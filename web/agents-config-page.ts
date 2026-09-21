@@ -1286,7 +1286,19 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         // doesn't splice into an already-running server's in-memory
         // registry any more than the CLI does (see installAbility's own
         // doc comment on why), so the operator needs the same nudge here.
-        statusEl.textContent = 'Installed: ' + result.body.installed.join(', ') + '. Already running under npx loopengine dev? It becomes active automatically. Running under serve (or nothing yet)? Restart the server to pick it up.';
+        var message = 'Installed: ' + escapeHtml(result.body.installed.join(', ')) + '. Already running under npx loopengine dev? It becomes active automatically. Running under serve (or nothing yet)? Restart the server to pick it up.';
+        var deps = result.body.dependencies || [];
+        if (deps.length) {
+          // installAbility only ever copies the ability's own files —
+          // never touches package.json/node_modules — so a real npm
+          // dependency the ability's own tool code imports (e.g. sharp)
+          // has to be installed separately, or the tool fails at runtime
+          // with an opaque "Cannot find package" the very next time this
+          // agent's config is loaded. Surfaced here, loudly, instead of
+          // leaving that as a silent trap discovered later.
+          message += ' <strong>This ability also needs: <code>npm install ' + escapeHtml(deps.join(' ')) + '</code></strong> in your own project before it will actually work.';
+        }
+        statusEl.innerHTML = message;
         loadAbilitiesTab(name);
       })
       .catch(function (err) {

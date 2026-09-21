@@ -169,6 +169,17 @@ export interface AbilityManifest {
   skills?: string[]
   actauth?: string
   env?: AbilityEnvDecl[]
+  /** Real npm package names (dependencies + optionalDependencies) the
+   * ability's own tool files import — read off package.json, not
+   * declared in loopengine.ability.json itself. installAbility only
+   * ever copies the ability's *files* into the consuming project, never
+   * touches its package.json/node_modules (see installAbility's own
+   * doc comment for why), so a tool that imports a real package like
+   * `sharp` will fail at runtime with a bare "Cannot find package"
+   * error unless the operator separately runs `npm install` for it —
+   * this is what lets a caller (the Admin UI's Abilities tab) warn
+   * about that up front instead of leaving it as a silent trap. */
+  dependencies?: string[]
 }
 
 /** One agent's record of one installed ability — the merge base a
@@ -280,12 +291,18 @@ function readManifest(abilityDir: string): AbilityManifest {
   if (!existsSync(pkgJsonPath)) {
     throw new AbilityManifestError(`${abilityDir} has no package.json — every loopengine ability needs one (name/version), even though its own metadata lives in loopengine.ability.json.`)
   }
-  const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as { name?: string; version?: string }
+  const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as {
+    name?: string
+    version?: string
+    dependencies?: Record<string, string>
+    optionalDependencies?: Record<string, string>
+  }
   if (!pkgJson.name || !pkgJson.version) {
     throw new AbilityManifestError(`${pkgJsonPath} must have "name" and "version".`)
   }
+  const dependencies = [...Object.keys(pkgJson.dependencies ?? {}), ...Object.keys(pkgJson.optionalDependencies ?? {})]
 
-  return { ...declared, name: pkgJson.name, version: pkgJson.version }
+  return { ...declared, name: pkgJson.name, version: pkgJson.version, dependencies }
 }
 
 // The installing project's own dependencies.loopengine is itself a
@@ -390,7 +407,7 @@ function parseActauthRules(abilityDir: string, manifest: AbilityManifest): Actau
  *
  * All-or-nothing: every collision check below runs, and the whole
  * install is refused, before a single file is written. */
-export async function installAbility(agentName: string, spec: string, options: FetchOptions = {}): Promise<{ installed: string[] }> {
+export async function installAbility(agentName: string, spec: string, options: FetchOptions = {}): Promise<{ installed: string[]; dependencies: string[] }> {
   const fetch = options.fetchAbilityDir ?? fetchAbilityDir
   const abilityDir = fetch(spec)
   const manifest = readManifest(abilityDir)
@@ -546,7 +563,10 @@ export async function installAbility(agentName: string, spec: string, options: F
   }
   writeProvenance(agentName, provenance)
 
-  return { installed: [...toolNames.map((n) => `tools/${n}.ts`), ...skillIds.map((id) => `skills/${id}/`), ...ruleNames.map((n) => `actauth:${n}`)] }
+  return {
+    installed: [...toolNames.map((n) => `tools/${n}.ts`), ...skillIds.map((id) => `skills/${id}/`), ...ruleNames.map((n) => `actauth:${n}`)],
+    dependencies: manifest.dependencies ?? [],
+  }
 }
 
 // ---- Upgrade ----

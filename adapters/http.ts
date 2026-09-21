@@ -840,7 +840,18 @@ async function handleEditAgent(req: IncomingMessage, res: ServerResponse, agentN
   }
   updateAgent(agentName, { config: configPatch, createModelCall })
 
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await describeAgent(getEntry(agentName)!)))
+  // Same "compute before writeHead" reasoning as the GET .../config
+  // route above — describeAgent can throw (a broken tools/index.ts
+  // import), and chaining it straight into .end()'s argument would send
+  // a 200 status before finding that out.
+  let described: Record<string, unknown>
+  try {
+    described = await describeAgent(getEntry(agentName)!)
+  } catch (err) {
+    res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(described))
 }
 
 // Backs the Skills tab's edit form (GET .../skills/:skillId to populate
@@ -2058,7 +2069,23 @@ const server = createServer(async (req, res) => {
         res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
         return
       }
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await describeAgent(entry)))
+      // describeAgent dynamically imports this agent's own tools/index.ts
+      // (loadDefaultTools) — a broken import there (a bad tool file, a
+      // dependency the agent's own code needs but doesn't have) throws.
+      // Computed before writeHead, not chained directly into .end() as an
+      // argument — chaining would send the 200 status line first, then
+      // throw while still computing the body, leaving the connection
+      // open with headers sent but no body ever written (a client-side
+      // "Unexpected end of JSON input", not a clear error) instead of a
+      // real 500 with an actual message.
+      let described: Record<string, unknown>
+      try {
+        described = await describeAgent(entry)
+      } catch (err) {
+        res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(described))
       return
     }
 
