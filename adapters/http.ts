@@ -63,6 +63,15 @@ import {
 } from '#core/gateway-tools.js'
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, EnvVarNameError } from '#web/env-admin.js'
+import { searchPublicAbilities } from '#web/abilities-admin.js'
+import {
+  installAbility,
+  listInstalledAbilities,
+  AbilityAlreadyInstalledError,
+  AbilityCollisionError,
+  AbilityManifestError,
+  AbilityVersionError,
+} from '#bin/ability-manager.js'
 import {
   createHttpTool,
   updateHttpTool,
@@ -934,6 +943,75 @@ async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName
     return
   }
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }))
+}
+
+// Backs the Admin UI's Abilities tab list — everything currently
+// installed for this agent. Read-only, so no extra auth gate beyond the
+// normal Basic Auth middleware every admin route already has.
+function handleAbilitiesGet(res: ServerResponse, agentName: string): void {
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities: listInstalledAbilities(agentName) }))
+}
+
+// Backs the Abilities tab's search box — proxies to npm's own public
+// registry search (abilities-admin.ts's searchPublicAbilities) so the
+// browser never needs direct access to registry.npmjs.org, and the
+// actual query text (the loopengine-ability keyword filter) stays a
+// server-side detail rather than something the client has to know to
+// construct.
+async function handleAbilitiesSearchGet(res: ServerResponse, agentName: string, query: string | null): Promise<void> {
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  try {
+    const results = await searchPublicAbilities(query ?? undefined)
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results }))
+  } catch (err) {
+    res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+// Installs an ability — any spec `npm pack` accepts (a bare/scoped
+// registry name, a pinned version, a git URL, or a local `file:../path`
+// for a private ability) — into this agent's own tree. Meaningfully
+// more sensitive than the rest of this admin surface: this runs
+// arbitrary third-party code inside the agent's project the next time
+// it's loaded, not just a config value or a credential. Same posture as
+// handleEnvPut's own secret-writing gate above — refuses outright when
+// LOOPENGINE_ADMIN_AUTH isn't configured at all, rather than proceeding
+// open like most routes here do.
+async function handleAbilityInstallPost(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  if (!adminAuth) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'Refusing to install an ability without LOOPENGINE_ADMIN_AUTH configured — set it before installing abilities through this route.' }),
+    )
+    return
+  }
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  const body = await readJsonBody(req)
+  if (typeof body.spec !== 'string' || !body.spec) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'spec is required' }))
+    return
+  }
+  try {
+    const result = await installAbility(agentName, body.spec)
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
+  } catch (err) {
+    const status =
+      err instanceof AbilityAlreadyInstalledError || err instanceof AbilityCollisionError
+        ? 409
+        : err instanceof AbilityManifestError || err instanceof AbilityVersionError
+          ? 422
+          : 500
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
 }
 
 // Backs the Actauth tab's rule editor — parses a rule body shared by both
@@ -2082,6 +2160,29 @@ const server = createServer(async (req, res) => {
     const envVarMatch = pathname.match(/^\/agents\/([^/]+)\/env\/([^/]+)$/)
     if (envVarMatch && req.method === 'PUT') {
       await handleEnvPut(req, res, decodeURIComponent(envVarMatch[1]), decodeURIComponent(envVarMatch[2]))
+      return
+    }
+
+    // Backs the Admin UI's Abilities tab — see handleAbilitiesGet/
+    // handleAbilitiesSearchGet/handleAbilityInstallPost's own doc
+    // comments above. The /search route is checked before the plain
+    // :agentName routes right below since 'search' would otherwise
+    // itself need to be excluded from matching as an agent name (it
+    // never would be one in practice, but this ordering means never
+    // having to think about it).
+    const abilitiesSearchMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/search$/)
+    if (abilitiesSearchMatch && req.method === 'GET') {
+      const query = new URL(req.url ?? '/', 'http://localhost').searchParams.get('q')
+      await handleAbilitiesSearchGet(res, decodeURIComponent(abilitiesSearchMatch[1]), query)
+      return
+    }
+    const abilitiesMatch = pathname.match(/^\/agents\/([^/]+)\/abilities$/)
+    if (abilitiesMatch && req.method === 'GET') {
+      handleAbilitiesGet(res, decodeURIComponent(abilitiesMatch[1]))
+      return
+    }
+    if (abilitiesMatch && req.method === 'POST') {
+      await handleAbilityInstallPost(req, res, decodeURIComponent(abilitiesMatch[1]))
       return
     }
 

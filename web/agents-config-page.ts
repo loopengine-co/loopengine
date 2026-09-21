@@ -408,6 +408,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   var actauthLoadedFor = null;
   // Same idea again, for the Environment tab's own GET .../env.
   var envLoadedFor = null;
+  // Same idea again, for the Abilities tab's own GET .../abilities.
+  var abilitiesLoadedFor = null;
   // The full /agents/:name/config response the currently-open agent was
   // last rendered from — kept around so refreshActauthDependentPanels/
   // refreshSkillsDependentPanels below can re-fetch and re-render just
@@ -1209,6 +1211,172 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       });
   }
 
+  // ---- Abilities tab: what's already installed for this agent, a
+  // search box over public (npm, tagged loopengine-ability) packages,
+  // and a plain spec field for a private ability (a git URL, a local
+  // file:../path, or a private registry name) — both installs go
+  // through the same POST .../abilities, since installAbility itself
+  // already resolves any spec npm pack accepts (see
+  // bin/ability-manager.ts's own doc comment on fetchAbilityDir).
+  // Lazily loaded the same way Actauth/Environment are. ----
+
+  function renderAbilitiesTabPlaceholder() {
+    return '<section id="abilitiesSection"><div id="abilitiesContent"><p class="hint">Loading&hellip;</p></div></section>';
+  }
+
+  function renderInstalledAbilityRow(a) {
+    return '<tr>' +
+      '<td><code>' + escapeHtml(a.name) + '</code></td>' +
+      '<td>' + escapeHtml(a.version) + '</td>' +
+      '<td class="hint">' + escapeHtml((a.tools || []).join(', ')) + '</td>' +
+      '</tr>';
+  }
+
+  function renderAbilitySearchResultRow(pkg) {
+    return '<tr>' +
+      '<td><code>' + escapeHtml(pkg.name) + '</code> <span class="hint">' + escapeHtml(pkg.version) + '</span></td>' +
+      '<td>' + escapeHtml(pkg.description || '') + '</td>' +
+      '<td><button type="button" class="ability-install-btn" data-spec="' + escapeHtml(pkg.name) + '">Install</button></td>' +
+      '</tr>';
+  }
+
+  function renderAbilitiesConfigHtml(data) {
+    var installed = data.abilities || [];
+    var installedHtml = installed.length
+      ? '<table><thead><tr><th>Name</th><th>Version</th><th>Tools</th></tr></thead><tbody>' + installed.map(renderInstalledAbilityRow).join('') + '</tbody></table>'
+      : '<p class="hint">No abilities installed for this agent yet.</p>';
+
+    return '<h3>Installed</h3>' + installedHtml +
+      '<h3>Search public abilities</h3>' +
+      '<form id="abilitySearchForm" class="add-source">' +
+        '<input type="text" name="q" placeholder="Search by name or keyword (optional)">' +
+        '<button type="submit">Search</button>' +
+      '</form>' +
+      '<div id="abilitySearchResults"></div>' +
+      '<h3 style="margin-top:24px">Install from a spec</h3>' +
+      '<p class="hint">A git URL, a local <code>file:../path</code>, or a private npm package name/version — for anything not published publicly.</p>' +
+      '<form id="abilityInstallForm" class="add-source">' +
+        '<input type="text" name="spec" placeholder="e.g. git+https://github.com/org/repo.git or file:../my-ability" required>' +
+        '<button type="submit">Install</button>' +
+      '</form>' +
+      '<p id="abilityInstallStatus" class="hint"></p>';
+  }
+
+  function abilitiesContentEl() {
+    return detail.querySelector('#abilitiesContent');
+  }
+
+  // Shared by both the search-results "Install" button and the
+  // spec-form submit — same endpoint either way, installAbility itself
+  // doesn't distinguish "found via search" from "pasted directly".
+  function installAbilitySpec(name, spec, statusEl, btn) {
+    if (btn) { btn.disabled = true; }
+    statusEl.className = 'hint';
+    statusEl.textContent = 'Installing ' + spec + '…';
+    fetch('/agents/' + encodeURIComponent(name) + '/abilities', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: spec }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'request failed');
+        // Same "is this dev or serve" distinction the CLI's own
+        // add-ability command prints after installing — a web install
+        // doesn't splice into an already-running server's in-memory
+        // registry any more than the CLI does (see installAbility's own
+        // doc comment on why), so the operator needs the same nudge here.
+        statusEl.textContent = 'Installed: ' + result.body.installed.join(', ') + '. Already running under npx loopengine dev? It becomes active automatically. Running under serve (or nothing yet)? Restart the server to pick it up.';
+        loadAbilitiesTab(name);
+      })
+      .catch(function (err) {
+        statusEl.className = 'error';
+        statusEl.textContent = 'Could not install: ' + err.message;
+        if (btn) { btn.disabled = false; }
+      });
+  }
+
+  // Shared by the initial (empty-query) load right after the tab opens
+  // and the search form's own submit — the empty-query case is just
+  // "list every published ability" (the keyword filter alone, no extra
+  // search text), so an operator sees what's out there immediately
+  // instead of having to search for something before anything shows up.
+  function runAbilitySearch(name, q, content, resultsEl) {
+    resultsEl.innerHTML = '<p class="hint">Loading&hellip;</p>';
+    fetch('/agents/' + encodeURIComponent(name) + '/abilities/search' + (q ? '?q=' + encodeURIComponent(q) : ''))
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'search failed');
+        var results = result.body.results || [];
+        resultsEl.innerHTML = results.length
+          ? '<table><thead><tr><th>Package</th><th>Description</th><th></th></tr></thead><tbody>' + results.map(renderAbilitySearchResultRow).join('') + '</tbody></table>'
+          : '<p class="hint">No public abilities found.</p>';
+        var installBtns = resultsEl.querySelectorAll('.ability-install-btn');
+        for (var i = 0; i < installBtns.length; i++) {
+          installBtns[i].addEventListener('click', function (ev2) {
+            var btn = ev2.currentTarget;
+            installAbilitySpec(name, btn.dataset.spec, content.querySelector('#abilityInstallStatus'), btn);
+          });
+        }
+      })
+      .catch(function (err) {
+        resultsEl.innerHTML = '<p class="error">' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function wireAbilitiesHandlers(name) {
+    var content = abilitiesContentEl();
+    if (!content) return;
+
+    var searchForm = content.querySelector('#abilitySearchForm');
+    var resultsEl = content.querySelector('#abilitySearchResults');
+    if (searchForm && resultsEl) {
+      searchForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var q = new FormData(searchForm).get('q');
+        runAbilitySearch(name, q, content, resultsEl);
+      });
+      // List every published ability immediately, not just after the
+      // operator explicitly searches for something.
+      runAbilitySearch(name, '', content, resultsEl);
+    }
+
+    var installForm = content.querySelector('#abilityInstallForm');
+    if (installForm) {
+      installForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var spec = new FormData(installForm).get('spec');
+        var statusEl = content.querySelector('#abilityInstallStatus');
+        var btn = installForm.querySelector('button[type="submit"]');
+        installAbilitySpec(name, spec, statusEl, btn);
+      });
+    }
+  }
+
+  function applyAbilitiesConfig(name, data) {
+    var content = abilitiesContentEl();
+    if (!content) return;
+    content.innerHTML = renderAbilitiesConfigHtml(data);
+    wireAbilitiesHandlers(name);
+    abilitiesLoadedFor = name;
+  }
+
+  function loadAbilitiesTab(name) {
+    var content = abilitiesContentEl();
+    if (!content) return;
+    content.innerHTML = '<p class="hint">Loading&hellip;</p>';
+    fetch('/agents/' + encodeURIComponent(name) + '/abilities')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (currentName !== name) return;
+        applyAbilitiesConfig(name, data);
+      })
+      .catch(function (err) {
+        if (currentName !== name) return;
+        content.innerHTML = '<p class="error">Could not load abilities: ' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
   // ---- Skills tab: editable — add/edit/delete SKILL.md files via
   // skills-admin.ts, restricted (see that file's own doc comment) to
   // flat, non-nested skill ids. Unlike the Tools tab's Gateway Tools
@@ -1996,6 +2164,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     if (tab === 'env' && envLoadedFor !== currentName) {
       loadEnvTab(currentName);
     }
+    if (tab === 'abilities' && abilitiesLoadedFor !== currentName) {
+      loadAbilitiesTab(currentName);
+    }
   }
 
   // Refreshes just Overview's own summary — used after anything that
@@ -2071,13 +2242,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         '<button class="tab" data-tab="skills">Skills</button>' +
         '<button class="tab" data-tab="tools">Tools</button>' +
         '<button class="tab" data-tab="actauth">ActAuth</button>' +
+        '<button class="tab" data-tab="abilities">Abilities</button>' +
         '<button class="tab" data-tab="env">Environment</button>' +
       '</div>' +
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="skills">' + renderSkillsTabHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="tools">' + renderToolsTabHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="actauth">' + renderActauthTabPlaceholder() + '</div>' +
-      '<div class="tab-panel" data-tab-panel="env">' + renderEnvTabPlaceholder() + '</div>';
+      '<div class="tab-panel" data-tab-panel="env">' + renderEnvTabPlaceholder() + '</div>' +
+      '<div class="tab-panel" data-tab-panel="abilities">' + renderAbilitiesTabPlaceholder() + '</div>';
 
     var buttons = detail.querySelectorAll('.tabs button');
     for (var i = 0; i < buttons.length; i++) {
@@ -2102,6 +2275,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     gatewayLoadedFor = null;
     actauthLoadedFor = null;
     envLoadedFor = null;
+    abilitiesLoadedFor = null;
     var items = agentList.querySelectorAll('li');
     for (var i = 0; i < items.length; i++) {
       items[i].classList.toggle('active', items[i].dataset.name === name);

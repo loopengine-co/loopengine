@@ -208,6 +208,16 @@ function readProvenance(agentName: string): ProvenanceFile {
   return JSON.parse(readFileSync(path, 'utf8')) as ProvenanceFile
 }
 
+/** Every ability currently installed for `agentName`, as recorded in
+ * .loopengine-abilities.json — powers the Admin UI's Abilities tab so an
+ * operator can see what's already there before installing something new
+ * (and get a clear collision error, via installAbility itself, rather
+ * than guessing blind). */
+export function listInstalledAbilities(agentName: string): Array<{ name: string } & InstalledAbilityRecord> {
+  const provenance = readProvenance(agentName)
+  return Object.entries(provenance).map(([name, record]) => ({ name, ...record }))
+}
+
 function writeProvenance(agentName: string, data: ProvenanceFile): void {
   writeFileSync(provenancePath(agentName), JSON.stringify(data, null, 2) + '\n')
 }
