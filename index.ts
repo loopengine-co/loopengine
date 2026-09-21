@@ -184,6 +184,19 @@ export {
 } from './web/actauth-admin.js'
 export type { ActauthRuleInput, ActauthConfigView } from './web/actauth-admin.js'
 
+export {
+  installAbility,
+  listInstalledAbilities,
+  AbilityManifestError,
+  AbilityVersionError,
+  AbilityCollisionError,
+  AbilityAlreadyInstalledError,
+} from './bin/ability-manager.js'
+export type { InstalledAbilityRecord, AbilityEnvDecl } from './bin/ability-manager.js'
+
+export { searchPublicAbilities } from './web/abilities-admin.js'
+export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
+
 export { describeModelProviders, describeGateways } from './web/global-config.js'
 export type { ModelProviderInfo, AgentModelUsage, ModelsView, GatewayProviderInfo, GatewaysView } from './web/global-config.js'
 
