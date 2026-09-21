@@ -38,9 +38,23 @@ export async function searchPublicAbilities(query?: string): Promise<PublicAbili
   if (!res.ok) throw new Error(`npm registry search failed (HTTP ${res.status})`)
 
   const data = (await res.json()) as NpmSearchResponse
-  return (data.objects ?? []).map((o) => ({
+  const results = (data.objects ?? []).map((o) => ({
     name: o.package.name,
     description: o.package.description ?? '',
     version: o.package.version,
   }))
+
+  // npm's own search is a relevance *ranker*, not a filter — a query
+  // like "keywords:loopengine-ability docs" boosts a matching package's
+  // score but doesn't drop the non-matching ones from the response at
+  // all (confirmed live: every ability in this ecosystem still came
+  // back regardless of the extra query text, just reordered). With this
+  // few, brand-new, all-zero-download packages, that reordering barely
+  // moves, so an operator typing a search term would otherwise see the
+  // exact same full list every time. Filtering here on name/description
+  // gives the strict, expected "search box" behavior npm's own API
+  // doesn't provide on its own.
+  if (!query) return results
+  const needle = query.toLowerCase()
+  return results.filter((r) => r.name.toLowerCase().includes(needle) || r.description.toLowerCase().includes(needle))
 }
