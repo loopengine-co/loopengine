@@ -2188,9 +2188,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   // so only Overview is left needing a re-fetch.
   function refreshOverviewPanel(name) {
     fetch('/agents/' + encodeURIComponent(name) + '/config')
-      .then(function (r) { return r.json(); })
-      .then(function (cfg) {
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
         if (currentName !== name) return;
+        // A non-ok body is {error: "..."}, not a real config — bail out
+        // to the catch below rather than rendering it as one (same risk
+        // selectAgent's own /config fetch has — see its own comment).
+        if (!result.ok) throw new Error(result.body.error || 'request failed');
+        var cfg = result.body;
         currentCfg = cfg;
         var overviewPanel = detail.querySelector('[data-tab-panel="overview"]');
         if (overviewPanel) {
@@ -2226,9 +2231,13 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   // re-rendering both it and Overview from a fresh /config fetch.
   function refreshSkillsDependentPanels(name) {
     fetch('/agents/' + encodeURIComponent(name) + '/config')
-      .then(function (r) { return r.json(); })
-      .then(function (cfg) {
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
         if (currentName !== name) return;
+        // Same "don't render an {error: ...} body as if it were a real
+        // config" guard as refreshOverviewPanel/selectAgent above.
+        if (!result.ok) throw new Error(result.body.error || 'request failed');
+        var cfg = result.body;
         currentCfg = cfg;
         var overviewPanel = detail.querySelector('[data-tab-panel="overview"]');
         var skillsPanel = skillsPanelEl();
@@ -2296,10 +2305,18 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     empty.style.display = 'none';
     detail.style.display = 'block';
     fetch('/agents/' + encodeURIComponent(name) + '/config')
-      .then(function (r) { return r.json(); })
-      .then(function (cfg) {
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
         if (currentName !== name) return;
-        renderDetail(cfg);
+        // A non-ok response's body is {error: "..."}, not a real config
+        // — rendering it as one would crash somewhere deep in
+        // renderDetail (e.g. reading .model.provider off an object with
+        // no .model at all) with a confusing, unrelated-looking message
+        // instead of the actual server-side error this route already
+        // went out of its way to surface clearly (see handleAgentConfig
+        // Get's own doc comment).
+        if (!result.ok) throw new Error(result.body.error || 'request failed');
+        renderDetail(result.body);
       })
       .catch(function (err) {
         if (currentName !== name) return;
