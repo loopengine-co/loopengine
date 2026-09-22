@@ -206,6 +206,14 @@ export interface InstalledAbilityRecord {
   skills: string[]
   actauthRules: string[]
   env: AbilityEnvDecl[]
+  /** Real npm package names (dependencies + optionalDependencies) the
+   * ability's own tool files import, as of the last install/upgrade —
+   * same values AbilityManifest.dependencies carries, persisted here so
+   * the Admin UI's "Install dependencies" button can read them back
+   * without refetching the ability from its spec. Optional only because
+   * an ability installed before this field existed has no recorded
+   * value. */
+  dependencies?: string[]
   /** relative path (e.g. "tools/foo.ts") -> sha256 hex, as of the last
    * install/upgrade — remove-ability's dirty-check compares against
    * this rather than storing/refetching full content to diff. */
@@ -564,6 +572,7 @@ export async function installAbility(agentName: string, spec: string, options: F
     skills: skillIds,
     actauthRules: ruleNames,
     env: manifest.env ?? [],
+    dependencies: manifest.dependencies ?? [],
     contentHashes,
   }
   writeProvenance(agentName, provenance)
@@ -756,7 +765,14 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     results.push({ path, status: 'updated' })
   }
 
-  provenance[abilityName] = { ...record, version: newManifest.version, spec, contentHashes: newContentHashes, env: newManifest.env ?? record.env }
+  provenance[abilityName] = {
+    ...record,
+    version: newManifest.version,
+    spec,
+    contentHashes: newContentHashes,
+    env: newManifest.env ?? record.env,
+    dependencies: newManifest.dependencies ?? record.dependencies,
+  }
   writeProvenance(agentName, provenance)
 
   return { files: results }

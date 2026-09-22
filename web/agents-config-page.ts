@@ -1298,6 +1298,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     var actionHtml = a.upToDate
       ? '<span class="hint">up to date</span>'
       : '<button type="button" class="ability-upgrade-btn" data-name="' + escapeHtml(a.name) + '">Upgrade</button>';
+    // Same reasoning as upToDate above — missingDependencies (see
+    // hasNodeModule) only ever hides this once the server actually
+    // found every dependency already present in node_modules; anything
+    // it can't confirm still shows the button.
+    var deps = a.missingDependencies || [];
+    if (deps.length) {
+      actionHtml += ' <button type="button" class="ability-install-deps-btn" data-name="' + escapeHtml(a.name) + '" title="npm install ' + escapeHtml(deps.join(' ')) + '">Install deps</button>';
+    }
     return '<tr>' +
       '<td><code>' + escapeHtml(a.name) + '</code></td>' +
       '<td>' + escapeHtml(a.version) + '</td>' +
@@ -1373,8 +1381,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
           // has to be installed separately, or the tool fails at runtime
           // with an opaque "Cannot find package" the very next time this
           // agent's config is loaded. Surfaced here, loudly, instead of
-          // leaving that as a silent trap discovered later.
-          message += ' <strong>This ability also needs: <code>npm install ' + escapeHtml(deps.join(' ')) + '</code></strong> in your own project before it will actually work.';
+          // leaving that as a silent trap discovered later — the
+          // Installed table below now has its own "Install deps" button
+          // for exactly this (see handleAbilityInstallDepsPost).
+          message += ' <strong>This ability also needs: <code>' + escapeHtml(deps.join(', ')) + '</code></strong> — use the "Install deps" button below, or run <code>npm install ' + escapeHtml(deps.join(' ')) + '</code> yourself.';
         }
         statusEl.innerHTML = message;
         loadAbilitiesTab(name);
@@ -1428,6 +1438,39 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       });
   }
 
+  // Runs npm install for an ability's own missing dependencies
+  // (handleAbilityInstallDepsPost) — the server reads the dependency
+  // list back off this ability's own installed record, not anything
+  // this form could tamper with, so there's nothing to pass except
+  // which ability. Can take a while (a native module like sharp
+  // especially), so the button stays disabled and the status line says
+  // so rather than looking hung.
+  function installAbilityDeps(name, abilityName, statusEl, btn) {
+    if (btn) { btn.disabled = true; }
+    statusEl.className = 'hint';
+    statusEl.textContent = 'Running npm install for ' + abilityName + '’s dependencies… this can take a minute.';
+    fetch('/agents/' + encodeURIComponent(name) + '/abilities/' + encodeURIComponent(abilityName) + '/install-deps', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'request failed');
+        var installed = result.body.installed || [];
+        statusEl.className = 'hint';
+        statusEl.textContent = installed.length
+          ? 'Installed: ' + installed.join(', ') + '. Restart the server to pick it up.'
+          : abilityName + ' had no dependencies to install.';
+        loadAbilitiesTab(name);
+      })
+      .catch(function (err) {
+        statusEl.className = 'error';
+        statusEl.textContent = 'Could not install dependencies: ' + err.message;
+        if (btn) { btn.disabled = false; }
+      });
+  }
+
   // Shared by the initial (empty-query) load right after the tab opens
   // and the search form's own submit — the empty-query case is just
   // "list every published ability" (the keyword filter alone, no extra
@@ -1466,6 +1509,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       upgradeBtns[u].addEventListener('click', function (ev) {
         var btn = ev.currentTarget;
         upgradeAbility(name, btn.dataset.name, upgradeStatusEl, btn);
+      });
+    }
+
+    var installDepsBtns = content.querySelectorAll('.ability-install-deps-btn');
+    for (var d = 0; d < installDepsBtns.length; d++) {
+      installDepsBtns[d].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        installAbilityDeps(name, btn.dataset.name, upgradeStatusEl, btn);
       });
     }
 

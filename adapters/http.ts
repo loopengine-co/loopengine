@@ -24,9 +24,13 @@
 // *same* session don't race on read-modify-write of that session's
 // history. What counts as "the same session" is deliberately not this
 // file's call — see AgentConfig.sessionIdFor and defaultSessionIdFor below.
+import { execFile } from 'node:child_process'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 import { getEntry, listAgents, projectDir, registerAgent, updateAgent, type RegistryEntry } from '../core/agent-registry.js'
 import { loadAgentModule, synthesizeCreateModelCall } from '#core/discover-agents.js'
 import {
@@ -969,14 +973,28 @@ async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }))
 }
 
+// A cheap, good-enough presence check — existsSync(node_modules/<dep>)
+// — rather than an actual module resolution (require.resolve/
+// import.meta.resolve): this only ever decides whether to show an
+// "Install deps" button, not whether the ability will actually work, so
+// a false negative in an unusual node_modules layout (a workspace
+// hoisting a dep up to a parent directory this project doesn't own,
+// say) just means the button stays visible a little too long — an
+// extra no-op npm install away from being right again — not a wrong
+// answer the operator has to debug.
+function hasNodeModule(name: string): boolean {
+  return existsSync(join(process.cwd(), 'node_modules', name))
+}
+
 // Backs the Admin UI's Abilities tab list — everything currently
 // installed for this agent, each annotated with the latest version
 // currently published on the public npm registry (fetchLatestAbilityVersion,
 // best-effort — null for a private/file:/git-installed ability, or on any
 // registry hiccup) so the tab can skip offering an "Upgrade" button for
-// something already at the newest version. Read-only, so no extra auth
-// gate beyond the normal Basic Auth middleware every admin route already
-// has.
+// something already at the newest version, and with `missingDependencies`
+// (see hasNodeModule) so it can likewise skip offering "Install deps"
+// once they're all already present. Read-only, so no extra auth gate
+// beyond the normal Basic Auth middleware every admin route already has.
 async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promise<void> {
   if (!getEntry(agentName)) {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
@@ -986,7 +1004,8 @@ async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promi
   const abilities = await Promise.all(
     installed.map(async (a) => {
       const latestVersion = await fetchLatestAbilityVersion(a.name)
-      return { ...a, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version }
+      const missingDependencies = (a.dependencies ?? []).filter((dep) => !hasNodeModule(dep))
+      return { ...a, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version, missingDependencies }
     }),
   )
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities }))
@@ -1079,6 +1098,60 @@ async function handleAbilityUpgradePost(req: IncomingMessage, res: ServerRespons
           ? 422
           : 500
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+const execFileAsync = promisify(execFile)
+const NPM_INSTALL_DEPS_TIMEOUT_MS = 180_000
+
+// Runs `npm install <deps>` in the project's own root (process.cwd(),
+// same convention web/env-admin.ts's own envFilePath() already
+// establishes) — the real npm packages an installed ability's tool code
+// imports (e.g. sharp, jszip) that installAbility itself never touches
+// (it only ever copies the ability's own files, deliberately never
+// package.json/node_modules — see installAbility's own doc comment).
+// Meaningfully more consequential than installing an ability's files:
+// this mutates the whole project's package.json/lockfile and runs
+// arbitrary npm lifecycle scripts, so same refuse-outright-without-
+// LOOPENGINE_ADMIN_AUTH posture as installing/upgrading an ability
+// itself. `deps` is read back off this ability's own persisted
+// provenance record (InstalledAbilityRecord.dependencies), never taken
+// from the request body — accepting an arbitrary client-supplied package
+// list here would let anyone who can reach this route install anything
+// on the server, not just what an already-installed ability actually
+// declared. execFile (array argv, no shell) rather than exec/a template
+// string — a dependency name is whatever text an ability's own
+// package.json happened to declare, not something to trust for shell
+// interpolation.
+async function handleAbilityInstallDepsPost(req: IncomingMessage, res: ServerResponse, agentName: string, abilityName: string): Promise<void> {
+  if (!adminAuth) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'Refusing to run npm install without LOOPENGINE_ADMIN_AUTH configured — set it before installing dependencies through this route.' }),
+    )
+    return
+  }
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  const record = listInstalledAbilities(agentName).find((a) => a.name === abilityName)
+  if (!record) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `Ability '${abilityName}' isn't installed for '${agentName}'.` }))
+    return
+  }
+  const deps = record.dependencies ?? []
+  if (!deps.length) {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ installed: [] }))
+    return
+  }
+  try {
+    await execFileAsync('npm', ['install', ...deps], { cwd: process.cwd(), timeout: NPM_INSTALL_DEPS_TIMEOUT_MS })
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ installed: deps }))
+  } catch (err) {
+    const stderr = err && typeof err === 'object' && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : undefined
+    res.writeHead(500, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: stderr || (err instanceof Error ? err.message : String(err)) }),
+    )
   }
 }
 
@@ -2263,6 +2336,11 @@ const server = createServer(async (req, res) => {
     const abilityUpgradeMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)\/upgrade$/)
     if (abilityUpgradeMatch && req.method === 'POST') {
       await handleAbilityUpgradePost(req, res, decodeURIComponent(abilityUpgradeMatch[1]), decodeURIComponent(abilityUpgradeMatch[2]))
+      return
+    }
+    const abilityInstallDepsMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)\/install-deps$/)
+    if (abilityInstallDepsMatch && req.method === 'POST') {
+      await handleAbilityInstallDepsPost(req, res, decodeURIComponent(abilityInstallDepsMatch[1]), decodeURIComponent(abilityInstallDepsMatch[2]))
       return
     }
     const abilitiesMatch = pathname.match(/^\/agents\/([^/]+)\/abilities$/)
