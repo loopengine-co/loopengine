@@ -1289,11 +1289,20 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   }
 
   function renderInstalledAbilityRow(a) {
+    // a.upToDate only ever comes back true when the npm registry lookup
+    // (handleAbilitiesGet's own fetchLatestAbilityVersion) actually
+    // succeeded and matched — a private/file:/git-installed ability, or
+    // any registry hiccup, leaves it false, so the button still shows
+    // rather than silently hiding on an unknown instead of a genuine
+    // "nothing to upgrade".
+    var actionHtml = a.upToDate
+      ? '<span class="hint">up to date</span>'
+      : '<button type="button" class="ability-upgrade-btn" data-name="' + escapeHtml(a.name) + '">Upgrade</button>';
     return '<tr>' +
       '<td><code>' + escapeHtml(a.name) + '</code></td>' +
       '<td>' + escapeHtml(a.version) + '</td>' +
       '<td class="hint">' + escapeHtml((a.tools || []).join(', ')) + '</td>' +
-      '<td><button type="button" class="ability-upgrade-btn" data-name="' + escapeHtml(a.name) + '">Upgrade</button></td>' +
+      '<td>' + actionHtml + '</td>' +
       '</tr>';
   }
 

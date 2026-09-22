@@ -58,3 +58,28 @@ export async function searchPublicAbilities(query?: string): Promise<PublicAbili
   const needle = query.toLowerCase()
   return results.filter((r) => r.name.toLowerCase().includes(needle) || r.description.toLowerCase().includes(needle))
 }
+
+const NPM_LATEST_VERSION_TIMEOUT_MS = 5000
+
+/** The latest version currently published on the public npm registry for
+ * `packageName`, or null if it can't be determined — not published
+ * there at all (a private/file:/git-installed ability, the common case
+ * during local development), a network hiccup, or a timeout. Best-effort
+ * only: the Abilities tab uses this to decide whether an installed
+ * ability's own "Upgrade" button is worth showing, not to block
+ * anything, so a failure here surfaces as "can't tell, show the button
+ * anyway" rather than an error the operator has to deal with. */
+export async function fetchLatestAbilityVersion(packageName: string): Promise<string | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), NPM_LATEST_VERSION_TIMEOUT_MS)
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`, { signal: controller.signal })
+    if (!res.ok) return null
+    const data = (await res.json()) as { version?: string }
+    return typeof data.version === 'string' ? data.version : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}

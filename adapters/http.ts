@@ -63,7 +63,7 @@ import {
 } from '#core/gateway-tools.js'
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, EnvVarNameError } from '#web/env-admin.js'
-import { searchPublicAbilities } from '#web/abilities-admin.js'
+import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
   upgradeAbility,
@@ -970,14 +970,26 @@ async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName
 }
 
 // Backs the Admin UI's Abilities tab list — everything currently
-// installed for this agent. Read-only, so no extra auth gate beyond the
-// normal Basic Auth middleware every admin route already has.
-function handleAbilitiesGet(res: ServerResponse, agentName: string): void {
+// installed for this agent, each annotated with the latest version
+// currently published on the public npm registry (fetchLatestAbilityVersion,
+// best-effort — null for a private/file:/git-installed ability, or on any
+// registry hiccup) so the tab can skip offering an "Upgrade" button for
+// something already at the newest version. Read-only, so no extra auth
+// gate beyond the normal Basic Auth middleware every admin route already
+// has.
+async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promise<void> {
   if (!getEntry(agentName)) {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities: listInstalledAbilities(agentName) }))
+  const installed = listInstalledAbilities(agentName)
+  const abilities = await Promise.all(
+    installed.map(async (a) => {
+      const latestVersion = await fetchLatestAbilityVersion(a.name)
+      return { ...a, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version }
+    }),
+  )
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities }))
 }
 
 // Backs the Abilities tab's search box — proxies to npm's own public
@@ -2255,7 +2267,7 @@ const server = createServer(async (req, res) => {
     }
     const abilitiesMatch = pathname.match(/^\/agents\/([^/]+)\/abilities$/)
     if (abilitiesMatch && req.method === 'GET') {
-      handleAbilitiesGet(res, decodeURIComponent(abilitiesMatch[1]))
+      await handleAbilitiesGet(res, decodeURIComponent(abilitiesMatch[1]))
       return
     }
     if (abilitiesMatch && req.method === 'POST') {

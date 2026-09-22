@@ -196,7 +196,7 @@ export {
 } from './bin/ability-manager.js'
 export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult } from './bin/ability-manager.js'
 
-export { searchPublicAbilities } from './web/abilities-admin.js'
+export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
 
 export { describeModelProviders, describeGateways } from './web/global-config.js'
