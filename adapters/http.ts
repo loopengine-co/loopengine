@@ -72,6 +72,7 @@ import {
   installAbility,
   upgradeAbility,
   listInstalledAbilities,
+  backfillDependencies,
   AbilityAlreadyInstalledError,
   AbilityCollisionError,
   AbilityManifestError,
@@ -1003,9 +1004,16 @@ async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promi
   const installed = listInstalledAbilities(agentName)
   const abilities = await Promise.all(
     installed.map(async (a) => {
+      // a.dependencies is only ever undefined for a record from before
+      // that field existed — backfillDependencies re-derives and
+      // persists it once rather than this route silently treating
+      // "never recorded" the same as "confirmed zero", which would
+      // otherwise permanently hide "Install deps" for an ability that
+      // genuinely still needs something.
+      const dependencies = a.dependencies !== undefined ? a.dependencies : ((await backfillDependencies(agentName, a.name)) ?? [])
       const latestVersion = await fetchLatestAbilityVersion(a.name)
-      const missingDependencies = (a.dependencies ?? []).filter((dep) => !hasNodeModule(dep))
-      return { ...a, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version, missingDependencies }
+      const missingDependencies = dependencies.filter((dep) => !hasNodeModule(dep))
+      return { ...a, dependencies, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version, missingDependencies }
     }),
   )
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities }))

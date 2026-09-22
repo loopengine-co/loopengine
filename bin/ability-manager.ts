@@ -246,6 +246,37 @@ function writeProvenance(agentName: string, data: ProvenanceFile): void {
   writeFileSync(provenancePath(agentName), JSON.stringify(data, null, 2) + '\n')
 }
 
+/** `record.dependencies` is only ever absent for an ability installed or
+ * last upgraded before that field existed (see InstalledAbilityRecord's
+ * own doc comment) — this re-derives it once by refetching the ability's
+ * own manifest (same technique upgradeAbility already uses for its own
+ * three-way merge base) and persists the result into provenance, so this
+ * only ever runs once per such ability rather than on every read. A
+ * record that already has `dependencies` — even a real empty array,
+ * meaning the ability genuinely declares none — is returned unchanged,
+ * never refetched. Best-effort: a spec that no longer resolves (private
+ * registry auth expired, a git ref that's gone, ...) leaves
+ * `dependencies` unset rather than throwing, since the Admin UI's own
+ * caller (handleAbilitiesGet) would rather show "can't tell" than fail
+ * the whole abilities list over one ability's stale record. */
+export async function backfillDependencies(agentName: string, abilityName: string, options: FetchOptions = {}): Promise<string[] | undefined> {
+  const provenance = readProvenance(agentName)
+  const record = provenance[abilityName]
+  if (!record) return undefined
+  if (record.dependencies !== undefined) return record.dependencies
+  const fetch = options.fetchAbilityDir ?? fetchAbilityDir
+  try {
+    const dir = fetch(record.spec ?? abilityName)
+    const manifest = readManifest(dir)
+    record.dependencies = manifest.dependencies ?? []
+    provenance[abilityName] = record
+    writeProvenance(agentName, provenance)
+    return record.dependencies
+  } catch {
+    return undefined
+  }
+}
+
 function sha256(content: string): string {
   return createHash('sha256').update(content).digest('hex')
 }

@@ -76,15 +76,18 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     flex-direction: column;
   }
   #agentList { list-style: none; margin: 0; padding: 6px; flex: 1; }
-  #agentList li {
+  #agentList li { border-radius: 6px; }
+  #agentList li a {
+    display: block;
     padding: 8px 10px;
     border-radius: 6px;
-    cursor: pointer;
     font-size: 13px;
     font-family: ui-monospace, monospace;
+    color: inherit;
+    text-decoration: none;
   }
-  #agentList li:hover { background: light-dark(#eee, #26262b); }
-  #agentList li.active { background: light-dark(#dbeafe, #1e3a5f); font-weight: 600; }
+  #agentList li a:hover { background: light-dark(#eee, #26262b); }
+  #agentList li.active a { background: light-dark(#dbeafe, #1e3a5f); font-weight: 600; }
   main {
     flex: 1;
     overflow-y: auto;
@@ -2513,9 +2516,17 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       for (var i = 0; i < agents.length; i++) {
         (function (name) {
           var li = document.createElement('li');
-          li.textContent = name;
           li.dataset.name = name;
-          li.addEventListener('click', function () { selectAgent(name); });
+          // A real <a href>, not a click handler calling selectAgent —
+          // switching agents is a full navigation to this same page with
+          // a different ?agent=, so the URL, browser back/forward, and
+          // bookmarking all reflect which agent is open, instead of the
+          // URL staying frozen at whatever it was on first load while
+          // the panel silently swaps underneath it via fetch.
+          var a = document.createElement('a');
+          a.href = '/agents/config?agent=' + encodeURIComponent(name);
+          a.textContent = name;
+          li.appendChild(a);
           agentList.appendChild(li);
         })(agents[i].name);
       }

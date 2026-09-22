@@ -188,6 +188,7 @@ export {
   installAbility,
   upgradeAbility,
   listInstalledAbilities,
+  backfillDependencies,
   AbilityManifestError,
   AbilityVersionError,
   AbilityCollisionError,
