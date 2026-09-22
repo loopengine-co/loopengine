@@ -946,6 +946,17 @@ async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName
     res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'value is required' }))
     return
   }
+  // A dropdown-backed var (AbilityEnvDecl.options) is still writable
+  // through this same raw route — worth rejecting an out-of-set value
+  // here too, not just skipping validation because the Admin UI's own
+  // <select> would never have produced one.
+  const declared = listDeclaredEnvVars(agentName).find((v) => v.name === varName)
+  if (declared?.options && !declared.options.includes(body.value)) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: `"${body.value}" isn't one of this var's allowed values: ${declared.options.join(', ')}` }),
+    )
+    return
+  }
   try {
     setEnvVar(varName, body.value)
   } catch (err) {

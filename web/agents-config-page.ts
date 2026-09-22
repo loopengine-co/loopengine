@@ -1150,31 +1150,41 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       : v.secret
         ? '<span class="hint">set</span>'
         : '<code>' + escapeHtml(v.value || '') + '</code>';
+    // A var with a closed set of valid values (AbilityEnvDecl.options,
+    // e.g. a provider switch) gets a <select> instead of a free-text
+    // field, so there's nothing to mistype — the same "value" form field
+    // name either element uses means wireEnvHandlers's own submit
+    // handler doesn't need to know which one it's looking at.
+    var fieldHtml = v.options
+      ? '<select name="value">' + v.options.map(function (opt) {
+          return '<option value="' + escapeHtml(opt) + '"' + (v.value === opt ? ' selected' : '') + '>' + escapeHtml(opt) + '</option>';
+        }).join('') + '</select>'
+      : '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'unchanged unless you type a new value' : 'value') + '" required>';
     return '<tr>' +
       '<td><code>' + escapeHtml(v.name) + '</code>' + sharedNote + '</td>' +
       '<td style="max-width:320px">' + escapeHtml(v.description || '') + '</td>' +
       '<td>' + statusHtml + '</td>' +
       '<td><form class="add-source env-var-form" data-name="' + escapeHtml(v.name) + '">' +
-        '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'unchanged unless you type a new value' : 'value') + '" required>' +
+        fieldHtml +
         '<button type="submit">Save</button>' +
       '</form></td>' +
       '</tr>';
   }
 
-  // One card per ability, matching the same .source/.source-head/
-  // status-ok/status-error look Gateway Tools sources already use — so
-  // an operator scanning the tab sees, per ability, whether it's fully
-  // configured or not, instead of hunting through one long flat table
-  // for rows that belong to whichever ability they're actually trying to
-  // set up right now.
+  // One card per ability, matching the same .source/.source-head look
+  // Gateway Tools sources already use — so an operator scanning the tab
+  // sees, per ability, which env vars it declared, instead of hunting
+  // through one long flat table for rows that belong to whichever
+  // ability they're actually trying to set up right now. Deliberately no
+  // "not set" count here (or in renderEnvConfigHtml's own summary) — a
+  // declared var not being set doesn't mean anything is broken, since
+  // plenty of them have working defaults (see each var's own
+  // description) and are only ever declared so an operator *can*
+  // override them, not because every single one is required.
   function renderEnvAbilityCard(abilityName, vars) {
-    var missing = vars.filter(function (v) { return !v.set; }).length;
-    var statusHtml = missing === 0
-      ? '<span class="status-ok">all set</span>'
-      : '<span class="status-error">' + missing + ' of ' + vars.length + ' not set</span>';
     var rows = vars.map(renderEnvRow).join('');
     return '<div class="source">' +
-      '<div class="source-head"><h4>' + escapeHtml(abilityName) + '</h4>' + statusHtml + '</div>' +
+      '<div class="source-head"><h4>' + escapeHtml(abilityName) + '</h4><span class="hint">' + vars.length + ' var' + (vars.length === 1 ? '' : 's') + '</span></div>' +
       '<table><thead><tr><th>Name</th><th style="max-width:320px">Description</th><th>Current value</th><th>Set value</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '</div>';
   }
@@ -1182,9 +1192,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   function renderEnvConfigHtml(vars) {
     if (!vars.length) return '<p class="hint">No installed ability has declared any environment variables for this agent yet.</p>';
 
-    var missingCount = vars.filter(function (v) { return !v.set; }).length;
-    var summaryHtml = '<p class="hint">' + vars.length + ' environment variable' + (vars.length === 1 ? '' : 's') + ' across every installed ability' +
-      (missingCount ? ' — <span class="error">' + missingCount + ' still not set</span>.' : ' — all set.') + '</p>';
+    var summaryHtml = '<p class="hint">' + vars.length + ' environment variable' + (vars.length === 1 ? '' : 's') + ' across every installed ability.</p>';
 
     // Grouped by declaring ability, not a single flat list — a var
     // declared by more than one ability (rare, but see renderEnvRow's

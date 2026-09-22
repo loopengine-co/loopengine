@@ -153,6 +153,11 @@ export interface AbilityEnvDecl {
   name: string
   description?: string
   secret?: boolean
+  /** A closed set of valid values, e.g. `["openai", "google"]` for a
+   * provider switch — the Admin UI renders these as a dropdown instead
+   * of a free-text field. Omit for anything that isn't genuinely a fixed
+   * enum (an API key, a free-form model name, a path, ...). */
+  options?: string[]
 }
 
 /** `name`/`version` deliberately aren't declared here — they're read off

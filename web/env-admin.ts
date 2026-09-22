@@ -31,6 +31,10 @@ export interface DeclaredEnvVar {
    * web/http-tool-admin.ts's `{{ENV_VAR}}` header handling already
    * follow. Undefined whenever `secret` is true or `set` is false. */
   value?: string
+  /** A closed set of valid values (see AbilityEnvDecl.options) — present
+   * only when the declaring ability actually named one; the Admin UI
+   * renders a dropdown instead of a free-text field when this is set. */
+  options?: string[]
 }
 
 function provenancePath(agentName: string): string {
@@ -84,6 +88,7 @@ export function listDeclaredEnvVars(agentName: string): DeclaredEnvVar[] {
         abilityNames: [abilityName],
         set: rawValue !== undefined,
         value: decl.secret === true ? undefined : rawValue,
+        options: decl.options,
       })
     }
   }
