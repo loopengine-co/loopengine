@@ -1306,11 +1306,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       '</tr>';
   }
 
-  function renderAbilitySearchResultRow(pkg) {
+  function renderAbilitySearchResultRow(pkg, installedNames) {
+    var actionHtml = installedNames.indexOf(pkg.name) !== -1
+      ? '<span class="hint">Installed</span>'
+      : '<button type="button" class="ability-install-btn" data-spec="' + escapeHtml(pkg.name) + '">Install</button>';
     return '<tr>' +
       '<td><code>' + escapeHtml(pkg.name) + '</code> <span class="hint">' + escapeHtml(pkg.version) + '</span></td>' +
       '<td>' + escapeHtml(pkg.description || '') + '</td>' +
-      '<td><button type="button" class="ability-install-btn" data-spec="' + escapeHtml(pkg.name) + '">Install</button></td>' +
+      '<td>' + actionHtml + '</td>' +
       '</tr>';
   }
 
@@ -1430,7 +1433,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   // "list every published ability" (the keyword filter alone, no extra
   // search text), so an operator sees what's out there immediately
   // instead of having to search for something before anything shows up.
-  function runAbilitySearch(name, q, content, resultsEl) {
+  function runAbilitySearch(name, q, content, resultsEl, installedNames) {
     resultsEl.innerHTML = '<p class="hint">Loading&hellip;</p>';
     fetch('/agents/' + encodeURIComponent(name) + '/abilities/search' + (q ? '?q=' + encodeURIComponent(q) : ''))
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
@@ -1438,7 +1441,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         if (!result.ok) throw new Error(result.body.error || 'search failed');
         var results = result.body.results || [];
         resultsEl.innerHTML = results.length
-          ? '<table><thead><tr><th>Package</th><th>Description</th><th></th></tr></thead><tbody>' + results.map(renderAbilitySearchResultRow).join('') + '</tbody></table>'
+          ? '<table><thead><tr><th>Package</th><th>Description</th><th></th></tr></thead><tbody>' + results.map(function (pkg) { return renderAbilitySearchResultRow(pkg, installedNames); }).join('') + '</tbody></table>'
           : '<p class="hint">No public abilities found.</p>';
         var installBtns = resultsEl.querySelectorAll('.ability-install-btn');
         for (var i = 0; i < installBtns.length; i++) {
@@ -1453,7 +1456,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       });
   }
 
-  function wireAbilitiesHandlers(name) {
+  function wireAbilitiesHandlers(name, installedNames) {
     var content = abilitiesContentEl();
     if (!content) return;
 
@@ -1472,11 +1475,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       searchForm.addEventListener('submit', function (ev) {
         ev.preventDefault();
         var q = new FormData(searchForm).get('q');
-        runAbilitySearch(name, q, content, resultsEl);
+        runAbilitySearch(name, q, content, resultsEl, installedNames);
       });
       // List every published ability immediately, not just after the
       // operator explicitly searches for something.
-      runAbilitySearch(name, '', content, resultsEl);
+      runAbilitySearch(name, '', content, resultsEl, installedNames);
     }
 
     var installForm = content.querySelector('#abilityInstallForm');
@@ -1495,7 +1498,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     var content = abilitiesContentEl();
     if (!content) return;
     content.innerHTML = renderAbilitiesConfigHtml(data);
-    wireAbilitiesHandlers(name);
+    var installedNames = (data.abilities || []).map(function (a) { return a.name; });
+    wireAbilitiesHandlers(name, installedNames);
     abilitiesLoadedFor = name;
   }
 
