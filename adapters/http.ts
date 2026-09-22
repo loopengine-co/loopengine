@@ -66,11 +66,13 @@ import { listDeclaredEnvVars, setEnvVar, EnvVarNameError } from '#web/env-admin.
 import { searchPublicAbilities } from '#web/abilities-admin.js'
 import {
   installAbility,
+  upgradeAbility,
   listInstalledAbilities,
   AbilityAlreadyInstalledError,
   AbilityCollisionError,
   AbilityManifestError,
   AbilityVersionError,
+  AbilityNotInstalledError,
 } from '#bin/ability-manager.js'
 import {
   createHttpTool,
@@ -1029,6 +1031,38 @@ async function handleAbilityInstallPost(req: IncomingMessage, res: ServerRespons
     const status =
       err instanceof AbilityAlreadyInstalledError || err instanceof AbilityCollisionError
         ? 409
+        : err instanceof AbilityManifestError || err instanceof AbilityVersionError
+          ? 422
+          : 500
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+// Upgrades an already-installed ability to whatever it currently
+// resolves to (or, optionally, a specific spec) — same admin-auth
+// posture as handleAbilityInstallPost above, since this runs arbitrary
+// third-party code inside the agent's project the next time it's
+// loaded, same as install does.
+async function handleAbilityUpgradePost(req: IncomingMessage, res: ServerResponse, agentName: string, abilityName: string): Promise<void> {
+  if (!adminAuth) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'Refusing to upgrade an ability without LOOPENGINE_ADMIN_AUTH configured — set it before upgrading abilities through this route.' }),
+    )
+    return
+  }
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  const body = await readJsonBody(req)
+  const spec = typeof body.spec === 'string' && body.spec ? body.spec : undefined
+  try {
+    const result = await upgradeAbility(agentName, abilityName, spec ? { spec } : {})
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
+  } catch (err) {
+    const status =
+      err instanceof AbilityNotInstalledError
+        ? 404
         : err instanceof AbilityManifestError || err instanceof AbilityVersionError
           ? 422
           : 500
@@ -2212,6 +2246,11 @@ const server = createServer(async (req, res) => {
     if (abilitiesSearchMatch && req.method === 'GET') {
       const query = new URL(req.url ?? '/', 'http://localhost').searchParams.get('q')
       await handleAbilitiesSearchGet(res, decodeURIComponent(abilitiesSearchMatch[1]), query)
+      return
+    }
+    const abilityUpgradeMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)\/upgrade$/)
+    if (abilityUpgradeMatch && req.method === 'POST') {
+      await handleAbilityUpgradePost(req, res, decodeURIComponent(abilityUpgradeMatch[1]), decodeURIComponent(abilityUpgradeMatch[2]))
       return
     }
     const abilitiesMatch = pathname.match(/^\/agents\/([^/]+)\/abilities$/)

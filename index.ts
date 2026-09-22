@@ -186,13 +186,15 @@ export type { ActauthRuleInput, ActauthConfigView } from './web/actauth-admin.js
 
 export {
   installAbility,
+  upgradeAbility,
   listInstalledAbilities,
   AbilityManifestError,
   AbilityVersionError,
   AbilityCollisionError,
   AbilityAlreadyInstalledError,
+  AbilityNotInstalledError,
 } from './bin/ability-manager.js'
-export type { InstalledAbilityRecord, AbilityEnvDecl } from './bin/ability-manager.js'
+export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult } from './bin/ability-manager.js'
 
 export { searchPublicAbilities } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'

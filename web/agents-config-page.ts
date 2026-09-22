@@ -1293,6 +1293,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       '<td><code>' + escapeHtml(a.name) + '</code></td>' +
       '<td>' + escapeHtml(a.version) + '</td>' +
       '<td class="hint">' + escapeHtml((a.tools || []).join(', ')) + '</td>' +
+      '<td><button type="button" class="ability-upgrade-btn" data-name="' + escapeHtml(a.name) + '">Upgrade</button></td>' +
       '</tr>';
   }
 
@@ -1307,7 +1308,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   function renderAbilitiesConfigHtml(data) {
     var installed = data.abilities || [];
     var installedHtml = installed.length
-      ? '<table><thead><tr><th>Name</th><th>Version</th><th>Tools</th></tr></thead><tbody>' + installed.map(renderInstalledAbilityRow).join('') + '</tbody></table>'
+      ? '<table><thead><tr><th>Name</th><th>Version</th><th>Tools</th><th></th></tr></thead><tbody>' + installed.map(renderInstalledAbilityRow).join('') + '</tbody></table>' +
+        '<p id="abilityUpgradeStatus" class="hint"></p>'
       : '<p class="hint">No abilities installed for this agent yet.</p>';
 
     return '<h3>Installed</h3>' + installedHtml +
@@ -1372,6 +1374,48 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       });
   }
 
+  // Upgrades an already-installed ability to whatever it currently
+  // resolves to — same endpoint upgradeAbility (bin/ability-manager.ts)
+  // backs, which three-way merges tool/skill files instead of blindly
+  // overwriting a hand-edited one, so a merge conflict is a real,
+  // expected outcome here, not an error — surfaced distinctly from a
+  // request actually failing.
+  function upgradeAbility(name, abilityName, statusEl, btn) {
+    if (btn) { btn.disabled = true; }
+    statusEl.className = 'hint';
+    statusEl.textContent = 'Upgrading ' + abilityName + '…';
+    fetch('/agents/' + encodeURIComponent(name) + '/abilities/' + encodeURIComponent(abilityName) + '/upgrade', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'request failed');
+        var files = result.body.files || [];
+        var updated = files.filter(function (f) { return f.status === 'updated'; });
+        var conflicts = files.filter(function (f) { return f.status === 'conflict'; });
+        var message;
+        if (!files.length || (!updated.length && !conflicts.length)) {
+          message = escapeHtml(abilityName) + ' is already up to date.';
+        } else {
+          message = 'Upgraded ' + escapeHtml(abilityName) + ': ' + escapeHtml(updated.map(function (f) { return f.path; }).join(', ') || 'no files changed') +
+            '. Already running under npx loopengine dev? It becomes active automatically. Running under serve (or nothing yet)? Restart the server to pick it up.';
+          if (conflicts.length) {
+            message += ' <strong>' + conflicts.length + ' file(s) need resolving by hand: ' + escapeHtml(conflicts.map(function (f) { return f.path; }).join(', ')) + '</strong> — a hand-edited file with upstream changes too, left alone rather than overwritten.';
+          }
+        }
+        statusEl.className = conflicts.length ? 'error' : 'hint';
+        statusEl.innerHTML = message;
+        loadAbilitiesTab(name);
+      })
+      .catch(function (err) {
+        statusEl.className = 'error';
+        statusEl.textContent = 'Could not upgrade: ' + err.message;
+        if (btn) { btn.disabled = false; }
+      });
+  }
+
   // Shared by the initial (empty-query) load right after the tab opens
   // and the search form's own submit — the empty-query case is just
   // "list every published ability" (the keyword filter alone, no extra
@@ -1403,6 +1447,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   function wireAbilitiesHandlers(name) {
     var content = abilitiesContentEl();
     if (!content) return;
+
+    var upgradeStatusEl = content.querySelector('#abilityUpgradeStatus');
+    var upgradeBtns = content.querySelectorAll('.ability-upgrade-btn');
+    for (var u = 0; u < upgradeBtns.length; u++) {
+      upgradeBtns[u].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        upgradeAbility(name, btn.dataset.name, upgradeStatusEl, btn);
+      });
+    }
 
     var searchForm = content.querySelector('#abilitySearchForm');
     var resultsEl = content.querySelector('#abilitySearchResults');
