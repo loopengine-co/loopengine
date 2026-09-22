@@ -1137,7 +1137,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       : '';
     return '<tr>' +
       '<td><code>' + escapeHtml(v.name) + '</code></td>' +
-      '<td>' + escapeHtml(v.description || '') + '</td>' +
+      '<td style="max-width:320px">' + escapeHtml(v.description || '') + '</td>' +
       '<td class="hint">' + escapeHtml(v.abilityNames.join(', ')) + sharedNote + '</td>' +
       '<td>' + (v.set ? '<span class="hint">set</span>' : '<span class="error">not set</span>') + '</td>' +
       '<td><form class="add-source env-var-form" data-name="' + escapeHtml(v.name) + '">' +
@@ -1150,7 +1150,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   function renderEnvConfigHtml(vars) {
     if (!vars.length) return '<p class="hint">No installed ability has declared any environment variables for this agent yet.</p>';
     var rows = vars.map(renderEnvRow).join('');
-    return '<table><thead><tr><th>Name</th><th>Description</th><th>Required by</th><th>Status</th><th>Set value</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th style="max-width:320px">Description</th><th>Required by</th><th>Status</th><th>Set value</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function envContentEl() {
@@ -1247,7 +1247,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       : '<p class="hint">No abilities installed for this agent yet.</p>';
 
     return '<h3>Installed</h3>' + installedHtml +
-      '<h3>Search public abilities</h3>' +
+      '<h3 style="margin-top:24px">Search public abilities</h3>' +
       '<form id="abilitySearchForm" class="add-source">' +
         '<input type="text" name="q" placeholder="Search by name or keyword (optional)">' +
         '<button type="submit">Search</button>' +
