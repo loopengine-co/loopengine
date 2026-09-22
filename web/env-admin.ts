@@ -1,9 +1,11 @@
 // Backs the Admin UI's "Environment" section — every env var an ability
 // (see ABILITIES.md, bin/ability-manager.ts) declared as required,
 // across every ability installed for an agent, with set/not-set status
-// only. A value marked `secret` is never echoed back once set — same
-// never-echo-a-secret rule web/http-tool-admin.ts's own `{{ENV_VAR}}`
-// header handling already establishes for a tool's own secrets.
+// and, for a non-secret var, its live value (so an operator can actually
+// tell what's configured, not just that something is). A value marked
+// `secret` is never echoed back once set — same never-echo-a-secret rule
+// web/http-tool-admin.ts's own `{{ENV_VAR}}` header handling already
+// establishes for a tool's own secrets.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agentDir } from '../core/gateway-tools.js'
@@ -24,6 +26,11 @@ export interface DeclaredEnvVar {
    * an array, not a single name. */
   abilityNames: string[]
   set: boolean
+  /** The live value, but only when `secret` is false — a secret is never
+   * echoed back once set, same rule this file's own top comment and
+   * web/http-tool-admin.ts's `{{ENV_VAR}}` header handling already
+   * follow. Undefined whenever `secret` is true or `set` is false. */
+  value?: string
 }
 
 function provenancePath(agentName: string): string {
@@ -66,14 +73,17 @@ export function listDeclaredEnvVars(agentName: string): DeclaredEnvVar[] {
       if (existing) {
         existing.abilityNames.push(abilityName)
         existing.secret = existing.secret || decl.secret === true
+        if (existing.secret) existing.value = undefined
         continue
       }
+      const rawValue = process.env[decl.name]
       byName.set(decl.name, {
         name: decl.name,
         description: decl.description,
         secret: decl.secret === true,
         abilityNames: [abilityName],
-        set: process.env[decl.name] !== undefined,
+        set: rawValue !== undefined,
+        value: decl.secret === true ? undefined : rawValue,
       })
     }
   }

@@ -1139,10 +1139,21 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     var sharedNote = v.abilityNames.length > 1
       ? ' <span class="hint" title="Also declared by: ' + escapeHtml(v.abilityNames.join(', ')) + '. There is only one value for it project-wide, so check whether they actually need the same one.">(shared)</span>'
       : '';
+    // A secret's value is never sent to the browser at all (see
+    // env-admin.ts) — "set" is the most this tab can ever say about one.
+    // A non-secret var's actual value comes through, so show it instead
+    // of a bare "set", since the whole point of looking here is usually
+    // to check *what* something is currently configured to, not just
+    // whether it has a value.
+    var statusHtml = !v.set
+      ? '<span class="error">not set</span>'
+      : v.secret
+        ? '<span class="hint">set</span>'
+        : '<code>' + escapeHtml(v.value || '') + '</code>';
     return '<tr>' +
       '<td><code>' + escapeHtml(v.name) + '</code>' + sharedNote + '</td>' +
       '<td style="max-width:320px">' + escapeHtml(v.description || '') + '</td>' +
-      '<td>' + (v.set ? '<span class="hint">set</span>' : '<span class="error">not set</span>') + '</td>' +
+      '<td>' + statusHtml + '</td>' +
       '<td><form class="add-source env-var-form" data-name="' + escapeHtml(v.name) + '">' +
         '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'unchanged unless you type a new value' : 'value') + '" required>' +
         '<button type="submit">Save</button>' +
@@ -1164,7 +1175,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     var rows = vars.map(renderEnvRow).join('');
     return '<div class="source">' +
       '<div class="source-head"><h4>' + escapeHtml(abilityName) + '</h4>' + statusHtml + '</div>' +
-      '<table><thead><tr><th>Name</th><th style="max-width:320px">Description</th><th>Status</th><th>Set value</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<table><thead><tr><th>Name</th><th style="max-width:320px">Description</th><th>Current value</th><th>Set value</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '</div>';
   }
 

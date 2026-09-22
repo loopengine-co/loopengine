@@ -44,7 +44,7 @@ describe('listDeclaredEnvVars', () => {
     expect(listDeclaredEnvVars(AGENT_NAME)).toEqual([])
   })
 
-  it('lists every declared var across every installed ability, with live set/not-set status', () => {
+  it('lists every declared var across every installed ability, with live set/not-set status and, for a non-secret var, its live value', () => {
     delete process.env.LOOPENGINE_TEST_FIXTURE_VAR_A
     process.env.LOOPENGINE_TEST_FIXTURE_VAR_B = 'already-set'
     writeProvenance({
@@ -57,9 +57,20 @@ describe('listDeclaredEnvVars', () => {
     expect(vars).toEqual(
       expect.arrayContaining([
         { name: 'LOOPENGINE_TEST_FIXTURE_VAR_A', description: 'from a', secret: true, abilityNames: ['ability-a'], set: false },
-        { name: 'LOOPENGINE_TEST_FIXTURE_VAR_B', description: 'from b', secret: false, abilityNames: ['ability-b'], set: true },
+        { name: 'LOOPENGINE_TEST_FIXTURE_VAR_B', description: 'from b', secret: false, abilityNames: ['ability-b'], set: true, value: 'already-set' },
       ]),
     )
+  })
+
+  it('never includes a value for a secret var, even when it is set', () => {
+    process.env.LOOPENGINE_TEST_FIXTURE_VAR_SECRET = 'sk-should-not-be-echoed'
+    writeProvenance({
+      'ability-a': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env: [{ name: 'LOOPENGINE_TEST_FIXTURE_VAR_SECRET', secret: true }] },
+    })
+
+    const vars = listDeclaredEnvVars(AGENT_NAME)
+    expect(vars[0].set).toBe(true)
+    expect(vars[0].value).toBeUndefined()
   })
 
   it('merges a name declared by more than one ability into one row, listing every ability instead of hiding all but the first', () => {
@@ -74,7 +85,8 @@ describe('listDeclaredEnvVars', () => {
     expect(vars[0].description).toBe('from a')
   })
 
-  it('treats a name as secret if any declaring ability marks it secret, even if another one checked first does not', () => {
+  it('treats a name as secret if any declaring ability marks it secret, even if another one checked first does not, and drops any value already picked up under the non-secret declaration', () => {
+    process.env.LOOPENGINE_TEST_FIXTURE_SHARED = 'sk-should-not-be-echoed'
     writeProvenance({
       'ability-a': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env: [{ name: 'LOOPENGINE_TEST_FIXTURE_SHARED', secret: false }] },
       'ability-b': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env: [{ name: 'LOOPENGINE_TEST_FIXTURE_SHARED', secret: true }] },
@@ -83,6 +95,7 @@ describe('listDeclaredEnvVars', () => {
     const vars = listDeclaredEnvVars(AGENT_NAME)
     expect(vars).toHaveLength(1)
     expect(vars[0].secret).toBe(true)
+    expect(vars[0].value).toBeUndefined()
   })
 })
 
