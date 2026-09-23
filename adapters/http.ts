@@ -2461,6 +2461,14 @@ const server = createServer(async (req, res) => {
 
     await handleMessages(req, res, decodeURIComponent(match[1]))
   } catch (err) {
+    // headersSent means some route already called writeHead (200,
+    // usually) before an awaited call after it threw — the exact
+    // "Unexpected end of JSON input" symptom on the client, since
+    // res.end() here with no argument sends an empty body under
+    // already-committed headers. Logged, not just silently ended, so
+    // that symptom is actually diagnosable from the server side instead
+    // of a client-side error with no server-side trace at all.
+    console.error('[loopengine] unhandled error in request handler:', err)
     if (res.headersSent) {
       res.end()
     } else {
