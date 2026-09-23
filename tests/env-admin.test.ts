@@ -128,10 +128,26 @@ describe('setEnvVar', () => {
     expect(process.env.LOOPENGINE_TEST_FIXTURE_REPLACE).toBe('second')
   })
 
-  it('quotes a value containing whitespace, matching how it would need to read back', () => {
+  it('single-quotes a value containing whitespace, matching how it would need to read back', () => {
     setEnvVar('LOOPENGINE_TEST_FIXTURE_SPACED', 'has a space')
 
-    expect(readFileSync(envPath, 'utf8')).toContain('LOOPENGINE_TEST_FIXTURE_SPACED="has a space"')
+    expect(readFileSync(envPath, 'utf8')).toContain("LOOPENGINE_TEST_FIXTURE_SPACED='has a space'")
+  })
+
+  it('single-quotes a value round-trips a real embedded newline, a literal double-quote, and a literal backslash all at once — Node\'s --env-file has no escape support inside a double-quoted value for any of these', () => {
+    const jsonLike = '{\n  "private_key": "line1\\nline2"\n}'
+    setEnvVar('LOOPENGINE_TEST_FIXTURE_JSONLIKE', jsonLike)
+
+    const written = readFileSync(envPath, 'utf8')
+    expect(written).toContain(`LOOPENGINE_TEST_FIXTURE_JSONLIKE='${jsonLike}'`)
+    expect(process.env.LOOPENGINE_TEST_FIXTURE_JSONLIKE).toBe(jsonLike)
+  })
+
+  it('falls back to double-quoting (escaped) when the value itself contains a literal single quote', () => {
+    setEnvVar('LOOPENGINE_TEST_FIXTURE_APOSTROPHE', "it's here")
+
+    expect(readFileSync(envPath, 'utf8')).toContain('LOOPENGINE_TEST_FIXTURE_APOSTROPHE="it\'s here"')
+    expect(process.env.LOOPENGINE_TEST_FIXTURE_APOSTROPHE).toBe("it's here")
   })
 
   it('throws EnvVarNameError for a name that is not valid uppercase_snake_case', () => {

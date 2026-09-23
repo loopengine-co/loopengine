@@ -35,6 +35,11 @@ export interface DeclaredEnvVar {
    * only when the declaring ability actually named one; the Admin UI
    * renders a dropdown instead of a free-text field when this is set. */
   options?: string[]
+  /** True for a naturally multi-line value (see AbilityEnvDecl.multiline)
+   * — the Admin UI renders a <textarea> instead of a single-line
+   * <input>, which strips embedded line breaks entirely per the HTML
+   * spec's own value sanitization. */
+  multiline?: boolean
 }
 
 function provenancePath(agentName: string): string {
@@ -89,6 +94,7 @@ export function listDeclaredEnvVars(agentName: string): DeclaredEnvVar[] {
         set: rawValue !== undefined,
         value: decl.secret === true ? undefined : rawValue,
         options: decl.options,
+        multiline: decl.multiline,
       })
     }
   }
@@ -106,12 +112,24 @@ function envFilePath(): string {
 }
 
 // Node's own --env-file parser (what bin/cli.ts's runTsx already passes
-// as --env-file-if-exists=.env) double-quotes a value containing
-// whitespace, '#', or a quote character — matched here so a value this
-// function writes reads back identically, not reinterpreted as a
-// comment or truncated at the first space.
+// as --env-file-if-exists=.env) needs a value containing whitespace, '#',
+// or a quote character quoted, so it reads back as one value instead of
+// being reinterpreted as a comment or truncated at the first space.
+// Single-quoting wins over double — confirmed live against Node's actual
+// parser that a single-quoted value reads back fully literally, with no
+// backslash-escape processing inside it at all: a real embedded newline,
+// a literal double-quote, or a literal backslash (a JSON secret like
+// GOOGLE_APPLICATION_CREDENTIALS_JSON has all three at once) all survive
+// untouched. Double-quoting a value with an *escaped* embedded quote does
+// NOT round-trip — confirmed live that Node's parser has no support for
+// \" as an escaped literal quote inside a double-quoted value; it just
+// ends the value there instead (`X="a\"b"` reads back as only `a\`,
+// silently dropping `b"` entirely). The double-quote fallback below is
+// only reached when the value itself contains a literal single quote —
+// the one character single-quoting can't represent at all.
 function serializeEnvValue(value: string): string {
   if (!/[\s#"'\\]/.test(value) && value !== '') return value
+  if (!value.includes("'")) return `'${value}'`
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 

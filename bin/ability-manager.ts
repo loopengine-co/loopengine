@@ -158,6 +158,15 @@ export interface AbilityEnvDecl {
    * of a free-text field. Omit for anything that isn't genuinely a fixed
    * enum (an API key, a free-form model name, a path, ...). */
   options?: string[]
+  /** True for a value that's naturally multi-line (a pasted JSON key
+   * file, a PEM block, ...) — the Admin UI renders a <textarea> instead
+   * of a single-line <input>, which per the HTML spec's own value
+   * sanitization strips line breaks entirely and would otherwise mangle
+   * exactly this kind of value on paste, regardless of how correctly the
+   * .env file itself round-trips real embedded newlines (see
+   * env-admin.ts's own serializeEnvValue doc comment). Omit for anything
+   * genuinely single-line. */
+  multiline?: boolean
 }
 
 /** `name`/`version` deliberately aren't declared here — they're read off

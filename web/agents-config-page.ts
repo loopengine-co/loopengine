@@ -1188,11 +1188,21 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     // field, so there's nothing to mistype — the same "value" form field
     // name either element uses means wireEnvHandlers's own submit
     // handler doesn't need to know which one it's looking at.
+    // A naturally multi-line value (AbilityEnvDecl.multiline, e.g. a
+    // pasted JSON key file) gets a <textarea> — a single-line <input>
+    // (even type="text") strips embedded line breaks from its value
+    // entirely per the HTML spec's own value sanitization, mangling
+    // exactly this kind of paste. No password-style masking for it
+    // either — <textarea> has no such mode, and masking a large blob
+    // secret buys little anyway compared to being able to paste it
+    // correctly at all.
     var fieldHtml = v.options
       ? '<select name="value">' + v.options.map(function (opt) {
           return '<option value="' + escapeHtml(opt) + '"' + (v.value === opt ? ' selected' : '') + '>' + escapeHtml(opt) + '</option>';
         }).join('') + '</select>'
-      : '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'unchanged unless you type a new value' : 'value') + '" required>';
+      : v.multiline
+        ? '<textarea name="value" rows="8" placeholder="' + (v.set ? 'unchanged unless you paste a new value' : 'paste the full value') + '" required></textarea>'
+        : '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'unchanged unless you type a new value' : 'value') + '" required>';
     return '<tr>' +
       '<td><code>' + escapeHtml(v.name) + '</code>' + sharedNote + '</td>' +
       '<td style="max-width:320px">' + escapeHtml(v.description || '') + '</td>' +
