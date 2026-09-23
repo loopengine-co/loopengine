@@ -659,6 +659,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
           '<dt>Provider</dt><dd>' + escapeHtml(cfg.model.provider) + '</dd>' +
           '<dt>Model</dt><dd>' + escapeHtml(cfg.model.model || '(provider default)') + '</dd>' +
           '<dt>Max tokens</dt><dd>' + escapeHtml(cfg.model.maxTokens != null ? cfg.model.maxTokens : '(default)') + '</dd>' +
+          '<dt>Reasoning effort</dt><dd>' + escapeHtml(cfg.model.reasoningEffort || (cfg.model.provider === 'openai' ? '(provider default)' : 'n/a')) + '</dd>' +
         '</dl>' +
         '<form class="add-source" id="modelForm" style="display:none">' +
           '<label>Provider' +
@@ -670,6 +671,16 @@ export const agentsConfigPageHtml: string = `<!doctype html>
           '</label>' +
           '<label>Model name <span class="hint">(required for openai/deepseek; defaults to claude-sonnet-5 for anthropic)</span>' +
             '<input type="text" name="modelName" value="' + escapeHtml(cfg.model.model || '') + '">' +
+          '</label>' +
+          '<label>Max tokens <span class="hint">(blank for provider default)</span>' +
+            '<input type="number" name="maxTokens" min="1" step="1" value="' + (cfg.model.maxTokens != null ? escapeHtml(cfg.model.maxTokens) : '') + '">' +
+          '</label>' +
+          '<label>Reasoning effort <span class="hint">(openai only — some reasoning models reject function tools unless this is \\\'none\\\'; leave unset otherwise)</span>' +
+            '<select name="reasoningEffort">' +
+              ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(function (v) {
+                return '<option value="' + v + '"' + (v === (cfg.model.reasoningEffort || '') ? ' selected' : '') + '>' + (v || '(unset)') + '</option>';
+              }).join('') +
+            '</select>' +
           '</label>' +
           '<button type="submit">Save</button>' +
           '<button type="button" id="cancelModelBtn">Cancel</button>' +
@@ -794,6 +805,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         var body = { model: { provider: data.get('provider') } };
         var modelName = data.get('modelName');
         if (modelName && modelName.trim()) body.model.model = modelName;
+        var maxTokens = data.get('maxTokens');
+        if (maxTokens && String(maxTokens).trim()) body.model.maxTokens = parseInt(maxTokens, 10);
+        var reasoningEffort = data.get('reasoningEffort');
+        if (reasoningEffort) body.model.reasoningEffort = reasoningEffort;
         fetch('/agents/' + encodeURIComponent(name), {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },

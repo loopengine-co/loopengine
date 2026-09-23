@@ -63,7 +63,7 @@ const MODEL_COMMENT_PATTERN = /^\/\/\s*reads\s+[A-Z_]+$/
 
 export interface AgentEditableFields {
   systemPrompt?: string
-  model?: { provider: Provider; model?: string }
+  model?: { provider: Provider; model?: string; maxTokens?: number; reasoningEffort?: string }
   maxTurns?: number
   contextBudgetTokens?: number
   skillIndexBudgetTokens?: number
@@ -71,7 +71,7 @@ export interface AgentEditableFields {
 
 export interface AgentEditResult {
   systemPrompt?: string
-  model?: { provider: Provider; model: string }
+  model?: { provider: Provider; model: string; maxTokens?: number; reasoningEffort?: string }
   maxTurns?: number
   contextBudgetTokens?: number
   skillIndexBudgetTokens?: number
@@ -201,12 +201,32 @@ export function editAgentFile(agentName: string, fields: AgentEditableFields): A
     if (provider !== 'anthropic' && !modelName) {
       throw new AgentModelError(`A model name is required for provider '${provider}' — only anthropic has a default (claude-sonnet-5).`)
     }
+    const maxTokens = fields.model.maxTokens
+    if (maxTokens !== undefined && (!Number.isInteger(maxTokens) || maxTokens < 1)) {
+      throw new AgentEditNotSupportedError('model.maxTokens must be a positive integer.')
+    }
+    const reasoningEffort = fields.model.reasoningEffort
+    // Only AgentModelConfig's 'openai' variant carries this (see its own
+    // doc comment) — refusing rather than silently dropping it for
+    // another provider, same "don't guess" posture the model-name check
+    // right above already follows.
+    if (reasoningEffort !== undefined && provider !== 'openai') {
+      throw new AgentModelError(`model.reasoningEffort only applies to provider 'openai' — '${provider}' doesn't support it.`)
+    }
+    // Every field the form actually round-trips (not just provider/model)
+    // — omitting maxTokens/reasoningEffort here, the way this used to
+    // unconditionally build `{ provider, model }` alone, would silently
+    // wipe out a value that was already set the moment an operator
+    // changed anything else about the model through this same form.
+    const objectFields = [`provider: '${provider}'`, `model: ${tsStringLiteral(modelName)}`]
+    if (maxTokens !== undefined) objectFields.push(`maxTokens: ${maxTokens}`)
+    if (reasoningEffort !== undefined) objectFields.push(`reasoningEffort: ${tsStringLiteral(reasoningEffort)}`)
     edits.push({
       start: prop.initializer.getStart(sourceFile),
       end: prop.initializer.getEnd(),
-      text: `{ provider: '${provider}', model: ${tsStringLiteral(modelName)} }`,
+      text: `{ ${objectFields.join(', ')} }`,
     })
-    result.model = { provider, model: modelName }
+    result.model = { provider, model: modelName, maxTokens, reasoningEffort }
 
     // The property's own value is now correct, but a stale
     // "// reads ANTHROPIC_API_KEY" sitting right after it (from before a

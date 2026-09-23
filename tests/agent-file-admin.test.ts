@@ -66,6 +66,29 @@ describe('editAgentFile', () => {
     expect(contents).toContain("systemPrompt: 'You are ...'")
   })
 
+  it('rewrites model including maxTokens and reasoningEffort when given', () => {
+    writeFixture(TEMPLATE)
+
+    const result = editAgentFile(AGENT_NAME, { model: { provider: 'openai', model: 'gpt-5.6-luna', maxTokens: 8000, reasoningEffort: 'none' } })
+
+    expect(result).toEqual({ model: { provider: 'openai', model: 'gpt-5.6-luna', maxTokens: 8000, reasoningEffort: 'none' } })
+    expect(readFileSync(INDEX_PATH, 'utf8')).toContain("model: { provider: 'openai', model: 'gpt-5.6-luna', maxTokens: 8000, reasoningEffort: 'none' }")
+  })
+
+  it('rejects reasoningEffort for a non-openai provider, leaving the file untouched', () => {
+    writeFixture(TEMPLATE)
+
+    expect(() => editAgentFile(AGENT_NAME, { model: { provider: 'anthropic', reasoningEffort: 'none' } })).toThrow(AgentModelError)
+    expect(readFileSync(INDEX_PATH, 'utf8')).toBe(TEMPLATE)
+  })
+
+  it('rejects a non-integer or non-positive model.maxTokens, leaving the file untouched', () => {
+    writeFixture(TEMPLATE)
+
+    expect(() => editAgentFile(AGENT_NAME, { model: { provider: 'anthropic', maxTokens: 0 } })).toThrow(AgentEditNotSupportedError)
+    expect(readFileSync(INDEX_PATH, 'utf8')).toBe(TEMPLATE)
+  })
+
   it('leaves a hand-written (non-matching) trailing comment alone', () => {
     writeFixture(TEMPLATE.replace('// reads ANTHROPIC_API_KEY', '// custom note, do not touch'))
 
