@@ -20,8 +20,13 @@ jobs:
           registry-url: https://registry.npmjs.org
       # Trusted publishing (OIDC) needs npm >= 11.5.1 — newer than what
       # actions/setup-node's bundled npm may ship, so pin explicitly
-      # rather than relying on the runner's default.
-      - run: npm install -g npm@latest
+      # rather than relying on the runner's default. A specific known-
+      # good version, not "latest": npm 12.x disabled git-spec fetching
+      # by default (EALLOWGIT), which broke this repo's own
+      # ability-upgrade-git-spec.test.ts (it shells out to
+      # `npm pack git+...` as part of exercising upgradeAbility) —
+      # confirmed live when "latest" resolved to 12.1.0 here.
+      - run: npm install -g npm@11.5.2
       - run: npm ci
       - run: npm test
       - run: npm publish
