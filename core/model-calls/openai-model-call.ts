@@ -46,6 +46,16 @@ export interface OpenAIModelCallOptions {
    * one you actually want. */
   model: string
   maxTokens?: number
+  /** Omitted by default — a reasoning-capable model (the gpt-5.x family)
+   * otherwise gets whatever effort level OpenAI defaults it to, which
+   * some of these models refuse to combine with function tools on
+   * /v1/chat/completions at all ("Function tools with reasoning_effort
+   * are not supported ... set reasoning_effort to 'none'" — confirmed
+   * live against gpt-5.6-luna). Set this to `'none'` for a model that
+   * hits that error; every real loopengine call passes `tools` (even an
+   * empty array is still the `tools` field being present), so there's no
+   * tools-vs-no-tools branch here to get this wrong on. */
+  reasoningEffort?: OpenAI.Chat.Completions.ChatCompletionReasoningEffort
   /** Inject a pre-configured client instead of building one from apiKey — e.g. to pass a custom `fetch` in tests. */
   client?: OpenAI
 }
@@ -144,6 +154,7 @@ export function createOpenAIModelCall(options: OpenAIModelCallOptions): ModelCal
             function: { name: t.name, description: t.description, parameters: t.input_schema },
           }))
         : undefined,
+      reasoning_effort: options.reasoningEffort,
     })
 
     return toModelResponse(response.choices[0])

@@ -50,6 +50,20 @@ describe('createOpenAIModelCall', () => {
     })
   })
 
+  it('omits reasoning_effort from the request when not set, same as before that option existed', async () => {
+    const { client, requests } = stubClient([chatCompletion('stop', { content: 'hi' })])
+    const modelCall: ModelCall = createOpenAIModelCall({ model: 'gpt-test', client })
+    await modelCall([{ role: 'user', content: 'hi' }], 'sys', [])
+    expect(requests[0]).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('passes reasoningEffort through as reasoning_effort — e.g. \'none\' for a model that rejects tool calls with any other effort level', async () => {
+    const { client, requests } = stubClient([chatCompletion('stop', { content: 'hi' })])
+    const modelCall: ModelCall = createOpenAIModelCall({ model: 'gpt-test', client, reasoningEffort: 'none' })
+    await modelCall([{ role: 'user', content: 'hi' }], 'sys', [])
+    expect(requests[0]).toMatchObject({ reasoning_effort: 'none' })
+  })
+
   it('normalizes stop_reason: tool_calls -> tool_use, stop -> end_turn', async () => {
     const { client } = stubClient([chatCompletion('tool_calls', { content: null, tool_calls: [] })])
     const modelCall: ModelCall = createOpenAIModelCall({ model: 'gpt-test', client })
