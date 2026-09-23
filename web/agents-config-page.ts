@@ -430,6 +430,22 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     });
   }
 
+  // A stale keep-alive TCP connection reused right after the server (or
+  // whatever's proxying it) closed it server-side fails silently — an
+  // empty/truncated response, surfaced here as "Unexpected end of JSON
+  // input" from r.json() — not a real request failure; a fresh
+  // connection on an immediate retry works. Retried exactly once, not
+  // looped: a genuine server-side error fails the retry too and should
+  // still surface, not get masked by retrying forever.
+  function fetchJsonRetryOnce(url, options) {
+    function attempt() {
+      return fetch(url, options).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, body: j }; });
+      });
+    }
+    return attempt().catch(function () { return attempt(); });
+  }
+
   function badge(label) {
     return '<span class="badge ' + (label === 'custom' ? 'badge-custom' : 'badge-default') + '">' + escapeHtml(label) + '</span>';
   }
@@ -809,12 +825,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         if (maxTokens && String(maxTokens).trim()) body.model.maxTokens = parseInt(maxTokens, 10);
         var reasoningEffort = data.get('reasoningEffort');
         if (reasoningEffort) body.model.reasoningEffort = reasoningEffort;
-        fetch('/agents/' + encodeURIComponent(name), {
+        fetchJsonRetryOnce('/agents/' + encodeURIComponent(name), {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
         })
-          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
           .then(function (result) {
             if (!result.ok) throw new Error(result.body.error || 'request failed');
             currentCfg = result.body;
