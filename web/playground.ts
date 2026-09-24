@@ -413,6 +413,42 @@ export const playgroundHtml: string = `<!doctype html>
   // target for one that happens to reuse an id namespace.
   var toolCallCardsById = {};
 
+  // Keyed by a signed URL's own base (everything before its "?") —
+  // populated from every 'toollane:result' event's own 'summary' (see
+  // core/loop-events.ts's own ToolLaneResultEvent doc comment: the raw,
+  // unparsed tool return value, straight from execute() with nothing
+  // reshaped in between). A long signed-URL query string (a GCS
+  // Signature param can run ~300 opaque base64 characters) is exactly
+  // the kind of thing an LLM can flip one character of while generating
+  // its own reply text from the same value earlier in its context — see
+  // correctKnownUrls below, which snaps a written URL back to this
+  // known-good one whenever the base (the object path — descriptive,
+  // not random, so far less likely to get mistyped) matches but the
+  // full string doesn't. Cleared on every conversation switch, same as
+  // toolCallCardsById above — a base from an unrelated earlier session
+  // is never a valid correction target (and its signed URL has likely
+  // expired anyway).
+  var knownUrlsByBase = {};
+
+  // Recursively walks an arbitrary JSON value (a tool's own summary,
+  // parsed) collecting every string that looks like a signed URL — has
+  // a "?" (nothing to correct in a bare URL with no query to corrupt).
+  // Last one seen for a given base wins, which is fine: a re-signed URL
+  // for the same object is just as valid a correction target as the
+  // first one seen.
+  function recordKnownUrls(value) {
+    if (typeof value === 'string') {
+      if (value.indexOf('https://') === 0 || value.indexOf('http://') === 0) {
+        var qIndex = value.indexOf('?');
+        if (qIndex !== -1) knownUrlsByBase[value.slice(0, qIndex)] = value;
+      }
+    } else if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) recordKnownUrls(value[i]);
+    } else if (value && typeof value === 'object') {
+      for (var key in value) recordKnownUrls(value[key]);
+    }
+  }
+
   // A page refresh only ever loses *this tab's* JS state — the actual
   // conversation is durably stored server-side (see session-store.ts).
   // What's missing after a refresh is just "which session ids did I
@@ -464,8 +500,30 @@ export const playgroundHtml: string = `<!doctype html>
   // attachment — a real HTTP response header, so a plain click already
   // downloads correctly regardless of origin, no JS fetch/blob trick or
   // same-origin requirement needed.
+  //
+  // Before any of that: correctKnownUrls (see knownUrlsByBase's own doc
+  // comment) snaps any signed URL the model wrote back to the exact
+  // known-good one whenever they share a base but differ — recovers a
+  // broken image/download link from a transcription slip without
+  // needing the model to get a ~300-character signature exactly right.
+  //
+  // Built from a runtime backslash character, never a literal
+  // backslash-letter sequence in this file's own source — same gotcha
+  // renderMessageMarkdown's own patterns below document in full (this
+  // page is one big outer template literal whose own output is itself
+  // parsed as JS a second time).
+  var urlBs = String.fromCharCode(92);
+  var urlPattern = new RegExp('https?:' + urlBs + '/' + urlBs + '/[^' + urlBs + 's)' + urlBs + ']]+', 'g');
+  function correctKnownUrls(md) {
+    return md.replace(urlPattern, function (url) {
+      var qIndex = url.indexOf('?');
+      if (qIndex === -1) return url;
+      var known = knownUrlsByBase[url.slice(0, qIndex)];
+      return known || url;
+    });
+  }
   function renderMessageMarkdown(md) {
-    var lines = escapeHtml(md).split('\\n');
+    var lines = escapeHtml(correctKnownUrls(md)).split('\\n');
     var html = '';
     var inCode = false;
     var codeBuffer = '';
@@ -1185,6 +1243,7 @@ export const playgroundHtml: string = `<!doctype html>
     sessionLabel.classList.add('copyable');
     chatPane.textContent = '';
     toolCallCardsById = {};
+    knownUrlsByBase = {};
     setEmptyHint(timelinePane, 'Loop events (tool calls, permission checks, budget checks) will appear here as the agent runs.');
     renderSessionsPane();
 
@@ -1335,6 +1394,7 @@ export const playgroundHtml: string = `<!doctype html>
   function resetConversation() {
     sessionId = null;
     toolCallCardsById = {};
+    knownUrlsByBase = {};
     removeThinking();
     sessionLabel.textContent = 'session: (new)';
     sessionLabel.classList.remove('copyable');
@@ -1467,6 +1527,19 @@ export const playgroundHtml: string = `<!doctype html>
     } else if (eventName === 'question:pending') {
       removeThinking();
       appendQuestionCard(data);
+      appendTimelineEntry(eventName, data);
+    } else if (eventName === 'toollane:result') {
+      // data.summary is a tool's raw, unreshaped return value (see
+      // knownUrlsByBase's own doc comment above) — a JSON string for
+      // this ability, but tools generally can return plain text too, so
+      // a parse failure here just means nothing to record, not an error.
+      if (typeof data.summary === 'string') {
+        try {
+          recordKnownUrls(JSON.parse(data.summary));
+        } catch (err) {
+          // Not JSON — nothing to correct against.
+        }
+      }
       appendTimelineEntry(eventName, data);
     } else {
       appendTimelineEntry(eventName, data);
