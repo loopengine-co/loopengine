@@ -1453,3 +1453,125 @@ describe('AgentConfig.httpNotifier', () => {
     expect(httpResult.stopReason).toBe('pending_approval')
   })
 })
+
+describe('runAgent known-URL correction', () => {
+  it('snaps a tool call argument back to a known-good URL from an earlier result in the same run', async () => {
+    let call = 0
+    const modelCall: ModelCall = vi.fn(async () => {
+      call++
+      if (call === 1) return toolUseResponse({ id: 't1', name: 'lookup', input: {} })
+      if (call === 2) {
+        // Same base as the lookup result below, wrong query — as if the
+        // model mistranscribed the signature while copying it here.
+        return toolUseResponse({
+          id: 't2',
+          name: 'archive',
+          input: { files: ['https://storage.example.com/obj.png?Sig=WRONG'] },
+        })
+      }
+      return textResponse('done')
+    })
+
+    const lookup: ToolDefinition = {
+      name: 'lookup',
+      description: 'Returns a signed URL',
+      input_schema: { type: 'object', properties: {} },
+      execute: async () => ({ path: 'https://storage.example.com/obj.png?Sig=CORRECT' }),
+    }
+    const archive: ToolDefinition = {
+      name: 'archive',
+      description: 'Archives files',
+      input_schema: { type: 'object', properties: { files: { type: 'array' } } },
+      execute: vi.fn(async (input) => ({ archived: input.files })),
+    }
+
+    const config = baseConfig({
+      tools: [lookup, archive],
+      isSafeTool: () => true,
+      rules: [
+        { scopePattern: 'default/production/test-agent', tool: 'lookup', decision: 'allow' },
+        { scopePattern: 'default/production/test-agent', tool: 'archive', decision: 'allow' },
+      ],
+    })
+
+    await runAgent(config, modelCall, 'archive the object')
+
+    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/obj.png?Sig=CORRECT'] })
+  })
+
+  it('also corrects against a resumed session\'s prior history, not just this run\'s own results', async () => {
+    const priorHistory: Message[] = [
+      { role: 'user', content: 'check the job' },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'past1',
+            content: JSON.stringify({ path: 'https://storage.example.com/obj.png?Sig=CORRECT' }),
+          },
+        ],
+      },
+    ]
+
+    let call = 0
+    const modelCall: ModelCall = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return toolUseResponse({
+          id: 't1',
+          name: 'archive',
+          input: { files: ['https://storage.example.com/obj.png?Sig=WRONG'] },
+        })
+      }
+      return textResponse('done')
+    })
+
+    const archive: ToolDefinition = {
+      name: 'archive',
+      description: 'Archives files',
+      input_schema: { type: 'object', properties: { files: { type: 'array' } } },
+      execute: vi.fn(async (input) => ({ archived: input.files })),
+    }
+
+    const config = baseConfig({
+      tools: [archive],
+      rules: [{ scopePattern: 'default/production/test-agent', tool: 'archive', decision: 'allow' }],
+    })
+
+    await runAgent(config, modelCall, 'now archive it', priorHistory)
+
+    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/obj.png?Sig=CORRECT'] })
+  })
+
+  it('leaves a URL alone when its base was never seen in any known result', async () => {
+    let call = 0
+    const modelCall: ModelCall = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return toolUseResponse({
+          id: 't1',
+          name: 'archive',
+          input: { files: ['https://storage.example.com/never-seen.png?Sig=ASIS'] },
+        })
+      }
+      return textResponse('done')
+    })
+
+    const archive: ToolDefinition = {
+      name: 'archive',
+      description: 'Archives files',
+      input_schema: { type: 'object', properties: { files: { type: 'array' } } },
+      execute: vi.fn(async (input) => ({ archived: input.files })),
+    }
+
+    const config = baseConfig({
+      tools: [archive],
+      rules: [{ scopePattern: 'default/production/test-agent', tool: 'archive', decision: 'allow' }],
+    })
+
+    await runAgent(config, modelCall, 'archive it', [])
+
+    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/never-seen.png?Sig=ASIS'] })
+  })
+})

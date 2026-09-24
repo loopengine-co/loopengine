@@ -13,6 +13,7 @@ import { BudgetTracker, type Message as BudgetMessage } from './budget.js'
 import { Compactor } from './compaction.js'
 import { ToolLane, type ToolCall as LaneCall, type SafetyClassifier } from './toollane.js'
 import { Recovery } from './recovery.js'
+import { collectKnownUrls, correctToolUseInput, recordKnownUrlsFromResult } from './known-urls.js'
 import type { AgentConfig, ApproverChannel, QuestionHandler, ToolDefinition, ToolSchema } from '#core/agent-config.js'
 import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
@@ -784,6 +785,13 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
     newMessages.push(message)
   }
 
+  // See known-urls.ts's own doc comment — seeded once from this
+  // session's full prior history (a resumed session's own tool results,
+  // not just this run's), then kept current live as this run's own new
+  // toollane:result events come in below. One map for the whole run, not
+  // re-derived every turn.
+  const knownUrlsByBase = collectKnownUrls(messages)
+
   const recovery = new Recovery<Message[]>({
     onPromptTooLong: async (currentMessages) => {
       // newMessages (this turn's own content — not durably stored
@@ -903,6 +911,13 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
     const approvedMetaById = new Map<string, { reason: string; args: Record<string, unknown> }>()
 
     for (const block of toolUseBlocks) {
+      // Before anything else looks at this block's own input at all
+      // (Skill's own args included) — see known-urls.ts's own doc
+      // comment: a URL the model just copied from an earlier tool
+      // result into this call's own arguments gets snapped back to the
+      // known-good one sharing its base, if they differ.
+      correctToolUseInput(block, knownUrlsByBase)
+
       // Skill invocation injects instructions into context; it isn't a
       // real tool call and doesn't need ActAuth gating or ToolLane
       // scheduling — but it's still a tool_use block the model emitted,
@@ -1075,6 +1090,11 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
         const summary = result.status === 'fulfilled' ? JSON.stringify(result.value) : `ERROR: ${result.error}`
         const meta = approvedMetaById.get(result.id)
         log({ type: 'toollane:result', name: result.name, summary })
+        // A later tool call this same run (or a follow-up message in
+        // this same session) can reference a URL from this result —
+        // see known-urls.ts's own doc comment. Harmless no-op for a
+        // non-JSON/error summary.
+        recordKnownUrlsFromResult(summary, knownUrlsByBase)
         resultBlocks.push({
           type: 'tool_result',
           tool_use_id: result.id,
