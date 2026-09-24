@@ -176,6 +176,89 @@ export const playgroundHtml: string = `<!doctype html>
   .question-answer-row input { flex: 1; font-size: 12px; }
   .question-answer-row button { font-size: 12px; padding: 5px 12px; }
   .question-status { font-size: 12px; font-style: italic; color: light-dark(#666, #999); }
+  /* An assistant message's rendered markdown (renderMessageMarkdown) —
+     tight margins since .msg-body already pads the bubble; a nested
+     paragraph/heading with normal margins would double up on that. */
+  .msg-body p { margin: 6px 0; }
+  .msg-body p:first-child { margin-top: 0; }
+  .msg-body p:last-child { margin-bottom: 0; }
+  .msg-body h1, .msg-body h2, .msg-body h3, .msg-body h4 { margin: 10px 0 4px; font-size: 14px; }
+  .msg-body code { font-family: ui-monospace, monospace; font-size: 12px; background: light-dark(#f3f3f4, #333); padding: 1px 4px; border-radius: 4px; }
+  .msg-body pre { background: light-dark(#f3f3f4, #26262b); border-radius: 6px; padding: 8px; overflow-x: auto; }
+  .msg-body pre code { background: none; padding: 0; }
+  .msg-body a { color: light-dark(#2563eb, #60a5fa); }
+  /* An image immediately followed by a download link (see
+     renderMessageMarkdown's own doc comment) merges into this — full
+     bubble width, a corner download icon that's a plain <a href> (a real
+     Content-Disposition: attachment response, so a plain click already
+     downloads correctly with no JS or same-origin requirement), and the
+     image itself opens openImageLightbox on click rather than
+     navigating anywhere. */
+  /* inline-block, not block — the wrap's own box needs to shrink to the
+     image's actual rendered width (capped by max-height below, so a
+     landscape shot is much narrower than the full chat bubble) so the
+     corner download icon, positioned relative to this wrap, lands on the
+     image's real visible edge instead of floating in empty space beside
+     a narrower image inside a full-width box. */
+  .msg-preview-wrap { position: relative; display: inline-block; max-width: 100%; margin: 6px 0; }
+  .msg-preview-img { display: block; max-width: 100%; max-height: 260px; width: auto; height: auto; border-radius: 8px; cursor: zoom-in; }
+  .msg-download-icon {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border-radius: 50%;
+    text-decoration: none;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .msg-download-icon:hover { background: rgba(0, 0, 0, 0.8); }
+  .lightbox-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+  }
+  .lightbox-overlay.open { display: flex; }
+  .lightbox-inner { position: relative; max-width: 100%; max-height: 100%; }
+  .lightbox-inner img { display: block; max-width: 100%; max-height: 85vh; border-radius: 8px; }
+  .lightbox-download {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .lightbox-download:hover { background: rgba(0, 0, 0, 0.9); }
+  .lightbox-close {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
   .dot {
     width: 6px;
     height: 6px;
@@ -281,6 +364,13 @@ export const playgroundHtml: string = `<!doctype html>
     <div class="pane-body" id="timelinePane"></div>
   </section>
 </main>
+<div class="lightbox-overlay" id="lightboxOverlay">
+  <div class="lightbox-inner">
+    <button type="button" class="lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
+    <img id="lightboxImage" src="" alt="">
+    <a id="lightboxDownload" class="lightbox-download" href="" target="_blank" rel="noopener noreferrer">&#8681; Download</a>
+  </div>
+</div>
 <script>
 (function () {
   var agentSelect = document.getElementById('agentSelect');
@@ -339,6 +429,199 @@ export const playgroundHtml: string = `<!doctype html>
     pane.appendChild(p);
   }
 
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // A small, deliberately non-CommonMark markdown-to-HTML renderer for
+  // an assistant message's own reply text (see appendChatMessage below —
+  // only ever applied to role: 'assistant', never to a user's own typed
+  // message or a raw error string). Same design and same escape-safety
+  // reasoning as web/agents-config-page.ts's own renderMarkdownPreview —
+  // duplicated here rather than shared since these are two separate
+  // self-contained pages with no shared module between them. Covers
+  // headings, bold/italic, inline code, fenced code blocks, links,
+  // images, and lists — good enough for what an agent's own final reply
+  // realistically contains, not a spec-complete parser. Escapes first,
+  // so no markdown source can inject raw HTML.
+  //
+  // The one thing beyond plain CommonMark: an image immediately followed
+  // on its own line by a link (see lp-product-ad-images' own SKILL.md,
+  // "After generating") merges into one widget — a full-bubble-width
+  // preview with its own corner download icon, the image itself opening
+  // openImageLightbox on click instead of navigating anywhere. The
+  // download icon (inline or in the lightbox) is a plain <a href> to a
+  // separately-signed URL carrying its own Content-Disposition:
+  // attachment — a real HTTP response header, so a plain click already
+  // downloads correctly regardless of origin, no JS fetch/blob trick or
+  // same-origin requirement needed.
+  function renderMessageMarkdown(md) {
+    var lines = escapeHtml(md).split('\\n');
+    var html = '';
+    var inCode = false;
+    var codeBuffer = '';
+    var listType = null;
+    var paragraph = [];
+
+    // Same "build patterns from a runtime backslash character, never a
+    // literal backslash-letter sequence in this file's own source" gotcha
+    // web/agents-config-page.ts's own renderMarkdownPreview already
+    // documents in full — this page is just as much an outer template
+    // literal whose own output is itself parsed as JS a second time.
+    var bs = String.fromCharCode(92);
+    var inlineCodePattern = new RegExp('\\u0060([^\\u0060]+)\\u0060', 'g');
+    var fencePattern = new RegExp('^\\u0060\\u0060\\u0060');
+    var boldPattern = new RegExp(bs + '*' + bs + '*([^*]+)' + bs + '*' + bs + '*', 'g');
+    var italicPattern = new RegExp(bs + '*([^*]+)' + bs + '*', 'g');
+    var imagePattern = new RegExp('!' + bs + '[([^' + bs + ']]*)' + bs + ']' + bs + '(([^)]+)' + bs + ')', 'g');
+    var linkPattern = new RegExp(bs + '[([^' + bs + ']]+)' + bs + ']' + bs + '(([^)]+)' + bs + ')', 'g');
+    var headingPattern = new RegExp('^(#{1,6})' + bs + 's+(.*)$');
+    var hrPattern = new RegExp('^(---|' + bs + '*' + bs + '*' + bs + '*)' + bs + 's*$');
+    var ulPattern = new RegExp('^[-*]' + bs + 's+(.*)$');
+    var olPattern = new RegExp('^' + bs + 'd+' + bs + '.' + bs + 's+(.*)$');
+    // Runs before linkPattern — an already-replaced image's own <img> tag
+    // has no literal "[...](...)" text left in it for linkPattern to
+    // also (mis)match.
+    function inlineFormat(text) {
+      return text
+        .replace(inlineCodePattern, '<code>$1</code>')
+        .replace(boldPattern, '<strong>$1</strong>')
+        .replace(italicPattern, '<em>$1</em>')
+        .replace(imagePattern, '<img src="$2" alt="$1" class="msg-plain-img">')
+        .replace(linkPattern, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+    function flushParagraph() {
+      if (paragraph.length) {
+        html += '<p>' + inlineFormat(paragraph.join(' ')) + '</p>';
+        paragraph = [];
+      }
+    }
+    function closeList() {
+      if (listType) {
+        html += '</' + listType + '>';
+        listType = null;
+      }
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (fencePattern.test(line)) {
+        if (!inCode) {
+          flushParagraph();
+          closeList();
+          inCode = true;
+          codeBuffer = '';
+        } else {
+          html += '<pre><code>' + codeBuffer + '</code></pre>';
+          inCode = false;
+        }
+        continue;
+      }
+      if (inCode) {
+        codeBuffer += line + '\\n';
+        continue;
+      }
+
+      var heading = line.match(headingPattern);
+      if (heading) {
+        flushParagraph();
+        closeList();
+        var level = heading[1].length;
+        html += '<h' + level + '>' + inlineFormat(heading[2]) + '</h' + level + '>';
+        continue;
+      }
+      if (hrPattern.test(line)) {
+        flushParagraph();
+        closeList();
+        html += '<hr>';
+        continue;
+      }
+      var ul = line.match(ulPattern);
+      var ol = line.match(olPattern);
+      if (ul || ol) {
+        flushParagraph();
+        var wantType = ul ? 'ul' : 'ol';
+        if (listType !== wantType) {
+          closeList();
+          html += '<' + wantType + '>';
+          listType = wantType;
+        }
+        html += '<li>' + inlineFormat((ul || ol)[1]) + '</li>';
+        continue;
+      }
+      closeList();
+
+      if (line.trim() === '') {
+        flushParagraph();
+        continue;
+      }
+      paragraph.push(line.trim());
+    }
+    flushParagraph();
+    closeList();
+
+    // The merge step: an <img class="msg-plain-img"> directly followed
+    // by (only whitespace between) an <a href>...</a> becomes one
+    // preview widget instead of two unrelated-looking elements. Built
+    // with new RegExp(string) rather than a /pattern/ literal — a
+    // literal's own closing "/" inside "</a>" would need escaping, and
+    // "\/" hits the exact same silently-dropped-backslash problem as
+    // "\d"/"\s" do (see this function's own header comment) since "/"
+    // isn't a recognized string escape character either. A plain string
+    // needs no such escaping for "/" at all.
+    var previewMergePattern = new RegExp(
+      '<img src="([^"]*)" alt="([^"]*)" class="msg-plain-img">' + bs + 's*<a href="([^"]*)"[^>]*>[^<]*</a>',
+      'g',
+    );
+    html = html.replace(previewMergePattern, function (match, src, alt, href) {
+      return '<span class="msg-preview-wrap">' +
+        '<img src="' + src + '" alt="' + alt + '" class="msg-preview-img" data-full-src="' + src + '" data-download-href="' + href + '">' +
+        '<a href="' + href + '" class="msg-download-icon" target="_blank" rel="noopener noreferrer" title="Download" aria-label="Download">&#8681;</a>' +
+        '</span>';
+    });
+
+    return html;
+  }
+
+  var lightboxOverlay = document.getElementById('lightboxOverlay');
+  var lightboxImage = document.getElementById('lightboxImage');
+  var lightboxDownload = document.getElementById('lightboxDownload');
+  var lightboxClose = document.getElementById('lightboxClose');
+
+  function openImageLightbox(src, downloadHref) {
+    lightboxImage.src = src;
+    lightboxDownload.href = downloadHref;
+    lightboxOverlay.classList.add('open');
+  }
+  function closeImageLightbox() {
+    lightboxOverlay.classList.remove('open');
+    lightboxImage.src = '';
+  }
+  lightboxClose.addEventListener('click', closeImageLightbox);
+  // Clicking the darkened backdrop closes it; clicking the image/download
+  // icon/close button (all inside .lightbox-inner) must not, since a
+  // click anywhere inside that inner box would otherwise bubble up to
+  // this same listener on the overlay and immediately close what was
+  // just opened.
+  lightboxOverlay.addEventListener('click', function (ev) {
+    if (ev.target === lightboxOverlay) closeImageLightbox();
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && lightboxOverlay.classList.contains('open')) closeImageLightbox();
+  });
+  // Delegated on chatPane, not per-image — messages (and their preview
+  // widgets) get created continuously as the conversation goes on, and a
+  // single listener here covers every one of them without needing to be
+  // rewired after each new message.
+  chatPane.addEventListener('click', function (ev) {
+    var target = ev.target;
+    if (target && target.classList && target.classList.contains('msg-preview-img')) {
+      openImageLightbox(target.getAttribute('data-full-src'), target.getAttribute('data-download-href'));
+    }
+  });
+
   function appendChatMessage(role, text) {
     clearEmptyHint(chatPane);
     var div = document.createElement('div');
@@ -348,7 +631,15 @@ export const playgroundHtml: string = `<!doctype html>
     label.textContent = role;
     var body = document.createElement('div');
     body.className = 'msg-body';
-    body.textContent = text;
+    // Only an assistant's own reply gets rendered as markdown — a user's
+    // typed message is shown exactly as typed (no reinterpreting
+    // whatever they literally typed as formatting), and an error string
+    // is plain diagnostic text, not content worth rendering.
+    if (role === 'assistant') {
+      body.innerHTML = renderMessageMarkdown(text);
+    } else {
+      body.textContent = text;
+    }
     div.appendChild(label);
     div.appendChild(body);
     chatPane.appendChild(div);
