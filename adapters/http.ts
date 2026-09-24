@@ -2007,6 +2007,109 @@ async function respondAfterResolution(res: ServerResponse, finalCheckpoint: Turn
   )
 }
 
+// A generated image/archive's own signed cloud-storage URL is a long,
+// high-entropy string (a GCS V4 Signature can run ~300 base64
+// characters) that an agent's own reply has to reproduce character-for-
+// character to embed as a markdown image/link — expensive in output
+// tokens, slow to generate, and one flipped character anywhere in it
+// breaks the whole thing (see core/known-urls.ts's own doc comment on
+// why that happens at all). This route lets a tool return a short,
+// stable object reference instead — bucket + object name, both
+// human-readable, not random — and defer the actual signing to request
+// time, right here, freshly, on every click: shorter for the model to
+// write, nothing random left to transcribe wrong, and a much shorter
+// signed-URL lifetime than an ability calling getSignedUrl itself at
+// generation time ever needed (this one only has to stay valid for as
+// long as the click that requested it takes to resolve, not however
+// long a chat reply might sit around unopened).
+//
+// Deliberately generic, not tied to any one ability — any ability using
+// GCS storage can point a tool's own returned URL here instead of
+// signing itself, as long as it authenticates the same way
+// lp-product-ad-images'/lp-file-archiver's own buildGcsStorageClient
+// already do (GOOGLE_APPLICATION_CREDENTIALS_JSON, falling back to
+// Application Default Credentials) — this is that same logic,
+// centralized, rather than every GCS-backed ability duplicating it
+// (which they already do today for the *upload* side; this just does
+// the same for signing).
+//
+// Sits behind the same isAuthorized() Basic Auth gate every other route
+// on this server already requires (checked once, unconditionally,
+// before any routing below even runs) — not a separately public
+// endpoint. A browser that already loaded /playground has that same
+// origin's Basic Auth credentials cached, so a plain
+// <img src="/gcs-redirect?..."> or download link both just work with no
+// extra wiring; anything without those credentials gets the same 401
+// every other route already gives it.
+async function handleGcsRedirect(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  const bucket = url.searchParams.get('bucket')
+  const object = url.searchParams.get('object')
+  const disposition = url.searchParams.get('disposition')
+  const filename = url.searchParams.get('filename')
+
+  if (!bucket || !object) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'gcs-redirect requires both bucket and object query params' }))
+    return
+  }
+  if (disposition && disposition !== 'inline' && disposition !== 'attachment') {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `disposition must be "inline" or "attachment" — got "${disposition}"` }))
+    return
+  }
+
+  // Imported by a variable, not a string literal, so tsc treats this as
+  // Promise<any> instead of trying to resolve @google-cloud/storage's
+  // own types at compile time — same reasoning
+  // lp-product-ad-images'/lp-file-archiver's own saveImage/saveArchive
+  // already use, for the same reason: installing it is only required at
+  // runtime for a deployment that actually uses this route, not every
+  // loopengine install.
+  const gcsModuleName = '@google-cloud/storage'
+  let gcs: any
+  try {
+    gcs = await import(gcsModuleName)
+  } catch {
+    res.writeHead(500, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'gcs-redirect requires the @google-cloud/storage package — npm install @google-cloud/storage in your own project.' }),
+    )
+    return
+  }
+
+  let client: any
+  const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+  if (credentialsJson) {
+    let credentials: { project_id?: string }
+    try {
+      credentials = JSON.parse(credentialsJson)
+    } catch {
+      res.writeHead(500, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          error: 'GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON — paste the entire contents of the downloaded service-account key file, unedited.',
+        }),
+      )
+      return
+    }
+    client = new gcs.Storage({ credentials, projectId: credentials.project_id })
+  } else {
+    client = new gcs.Storage()
+  }
+
+  try {
+    const file = client.bucket(bucket).file(object)
+    const expires = Date.now() + 5 * 60 * 1000
+    const signOptions: Record<string, unknown> = { action: 'read', expires }
+    if (disposition === 'attachment') {
+      signOptions.responseDisposition = `attachment; filename="${filename || object.split('/').pop()}"`
+    }
+    const [signedUrl] = await file.getSignedUrl(signOptions)
+    res.writeHead(302, { location: signedUrl }).end()
+  } catch (err) {
+    res
+      .writeHead(502, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ error: `gcs-redirect: could not sign a URL for gs://${bucket}/${object}: ${err instanceof Error ? err.message : String(err)}` }))
+  }
+}
+
 const server = createServer(async (req, res) => {
   if (!isAuthorized(req)) {
     res
@@ -2453,6 +2556,11 @@ const server = createServer(async (req, res) => {
       return
     }
 
+    if (req.method === 'GET' && pathname === '/gcs-redirect') {
+      await handleGcsRedirect(req, res)
+      return
+    }
+
     const match = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/messages$/)
     if (!match) {
       res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'not found' }))
@@ -2480,8 +2588,63 @@ const server = createServer(async (req, res) => {
 const port = Number(process.env.PORT ?? 8787)
 server.listen(port, () => console.log(`agent API listening on :${port}`))
 
+// server.close() alone only stops accepting *new* connections — it
+// doesn't wait for existing ones, and the old code called process.exit
+// right after it regardless, killing every still-open connection
+// immediately. A long-lived SSE stream (the Playground's own
+// /messages/stream, open for a whole turn — longer still if the model
+// polls a background job within that same turn) dies mid-response, and
+// whatever's in front of this process (a load balancer, a reverse
+// proxy) sees the backend vanish mid-stream and reports a 502 to
+// whoever was watching it — confirmed live: a `pm2 restart` while an
+// image-generation batch was in progress produced exactly that. Now
+// actually waits for server.close()'s own callback (fires once every
+// in-flight connection has closed on its own) before tearing anything
+// else down — bounded by LOOPENGINE_SHUTDOWN_GRACE_MS so a genuinely
+// stuck connection can't hang a deploy forever. Whatever's orchestrating
+// the restart (pm2's own kill_timeout, a container platform's own grace
+// period) needs to be at least this long too, or it'll SIGKILL out from
+// under this before the wait finishes — SIGKILL can't be caught or
+// delayed by anything here.
+//
+// This only protects the *connection* a request/stream is running
+// over. A tool's own background work that isn't awaited by its
+// execute() call (lp-product-ad-images' own generate_google_ad_images,
+// which returns a job_id immediately and keeps generating after — see
+// that tool's own doc comment) isn't tied to any connection at all, and
+// still dies the instant process.exit runs regardless of how long this
+// grace period is — there's no persistent job queue here surviving a
+// process restart, just this one process's own event loop.
 async function shutdown() {
-  server.close()
+  console.log('[loopengine] shutting down — draining in-flight requests...')
+  const graceMs = Number(process.env.LOOPENGINE_SHUTDOWN_GRACE_MS ?? 30000)
+  const closed = new Promise<void>((resolve) => server.close(() => resolve()))
+  // HTTP keep-alive means a connection whose last request already
+  // finished doesn't close itself — it sits open, idle, waiting for a
+  // *next* request that (mid-restart) is never coming, which would
+  // otherwise hold server.close()'s own callback back for the entire
+  // grace period even though nothing real is still in flight on it —
+  // confirmed live: an idle keep-alive socket alone reproduced the full
+  // wait. closeIdleConnections() (Node >= 18.2) drops exactly those
+  // (never an actively-streaming request/response, which is the one
+  // thing this whole function exists to protect) right away — but only
+  // the ones idle *at the instant it's called*. A connection that's
+  // still active right now (the actual case this whole function exists
+  // to protect) goes idle *later*, once its own response finishes, so a
+  // single call up front misses it — confirmed live: without the
+  // repeated sweep below, that connection's own idle socket still held
+  // the grace period open right up to the timeout, same as if this call
+  // were never made at all. Repeating it on an interval catches that as
+  // soon as it happens, instead of only ever catching sockets already
+  // idle before shutdown even began.
+  server.closeIdleConnections()
+  const sweep = setInterval(() => server.closeIdleConnections(), 1000)
+  const timedOut = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), graceMs))
+  const outcome = await Promise.race([closed.then(() => 'closed' as const), timedOut])
+  clearInterval(sweep)
+  if (outcome === 'timeout') {
+    console.log(`[loopengine] shutdown grace period (${graceMs}ms) elapsed with connections still open — exiting anyway`)
+  }
   await sessions.close()
   process.exit(0)
 }
