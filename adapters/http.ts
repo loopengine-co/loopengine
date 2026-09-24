@@ -26,9 +26,10 @@
 // file's call — see AgentConfig.sessionIdFor and defaultSessionIdFor below.
 import { execFile } from 'node:child_process'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { extname, join, resolve as resolvePath, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { getEntry, listAgents, projectDir, registerAgent, updateAgent, type RegistryEntry } from '../core/agent-registry.js'
@@ -2079,6 +2080,86 @@ async function handleStorageRedirect(req: IncomingMessage, res: ServerResponse):
   }
 }
 
+const LOCAL_FILE_CONTENT_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.zip': 'application/zip',
+  '.pdf': 'application/pdf',
+}
+
+// storage-redirect above only ever has a URL to redirect to *because*
+// the cloud provider already serves the bytes itself — AD_IMAGE_STORAGE=
+// local/ARCHIVE_STORAGE=local has no such external server at all, so
+// this route serves the bytes directly instead of redirecting anywhere,
+// giving local storage the same preview/download-button treatment
+// storage-redirect already gives gcs, instead of the bare filesystem
+// path a local ability result used to be stuck with (unopenable by
+// anything except direct server access).
+//
+// `path` is resolved against process.cwd() (this process's own working
+// directory — not this file's location, and not any one ability's own
+// AD_IMAGE_OUTPUT_DIR/ARCHIVE_OUTPUT_DIR specifically, since this route
+// has no idea which ability or env var produced the value it's given)
+// and then checked against that same root before anything is read —
+// this route is otherwise a generic "serve a file from this
+// deployment's own project directory," and skipping that check would
+// turn it into an arbitrary-file-read over HTTP. AD_IMAGE_OUTPUT_DIR/
+// ARCHIVE_OUTPUT_DIR left at their own defaults (a relative path) are
+// already under cwd, so this covers the common case with zero
+// configuration; a deployment pointing either at an absolute path
+// outside the project directory gets no preview/download URL for that
+// file at all — see generate_google_ad_images.ts's/create_zip_archive.ts's
+// own saveImage/saveArchive doc comments for that fallback.
+//
+// Same Basic Auth gate as every other route on this server — see
+// handleStorageRedirect's own doc comment for why that's what makes a
+// plain <img src="/local-file?..."> just work with no extra wiring.
+async function handleLocalFile(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  const relativePath = url.searchParams.get('path')
+  const disposition = url.searchParams.get('disposition')
+  const filename = url.searchParams.get('filename')
+
+  if (!relativePath) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'local-file requires a path query param' }))
+    return
+  }
+  if (disposition && disposition !== 'inline' && disposition !== 'attachment') {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `disposition must be "inline" or "attachment" — got "${disposition}"` }))
+    return
+  }
+
+  const root = process.cwd()
+  const resolved = resolvePath(root, relativePath)
+  if (resolved !== root && !resolved.startsWith(root + sep)) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'local-file: path escapes this deployment\'s own project directory' }))
+    return
+  }
+
+  let stats: Awaited<ReturnType<typeof stat>>
+  try {
+    stats = await stat(resolved)
+  } catch {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `local-file: no such file "${relativePath}"` }))
+    return
+  }
+  if (!stats.isFile()) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `local-file: "${relativePath}" is not a regular file` }))
+    return
+  }
+
+  const contentType = LOCAL_FILE_CONTENT_TYPES[extname(resolved).toLowerCase()] ?? 'application/octet-stream'
+  const headers: Record<string, string> = { 'content-type': contentType, 'content-length': String(stats.size) }
+  if (disposition === 'attachment') {
+    headers['content-disposition'] = `attachment; filename="${filename || relativePath.split('/').pop()}"`
+  }
+  res.writeHead(200, headers)
+  createReadStream(resolved).pipe(res)
+}
+
 const server = createServer(async (req, res) => {
   if (!isAuthorized(req)) {
     res
@@ -2527,6 +2608,11 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'GET' && pathname === '/storage-redirect') {
       await handleStorageRedirect(req, res)
+      return
+    }
+
+    if (req.method === 'GET' && pathname === '/local-file') {
+      await handleLocalFile(req, res)
       return
     }
 
