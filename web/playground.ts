@@ -201,7 +201,14 @@ export const playgroundHtml: string = `<!doctype html>
      image's real visible edge instead of floating in empty space beside
      a narrower image inside a full-width box. */
   .msg-preview-wrap { position: relative; display: inline-block; max-width: 100%; margin: 6px 0; }
-  .msg-preview-img { display: block; max-width: 100%; max-height: 260px; width: auto; height: auto; border-radius: 8px; cursor: zoom-in; }
+  /* .msg-plain-img (no download link — see renderMessageMarkdown's own
+     doc comment) gets the same capped size and click-to-zoom as the
+     merged .msg-preview-img, just without the corner download icon and
+     without a wrap element of its own (nothing needs to be positioned
+     relative to it) — see the chatPane click handler below and
+     openImageLightbox's own handling of a missing downloadHref. */
+  .msg-preview-img, .msg-plain-img { display: block; max-width: 100%; max-height: 260px; width: auto; height: auto; border-radius: 8px; cursor: zoom-in; }
+  .msg-plain-img { margin: 6px 0; }
   .msg-download-icon {
     position: absolute;
     top: 8px;
@@ -489,7 +496,7 @@ export const playgroundHtml: string = `<!doctype html>
         .replace(inlineCodePattern, '<code>$1</code>')
         .replace(boldPattern, '<strong>$1</strong>')
         .replace(italicPattern, '<em>$1</em>')
-        .replace(imagePattern, '<img src="$2" alt="$1" class="msg-plain-img">')
+        .replace(imagePattern, '<img src="$2" alt="$1" class="msg-plain-img" data-full-src="$2">')
         .replace(linkPattern, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     }
     function flushParagraph() {
@@ -572,7 +579,7 @@ export const playgroundHtml: string = `<!doctype html>
     // isn't a recognized string escape character either. A plain string
     // needs no such escaping for "/" at all.
     var previewMergePattern = new RegExp(
-      '<img src="([^"]*)" alt="([^"]*)" class="msg-plain-img">' + bs + 's*<a href="([^"]*)"[^>]*>[^<]*</a>',
+      '<img src="([^"]*)" alt="([^"]*)" class="msg-plain-img" data-full-src="[^"]*">' + bs + 's*<a href="([^"]*)"[^>]*>[^<]*</a>',
       'g',
     );
     html = html.replace(previewMergePattern, function (match, src, alt, href) {
@@ -592,7 +599,16 @@ export const playgroundHtml: string = `<!doctype html>
 
   function openImageLightbox(src, downloadHref) {
     lightboxImage.src = src;
-    lightboxDownload.href = downloadHref;
+    // A plain image (no download link — see renderMessageMarkdown's own
+    // doc comment on .msg-plain-img) has no downloadHref at all; hiding
+    // the button beats pointing it at '' (a dead link that would just
+    // reload the page) or at src (opens inline, not an actual download).
+    if (downloadHref) {
+      lightboxDownload.href = downloadHref;
+      lightboxDownload.style.display = '';
+    } else {
+      lightboxDownload.style.display = 'none';
+    }
     lightboxOverlay.classList.add('open');
   }
   function closeImageLightbox() {
@@ -617,7 +633,7 @@ export const playgroundHtml: string = `<!doctype html>
   // rewired after each new message.
   chatPane.addEventListener('click', function (ev) {
     var target = ev.target;
-    if (target && target.classList && target.classList.contains('msg-preview-img')) {
+    if (target && target.classList && (target.classList.contains('msg-preview-img') || target.classList.contains('msg-plain-img'))) {
       openImageLightbox(target.getAttribute('data-full-src'), target.getAttribute('data-download-href'));
     }
   });
