@@ -4,6 +4,8 @@
 // built on top of this surface, not part of it — see the README section
 // "Using loopengine as a library" for the boundary and why.
 export { runAgent } from '#core/run-agent.js'
+export { storageSigners } from '#core/storage-signers/index.js'
+export type { SignRequest, StorageSigner } from '#core/storage-signers/types.js'
 export type {
   Message,
   ModelCall,

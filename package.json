@@ -1,6 +1,6 @@
 {
   "name": "loopengine",
-  "version": "0.1.55",
+  "version": "0.1.56",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
   "license": "MIT",
@@ -29,6 +29,7 @@
     "dist/core/run-agent.d.ts",
     "dist/core/known-urls.js",
     "dist/core/known-urls.d.ts",
+    "dist/core/storage-signers",
     "dist/core/loop-events.js",
     "dist/core/loop-events.d.ts",
     "dist/core/client.js",

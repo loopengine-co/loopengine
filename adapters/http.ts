@@ -107,6 +107,7 @@ import { listQuestions, answerQuestion, findQuestion, createAskUserTool, type Pe
 import { WebhookNotifier } from '#core/http-notify-triggers/webhook.js'
 import type { Decision, PendingApproval } from 'actauth'
 import type { LoopEvent } from '#core/loop-events.js'
+import { storageSigners } from '#core/storage-signers/index.js'
 
 const sessions = createSessionStore()
 const checkpoints = createCheckpointStore()
@@ -2023,90 +2024,58 @@ async function respondAfterResolution(res: ServerResponse, finalCheckpoint: Turn
 // long as the click that requested it takes to resolve, not however
 // long a chat reply might sit around unopened).
 //
-// Deliberately generic, not tied to any one ability — any ability using
-// GCS storage can point a tool's own returned URL here instead of
-// signing itself, as long as it authenticates the same way
-// lp-product-ad-images'/lp-file-archiver's own buildGcsStorageClient
-// already do (GOOGLE_APPLICATION_CREDENTIALS_JSON, falling back to
-// Application Default Credentials) — this is that same logic,
-// centralized, rather than every GCS-backed ability duplicating it
-// (which they already do today for the *upload* side; this just does
-// the same for signing).
+// Deliberately generic on two axes, not tied to any one ability or
+// cloud provider: any ability can point a tool's own returned URL here
+// instead of signing itself, as long as it authenticates the same way
+// core/storage-signers/gcs.ts already does (GOOGLE_APPLICATION_CREDENTIALS_JSON,
+// falling back to Application Default Credentials) — that's the same
+// logic lp-product-ad-images'/lp-file-archiver's own
+// buildGcsStorageClient already duplicate for the *upload* side,
+// centralized here for signing instead. `provider` picks which one of
+// core/storage-signers' own small, independent modules actually does
+// the signing (only `gcs` exists today) — adding S3/Azure/etc. later is
+// a new module there plus one registry entry, not a change to this
+// route or its own URL shape; see that module's own doc comment.
 //
 // Sits behind the same isAuthorized() Basic Auth gate every other route
 // on this server already requires (checked once, unconditionally,
 // before any routing below even runs) — not a separately public
 // endpoint. A browser that already loaded /playground has that same
 // origin's Basic Auth credentials cached, so a plain
-// <img src="/gcs-redirect?..."> or download link both just work with no
-// extra wiring; anything without those credentials gets the same 401
-// every other route already gives it.
-async function handleGcsRedirect(req: IncomingMessage, res: ServerResponse): Promise<void> {
+// <img src="/storage-redirect?..."> or download link both just work
+// with no extra wiring; anything without those credentials gets the
+// same 401 every other route already gives it.
+async function handleStorageRedirect(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost')
+  const provider = url.searchParams.get('provider')
   const bucket = url.searchParams.get('bucket')
   const object = url.searchParams.get('object')
   const disposition = url.searchParams.get('disposition')
   const filename = url.searchParams.get('filename')
 
-  if (!bucket || !object) {
-    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'gcs-redirect requires both bucket and object query params' }))
+  if (!provider || !bucket || !object) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'storage-redirect requires provider, bucket, and object query params' }))
     return
   }
   if (disposition && disposition !== 'inline' && disposition !== 'attachment') {
     res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `disposition must be "inline" or "attachment" — got "${disposition}"` }))
     return
   }
-
-  // Imported by a variable, not a string literal, so tsc treats this as
-  // Promise<any> instead of trying to resolve @google-cloud/storage's
-  // own types at compile time — same reasoning
-  // lp-product-ad-images'/lp-file-archiver's own saveImage/saveArchive
-  // already use, for the same reason: installing it is only required at
-  // runtime for a deployment that actually uses this route, not every
-  // loopengine install.
-  const gcsModuleName = '@google-cloud/storage'
-  let gcs: any
-  try {
-    gcs = await import(gcsModuleName)
-  } catch {
-    res.writeHead(500, { 'content-type': 'application/json' }).end(
-      JSON.stringify({ error: 'gcs-redirect requires the @google-cloud/storage package — npm install @google-cloud/storage in your own project.' }),
+  const signer = storageSigners[provider]
+  if (!signer) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: `storage-redirect: unknown provider "${provider}" — supported: ${Object.keys(storageSigners).join(', ')}` }),
     )
     return
   }
 
-  let client: any
-  const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
-  if (credentialsJson) {
-    let credentials: { project_id?: string }
-    try {
-      credentials = JSON.parse(credentialsJson)
-    } catch {
-      res.writeHead(500, { 'content-type': 'application/json' }).end(
-        JSON.stringify({
-          error: 'GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON — paste the entire contents of the downloaded service-account key file, unedited.',
-        }),
-      )
-      return
-    }
-    client = new gcs.Storage({ credentials, projectId: credentials.project_id })
-  } else {
-    client = new gcs.Storage()
-  }
-
   try {
-    const file = client.bucket(bucket).file(object)
-    const expires = Date.now() + 5 * 60 * 1000
-    const signOptions: Record<string, unknown> = { action: 'read', expires }
-    if (disposition === 'attachment') {
-      signOptions.responseDisposition = `attachment; filename="${filename || object.split('/').pop()}"`
-    }
-    const [signedUrl] = await file.getSignedUrl(signOptions)
+    const signedUrl = await signer({ bucket, object, disposition: (disposition as 'inline' | 'attachment' | null) ?? undefined, filename: filename ?? undefined })
     res.writeHead(302, { location: signedUrl }).end()
   } catch (err) {
     res
       .writeHead(502, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ error: `gcs-redirect: could not sign a URL for gs://${bucket}/${object}: ${err instanceof Error ? err.message : String(err)}` }))
+      .end(JSON.stringify({ error: `storage-redirect: could not sign a URL for ${provider}://${bucket}/${object}: ${err instanceof Error ? err.message : String(err)}` }))
   }
 }
 
@@ -2556,8 +2525,8 @@ const server = createServer(async (req, res) => {
       return
     }
 
-    if (req.method === 'GET' && pathname === '/gcs-redirect') {
-      await handleGcsRedirect(req, res)
+    if (req.method === 'GET' && pathname === '/storage-redirect') {
+      await handleStorageRedirect(req, res)
       return
     }
 
