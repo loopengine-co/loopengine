@@ -1309,7 +1309,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         // secret nothing else has a copy of) gets the one confirm() this
         // whole tab uses — every other action here is a plain upsert,
         // nothing else to lose by clicking it again.
-        if (!confirm('Remove ' + varName + '? Any tool/ability relying on it falls back to its own default (if it has one) or starts failing until it\'s set again.')) return;
+        if (!confirm('Remove ' + varName + '? Any tool/ability relying on it falls back to its own default (if it has one) or starts failing until it is set again.')) return;
         btn.disabled = true;
         fetch('/agents/' + encodeURIComponent(name) + '/env/' + encodeURIComponent(varName), { method: 'DELETE' })
           .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
