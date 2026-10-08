@@ -172,7 +172,7 @@ export { playgroundHtml } from './web/playground.js'
 export { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from './web/skills-admin.js'
 export type { SkillContent } from './web/skills-admin.js'
 
-export { listDeclaredEnvVars, setEnvVar, EnvVarNameError } from './web/env-admin.js'
+export { listDeclaredEnvVars, setEnvVar, unsetEnvVar, EnvVarNameError } from './web/env-admin.js'
 export type { DeclaredEnvVar } from './web/env-admin.js'
 
 export {

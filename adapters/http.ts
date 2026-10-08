@@ -67,7 +67,7 @@ import {
   type GatewayToolDecision,
 } from '#core/gateway-tools.js'
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
-import { listDeclaredEnvVars, setEnvVar, EnvVarNameError } from '#web/env-admin.js'
+import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
@@ -1028,6 +1028,31 @@ async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName
   }
   try {
     setEnvVar(varName, body.value)
+  } catch (err) {
+    const status = err instanceof EnvVarNameError ? 400 : 500
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }))
+}
+
+// Same auth requirement as handleEnvPut above and the same reasoning —
+// removing a secret from .env is still a secrets-management action,
+// not just config, so this refuses outright rather than proceeding
+// open when LOOPENGINE_ADMIN_AUTH isn't configured at all.
+async function handleEnvDelete(res: ServerResponse, agentName: string, varName: string): Promise<void> {
+  if (!adminAuth) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'Refusing to unset an env var without LOOPENGINE_ADMIN_AUTH configured — set it before managing secrets through this route.' }),
+    )
+    return
+  }
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  try {
+    unsetEnvVar(varName)
   } catch (err) {
     const status = err instanceof EnvVarNameError ? 400 : 500
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
@@ -2538,6 +2563,10 @@ const server = createServer(async (req, res) => {
     const envVarMatch = pathname.match(/^\/agents\/([^/]+)\/env\/([^/]+)$/)
     if (envVarMatch && req.method === 'PUT') {
       await handleEnvPut(req, res, decodeURIComponent(envVarMatch[1]), decodeURIComponent(envVarMatch[2]))
+      return
+    }
+    if (envVarMatch && req.method === 'DELETE') {
+      await handleEnvDelete(res, decodeURIComponent(envVarMatch[1]), decodeURIComponent(envVarMatch[2]))
       return
     }
 

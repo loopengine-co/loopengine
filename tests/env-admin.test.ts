@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { listDeclaredEnvVars, setEnvVar, EnvVarNameError } from '../web/env-admin.js'
+import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, EnvVarNameError } from '../web/env-admin.js'
 
 // Same fixture-agent-under-the-real-agents-dir approach as
 // tests/actauth-admin.test.ts — env-admin.ts has no live-registry
@@ -154,5 +154,42 @@ describe('setEnvVar', () => {
     expect(() => setEnvVar('not-valid', 'x')).toThrow(EnvVarNameError)
     expect(() => setEnvVar('lowercase', 'x')).toThrow(EnvVarNameError)
     expect(() => setEnvVar('1STARTS_WITH_DIGIT', 'x')).toThrow(EnvVarNameError)
+  })
+})
+
+describe('unsetEnvVar', () => {
+  it('removes the KEY=VALUE line from .env and clears it from process.env immediately', () => {
+    setEnvVar('LOOPENGINE_TEST_FIXTURE_REMOVE', 'hello')
+    expect(readFileSync(envPath, 'utf8')).toContain('LOOPENGINE_TEST_FIXTURE_REMOVE=')
+
+    unsetEnvVar('LOOPENGINE_TEST_FIXTURE_REMOVE')
+
+    expect(process.env.LOOPENGINE_TEST_FIXTURE_REMOVE).toBeUndefined()
+    expect(readFileSync(envPath, 'utf8')).not.toContain('LOOPENGINE_TEST_FIXTURE_REMOVE')
+  })
+
+  it('preserves every other line, including comments, when removing one key', () => {
+    setEnvVar('LOOPENGINE_TEST_FIXTURE_KEEP', 'kept')
+    setEnvVar('LOOPENGINE_TEST_FIXTURE_DROP', 'dropped')
+
+    unsetEnvVar('LOOPENGINE_TEST_FIXTURE_DROP')
+
+    const after = readFileSync(envPath, 'utf8')
+    expect(after).toContain('LOOPENGINE_TEST_FIXTURE_KEEP=kept')
+    expect(after).not.toContain('LOOPENGINE_TEST_FIXTURE_DROP')
+  })
+
+  it('is a no-op, not an error, when the var was never set in .env to begin with', () => {
+    expect(() => unsetEnvVar('LOOPENGINE_TEST_FIXTURE_NEVER_SET')).not.toThrow()
+    expect(process.env.LOOPENGINE_TEST_FIXTURE_NEVER_SET).toBeUndefined()
+  })
+
+  it('is a no-op when .env does not exist at all', () => {
+    rmSync(envPath, { force: true })
+    expect(() => unsetEnvVar('LOOPENGINE_TEST_FIXTURE_NO_FILE')).not.toThrow()
+  })
+
+  it('throws EnvVarNameError for a name that is not valid uppercase_snake_case', () => {
+    expect(() => unsetEnvVar('not-valid')).toThrow(EnvVarNameError)
   })
 })

@@ -164,3 +164,32 @@ export function setEnvVar(name: string, value: string): void {
   writeFileSync(path, lines.join('\n') + '\n')
   process.env[name] = value
 }
+
+/** Removes NAME= entirely from the project's .env file (not just
+ * blanking its value — an empty string is itself a real, distinct
+ * value some vars would treat differently from "unset," e.g. falling
+ * through to a default only when truly absent) and clears it from
+ * *this* running process's own process.env immediately, the same
+ * "no restart needed" promise setEnvVar already makes. A no-op,
+ * not an error, when the var was never set in .env to begin with —
+ * same reasoning the DELETE route calling this treats a missing name
+ * as success rather than a 404: the end state ("not set") is identical
+ * either way, and the caller has no way to distinguish "I removed it"
+ * from "it was already gone" that would actually matter to them. */
+export function unsetEnvVar(name: string): void {
+  if (!ENV_VAR_NAME_PATTERN.test(name)) {
+    throw new EnvVarNameError(`"${name}" isn't a valid env var name (uppercase letters, digits, underscore, not starting with a digit).`)
+  }
+
+  const path = envFilePath()
+  if (existsSync(path)) {
+    const lines = readFileSync(path, 'utf8').split('\n')
+    const filtered = lines.filter((line) => !line.startsWith(`${name}=`))
+    // Only rewrites the file when something actually changed — a
+    // no-op removal shouldn't still touch the file's own mtime/trailing-
+    // newline shape for no reason. Matches setEnvVar's own exactly-one-
+    // trailing-newline convention when it does.
+    if (filtered.length !== lines.length) writeFileSync(path, filtered.join('\n').replace(/\n*$/, '\n'))
+  }
+  delete process.env[name]
+}

@@ -1203,6 +1203,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       : v.multiline
         ? '<textarea name="value" rows="8" placeholder="' + (v.set ? 'unchanged unless you paste a new value' : 'paste the full value') + '" required></textarea>'
         : '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'unchanged unless you type a new value' : 'value') + '" required>';
+    // Only offered once something is actually set — removing what's
+    // already absent has nothing to do, and the button would just be
+    // clutter for every var an operator hasn't touched yet (most of
+    // them, on a freshly installed ability — see renderEnvConfigHtml's
+    // own comment on why "not set" isn't itself treated as a problem).
+    var removeHtml = v.set
+      ? ' <button type="button" class="env-var-remove" data-name="' + escapeHtml(v.name) + '">Remove</button>'
+      : '';
     return '<tr>' +
       '<td><code>' + escapeHtml(v.name) + '</code>' + sharedNote + '</td>' +
       '<td style="max-width:320px">' + escapeHtml(v.description || '') + '</td>' +
@@ -1210,7 +1218,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       '<td><form class="add-source env-var-form" data-name="' + escapeHtml(v.name) + '">' +
         fieldHtml +
         '<button type="submit">Save</button>' +
-      '</form></td>' +
+      '</form>' + removeHtml + '</td>' +
       '</tr>';
   }
 
@@ -1289,6 +1297,29 @@ export const agentsConfigPageHtml: string = `<!doctype html>
           .catch(function (err) {
             alert('Could not set value: ' + err.message);
             submitBtn.disabled = false;
+          });
+      });
+    }
+    var removeButtons = content.querySelectorAll('.env-var-remove');
+    for (var j = 0; j < removeButtons.length; j++) {
+      removeButtons[j].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var varName = btn.getAttribute('data-name');
+        // A destructive action (clearing a configured value, possibly a
+        // secret nothing else has a copy of) gets the one confirm() this
+        // whole tab uses — every other action here is a plain upsert,
+        // nothing else to lose by clicking it again.
+        if (!confirm('Remove ' + varName + '? Any tool/ability relying on it falls back to its own default (if it has one) or starts failing until it\'s set again.')) return;
+        btn.disabled = true;
+        fetch('/agents/' + encodeURIComponent(name) + '/env/' + encodeURIComponent(varName), { method: 'DELETE' })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+          .then(function (result) {
+            if (!result.ok) throw new Error(result.body.error || 'request failed');
+            loadEnvTab(name);
+          })
+          .catch(function (err) {
+            alert('Could not remove value: ' + err.message);
+            btn.disabled = false;
           });
       });
     }
