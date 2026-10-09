@@ -8,7 +8,7 @@
 // the only intended writer of that file; loadGatewayToolsFromDir is what
 // run-agent.ts calls to actually resolve it into ToolDefinitions.
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -81,6 +81,35 @@ function gatewayToolsPath(dir: string): string {
  * from process.cwd()) and risking the two drifting apart. */
 export function agentDir(agentName: string): string {
   return join(agentsRootDir, agentName)
+}
+
+/** agentDir's own inverse, for a tool file that needs to know which
+ * agent it was installed under without an env var to tell it — an
+ * ability's own tool file (copied to agents/<name>/tools/<file>.ts by
+ * add-ability) calls this with its own `import.meta.url`, and gets
+ * `<name>` back, by walking back up from the file's real on-disk
+ * location rather than trusting anything passed in (there's nothing
+ * else to trust: this runs from inside the tool file itself, before
+ * any agent-scoped state exists). Returns undefined for a tool file
+ * that isn't actually at that expected agents/<name>/tools/ depth (a
+ * test harness loading the file from somewhere else, say) — a caller
+ * needing a default when this can't be determined should fall back
+ * explicitly, not treat undefined as a crash. Mirrors the inferAgentName
+ * helper lp-task-scheduler's own tool files (schedule_task.ts et al.)
+ * already hand-duplicate per the ability system's own "no shared
+ * modules between tool files" rule — this is the one place that's
+ * actually safe to centralize, since every ability's tool file already
+ * imports real functions from this package (see e.g. lp-task-scheduler's
+ * own createCheckpointStore/runAgent imports), just not yet this. */
+export function inferAgentNameFromToolUrl(toolFileUrl: string): string | undefined {
+  try {
+    const toolsDir = dirname(fileURLToPath(toolFileUrl))
+    const agentDir = dirname(toolsDir)
+    if (basename(dirname(agentDir)) !== 'agents') return undefined
+    return basename(agentDir)
+  } catch {
+    return undefined
+  }
 }
 
 /** `dir` is the agent's real folder — `agents/<name>` for a top-level

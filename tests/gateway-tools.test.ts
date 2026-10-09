@@ -1,12 +1,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   addGatewayTool,
   describeGatewayTools,
+  inferAgentNameFromToolUrl,
   isReadOnlyToolName,
   listComposioConnections,
   listComposioTools,
@@ -220,6 +221,28 @@ describe('isReadOnlyToolName', () => {
 
   it('defaults to not-read-only (the safer failure mode) for an unrecognized verb', () => {
     expect(isReadOnlyToolName('some_toolkit_TOTALLY_UNKNOWN_ACTION_NAME')).toBe(false)
+  })
+})
+
+describe('inferAgentNameFromToolUrl', () => {
+  function toolUrl(...segments: string[]): string {
+    return pathToFileURL(join('/project', 'agents', ...segments)).toString()
+  }
+
+  it('returns the agent name for a file at the expected agents/<name>/tools/<file> depth', () => {
+    expect(inferAgentNameFromToolUrl(toolUrl('customer-service', 'tools', 'post_to_slack.ts'))).toBe('customer-service')
+  })
+
+  it('returns undefined when the file is not actually under an agents/ directory', () => {
+    expect(inferAgentNameFromToolUrl(pathToFileURL(join('/project', 'scripts', 'tools', 'post_to_slack.ts')).toString())).toBeUndefined()
+  })
+
+  it('returns undefined when the file is one level shallower than expected', () => {
+    expect(inferAgentNameFromToolUrl(toolUrl('customer-service', 'post_to_slack.ts'))).toBeUndefined()
+  })
+
+  it('returns undefined for an unparsable URL', () => {
+    expect(inferAgentNameFromToolUrl('not a url')).toBeUndefined()
   })
 })
 

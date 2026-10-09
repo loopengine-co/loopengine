@@ -122,6 +122,7 @@ export type { TurnCheckpoint, CheckpointStore, OutstandingItem } from './core/du
 export {
   addGatewayTool,
   agentDir,
+  inferAgentNameFromToolUrl,
   disconnectComposioAccount,
   describeGatewayTools,
   listComposioConnections,
@@ -172,7 +173,7 @@ export { playgroundHtml } from './web/playground.js'
 export { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from './web/skills-admin.js'
 export type { SkillContent } from './web/skills-admin.js'
 
-export { listDeclaredEnvVars, setEnvVar, unsetEnvVar, EnvVarNameError } from './web/env-admin.js'
+export { listDeclaredEnvVars, setEnvVar, unsetEnvVar, agentScopedEnvVarName, EnvVarNameError } from './web/env-admin.js'
 export type { DeclaredEnvVar } from './web/env-admin.js'
 
 export {

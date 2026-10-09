@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agentDir } from '../core/gateway-tools.js'
-import type { InstalledAbilityRecord } from '../bin/ability-manager.js'
+import type { AbilityEnvDecl, InstalledAbilityRecord } from '../bin/ability-manager.js'
 
 export class EnvVarNameError extends Error {}
 
@@ -70,32 +70,63 @@ function provenancePath(agentName: string): string {
  * live off `process.env`, not cached, so it reflects whatever the last
  * `setEnvVar` call — or a plain restart picking up `.env` — actually
  * did. */
+/** `varName`'s own per-agent override name (see AbilityEnvDecl.perAgent)
+ * — `<AGENT_NAME>_<varName>`, with `agentName` upper-cased and anything
+ * that isn't `[A-Z0-9_]` (a hyphen, most likely — agent directory names
+ * are kebab-case) turned into `_`, same alphabet ENV_VAR_NAME_PATTERN
+ * already requires. Guards against a result starting with a digit (a
+ * from-digits agent name, or an agent name that's entirely punctuation)
+ * the same way that pattern would otherwise reject — by prefixing one
+ * more `_` — though in practice agent names are never actually bare
+ * digits. */
+export function agentScopedEnvVarName(agentName: string, varName: string): string {
+  const prefix = agentName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+  return `${/^[0-9]/.test(prefix) ? '_' : ''}${prefix}_${varName}`
+}
+
 export function listDeclaredEnvVars(agentName: string): DeclaredEnvVar[] {
   const path = provenancePath(agentName)
   if (!existsSync(path)) return []
 
   const provenance = JSON.parse(readFileSync(path, 'utf8')) as Record<string, InstalledAbilityRecord>
   const byName = new Map<string, DeclaredEnvVar>()
+
+  function upsert(name: string, abilityName: string, decl: AbilityEnvDecl, description: string | undefined): void {
+    const existing = byName.get(name)
+    if (existing) {
+      existing.abilityNames.push(abilityName)
+      existing.secret = existing.secret || decl.secret === true
+      if (existing.secret) existing.value = undefined
+      return
+    }
+    const rawValue = process.env[name]
+    byName.set(name, {
+      name,
+      description,
+      secret: decl.secret === true,
+      abilityNames: [abilityName],
+      set: rawValue !== undefined,
+      value: decl.secret === true ? undefined : rawValue,
+      options: decl.options,
+      multiline: decl.multiline,
+    })
+  }
+
   for (const [abilityName, record] of Object.entries(provenance)) {
     for (const decl of record.env) {
-      const existing = byName.get(decl.name)
-      if (existing) {
-        existing.abilityNames.push(abilityName)
-        existing.secret = existing.secret || decl.secret === true
-        if (existing.secret) existing.value = undefined
-        continue
+      upsert(decl.name, abilityName, decl, decl.description)
+      // A perAgent var also gets its own separate, independently
+      // set/unset row for this one agent's override — see
+      // AbilityEnvDecl.perAgent's own doc comment for why this is a
+      // second row, not a replacement for the shared one above (an
+      // ability's own tool code checks the override first and falls
+      // back to the shared value, so both need to stay independently
+      // visible and settable here).
+      if (decl.perAgent) {
+        const scopedName = agentScopedEnvVarName(agentName, decl.name)
+        const overrideDescription = `Overrides ${decl.name} for this agent only — if unset, falls back to the shared value above.${decl.description ? ` ${decl.description}` : ''}`
+        upsert(scopedName, abilityName, decl, overrideDescription)
       }
-      const rawValue = process.env[decl.name]
-      byName.set(decl.name, {
-        name: decl.name,
-        description: decl.description,
-        secret: decl.secret === true,
-        abilityNames: [abilityName],
-        set: rawValue !== undefined,
-        value: decl.secret === true ? undefined : rawValue,
-        options: decl.options,
-        multiline: decl.multiline,
-      })
     }
   }
   return [...byName.values()]

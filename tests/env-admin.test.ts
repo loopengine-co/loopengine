@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, EnvVarNameError } from '../web/env-admin.js'
+import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, agentScopedEnvVarName, EnvVarNameError } from '../web/env-admin.js'
 
 // Same fixture-agent-under-the-real-agents-dir approach as
 // tests/actauth-admin.test.ts — env-admin.ts has no live-registry
@@ -96,6 +96,58 @@ describe('listDeclaredEnvVars', () => {
     expect(vars).toHaveLength(1)
     expect(vars[0].secret).toBe(true)
     expect(vars[0].value).toBeUndefined()
+  })
+
+  it('adds a separate, independently set/unset override row for a perAgent var, alongside the shared one', () => {
+    delete process.env.LOOPENGINE_TEST_FIXTURE_PERAGENT
+    process.env[agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_PERAGENT')] = 'override-value'
+    writeProvenance({
+      'ability-a': {
+        version: '1.0.0',
+        tools: [],
+        skills: [],
+        actauthRules: [],
+        contentHashes: {},
+        env: [{ name: 'LOOPENGINE_TEST_FIXTURE_PERAGENT', description: 'shared default', secret: false, perAgent: true }],
+      },
+    })
+
+    const vars = listDeclaredEnvVars(AGENT_NAME)
+    expect(vars).toHaveLength(2)
+
+    const shared = vars.find((v) => v.name === 'LOOPENGINE_TEST_FIXTURE_PERAGENT')
+    expect(shared?.set).toBe(false)
+    expect(shared?.description).toBe('shared default')
+
+    const overrideName = agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_PERAGENT')
+    const override = vars.find((v) => v.name === overrideName)
+    expect(override?.set).toBe(true)
+    expect(override?.value).toBe('override-value')
+    expect(override?.abilityNames).toEqual(['ability-a'])
+    expect(override?.description).toContain('Overrides LOOPENGINE_TEST_FIXTURE_PERAGENT for this agent only')
+  })
+
+  it('does not add an override row for a var that is not declared perAgent', () => {
+    writeProvenance({
+      'ability-a': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env: [{ name: 'LOOPENGINE_TEST_FIXTURE_NOT_PERAGENT' }] },
+    })
+
+    const vars = listDeclaredEnvVars(AGENT_NAME)
+    expect(vars).toHaveLength(1)
+  })
+})
+
+describe('agentScopedEnvVarName', () => {
+  it('upper-cases the agent name and joins it to the var name with an underscore', () => {
+    expect(agentScopedEnvVarName('support', 'SLACK_DEFAULT_CHANNEL')).toBe('SUPPORT_SLACK_DEFAULT_CHANNEL')
+  })
+
+  it('turns a hyphenated agent name into underscores', () => {
+    expect(agentScopedEnvVarName('customer-service', 'SLACK_DEFAULT_CHANNEL')).toBe('CUSTOMER_SERVICE_SLACK_DEFAULT_CHANNEL')
+  })
+
+  it('prefixes an extra underscore when the agent name would otherwise start with a digit', () => {
+    expect(agentScopedEnvVarName('2nd-agent', 'SLACK_DEFAULT_CHANNEL')).toBe('_2ND_AGENT_SLACK_DEFAULT_CHANNEL')
   })
 })
 

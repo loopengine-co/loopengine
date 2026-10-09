@@ -167,6 +167,17 @@ export interface AbilityEnvDecl {
    * env-admin.ts's own serializeEnvValue doc comment). Omit for anything
    * genuinely single-line. */
   multiline?: boolean
+  /** True when this setting is meaningfully different per agent (e.g.
+   * which Slack channel to post to) rather than one real shared
+   * credential every installed copy should agree on (e.g. an API key
+   * for the one external service they all call). The Admin UI's
+   * Environment tab then also offers a per-agent override — a second,
+   * separate var named `<AGENT_NAME>_<this name>` (env-admin.ts's own
+   * agentScopedEnvVarName) — that an ability's own tool code can check
+   * first, falling back to this bare name when the override isn't set.
+   * Omit (the default, false) for anything that's actually fine shared
+   * across every agent that installs this ability. */
+  perAgent?: boolean
 }
 
 /** `name`/`version` deliberately aren't declared here — they're read off
