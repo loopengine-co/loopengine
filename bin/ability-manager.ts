@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os'
 import { parse as parseYaml } from 'yaml'
 import semver from 'semver'
 import { agentDir } from '../core/gateway-tools.js'
+import type { EnvScope } from '../core/agent-env.js'
 import { addToolToIndex, removeToolFromIndex, toCamelCase } from '../web/http-tool-admin.js'
 import { addActauthRule, updateActauthRule, removeActauthRule, readActauthConfig, type ActauthRuleInput } from '../web/actauth-admin.js'
 
@@ -167,16 +168,21 @@ export interface AbilityEnvDecl {
    * env-admin.ts's own serializeEnvValue doc comment). Omit for anything
    * genuinely single-line. */
   multiline?: boolean
-  /** True when this setting is meaningfully different per agent (e.g.
-   * which Slack channel to post to) rather than one real shared
-   * credential every installed copy should agree on (e.g. an API key
-   * for the one external service they all call). The Admin UI's
-   * Environment tab then also offers a per-agent override — a second,
-   * separate var named `<AGENT_NAME>_<this name>` (env-admin.ts's own
-   * agentScopedEnvVarName) — that an ability's own tool code can check
-   * first, falling back to this bare name when the override isn't set.
-   * Omit (the default, false) for anything that's actually fine shared
-   * across every agent that installs this ability. */
+  /** How this var is shared across the agents that install this
+   * ability (see core/agent-env.ts's EnvScope), read by tools through
+   * ToolContext.env:
+   * - `shared` (default): one project-wide value — e.g. an API key for
+   *   the one external service every installed copy calls.
+   * - `overridable`: an agent may set its own value (agents/<name>/.env),
+   *   falling back to the shared one — e.g. which chat to post to.
+   * - `agent`: every agent must set its own; never falls back — e.g. a
+   *   bot token, where silently sharing one would make two agents speak
+   *   as the same bot.
+   * The Admin UI's Environment tab shows a shared row, a per-agent row,
+   * or both, to match. */
+  scope?: EnvScope
+  /** @deprecated Use `scope: 'overridable'` — still accepted, and means
+   * exactly that when `scope` is unset. */
   perAgent?: boolean
 }
 

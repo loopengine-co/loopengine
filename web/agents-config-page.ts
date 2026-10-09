@@ -1178,11 +1178,23 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     // of a bare "set", since the whole point of looking here is usually
     // to check *what* something is currently configured to, not just
     // whether it has a value.
+    // An agent row (v.slot === 'agent' — this agent's own value, see
+    // env-admin.ts's DeclaredEnvVar.slot) for an overridable var isn't a
+    // problem when unset: it just falls back to the shared row. One for
+    // an agent-scoped var has no fallback, so unset really is missing.
     var statusHtml = !v.set
-      ? '<span class="error">not set</span>'
+      ? (v.slot === 'agent' && v.scope === 'overridable'
+          ? '<span class="hint">not set &mdash; uses shared value</span>'
+          : '<span class="error">not set</span>')
       : v.secret
         ? '<span class="hint">set</span>'
         : '<code>' + escapeHtml(v.value || '') + '</code>';
+    if (v.set && v.source === 'legacy') {
+      statusHtml += ' <span class="hint" title="Read from the older prefixed project variable. Saving a value here moves it into this agent&#39;s own .env.">(from ' + escapeHtml(v.legacyName || '') + ')</span>';
+    }
+    var slotNote = v.slot === 'agent'
+      ? ' <span class="hint">' + (v.scope === 'agent' ? 'this agent only' : 'this agent&#39;s override') + '</span>'
+      : (v.scope === 'overridable' ? ' <span class="hint">shared</span>' : '');
     // A var with a closed set of valid values (AbilityEnvDecl.options,
     // e.g. a provider switch) gets a <select> instead of a free-text
     // field, so there's nothing to mistype — the same "value" form field
@@ -1209,13 +1221,13 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     // them, on a freshly installed ability — see renderEnvConfigHtml's
     // own comment on why "not set" isn't itself treated as a problem).
     var removeHtml = v.set
-      ? ' <button type="button" class="env-var-remove" data-name="' + escapeHtml(v.name) + '">Remove</button>'
+      ? ' <button type="button" class="env-var-remove" data-name="' + escapeHtml(v.name) + '" data-slot="' + escapeHtml(v.slot) + '">Remove</button>'
       : '';
     return '<tr>' +
-      '<td><code>' + escapeHtml(v.name) + '</code>' + sharedNote + '</td>' +
+      '<td><code>' + escapeHtml(v.name) + '</code>' + slotNote + sharedNote + '</td>' +
       '<td style="max-width:320px">' + escapeHtml(v.description || '') + '</td>' +
       '<td>' + statusHtml + '</td>' +
-      '<td><form class="add-source env-var-form" data-name="' + escapeHtml(v.name) + '">' +
+      '<td><form class="add-source env-var-form" data-name="' + escapeHtml(v.name) + '" data-slot="' + escapeHtml(v.slot) + '">' +
         fieldHtml +
         '<button type="submit">Save</button>' +
       '</form>' + removeHtml + '</td>' +
@@ -1281,10 +1293,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         ev.preventDefault();
         var form = ev.currentTarget;
         var varName = form.getAttribute('data-name');
+        var slot = form.getAttribute('data-slot');
         var value = new FormData(form).get('value');
         var submitBtn = form.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
-        fetch('/agents/' + encodeURIComponent(name) + '/env/' + encodeURIComponent(varName), {
+        fetch('/agents/' + encodeURIComponent(name) + '/env/' + encodeURIComponent(varName) + '?slot=' + encodeURIComponent(slot), {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ value: value }),
@@ -1305,13 +1318,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       removeButtons[j].addEventListener('click', function (ev) {
         var btn = ev.currentTarget;
         var varName = btn.getAttribute('data-name');
+        var slot = btn.getAttribute('data-slot');
         // A destructive action (clearing a configured value, possibly a
         // secret nothing else has a copy of) gets the one confirm() this
         // whole tab uses — every other action here is a plain upsert,
         // nothing else to lose by clicking it again.
-        if (!confirm('Remove ' + varName + '? Any tool/ability relying on it falls back to its own default (if it has one) or starts failing until it is set again.')) return;
+        var what = slot === 'agent' ? 'the agent-specific value of ' + varName : varName;
+        if (!confirm('Remove ' + what + '? Any tool/ability relying on it falls back to its own default (if it has one) or starts failing until it is set again.')) return;
         btn.disabled = true;
-        fetch('/agents/' + encodeURIComponent(name) + '/env/' + encodeURIComponent(varName), { method: 'DELETE' })
+        fetch('/agents/' + encodeURIComponent(name) + '/env/' + encodeURIComponent(varName) + '?slot=' + encodeURIComponent(slot), { method: 'DELETE' })
           .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
           .then(function (result) {
             if (!result.ok) throw new Error(result.body.error || 'request failed');

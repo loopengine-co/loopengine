@@ -149,6 +149,53 @@ two numbers to keep in sync instead of one.
   buried in each tool file for an installer/admin to have to go find).
   `secret: true` means the Admin UI never echoes the value back once
   set — see "Managing ability secrets in the Admin UI" below.
+  `scope` says how the value is shared across the agents that install
+  the ability — see "Per-agent values" below.
+
+### Per-agent values
+
+Several agents in one project can install the same ability and need
+different values for some of its settings — each agent's own Telegram
+bot token, or a different default chat to post to. Declare that with
+`scope` on the `env` entry:
+
+| `scope` | Agent with its own value | Agent without one |
+| --- | --- | --- |
+| `shared` (default) | — (not offered) | the project `.env` value |
+| `overridable` | its own value | falls back to the project `.env` value |
+| `agent` | its own value | not set — `ctx.env.require` throws |
+
+```json
+"env": [
+  { "name": "TELEGRAM_BOT_TOKEN", "secret": true, "scope": "agent" },
+  { "name": "TELEGRAM_DEFAULT_CHAT_ID", "scope": "overridable" }
+]
+```
+
+Use `agent` when sharing a value would be a bug rather than a sensible
+default: a bot token decides *who* the agent speaks as, and two agents
+silently sharing one would post as the same bot (and fight over the
+same incoming updates). `perAgent: true`, from before `scope` existed,
+still works and means `overridable`.
+
+Per-agent values live in the agent's own `agents/<name>/.env`
+(gitignored by the same `.env` rule as the project's). Tools read them
+through `ctx`, `execute`'s second argument, rather than `process.env` —
+the runtime resolves the right agent, including for a subagent:
+
+```ts
+execute: async (input, ctx) => {
+  const token = ctx.env.require('TELEGRAM_BOT_TOKEN')     // throws: "... is not set for agent 'growth-agent'"
+  const chatId = input.chatId ?? ctx.env.get('TELEGRAM_DEFAULT_CHAT_ID')
+  // ctx.agentName, ctx.tenant, ctx.sessionId are there too
+}
+```
+
+`ctx.env.get(name)` checks, in order: the agent's own `.env`; the older
+prefixed project var `<AGENT_NAME>_<name>` (so projects configured that
+way keep working); then `process.env[name]`, unless an installed ability
+declared `name` with `scope: "agent"`. Per-agent values are never copied
+into `process.env`, since that's shared by every agent in the process.
 
 ## Installing
 
@@ -282,12 +329,17 @@ Mechanically:
 
 - The Admin UI reads every installed ability's `env` list (from every
   agent's `.loopengine-abilities.json`) and shows one row per declared
-  var name: description, which ability(ies) declare it, and whether
-  `process.env[name]` currently has a value. More than one ability
+  var name and slot: a shared row for the project `.env` (unless the var
+  is `scope: "agent"`), plus an agent row for `agents/<name>/.env` when
+  its scope allows one (see "Per-agent values" above) — description,
+  which ability(ies) declare it, and whether that slot currently has a
+  value. More than one ability
   declaring the same name merges into that one row rather than hiding
   all but the first — see the "Open questions" section below for why
   that's surfaced, not resolved.
-- Submitting a new value does two things, not one: upserts the
+- Submitting a new value on an agent row writes only to that agent's
+  own `.env` (`PUT .../env/<NAME>?slot=agent`), never `process.env`.
+  Submitting one on a shared row does two things, not one: upserts the
   `KEY=VALUE` line into the project's `.env` file (a new small
   parse-and-upsert utility — preserve every other line/comment, replace
   or append the one key), and sets `process.env[name]` on the *current*

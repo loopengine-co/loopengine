@@ -9,7 +9,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agentDir } from '../core/gateway-tools.js'
+import { agentEnvFilePath, agentScopedEnvVarName, envScopeOf, readAgentEnvFile, type EnvScope } from '../core/agent-env.js'
 import type { AbilityEnvDecl, InstalledAbilityRecord } from '../bin/ability-manager.js'
+
+export { agentScopedEnvVarName }
 
 export class EnvVarNameError extends Error {}
 
@@ -20,6 +23,19 @@ const ENV_VAR_NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/
 export interface DeclaredEnvVar {
   name: string
   description?: string
+  /** Which value this row reads and writes: `shared` = the project
+   * .env, `agent` = this agent's own agents/<name>/.env. A var declared
+   * `overridable` gets one row of each; `agent` only the agent row. */
+  slot: 'shared' | 'agent'
+  /** The scope the declaring ability gave this var (see
+   * core/agent-env.ts's EnvScope) — the strictest one when more than
+   * one ability declares it. */
+  scope: EnvScope
+  /** Agent rows only, when set: `agent` = from agents/<name>/.env,
+   * `legacy` = from the older prefixed project var named `legacyName`
+   * (see agentScopedEnvVarName), still honored until replaced. */
+  source?: 'agent' | 'legacy'
+  legacyName?: string
   secret: boolean
   /** Every ability that declares this name, in install order — usually
    * one, but see listDeclaredEnvVars's own doc comment for why this is
@@ -46,9 +62,13 @@ function provenancePath(agentName: string): string {
   return join(agentDir(agentName), '.loopengine-abilities.json')
 }
 
+const SCOPE_STRICTNESS: Record<EnvScope, number> = { shared: 0, overridable: 1, agent: 2 }
+
 /** Every env var any ability installed for `agentName` declared it
- * needs, merged by name. There's one .env per *project*, not per agent
- * or per ability, so this can't actually resolve a genuine cross-ability
+ * needs, merged by name — one row per slot it can be set in (see
+ * DeclaredEnvVar.slot): a `shared` row for the project .env, an `agent`
+ * row for this agent's own .env when the var's scope allows one. There's
+ * one shared .env per *project*, not per ability, so this can't actually resolve a genuine cross-ability
  * name collision (two abilities declaring, say, "API_KEY" for two
  * unrelated services still both read whichever single value ends up
  * set — there is no per-ability slot to give them) — unlike a tool or
@@ -67,42 +87,52 @@ function provenancePath(agentName: string): string {
  * safer default, since treating a real secret as non-secret because a
  * different ability's own declaration happened to be checked first
  * would be the one direction genuinely worth avoiding. `set` is read
- * live off `process.env`, not cached, so it reflects whatever the last
- * `setEnvVar` call — or a plain restart picking up `.env` — actually
- * did. */
-/** `varName`'s own per-agent override name (see AbilityEnvDecl.perAgent)
- * — `<AGENT_NAME>_<varName>`, with `agentName` upper-cased and anything
- * that isn't `[A-Z0-9_]` (a hyphen, most likely — agent directory names
- * are kebab-case) turned into `_`, same alphabet ENV_VAR_NAME_PATTERN
- * already requires. Guards against a result starting with a digit (a
- * from-digits agent name, or an agent name that's entirely punctuation)
- * the same way that pattern would otherwise reject — by prefixing one
- * more `_` — though in practice agent names are never actually bare
- * digits. */
-export function agentScopedEnvVarName(agentName: string, varName: string): string {
-  const prefix = agentName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
-  return `${/^[0-9]/.test(prefix) ? '_' : ''}${prefix}_${varName}`
-}
-
+ * live (process.env for a shared row, the agent's own .env file for an
+ * agent row), not cached. */
 export function listDeclaredEnvVars(agentName: string): DeclaredEnvVar[] {
   const path = provenancePath(agentName)
   if (!existsSync(path)) return []
 
   const provenance = JSON.parse(readFileSync(path, 'utf8')) as Record<string, InstalledAbilityRecord>
-  const byName = new Map<string, DeclaredEnvVar>()
+  const agentValues = readAgentEnvFile(agentDir(agentName))
+  const rows = new Map<string, DeclaredEnvVar>()
 
-  function upsert(name: string, abilityName: string, decl: AbilityEnvDecl, description: string | undefined): void {
-    const existing = byName.get(name)
+  function upsert(slot: 'shared' | 'agent', abilityName: string, decl: AbilityEnvDecl, description: string | undefined): void {
+    const scope = envScopeOf(decl)
+    const key = `${slot}:${decl.name}`
+    const existing = rows.get(key)
     if (existing) {
       existing.abilityNames.push(abilityName)
       existing.secret = existing.secret || decl.secret === true
       if (existing.secret) existing.value = undefined
+      if (SCOPE_STRICTNESS[scope] > SCOPE_STRICTNESS[existing.scope]) existing.scope = scope
       return
     }
-    const rawValue = process.env[name]
-    byName.set(name, {
-      name,
+
+    let rawValue: string | undefined
+    let source: DeclaredEnvVar['source']
+    let legacyName: string | undefined
+    if (slot === 'shared') {
+      rawValue = process.env[decl.name]
+    } else if (agentValues[decl.name] !== undefined) {
+      rawValue = agentValues[decl.name]
+      source = 'agent'
+    } else {
+      const legacy = agentScopedEnvVarName(agentName, decl.name)
+      rawValue = process.env[legacy]
+      if (rawValue !== undefined) {
+        source = 'legacy'
+        legacyName = legacy
+      }
+    }
+
+    rows.set(key, {
+      name: decl.name,
       description,
+      slot,
+      scope,
+      source,
+      legacyName,
       secret: decl.secret === true,
       abilityNames: [abilityName],
       set: rawValue !== undefined,
@@ -114,22 +144,23 @@ export function listDeclaredEnvVars(agentName: string): DeclaredEnvVar[] {
 
   for (const [abilityName, record] of Object.entries(provenance)) {
     for (const decl of record.env) {
-      upsert(decl.name, abilityName, decl, decl.description)
-      // A perAgent var also gets its own separate, independently
-      // set/unset row for this one agent's override — see
-      // AbilityEnvDecl.perAgent's own doc comment for why this is a
-      // second row, not a replacement for the shared one above (an
-      // ability's own tool code checks the override first and falls
-      // back to the shared value, so both need to stay independently
-      // visible and settable here).
-      if (decl.perAgent) {
-        const scopedName = agentScopedEnvVarName(agentName, decl.name)
-        const overrideDescription = `Overrides ${decl.name} for this agent only — if unset, falls back to the shared value above.${decl.description ? ` ${decl.description}` : ''}`
-        upsert(scopedName, abilityName, decl, overrideDescription)
+      const scope = envScopeOf(decl)
+      if (scope !== 'agent') upsert('shared', abilityName, decl, decl.description)
+      if (scope === 'overridable') {
+        upsert('agent', abilityName, decl, `This agent's own value — if unset, falls back to the shared value.${decl.description ? ` ${decl.description}` : ''}`)
+      } else if (scope === 'agent') {
+        upsert('agent', abilityName, decl, `Set per agent — never shared with or borrowed from other agents.${decl.description ? ` ${decl.description}` : ''}`)
       }
     }
   }
-  return [...byName.values()]
+
+  // A name that's `agent`-scoped by any declaring ability is never read
+  // from the shared slot (core/agent-env.ts's createAgentEnv), so a
+  // shared row for it would only mislead.
+  for (const [key, row] of rows) {
+    if (row.slot === 'shared' && rows.get(`agent:${row.name}`)?.scope === 'agent') rows.delete(key)
+  }
+  return [...rows.values()]
 }
 
 // process.cwd(), matching exactly where bin/cli.ts's own runTsx passes
@@ -164,19 +195,15 @@ function serializeEnvValue(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
-/** Upserts `NAME=VALUE` into the project's `.env` file — preserving
- * every other line (comments, blank lines, unrelated keys) — and
- * applies it to *this* running process immediately via `process.env`,
- * so a newly-installed ability's tools work without a restart. Callers
- * (the PUT route in adapters/http.ts) are responsible for refusing to
- * call this at all when `LOOPENGINE_ADMIN_AUTH` isn't set — this
- * function itself has no notion of HTTP auth, it just writes. */
-export function setEnvVar(name: string, value: string): void {
+function assertEnvVarName(name: string): void {
   if (!ENV_VAR_NAME_PATTERN.test(name)) {
     throw new EnvVarNameError(`"${name}" isn't a valid env var name (uppercase letters, digits, underscore, not starting with a digit).`)
   }
+}
 
-  const path = envFilePath()
+/** Upserts `NAME=VALUE` into the .env file at `path`, preserving every
+ * other line (comments, blank lines, unrelated keys). */
+function upsertEnvFileLine(path: string, name: string, value: string): void {
   const lines = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : []
   const newLine = `${name}=${serializeEnvValue(value)}`
 
@@ -193,6 +220,28 @@ export function setEnvVar(name: string, value: string): void {
   }
 
   writeFileSync(path, lines.join('\n') + '\n')
+}
+
+/** Removes NAME= from the .env file at `path`, if present. Only
+ * rewrites the file when something actually changed — a no-op removal
+ * shouldn't still touch the file's own mtime/trailing-newline shape for
+ * no reason. */
+function removeEnvFileLine(path: string, name: string): void {
+  if (!existsSync(path)) return
+  const lines = readFileSync(path, 'utf8').split('\n')
+  const filtered = lines.filter((line) => !line.startsWith(`${name}=`))
+  if (filtered.length !== lines.length) writeFileSync(path, filtered.join('\n').replace(/\n*$/, '\n'))
+}
+
+/** Upserts `NAME=VALUE` into the project's `.env` file and applies it to
+ * *this* running process immediately via `process.env`, so a
+ * newly-installed ability's tools work without a restart. Callers (the
+ * PUT route in adapters/http.ts) are responsible for refusing to call
+ * this at all when `LOOPENGINE_ADMIN_AUTH` isn't set — this function
+ * itself has no notion of HTTP auth, it just writes. */
+export function setEnvVar(name: string, value: string): void {
+  assertEnvVarName(name)
+  upsertEnvFileLine(envFilePath(), name, value)
   process.env[name] = value
 }
 
@@ -203,24 +252,30 @@ export function setEnvVar(name: string, value: string): void {
  * *this* running process's own process.env immediately, the same
  * "no restart needed" promise setEnvVar already makes. A no-op,
  * not an error, when the var was never set in .env to begin with —
- * same reasoning the DELETE route calling this treats a missing name
- * as success rather than a 404: the end state ("not set") is identical
- * either way, and the caller has no way to distinguish "I removed it"
- * from "it was already gone" that would actually matter to them. */
+ * the end state ("not set") is identical either way. */
 export function unsetEnvVar(name: string): void {
-  if (!ENV_VAR_NAME_PATTERN.test(name)) {
-    throw new EnvVarNameError(`"${name}" isn't a valid env var name (uppercase letters, digits, underscore, not starting with a digit).`)
-  }
-
-  const path = envFilePath()
-  if (existsSync(path)) {
-    const lines = readFileSync(path, 'utf8').split('\n')
-    const filtered = lines.filter((line) => !line.startsWith(`${name}=`))
-    // Only rewrites the file when something actually changed — a
-    // no-op removal shouldn't still touch the file's own mtime/trailing-
-    // newline shape for no reason. Matches setEnvVar's own exactly-one-
-    // trailing-newline convention when it does.
-    if (filtered.length !== lines.length) writeFileSync(path, filtered.join('\n').replace(/\n*$/, '\n'))
-  }
+  assertEnvVarName(name)
+  removeEnvFileLine(envFilePath(), name)
   delete process.env[name]
+}
+
+/** Upserts `NAME=VALUE` into `agentName`'s own agents/<name>/.env — read
+ * by that agent's tools through ToolContext.env (core/agent-env.ts),
+ * which reads the file fresh on every lookup, so no restart is needed.
+ * Deliberately never copied into process.env: that's shared by every
+ * agent in the process, which is exactly what a per-agent value must
+ * not be. Same auth responsibility for callers as setEnvVar. */
+export function setAgentEnvVar(agentName: string, name: string, value: string): void {
+  assertEnvVarName(name)
+  upsertEnvFileLine(agentEnvFilePath(agentDir(agentName)), name, value)
+}
+
+/** Removes NAME= from `agentName`'s own .env — and the legacy prefixed
+ * project var for it too (see agentScopedEnvVarName), since createAgentEnv
+ * still falls back to that one, and "Remove" on this agent's row should
+ * leave the agent with no value of its own either way. */
+export function unsetAgentEnvVar(agentName: string, name: string): void {
+  assertEnvVarName(name)
+  removeEnvFileLine(agentEnvFilePath(agentDir(agentName)), name)
+  unsetEnvVar(agentScopedEnvVarName(agentName, name))
 }

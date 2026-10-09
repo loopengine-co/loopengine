@@ -14,7 +14,8 @@ import { Compactor } from './compaction.js'
 import { ToolLane, type ToolCall as LaneCall, type SafetyClassifier } from './toollane.js'
 import { Recovery } from './recovery.js'
 import { collectKnownUrls, correctToolUseInput, recordKnownUrlsFromResult } from './known-urls.js'
-import type { AgentConfig, ApproverChannel, QuestionHandler, ToolDefinition, ToolSchema } from '#core/agent-config.js'
+import type { AgentConfig, ApproverChannel, QuestionHandler, ToolContext, ToolDefinition, ToolSchema } from '#core/agent-config.js'
+import { agentDirFor, createAgentEnv, setAgentDir } from './agent-env.js'
 import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
 import { loadGatewayToolsFromDir } from './gateway-tools.js'
@@ -484,6 +485,7 @@ async function resolveSubagentConfig(config: AgentConfig, dir: string): Promise<
     resolved.skillsDirs = [join(dir, 'skills')]
   }
 
+  setAgentDir(resolved, dir)
   return resolved
 }
 
@@ -575,6 +577,8 @@ interface TurnContext {
    * off of this same resolution for their own lifecycle-hook fallback,
    * rather than calling resolveHttpNotifier a second time. */
   httpNotifier: ReturnType<typeof resolveHttpNotifier>
+  /** Passed to every tool's execute — see ToolContext's own doc comment. */
+  toolContext: ToolContext
 }
 
 async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, options: RunAgentOptions): Promise<TurnContext> {
@@ -766,6 +770,12 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     askUserTool,
     questionHandler,
     httpNotifier,
+    toolContext: {
+      agentName: config.name,
+      tenant: scope.tenant,
+      sessionId: options.sessionId,
+      env: createAgentEnv(config.name, agentDirFor(config)),
+    },
   }
 }
 
@@ -778,7 +788,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
  * fresh in each case) but mutated here via pushMessage, same as the
  * single function this was split out of always did. */
 async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
-  const { modelCall, log, scope, sessionId, skillGarden, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler } = ctx
+  const { modelCall, log, scope, sessionId, skillGarden, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext } = ctx
 
   function pushMessage(message: Message): void {
     messages.push(message)
@@ -977,7 +987,7 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
         approvedCalls.push({
           id: block.id!,
           name: block.name!,
-          execute: () => toolsByName.get(block.name!)!.execute(block.input ?? {}),
+          execute: () => toolsByName.get(block.name!)!.execute(block.input ?? {}, toolContext),
         })
         continue
       }
@@ -999,7 +1009,7 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
         approvedCalls.push({
           id: block.id!,
           name: block.name!,
-          execute: () => toolsByName.get(block.name!)!.execute(block.input ?? {}),
+          execute: () => toolsByName.get(block.name!)!.execute(block.input ?? {}, toolContext),
         })
       } else if (decision.decision === 'pending') {
         // No 'tool:started'/'tool:result' here — unlike a live 'ask',

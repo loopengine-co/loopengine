@@ -6,6 +6,7 @@ import { runAgent, resumeAgent, type Message, type ModelCall, type ModelResponse
 import type { AgentConfig, ToolDefinition, PendingQuestion } from '#core/agent-config.js'
 import type { LoopEvent } from '#core/loop-events.js'
 import { answerQuestion } from '#core/system-tools/index.js'
+import { setAgentDir } from '#core/agent-env.js'
 
 function baseConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
@@ -1496,7 +1497,7 @@ describe('runAgent known-URL correction', () => {
 
     await runAgent(config, modelCall, 'archive the object')
 
-    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/obj.png?Sig=CORRECT'] })
+    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/obj.png?Sig=CORRECT'] }, expect.objectContaining({ agentName: 'test-agent', tenant: 'default' }))
   })
 
   it('also corrects against a resumed session\'s prior history, not just this run\'s own results', async () => {
@@ -1541,7 +1542,7 @@ describe('runAgent known-URL correction', () => {
 
     await runAgent(config, modelCall, 'now archive it', priorHistory)
 
-    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/obj.png?Sig=CORRECT'] })
+    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/obj.png?Sig=CORRECT'] }, expect.objectContaining({ agentName: 'test-agent', tenant: 'default' }))
   })
 
   it('leaves a URL alone when its base was never seen in any known result', async () => {
@@ -1572,6 +1573,38 @@ describe('runAgent known-URL correction', () => {
 
     await runAgent(config, modelCall, 'archive it', [])
 
-    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/never-seen.png?Sig=ASIS'] })
+    expect(archive.execute).toHaveBeenCalledWith({ files: ['https://storage.example.com/never-seen.png?Sig=ASIS'] }, expect.objectContaining({ agentName: 'test-agent', tenant: 'default' }))
+  })
+})
+
+describe('runAgent ToolContext', () => {
+  it("passes each tool the running agent's name, tenant, session, and its own folder's env", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'loopengine-agent-env-'))
+    try {
+      writeFileSync(join(dir, '.env'), 'LOOPENGINE_TEST_TOOLCTX_CHAT=agent-chat\n')
+      let seen: { agentName: string; tenant: string; sessionId?: string; chat?: string } | undefined
+      const notify: ToolDefinition = {
+        name: 'notify',
+        description: 'Posts a message',
+        input_schema: { type: 'object', properties: {} },
+        execute: async (_input, ctx) => {
+          seen = { agentName: ctx.agentName, tenant: ctx.tenant, sessionId: ctx.sessionId, chat: ctx.env.get('LOOPENGINE_TEST_TOOLCTX_CHAT') }
+          return 'ok'
+        },
+      }
+      let turn = 0
+      const modelCall: ModelCall = async () => (turn++ === 0 ? toolUseResponse({ id: 't1', name: 'notify', input: {} }) : textResponse('done'))
+      const config = baseConfig({
+        tools: [notify],
+        rules: [{ scopePattern: 'acme/production/test-agent', tool: 'notify', decision: 'allow' }],
+      })
+      setAgentDir(config, dir)
+
+      await runAgent(config, modelCall, 'notify', [], { tenant: 'acme', sessionId: 's-1' })
+
+      expect(seen).toEqual({ agentName: 'test-agent', tenant: 'acme', sessionId: 's-1', chat: 'agent-chat' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

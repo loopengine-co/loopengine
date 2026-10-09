@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, agentScopedEnvVarName, EnvVarNameError } from '../web/env-admin.js'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, agentScopedEnvVarName, EnvVarNameError } from '../web/env-admin.js'
+import { createAgentEnv } from '../core/agent-env.js'
 
 // Same fixture-agent-under-the-real-agents-dir approach as
 // tests/actauth-admin.test.ts — env-admin.ts has no live-registry
@@ -39,6 +40,10 @@ function writeProvenance(record: unknown): void {
   writeFileSync(join(AGENT_DIR, '.loopengine-abilities.json'), JSON.stringify(record, null, 2))
 }
 
+function abilityWithEnv(env: unknown[]): unknown {
+  return { 'ability-a': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env } }
+}
+
 describe('listDeclaredEnvVars', () => {
   it('returns [] when no ability has been installed for this agent', () => {
     expect(listDeclaredEnvVars(AGENT_NAME)).toEqual([])
@@ -56,8 +61,8 @@ describe('listDeclaredEnvVars', () => {
 
     expect(vars).toEqual(
       expect.arrayContaining([
-        { name: 'LOOPENGINE_TEST_FIXTURE_VAR_A', description: 'from a', secret: true, abilityNames: ['ability-a'], set: false },
-        { name: 'LOOPENGINE_TEST_FIXTURE_VAR_B', description: 'from b', secret: false, abilityNames: ['ability-b'], set: true, value: 'already-set' },
+        { name: 'LOOPENGINE_TEST_FIXTURE_VAR_A', description: 'from a', slot: 'shared', scope: 'shared', secret: true, abilityNames: ['ability-a'], set: false },
+        { name: 'LOOPENGINE_TEST_FIXTURE_VAR_B', description: 'from b', slot: 'shared', scope: 'shared', secret: false, abilityNames: ['ability-b'], set: true, value: 'already-set' },
       ]),
     )
   })
@@ -98,42 +103,124 @@ describe('listDeclaredEnvVars', () => {
     expect(vars[0].value).toBeUndefined()
   })
 
-  it('adds a separate, independently set/unset override row for a perAgent var, alongside the shared one', () => {
-    delete process.env.LOOPENGINE_TEST_FIXTURE_PERAGENT
-    process.env[agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_PERAGENT')] = 'override-value'
-    writeProvenance({
-      'ability-a': {
-        version: '1.0.0',
-        tools: [],
-        skills: [],
-        actauthRules: [],
-        contentHashes: {},
-        env: [{ name: 'LOOPENGINE_TEST_FIXTURE_PERAGENT', description: 'shared default', secret: false, perAgent: true }],
-      },
-    })
+  it('gives an overridable var a shared row plus an agent row read from the agent\'s own .env', () => {
+    process.env.LOOPENGINE_TEST_FIXTURE_CHAT = 'shared-chat'
+    writeProvenance(abilityWithEnv([{ name: 'LOOPENGINE_TEST_FIXTURE_CHAT', description: 'chat id', scope: 'overridable' }]))
+    writeFileSync(join(AGENT_DIR, '.env'), 'LOOPENGINE_TEST_FIXTURE_CHAT=agent-chat\n')
 
     const vars = listDeclaredEnvVars(AGENT_NAME)
     expect(vars).toHaveLength(2)
-
-    const shared = vars.find((v) => v.name === 'LOOPENGINE_TEST_FIXTURE_PERAGENT')
-    expect(shared?.set).toBe(false)
-    expect(shared?.description).toBe('shared default')
-
-    const overrideName = agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_PERAGENT')
-    const override = vars.find((v) => v.name === overrideName)
-    expect(override?.set).toBe(true)
-    expect(override?.value).toBe('override-value')
-    expect(override?.abilityNames).toEqual(['ability-a'])
-    expect(override?.description).toContain('Overrides LOOPENGINE_TEST_FIXTURE_PERAGENT for this agent only')
+    expect(vars.find((v) => v.slot === 'shared')).toMatchObject({ name: 'LOOPENGINE_TEST_FIXTURE_CHAT', scope: 'overridable', set: true, value: 'shared-chat', description: 'chat id' })
+    const agentRow = vars.find((v) => v.slot === 'agent')
+    expect(agentRow).toMatchObject({ name: 'LOOPENGINE_TEST_FIXTURE_CHAT', scope: 'overridable', set: true, value: 'agent-chat', source: 'agent', abilityNames: ['ability-a'] })
+    expect(agentRow?.description).toContain('falls back to the shared value')
   })
 
-  it('does not add an override row for a var that is not declared perAgent', () => {
+  it('treats the legacy perAgent: true as overridable, and reports a value still held in the old prefixed var', () => {
+    process.env[agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_PERAGENT')] = 'override-value'
+    writeProvenance(abilityWithEnv([{ name: 'LOOPENGINE_TEST_FIXTURE_PERAGENT', perAgent: true }]))
+
+    const agentRow = listDeclaredEnvVars(AGENT_NAME).find((v) => v.slot === 'agent')
+    expect(agentRow).toMatchObject({
+      scope: 'overridable',
+      set: true,
+      value: 'override-value',
+      source: 'legacy',
+      legacyName: agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_PERAGENT'),
+    })
+  })
+
+  it('gives an agent-scoped var only an agent row, never a shared one', () => {
+    process.env.LOOPENGINE_TEST_FIXTURE_TOKEN = 'project-token'
+    writeProvenance(abilityWithEnv([{ name: 'LOOPENGINE_TEST_FIXTURE_TOKEN', secret: true, scope: 'agent' }]))
+
+    const vars = listDeclaredEnvVars(AGENT_NAME)
+    expect(vars).toHaveLength(1)
+    expect(vars[0]).toMatchObject({ slot: 'agent', scope: 'agent', set: false, secret: true })
+  })
+
+  it('drops the shared row when another ability declares the same name agent-scoped', () => {
     writeProvenance({
-      'ability-a': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env: [{ name: 'LOOPENGINE_TEST_FIXTURE_NOT_PERAGENT' }] },
+      'ability-a': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env: [{ name: 'LOOPENGINE_TEST_FIXTURE_MIXED', scope: 'overridable' }] },
+      'ability-b': { version: '1.0.0', tools: [], skills: [], actauthRules: [], contentHashes: {}, env: [{ name: 'LOOPENGINE_TEST_FIXTURE_MIXED', scope: 'agent' }] },
     })
 
     const vars = listDeclaredEnvVars(AGENT_NAME)
     expect(vars).toHaveLength(1)
+    expect(vars[0]).toMatchObject({ slot: 'agent', scope: 'agent', abilityNames: ['ability-a', 'ability-b'] })
+  })
+
+  it('does not add an agent row for a shared var', () => {
+    writeProvenance(abilityWithEnv([{ name: 'LOOPENGINE_TEST_FIXTURE_NOT_PERAGENT' }]))
+
+    const vars = listDeclaredEnvVars(AGENT_NAME)
+    expect(vars).toHaveLength(1)
+    expect(vars[0].slot).toBe('shared')
+  })
+})
+
+describe('setAgentEnvVar / unsetAgentEnvVar', () => {
+  beforeEach(() => mkdirSync(AGENT_DIR, { recursive: true }))
+
+  it('writes to the agent\'s own .env, never to process.env or the project .env', () => {
+    setAgentEnvVar(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_AGENT_ONLY', 'has a space')
+
+    expect(readFileSync(join(AGENT_DIR, '.env'), 'utf8')).toBe("LOOPENGINE_TEST_FIXTURE_AGENT_ONLY='has a space'\n")
+    expect(process.env.LOOPENGINE_TEST_FIXTURE_AGENT_ONLY).toBeUndefined()
+    expect(existsSync(envPath) ? readFileSync(envPath, 'utf8') : '').not.toContain('LOOPENGINE_TEST_FIXTURE_AGENT_ONLY')
+  })
+
+  it('removes the agent\'s own value and the legacy prefixed var for it', () => {
+    const legacy = agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_AGENT_RM')
+    setEnvVar(legacy, 'old')
+    setAgentEnvVar(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_AGENT_RM', 'new')
+
+    unsetAgentEnvVar(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_AGENT_RM')
+
+    expect(readFileSync(join(AGENT_DIR, '.env'), 'utf8')).not.toContain('LOOPENGINE_TEST_FIXTURE_AGENT_RM')
+    expect(process.env[legacy]).toBeUndefined()
+    expect(readFileSync(envPath, 'utf8')).not.toContain(legacy)
+  })
+})
+
+describe('createAgentEnv', () => {
+  beforeEach(() => mkdirSync(AGENT_DIR, { recursive: true }))
+
+  it('prefers the agent\'s own value, then the legacy prefixed var, then the shared one', () => {
+    process.env.LOOPENGINE_TEST_FIXTURE_ORDER = 'shared'
+    const env = createAgentEnv(AGENT_NAME, AGENT_DIR)
+    expect(env.get('LOOPENGINE_TEST_FIXTURE_ORDER')).toBe('shared')
+
+    process.env[agentScopedEnvVarName(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_ORDER')] = 'legacy'
+    expect(env.get('LOOPENGINE_TEST_FIXTURE_ORDER')).toBe('legacy')
+
+    setAgentEnvVar(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_ORDER', 'own')
+    expect(env.get('LOOPENGINE_TEST_FIXTURE_ORDER')).toBe('own')
+  })
+
+  it('keeps two agents\' values apart', () => {
+    const otherDir = join(process.cwd(), 'agents', 'env-admin-fixture-other')
+    try {
+      mkdirSync(otherDir, { recursive: true })
+      setAgentEnvVar(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_TWO', 'one')
+      setAgentEnvVar('env-admin-fixture-other', 'LOOPENGINE_TEST_FIXTURE_TWO', 'two')
+      expect(createAgentEnv(AGENT_NAME, AGENT_DIR).get('LOOPENGINE_TEST_FIXTURE_TWO')).toBe('one')
+      expect(createAgentEnv('env-admin-fixture-other', otherDir).get('LOOPENGINE_TEST_FIXTURE_TWO')).toBe('two')
+    } finally {
+      rmSync(otherDir, { recursive: true, force: true })
+    }
+  })
+
+  it('never falls back to the shared value for an agent-scoped var, and require() names the agent', () => {
+    process.env.LOOPENGINE_TEST_FIXTURE_BOT = 'someone-elses-token'
+    writeProvenance(abilityWithEnv([{ name: 'LOOPENGINE_TEST_FIXTURE_BOT', scope: 'agent' }]))
+    const env = createAgentEnv(AGENT_NAME, AGENT_DIR)
+
+    expect(env.get('LOOPENGINE_TEST_FIXTURE_BOT')).toBeUndefined()
+    expect(() => env.require('LOOPENGINE_TEST_FIXTURE_BOT')).toThrow(`LOOPENGINE_TEST_FIXTURE_BOT is not set for agent '${AGENT_NAME}'`)
+
+    setAgentEnvVar(AGENT_NAME, 'LOOPENGINE_TEST_FIXTURE_BOT', 'my-token')
+    expect(env.require('LOOPENGINE_TEST_FIXTURE_BOT')).toBe('my-token')
   })
 })
 

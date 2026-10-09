@@ -15,7 +15,8 @@ export type {
   RunAgentResult,
 } from '#core/run-agent.js'
 
-export type { AgentConfig, AgentModelConfig, ToolSchema, ToolDefinition } from '#core/agent-config.js'
+export type { AgentConfig, AgentModelConfig, ToolSchema, ToolDefinition, ToolContext, AgentEnv } from '#core/agent-config.js'
+export { createAgentEnv, agentDirFor, envScopeOf, type EnvScope } from '#core/agent-env.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via
@@ -173,7 +174,7 @@ export { playgroundHtml } from './web/playground.js'
 export { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from './web/skills-admin.js'
 export type { SkillContent } from './web/skills-admin.js'
 
-export { listDeclaredEnvVars, setEnvVar, unsetEnvVar, agentScopedEnvVarName, EnvVarNameError } from './web/env-admin.js'
+export { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, agentScopedEnvVarName, EnvVarNameError } from './web/env-admin.js'
 export type { DeclaredEnvVar } from './web/env-admin.js'
 
 export {

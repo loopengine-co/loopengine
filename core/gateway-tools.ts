@@ -83,7 +83,11 @@ export function agentDir(agentName: string): string {
   return join(agentsRootDir, agentName)
 }
 
-/** agentDir's own inverse, for a tool file that needs to know which
+/** @deprecated A tool can read `ctx.agentName` (ToolContext, passed as
+ * execute's second argument) instead — which, unlike this, is also
+ * right for a subagent's tools.
+ *
+ * agentDir's own inverse, for a tool file that needs to know which
  * agent it was installed under without an env var to tell it — an
  * ability's own tool file (copied to agents/<name>/tools/<file>.ts by
  * add-ability) calls this with its own `import.meta.url`, and gets

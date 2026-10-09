@@ -244,8 +244,31 @@ export interface ToolSchema {
   input_schema: Record<string, unknown>
 }
 
+/** An agent's view of its environment — see core/agent-env.ts's
+ * createAgentEnv for the exact lookup order (this agent's own
+ * agents/<name>/.env first, then the project-wide value, unless the
+ * declaring ability marked the var `scope: 'agent'`). */
+export interface AgentEnv {
+  get(name: string): string | undefined
+  /** Same as `get`, but throws a clear "not set for agent X" error
+   * instead of returning undefined. */
+  require(name: string): string
+}
+
+/** Passed as `execute`'s second argument on every call runAgent (and a
+ * durable approval's resume) makes — so a tool shared across several
+ * agents, typically one an ability installed, can tell which agent it's
+ * running for and read that agent's own settings via `env`, instead of
+ * working it out from its own file path or a prefixed env var name. */
+export interface ToolContext {
+  agentName: string
+  tenant: string
+  sessionId?: string
+  env: AgentEnv
+}
+
 export interface ToolDefinition extends ToolSchema {
-  execute: (input: Record<string, unknown>) => Promise<unknown>
+  execute: (input: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>
   /** Safe to run in ToolLane's parallel lane alongside other safe calls —
    * true for a read-only tool with no side effects and no shared mutable
    * state (a lookup, a search), false/omitted for anything that mutates
