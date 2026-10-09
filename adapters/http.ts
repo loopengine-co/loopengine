@@ -72,6 +72,7 @@ import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities
 import {
   installAbility,
   upgradeAbility,
+  removeAbility,
   listInstalledAbilities,
   backfillDependencies,
   AbilityAlreadyInstalledError,
@@ -1192,6 +1193,34 @@ async function handleAbilityUpgradePost(req: IncomingMessage, res: ServerRespons
         : err instanceof AbilityManifestError || err instanceof AbilityVersionError
           ? 422
           : 500
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+// Uninstalls an ability — deletes its tool/skill files and actauth
+// rules (bin/ability-manager.ts's own removeAbility). Same admin-auth
+// posture as install/upgrade above: this mutates the agent's own tree,
+// even though — unlike install/upgrade — it never runs new third-party
+// code. `removed`/`refused` pass straight through on success (not an
+// error: a dirty file left in place, same as remove-ability's own CLI
+// behavior, is a normal partial outcome the Admin UI shows and offers
+// to retry with force, not a failure).
+async function handleAbilityUninstallDelete(res: ServerResponse, agentName: string, abilityName: string, force: boolean): Promise<void> {
+  if (!adminAuth) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'Refusing to uninstall an ability without LOOPENGINE_ADMIN_AUTH configured — set it before uninstalling abilities through this route.' }),
+    )
+    return
+  }
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  try {
+    const result = removeAbility(agentName, abilityName, force)
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
+  } catch (err) {
+    const status = err instanceof AbilityNotInstalledError ? 404 : 500
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
   }
 }
@@ -2591,6 +2620,12 @@ const server = createServer(async (req, res) => {
     const abilityInstallDepsMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)\/install-deps$/)
     if (abilityInstallDepsMatch && req.method === 'POST') {
       await handleAbilityInstallDepsPost(req, res, decodeURIComponent(abilityInstallDepsMatch[1]), decodeURIComponent(abilityInstallDepsMatch[2]))
+      return
+    }
+    const abilityMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)$/)
+    if (abilityMatch && req.method === 'DELETE') {
+      const force = new URL(req.url ?? '/', 'http://localhost').searchParams.get('force') === 'true'
+      await handleAbilityUninstallDelete(res, decodeURIComponent(abilityMatch[1]), decodeURIComponent(abilityMatch[2]), force)
       return
     }
     const abilitiesMatch = pathname.match(/^\/agents\/([^/]+)\/abilities$/)

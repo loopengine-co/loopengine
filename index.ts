@@ -190,6 +190,7 @@ export type { ActauthRuleInput, ActauthConfigView } from './web/actauth-admin.js
 export {
   installAbility,
   upgradeAbility,
+  removeAbility,
   listInstalledAbilities,
   backfillDependencies,
   AbilityManifestError,

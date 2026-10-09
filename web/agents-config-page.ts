@@ -1380,6 +1380,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     if (deps.length) {
       actionHtml += ' <button type="button" class="ability-install-deps-btn" data-name="' + escapeHtml(a.name) + '" title="npm install ' + escapeHtml(deps.join(' ')) + '">Install deps</button>';
     }
+    actionHtml += ' <button type="button" class="ability-uninstall-btn" data-name="' + escapeHtml(a.name) + '">Uninstall</button>';
     return '<tr>' +
       '<td><code>' + escapeHtml(a.name) + '</code></td>' +
       '<td>' + escapeHtml(a.version) + '</td>' +
@@ -1545,6 +1546,49 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       });
   }
 
+  // Deletes an ability's tool/skill files and actauth rules
+  // (handleAbilityUninstallDelete / bin/ability-manager.ts's own
+  // removeAbility). A file hand-modified since install is left in place
+  // and reported back as refused rather than silently deleted — the
+  // confirm() below offers to retry with force once the operator has
+  // seen exactly which files those are, same two-step the CLI itself
+  // takes with --force. Always reloads the tab afterward: a partial
+  // uninstall (some files refused) still changes what is installed,
+  // it just does not remove the ability entirely from provenance.
+  function uninstallAbility(name, abilityName, statusEl, btn, force) {
+    if (btn) { btn.disabled = true; }
+    statusEl.className = 'hint';
+    statusEl.textContent = 'Uninstalling ' + abilityName + '...';
+    var url = '/agents/' + encodeURIComponent(name) + '/abilities/' + encodeURIComponent(abilityName) + (force ? '?force=true' : '');
+    fetch(url, { method: 'DELETE' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'request failed');
+        var removed = result.body.removed || [];
+        var refused = result.body.refused || [];
+        if (refused.length && !force) {
+          var retry = confirm(
+            abilityName + ': ' + refused.length + ' file(s) were hand-modified since install and left in place (' + refused.join(', ') + '). Remove them anyway?',
+          );
+          if (retry) {
+            uninstallAbility(name, abilityName, statusEl, btn, true);
+            return;
+          }
+        }
+        statusEl.className = refused.length ? 'error' : 'hint';
+        statusEl.textContent = removed.length
+          ? 'Removed ' + removed.join(', ') + '.' + (refused.length ? ' Left in place (hand-modified): ' + refused.join(', ') + '.' : '')
+          : 'Nothing removed.';
+        if (btn) { btn.disabled = false; }
+        loadAbilitiesTab(name);
+      })
+      .catch(function (err) {
+        statusEl.className = 'error';
+        statusEl.textContent = 'Could not uninstall: ' + err.message;
+        if (btn) { btn.disabled = false; }
+      });
+  }
+
   // Shared by the initial (empty-query) load right after the tab opens
   // and the search form's own submit — the empty-query case is just
   // "list every published ability" (the keyword filter alone, no extra
@@ -1591,6 +1635,16 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       installDepsBtns[d].addEventListener('click', function (ev) {
         var btn = ev.currentTarget;
         installAbilityDeps(name, btn.dataset.name, upgradeStatusEl, btn);
+      });
+    }
+
+    var uninstallBtns = content.querySelectorAll('.ability-uninstall-btn');
+    for (var r = 0; r < uninstallBtns.length; r++) {
+      uninstallBtns[r].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var abilityName = btn.dataset.name;
+        if (!confirm('Uninstall ' + abilityName + '? This deletes its tool and skill files and actauth rules from this agent.')) return;
+        uninstallAbility(name, abilityName, upgradeStatusEl, btn, false);
       });
     }
 
