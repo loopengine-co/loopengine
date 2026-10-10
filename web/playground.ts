@@ -698,13 +698,22 @@ ${consoleShellScript}
     }
   });
 
+  // "You" for the person typing, the agent's own name for its replies.
+  function messageLabel(role) {
+    if (role === 'user') return 'You';
+    if (role === 'assistant') return agentSelect.value || 'Agent';
+    if (role === 'error') return 'Error';
+    if (role === 'stopped') return 'Stopped';
+    return role;
+  }
+
   function appendChatMessage(role, text) {
     clearEmptyHint(chatPane);
     var div = document.createElement('div');
     div.className = 'msg msg-' + role;
     var label = document.createElement('div');
     label.className = 'msg-label';
-    label.textContent = role;
+    label.textContent = messageLabel(role);
     var body = document.createElement('div');
     body.className = 'msg-body';
     // Only an assistant's own reply gets rendered as markdown — a user's
