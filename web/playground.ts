@@ -1425,7 +1425,7 @@ ${consoleShellScript}
       var counts = {};
       if (cfg) {
         chips.push({ text: typeof cfg.model === 'string' ? cfg.model : cfg.model.provider + ' \u00b7 ' + (cfg.model.model || 'default model'), mono: true });
-        counts = { tools: cfg.tools.length, skills: cfg.skills.length, actauth: cfg.permissions.rules.length };
+        counts = { tools: cfg.tools.length, skills: cfg.skills.length, abilities: cfg.abilityCount, actauth: cfg.permissions.rules.length };
       }
       head.innerHTML = leShell.renderHead({ name: name, prompt: agent.systemPrompt, chips: chips, tab: 'chat', counts: counts });
     }

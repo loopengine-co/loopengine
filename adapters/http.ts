@@ -347,6 +347,10 @@ async function describeAgent(entry: RegistryEntry): Promise<Record<string, unkno
     contextBudgetTokens: config.contextBudgetTokens ?? 100000,
     skillIndexBudgetTokens: config.skillIndexBudgetTokens ?? 2000,
     skillsDirs: skillsDirs,
+    // How many abilities are installed — just the count, for the console's
+    // tab badge; the Abilities tab's own GET .../abilities has the detail
+    // (and its slower npm version lookups).
+    abilityCount: listInstalledAbilities(config.name).length,
     skills: skillIndex.map((s) => ({ name: s.name, description: s.description })),
     systemSkills: systemSkillIndex.map((s) => ({ name: s.name, description: s.description })),
     tools: tools.map(describeTool),

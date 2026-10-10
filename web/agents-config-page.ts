@@ -601,11 +601,13 @@ ${consoleShellScript}
     }
     return '<div class="le-cards" style="margin-bottom:28px">' +
       card(null, 'Model', escapeHtml(modelValue), escapeHtml(modelDetail)) +
+      (cfg.abilityCount != null
+        ? card('abilities', 'Abilities', String(cfg.abilityCount), cfg.abilityCount ? 'Installed for this agent' : 'Add tools, skills and rules in one install')
+        : card('abilities', 'Abilities', 'Browse', 'Add tools, skills and rules in one install')) +
       card('tools', 'Tools', String(cfg.tools.length), escapeHtml(toolNames.slice(0, 3).join(', ') + (toolNames.length > 3 ? ', \u2026' : '')) || 'None yet') +
+      card('skills', 'Skills', String(cfg.skills.length), escapeHtml(cfg.skills.map(function (k) { return k.name; }).join(', ')) || 'None yet') +
       card('actauth', 'Permissions', rules.length + (rules.length === 1 ? ' rule' : ' rules'),
         (asks ? asks + ' need approval \u00b7 ' : '') + 'unmatched calls: ' + escapeHtml(cfg.permissions.defaultDecision)) +
-      card('skills', 'Skills', String(cfg.skills.length), escapeHtml(cfg.skills.map(function (k) { return k.name; }).join(', ')) || 'None yet') +
-      card('abilities', 'Abilities', 'Browse', 'Add tools, skills and rules in one install') +
       card('env', 'Environment', 'Settings', '<span data-le-env-count="' + escapeHtml(cfg.name) + '">' + leShell.envCountHtml(cfg.name) + '</span> Values your installed abilities read') +
     '</div>';
   }
@@ -1635,6 +1637,8 @@ ${consoleShellScript}
     if (!content) return;
     content.innerHTML = renderAbilitiesConfigHtml(data);
     var installedNames = (data.abilities || []).map(function (a) { return a.name; });
+    // Keeps the tab badge right after an install or uninstall here.
+    leShell.setCount('abilities', installedNames.length);
     wireAbilitiesHandlers(name, installedNames);
     abilitiesLoadedFor = name;
   }
@@ -2538,7 +2542,7 @@ ${consoleShellScript}
         prompt: cfg.systemPrompt,
         chips: [modelChip(cfg), { text: 'unmatched calls: ' + cfg.permissions.defaultDecision }],
         tab: currentTab,
-        counts: { tools: cfg.tools.length, skills: cfg.skills.length, actauth: cfg.permissions.rules.length },
+        counts: { tools: cfg.tools.length, skills: cfg.skills.length, abilities: cfg.abilityCount, actauth: cfg.permissions.rules.length },
       }) +
       '<div class="le-scroll"><div class="le-page" style="display:block">' +
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +

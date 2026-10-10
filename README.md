@@ -117,9 +117,9 @@ code changes or redeploy needed for most of it:
 | --- | --- |
 | **Chat** | Talk to the agent, approve or deny tool calls as they come up, and follow each step (model calls, tool calls, permission checks) in the Run trace. Past conversations are under History. |
 | **Overview** | A card per tab (tools, permissions, skills, settings), plus the system prompt, model, hooks and limits, each editable in place. |
+| **Abilities** | Install, upgrade, and uninstall abilities (see [Ability system](#ability-system)). |
 | **Tools** | Your hand-written tools, tools from integrations (e.g. [Composio](https://composio.dev)) and subagents, with whether each call runs on its own, asks first, or is denied. Build an HTTP tool or connect an integration without touching a file. |
 | **Skills** | Create, edit, and delete `SKILL.md` files for this agent directly in the browser — write the body, preview the rendered markdown, save. |
-| **Abilities** | Install, upgrade, and uninstall abilities (see [Ability system](#ability-system)). |
 | **Permissions** | Add, edit, and delete permission rules (actauth) — who, tool, decision — and choose what happens when no rule matches. |
 | **Environment** | Every setting an installed ability reads, with its project-wide value and this agent's own value side by side, and which one the agent actually uses. A secret is never shown again once set. |
 

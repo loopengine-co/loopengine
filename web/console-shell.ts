@@ -45,8 +45,8 @@ export const consoleShellScript: string = `<script>
   // after the list loads.
   var toSet = {};
   var TABS = [
-    ['chat', 'Chat'], ['overview', 'Overview'], ['tools', 'Tools'], ['skills', 'Skills'],
-    ['abilities', 'Abilities'], ['actauth', 'Permissions'], ['env', 'Environment']
+    ['chat', 'Chat'], ['overview', 'Overview'], ['abilities', 'Abilities'], ['tools', 'Tools'],
+    ['skills', 'Skills'], ['actauth', 'Permissions'], ['env', 'Environment']
   ];
 
   function esc(s) {
@@ -138,6 +138,15 @@ export const consoleShellScript: string = `<script>
     renderList();
   }
 
+  // Updates one tab's count badge in place (e.g. after an install).
+  function setCount(tab, n) {
+    var link = document.querySelector('.le-tab[data-tab="' + tab + '"]');
+    if (!link) return;
+    var badge = link.querySelector('.le-count');
+    if (!badge) { badge = document.createElement('span'); badge.className = 'le-count'; link.appendChild(badge); }
+    badge.textContent = String(n);
+  }
+
   function setActive(name) {
     activeAgent = name;
     renderList();
@@ -155,6 +164,6 @@ export const consoleShellScript: string = `<script>
     if (app.classList.contains('nav-open') && !ev.target.closest('.le-sidebar')) app.classList.remove('nav-open');
   });
 
-  window.leShell = { ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml };
+  window.leShell = { ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount };
 })();
 </script>`
