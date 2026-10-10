@@ -113,7 +113,7 @@ describe('listDeclaredEnvVars', () => {
     expect(vars.find((v) => v.slot === 'shared')).toMatchObject({ name: 'LOOPENGINE_TEST_FIXTURE_CHAT', scope: 'overridable', set: true, value: 'shared-chat', description: 'chat id' })
     const agentRow = vars.find((v) => v.slot === 'agent')
     expect(agentRow).toMatchObject({ name: 'LOOPENGINE_TEST_FIXTURE_CHAT', scope: 'overridable', set: true, value: 'agent-chat', source: 'agent', abilityNames: ['ability-a'] })
-    expect(agentRow?.description).toContain('falls back to the shared value')
+    expect(agentRow?.description).toBe('chat id')
   })
 
   it('treats the legacy perAgent: true as overridable, and reports a value still held in the old prefixed var', async () => {

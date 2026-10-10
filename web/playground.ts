@@ -16,58 +16,56 @@
 // outer one. Plain string concatenation sidesteps that class of bug
 // entirely rather than relying on getting every escape right.
 import { devUiCss } from './dev-ui-styles.js'
+import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
 export const playgroundHtml: string = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoopEngine Playground</title>
+<title>LoopEngine Chat</title>
 <style>${devUiCss}
-  body {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  header {
-    padding: 10px 16px;
-    border-bottom: 1px solid light-dark(#ddd, #333);
+  /* The Chat tab of the agent console (see web/console-shell.ts): a
+     toolbar, then History | conversation | Run trace. History and Run
+     trace can each be hidden (.no-history / .no-trace on .chat-body). */
+  .chat-toolbar {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     flex-wrap: wrap;
+    padding: 8px 24px;
+    border-bottom: 1px solid var(--line);
   }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
-  #agentCaption {
-    font-size: 12px;
-    color: light-dark(#666, #999);
-    max-width: 360px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  #configLink { font-size: 12px; white-space: nowrap; text-decoration: none; }
+  .chat-toolbar button { padding: 4px 10px; font-size: 12.5px; }
+  .chat-toolbar button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-soft); }
   #sessionLabel {
     margin-left: auto;
     font-size: 12px;
-    font-family: ui-monospace, monospace;
-    color: light-dark(#666, #999);
+    font-family: var(--font-mono);
+    color: var(--ink-faint);
   }
   #sessionLabel.copyable { cursor: pointer; }
   #sessionLabel.copyable:hover { text-decoration: underline; }
-  main {
+  .chat-body {
     flex: 1;
-    display: flex;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr) 340px;
     min-height: 0;
   }
+  .chat-body.no-history { grid-template-columns: minmax(0, 1fr) 340px; }
+  .chat-body.no-trace { grid-template-columns: 220px minmax(0, 1fr); }
+  .chat-body.no-history.no-trace { grid-template-columns: minmax(0, 1fr); }
+  .chat-body.no-history .sessions-pane, .chat-body.no-trace .trace-pane { display: none; }
   .pane {
-    flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border-right: 1px solid light-dark(#ddd, #333);
+    min-height: 0;
+    border-right: 1px solid var(--line);
   }
   .pane:last-child { border-right: none; }
+  .sessions-pane, .trace-pane { background: var(--surface); }
+  .sessions-pane .pane-body { padding: 6px; gap: 2px; }
   .sessions-pane { flex: 0 0 200px; }
   .sessions-pane .pane-body { padding: 6px; gap: 2px; }
   .session-item {
@@ -78,8 +76,8 @@ export const playgroundHtml: string = `<!doctype html>
     padding: 6px 8px;
     cursor: pointer;
   }
-  .session-item:hover { background: light-dark(#f0f0f1, #26262b); }
-  .session-item.active { background: light-dark(#dbeafe, #1e3a5f); }
+  .session-item:hover { background: var(--surface); }
+  .session-item.active { background: var(--accent-soft); }
   .session-item .preview {
     flex: 1;
     min-width: 0;
@@ -88,7 +86,7 @@ export const playgroundHtml: string = `<!doctype html>
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .session-item .session-time { font-size: 10px; color: light-dark(#999, #777); flex-shrink: 0; }
+  .session-item .session-time { font-size: 10px; color: var(--ink-faint); flex-shrink: 0; }
   .session-item .session-remove {
     flex-shrink: 0;
     border: none;
@@ -96,61 +94,60 @@ export const playgroundHtml: string = `<!doctype html>
     padding: 0 2px;
     font-size: 13px;
     line-height: 1;
-    color: light-dark(#999, #777);
+    color: var(--ink-faint);
     display: none;
   }
   .session-item:hover .session-remove { display: block; }
-  .session-item .session-remove:hover { color: light-dark(#991b1b, #f87171); }
+  .session-item .session-remove:hover { color: var(--bad); }
   .pane h2 {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: light-dark(#666, #999);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
     margin: 0;
-    padding: 8px 12px;
-    border-bottom: 1px solid light-dark(#eee, #2a2a2e);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
   }
   .pane-body {
     flex: 1;
     overflow-y: auto;
-    padding: 10px 12px;
+    padding: 12px 14px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
-  .msg { max-width: 90%; }
+  .chat-pane .pane-body { padding: 20px 24px; gap: 14px; }
+  .msg { max-width: min(72ch, 92%); }
   .msg-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    color: light-dark(#999, #777);
-    margin-bottom: 2px;
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin-bottom: 3px;
   }
   .msg-body {
-    padding: 8px 10px;
-    border-radius: 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
     white-space: pre-wrap;
     word-break: break-word;
   }
   .msg-user { align-self: flex-end; }
-  .msg-user .msg-body { background: light-dark(#dbeafe, #1e3a5f); }
-  .msg-assistant .msg-body { background: light-dark(#fff, #2a2a2e); border: 1px solid light-dark(#ddd, #3a3a3e); }
-  .msg-error .msg-body { background: light-dark(#fee2e2, #4a1f1f); color: light-dark(#991b1b, #f87171); }
-  .msg-stopped .msg-body { font-style: italic; color: light-dark(#666, #999); background: light-dark(#f3f3f4, #26262b); }
+  .msg-user .msg-body { background: var(--accent-soft); }
+  .msg-assistant .msg-body { background: var(--surface); }
+  .msg-error .msg-body { background: var(--bad-soft); color: var(--bad); }
+  .msg-stopped .msg-body { font-style: italic; color: var(--ink-muted); background: var(--surface); }
   .msg-thinking .msg-body { display: inline-flex; gap: 4px; padding: 11px 10px; }
   .msg-approval .msg-body {
-    background: light-dark(#fefce8, #422006);
-    border: 1px solid light-dark(#eab308, #a16207);
+    background: var(--bg);
+    border: 1px solid var(--warn);
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
   .approval-tool { font-family: ui-monospace, monospace; font-weight: 600; }
-  .approval-scope { font-size: 11px; color: light-dark(#666, #999); }
+  .approval-scope { font-size: 11px; color: var(--ink-muted); }
   .approval-reason { font-size: 12px; }
   .approval-args {
     font-size: 11px;
     margin: 0;
-    background: light-dark(#fff, #26262b);
+    background: var(--bg);
     border-radius: 6px;
     padding: 6px 8px;
     overflow-x: auto;
@@ -159,12 +156,12 @@ export const playgroundHtml: string = `<!doctype html>
   }
   .approval-actions { display: flex; gap: 8px; }
   .approval-actions button { font-size: 12px; padding: 5px 12px; }
-  .approval-actions .approve { background: light-dark(#dcfce7, #14532d); }
-  .approval-actions .deny { background: light-dark(#fee2e2, #450a0a); }
-  .approval-status { font-size: 12px; font-style: italic; color: light-dark(#666, #999); }
+  .approval-actions .approve { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .approval-actions .deny { color: var(--bad); }
+  .approval-status { font-size: 12px; font-style: italic; color: var(--ink-muted); }
   .msg-question .msg-body {
-    background: light-dark(#eff6ff, #1e293b);
-    border: 1px solid light-dark(#3b82f6, #60a5fa);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -175,7 +172,7 @@ export const playgroundHtml: string = `<!doctype html>
   .question-answer-row { display: flex; gap: 6px; }
   .question-answer-row input { flex: 1; font-size: 12px; }
   .question-answer-row button { font-size: 12px; padding: 5px 12px; }
-  .question-status { font-size: 12px; font-style: italic; color: light-dark(#666, #999); }
+  .question-status { font-size: 12px; font-style: italic; color: var(--ink-muted); }
   /* An assistant message's rendered markdown (renderMessageMarkdown) —
      tight margins since .msg-body already pads the bubble; a nested
      paragraph/heading with normal margins would double up on that. */
@@ -183,10 +180,10 @@ export const playgroundHtml: string = `<!doctype html>
   .msg-body p:first-child { margin-top: 0; }
   .msg-body p:last-child { margin-bottom: 0; }
   .msg-body h1, .msg-body h2, .msg-body h3, .msg-body h4 { margin: 10px 0 4px; font-size: 14px; }
-  .msg-body code { font-family: ui-monospace, monospace; font-size: 12px; background: light-dark(#f3f3f4, #333); padding: 1px 4px; border-radius: 4px; }
-  .msg-body pre { background: light-dark(#f3f3f4, #26262b); border-radius: 6px; padding: 8px; overflow-x: auto; }
+  .msg-body code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--line); padding: 1px 4px; border-radius: 4px; }
+  .msg-body pre { background: var(--surface); border-radius: 6px; padding: 8px; overflow-x: auto; }
   .msg-body pre code { background: none; padding: 0; }
-  .msg-body a { color: light-dark(#2563eb, #60a5fa); }
+  .msg-body a { color: var(--accent); }
   /* An image immediately followed by a download link (see
      renderMessageMarkdown's own doc comment) merges into this — full
      bubble width, a corner download icon that's a plain <a href> (a real
@@ -270,7 +267,7 @@ export const playgroundHtml: string = `<!doctype html>
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: light-dark(#999, #777);
+    background: var(--ink-faint);
     animation: dot-blink 1.4s infinite both;
   }
   .dot:nth-child(2) { animation-delay: 0.2s; }
@@ -278,7 +275,7 @@ export const playgroundHtml: string = `<!doctype html>
   @keyframes dot-blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
   .empty-hint { padding: 10px 2px; }
   .event {
-    border-left: 3px solid light-dark(#ccc, #444);
+    border-left: 3px solid var(--line);
     padding: 4px 8px;
     font-size: 12px;
   }
@@ -289,7 +286,7 @@ export const playgroundHtml: string = `<!doctype html>
     font-size: 11px;
     white-space: pre-wrap;
     word-break: break-word;
-    color: light-dark(#444, #aaa);
+    color: var(--ink-muted);
   }
   .event-actauth { border-left-color: #f59e0b; }
   .event-toollane { border-left-color: #3b82f6; }
@@ -300,54 +297,60 @@ export const playgroundHtml: string = `<!doctype html>
   .event-approval { border-left-color: #eab308; }
   .event-question { border-left-color: #3b82f6; }
   .composer {
-    border-top: 1px solid light-dark(#ddd, #333);
-    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+    padding: 12px 24px 16px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
-  .send-row { display: flex; gap: 8px; }
-  #messageInput { flex: 1; resize: vertical; height: 90px; }
+  .send-row { display: flex; gap: 8px; align-items: flex-end; }
+  #messageInput { flex: 1; min-width: 0; resize: vertical; height: 64px; border-radius: var(--radius); padding: 10px 12px; }
+  #sendButton { background: var(--accent); border-color: var(--accent); color: var(--on-accent); padding: 8px 16px; }
   #messageInput:disabled, #sendButton:disabled { cursor: not-allowed; }
-  details summary { cursor: pointer; font-size: 12px; color: light-dark(#666, #999); }
+  details summary { cursor: pointer; font-size: 12px; color: var(--ink-muted); }
   .advanced-hint { margin: 6px 0 0; font-size: 11px; }
   .advanced-fields { display: flex; gap: 8px; margin-top: 6px; }
   .advanced-fields > div { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-  .advanced-fields label { font-size: 11px; color: light-dark(#666, #999); }
+  .advanced-fields label { font-size: 11px; color: var(--ink-muted); }
   .advanced-fields textarea { height: 50px; font-family: ui-monospace, monospace; font-size: 11px; resize: vertical; }
-  @media (max-width: 720px) {
-    main { flex-direction: column; }
-    .pane { border-right: none; border-bottom: 1px solid light-dark(#ddd, #333); min-height: 160px; }
-    .pane:last-child { border-bottom: none; }
-    .sessions-pane { flex-basis: auto; }
+  @media (max-width: 860px) {
+    .chat-toolbar { padding: 8px 16px; }
+    .chat-body, .chat-body.no-history, .chat-body.no-trace { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, auto); overflow-y: auto; }
+    .chat-body .pane { border-right: none; border-bottom: 1px solid var(--line); }
+    .chat-pane { min-height: 60vh; }
+    .sessions-pane, .trace-pane { max-height: 40vh; }
+    .chat-pane .pane-body, .composer { padding-left: 16px; padding-right: 16px; }
   }
 </style>
 </head>
-<body>
-<nav class="topnav">
-  <a href="/agents">Agents</a>
-  <a href="/agents/config">Config</a>
-  <a href="/playground" class="active">Playground</a>
-</nav>
-<header>
-  <h1>LoopEngine Playground</h1>
-  <select id="agentSelect"></select>
-  <span id="agentCaption"></span>
-  <button id="newConversationButton" type="button">New conversation</button>
-  <a id="configLink" href="/agents/config">Agent config &rarr;</a>
-  <span id="sessionLabel">session: (new)</span>
-</header>
-<main>
+<body data-le-page="chat">
+<div class="le-app">
+${consoleSidebarHtml}
+<main class="le-main">
+  <div id="leHead"></div>
+  <div class="chat-toolbar">
+    <select id="agentSelect" hidden aria-label="Agent"></select>
+    <span id="agentCaption" hidden></span>
+    <a id="configLink" href="/agents/config" hidden>Agent config</a>
+    <button id="newConversationButton" type="button">New conversation</button>
+    <button id="historyToggle" type="button" aria-pressed="true">History</button>
+    <button id="traceToggle" type="button" aria-pressed="true">Run trace</button>
+    <span id="sessionLabel">session: (new)</span>
+  </div>
+  <div class="chat-body" id="chatBody">
   <section class="pane sessions-pane">
-    <h2>Sessions</h2>
+    <h2>History</h2>
     <div class="pane-body" id="sessionsPane"></div>
   </section>
-  <section class="pane">
-    <h2>Chat</h2>
+  <section class="pane chat-pane" aria-label="Conversation">
     <div class="pane-body" id="chatPane"></div>
     <div class="composer">
+      <div class="send-row">
+        <textarea id="messageInput" placeholder="Message&hellip; (Enter to send, Shift+Enter for a new line)"></textarea>
+        <button id="sendButton" type="button">Send</button>
+      </div>
       <details>
-        <summary>Advanced</summary>
+        <summary>Request options</summary>
         <p class="advanced-hint muted">For agents whose sessionIdFor/tenantFor need something beyond a plain sessionId — e.g. customer-service reads customerEmail from the body.</p>
         <div class="advanced-fields">
           <div>
@@ -360,17 +363,16 @@ export const playgroundHtml: string = `<!doctype html>
           </div>
         </div>
       </details>
-      <div class="send-row">
-        <textarea id="messageInput" placeholder="Message&hellip; (Enter to send, Shift+Enter for a new line)"></textarea>
-        <button id="sendButton" type="button">Send</button>
-      </div>
     </div>
   </section>
-  <section class="pane">
-    <h2>Loop events</h2>
+  <section class="pane trace-pane">
+    <h2>Run trace</h2>
     <div class="pane-body" id="timelinePane"></div>
   </section>
+  </div>
 </main>
+</div>
+${consoleShellScript}
 <div class="lightbox-overlay" id="lightboxOverlay">
   <div class="lightbox-inner">
     <button type="button" class="lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
@@ -1134,7 +1136,7 @@ export const playgroundHtml: string = `<!doctype html>
     var list = loadSavedSessions().filter(function (s) { return s.agent === agent; });
     sessionsPane.textContent = '';
     if (!list.length) {
-      setEmptyHint(sessionsPane, 'No saved sessions yet.');
+      setEmptyHint(sessionsPane, 'Past conversations with this agent appear here.');
       return;
     }
     for (var i = 0; i < list.length; i++) {
@@ -1244,7 +1246,7 @@ export const playgroundHtml: string = `<!doctype html>
     chatPane.textContent = '';
     toolCallCardsById = {};
     knownUrlsByBase = {};
-    setEmptyHint(timelinePane, 'Loop events (tool calls, permission checks, budget checks) will appear here as the agent runs.');
+    setEmptyHint(timelinePane, 'Each step of a turn (model calls, tool calls, permission checks) appears here as the agent runs.');
     renderSessionsPane();
 
     fetch('/agents/' + encodeURIComponent(item.agent) + '/sessions/' + encodeURIComponent(item.sessionId))
@@ -1401,9 +1403,60 @@ export const playgroundHtml: string = `<!doctype html>
     sessionLabel.title = '';
     var name = agentSelect.value;
     setEmptyHint(chatPane, name ? 'No messages yet \\u2014 say hi to ' + name + '.' : 'No messages yet \\u2014 pick an agent above to get started.');
-    setEmptyHint(timelinePane, 'Loop events (tool calls, permission checks, budget checks) will appear here as the agent runs.');
+    setEmptyHint(timelinePane, 'Each step of a turn (model calls, tool calls, permission checks) appears here as the agent runs.');
     renderSessionsPane();
   }
+
+  // The console's agent header + tabs (web/console-shell.ts), with this
+  // page as the Chat tab. Rendered from the /agents list right away, then
+  // again once this agent's config arrives with its model and counts.
+  function renderAgentHead() {
+    var head = document.getElementById('leHead');
+    var name = agentSelect.value;
+    if (!name) {
+      head.innerHTML = '<div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
+        '<div><h1>Chat</h1><p>No agents yet. <a href="/agents?new=1">Create one</a> or add a folder under agents/.</p></div></div></div>';
+      return;
+    }
+    leShell.setActive(name);
+    var agent = currentAgents.filter(function (a) { return a.name === name; })[0] || {};
+    function draw(cfg) {
+      var chips = [];
+      var counts = {};
+      if (cfg) {
+        chips.push({ text: typeof cfg.model === 'string' ? cfg.model : cfg.model.provider + ' \u00b7 ' + (cfg.model.model || 'default model'), mono: true });
+        counts = { tools: cfg.tools.length, skills: cfg.skills.length, actauth: cfg.permissions.rules.length };
+      }
+      head.innerHTML = leShell.renderHead({ name: name, prompt: agent.systemPrompt, chips: chips, tab: 'chat', counts: counts });
+    }
+    draw(null);
+    fetch('/agents/' + encodeURIComponent(name) + '/config')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (cfg) { if (cfg && agentSelect.value === name) draw(cfg); })
+      .catch(function () {});
+  }
+
+  // History and Run trace can each be hidden; remembered per browser.
+  // Both start hidden on a narrow screen, where they'd stack above and
+  // below the conversation.
+  var chatBody = document.getElementById('chatBody');
+  var historyToggle = document.getElementById('historyToggle');
+  var traceToggle = document.getElementById('traceToggle');
+  var panes = { history: window.innerWidth > 860, trace: window.innerWidth > 860 };
+  try {
+    var savedPanes = JSON.parse(localStorage.getItem('loopengine.chatPanes') || 'null');
+    if (savedPanes && window.innerWidth > 860) panes = savedPanes;
+  } catch (e) {}
+  function applyPanes() {
+    chatBody.classList.toggle('no-history', !panes.history);
+    chatBody.classList.toggle('no-trace', !panes.trace);
+    historyToggle.setAttribute('aria-pressed', String(panes.history));
+    traceToggle.setAttribute('aria-pressed', String(panes.trace));
+    try { localStorage.setItem('loopengine.chatPanes', JSON.stringify(panes)); } catch (e) {}
+  }
+  historyToggle.addEventListener('click', function () { panes.history = !panes.history; applyPanes(); });
+  traceToggle.addEventListener('click', function () { panes.trace = !panes.trace; applyPanes(); });
+  applyPanes();
 
   function loadAgents() {
     fetch('/agents')
@@ -1430,12 +1483,14 @@ export const playgroundHtml: string = `<!doctype html>
           ? 'Message\\u2026 (Enter to send, Shift+Enter for a new line)'
           : 'No agents registered';
         updateCaption();
+        renderAgentHead();
         resetConversation();
         updateSendButtonState();
         if (hasAgents) messageInput.focus();
       })
       .catch(function (err) {
         agentCaption.textContent = 'Could not load agents: ' + err.message;
+        renderAgentHead();
         resetConversation();
       });
   }
@@ -1623,6 +1678,7 @@ export const playgroundHtml: string = `<!doctype html>
 
   agentSelect.addEventListener('change', function () {
     updateCaption();
+    renderAgentHead();
     resetConversation();
     updateSendButtonState();
   });

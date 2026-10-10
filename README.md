@@ -108,17 +108,25 @@ working examples.
 
 ## Admin UI
 
-Run the HTTP adapter and open `http://localhost:8787/agents/config` — a
-live, editable view of every registered agent, no code changes or
-redeploy needed for most of it:
+Run the HTTP adapter and open `http://localhost:8787/agents` — one
+console for every registered agent: a sidebar of agents (with a badge
+when one still needs a setting), and for each agent a set of tabs. No
+code changes or redeploy needed for most of it:
 
 | Tab | What you can do |
 | --- | --- |
-| **Overview** | System prompt, model, every tool (with its JSON schema and parallel-safety), and a read-only view of the rules that would actually apply. |
+| **Chat** | Talk to the agent, approve or deny tool calls as they come up, and follow each step (model calls, tool calls, permission checks) in the Run trace. Past conversations are under History. |
+| **Overview** | A card per tab (tools, permissions, skills, settings), plus the system prompt, model, hooks and limits, each editable in place. |
+| **Tools** | Your hand-written tools, tools from integrations (e.g. [Composio](https://composio.dev)) and subagents, with whether each call runs on its own, asks first, or is denied. Build an HTTP tool or connect an integration without touching a file. |
 | **Skills** | Create, edit, and delete `SKILL.md` files for this agent directly in the browser — write the body, preview the rendered markdown, save. |
-| **Tools** | Local hand-written tools, gateway-sourced tools (e.g. [Composio](https://composio.dev)), and subagents-as-tools, in one place. Connect a new external gateway source or add/remove a tool without touching a file. |
-| **ActAuth** | Add, edit, and delete permission rules — scope, tool, condition, decision — and change `default_decision`, live. |
-| **Environment** | Every env var an ability (see [Ability system](#ability-system)) declared it needs, across everything installed for this agent — which ones are set, which are missing, and a form to set one. A value is never echoed back once set. |
+| **Abilities** | Install, upgrade, and uninstall abilities (see [Ability system](#ability-system)). |
+| **Permissions** | Add, edit, and delete permission rules (actauth) — who, tool, decision — and choose what happens when no rule matches. |
+| **Environment** | Every setting an installed ability reads, with its project-wide value and this agent's own value side by side, and which one the agent actually uses. A secret is never shown again once set. |
+
+Models and Integrations in the sidebar show which model providers have a
+key set and which outside tool sources are connected. Tabs deep-link:
+`/agents/config?agent=<name>&tab=tools`, `/playground?agent=<name>` for
+Chat.
 
 Every tab is backed by a real API (`GET /agents/:name/config`, `.../actauth`,
 `.../env`, ...) that reuses the exact same resolution `runAgent()` itself
@@ -264,10 +272,11 @@ content-negotiated on the `Accept` header, so nothing that already calls
 it as an API needs to change) to see every registered agent with links
 into the playground and config page below.
 
-**Dev playground:** open `http://localhost:8787/playground` (optionally
-`?agent=<name>` to preselect one) — pick an agent, chat with it, and watch
-that same loop-step event stream render live instead of reading raw SSE
-frames. Same `/messages/stream` route underneath.
+**Chat:** open `http://localhost:8787/playground` (optionally
+`?agent=<name>` to preselect one) — the console's Chat tab: talk to an
+agent and watch the loop-step event stream render live in the Run trace
+instead of reading raw SSE frames. Same `/messages/stream` route
+underneath.
 
 **Building your own client:** the playground is one UI on top of a typed
 event protocol, not the only way to consume a turn — see

@@ -26,109 +26,38 @@
 // concatenation, not a nested template literal, for the same
 // backtick/${}-escaping reason playground.ts's own header comment explains.
 import { devUiCss } from './dev-ui-styles.js'
+import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
 export const agentsConfigPageHtml: string = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoopEngine Agents</title>
+<title>LoopEngine Console</title>
 <style>${devUiCss}
-  body {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  /* Outer Agents/Models/Gateways section sidebar — matches
-     web/global-config-page.ts's own left nav, so this page (with
-     Agents pre-selected) and /config (with Models pre-selected) read as
-     two views of the same shell rather than unrelated pages. Models and
-     Gateways are real links out to /config?section=..., not client-side
-     panels rendered here too — that data/logic already lives in
-     global-config-page.ts, duplicating it here would just be two places
-     it could drift apart. Named .section-sidebar (not .sidebar) to avoid
-     colliding with nav.sidebar right below, which is the agent picker,
-     not this new outer one. */
-  .page-body { flex: 1; display: flex; min-height: 0; }
-  nav.section-sidebar {
-    width: 150px;
-    flex-shrink: 0;
-    border-right: 1px solid light-dark(#ddd, #333);
-    padding: 6px;
-  }
-  nav.section-sidebar a {
-    display: block;
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 13px;
-    text-decoration: none;
-    color: inherit;
-  }
-  nav.section-sidebar a:hover { background: light-dark(#eee, #26262b); }
-  nav.section-sidebar a.active { background: light-dark(#dbeafe, #1e3a5f); font-weight: 600; }
-  .layout { flex: 1; display: flex; min-height: 0; }
-  nav.sidebar {
-    width: 220px;
-    flex-shrink: 0;
-    border-right: 1px solid light-dark(#ddd, #333);
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-  #agentList { list-style: none; margin: 0; padding: 6px; flex: 1; }
-  #agentList li { border-radius: 6px; }
-  #agentList li a {
-    display: block;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: ui-monospace, monospace;
-    color: inherit;
-    text-decoration: none;
-  }
-  #agentList li a:hover { background: light-dark(#eee, #26262b); }
-  #agentList li.active a { background: light-dark(#dbeafe, #1e3a5f); font-weight: 600; }
-  main {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px 28px;
-  }
-  #empty { color: light-dark(#666, #999); font-size: 13px; }
-  h2 { font-size: 20px; margin: 0 0 4px; font-family: ui-monospace, monospace; }
-  .tabs {
-    display: flex;
-    gap: 18px;
-    margin: 14px 0 20px;
-    border-bottom: 1px solid light-dark(#ddd, #333);
-  }
-  .tabs button {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 8px 2px;
-    font-size: 13px;
-    cursor: pointer;
-    color: light-dark(#666, #999);
-  }
-  .tabs button:hover { color: light-dark(#1a1a1e, #e8e8ea); }
-  .tabs button.active {
-    color: light-dark(#1a1a1e, #e8e8ea);
-    border-bottom-color: light-dark(#1d4ed8, #60a5fa);
-    font-weight: 600;
-  }
-  section { margin-bottom: 22px; }
+  /* Each tab panel is a .le-page column inside the shell's scrolling
+     main area (see web/console-shell.ts); everything below styles the
+     panels' own content. */
+  #empty { color: var(--ink-muted); font-size: 13px; padding: 24px; }
+  .env-cell { display: grid; gap: 6px; }
+  .env-desc { max-width: 340px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  form.add-source.env-inline { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-width: 320px; }
+  form.add-source.env-inline input, form.add-source.env-inline select { flex: 1 1 140px; width: auto; min-width: 0; }
+  form.add-source.env-inline textarea { flex: 1 1 100%; }
+  form.add-source.env-inline button { padding: 4px 10px; }
+  .tab-panel .le-table-wrap table { border: 0; border-radius: 0; }
+  section { margin-bottom: 28px; }
   section h3 {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: light-dark(#666, #999);
-    margin: 0 0 8px;
-    border-bottom: 1px solid light-dark(#eee, #2a2a2e);
-    padding-bottom: 4px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0 0 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
   }
+  section > table, .tab-panel table { border: 1px solid var(--line); border-radius: var(--radius); border-collapse: separate; border-spacing: 0; overflow: hidden; }
   .hint-btn {
     font-size: 11px;
     text-transform: none;
@@ -138,18 +67,18 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .admin-subsection {
     margin-top: 14px;
     padding-top: 14px;
-    border-top: 1px dashed light-dark(#eee, #2a2a2e);
+    border-top: 1px dashed var(--line);
   }
   .admin-subsection h4 {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: light-dark(#666, #999);
+    color: var(--ink-muted);
     margin: 0 0 8px;
   }
   pre {
-    background: light-dark(#fff, #26262b);
-    border: 1px solid light-dark(#ddd, #3a3a3e);
+    background: var(--bg);
+    border: 1px solid var(--line);
     border-radius: 6px;
     padding: 10px 12px;
     font-size: 12px;
@@ -161,29 +90,29 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   th, td {
     text-align: left;
     padding: 6px 8px;
-    border-bottom: 1px solid light-dark(#eee, #2a2a2e);
+    border-bottom: 1px solid var(--line);
     vertical-align: top;
   }
-  th { color: light-dark(#666, #999); font-weight: 600; }
-  .decision-allow { color: light-dark(#166534, #86efac); }
-  .decision-ask { color: light-dark(#92400e, #fcd34d); }
-  .decision-deny { color: light-dark(#991b1b, #f87171); }
+  th { color: var(--ink-muted); font-weight: 600; }
+  .decision-allow { color: var(--good); }
+  .decision-ask { color: var(--warn); }
+  .decision-deny { color: var(--bad); }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 13px; }
-  .kv dt { color: light-dark(#666, #999); }
+  .kv dt { color: var(--ink-muted); }
   .kv dd { margin: 0; font-family: ui-monospace, monospace; }
-  .error { color: light-dark(#991b1b, #f87171); font-size: 13px; }
-  .hint { font-size: 11px; color: light-dark(#666, #999); }
+  .error { color: var(--bad); font-size: 13px; }
+  .hint { font-size: 11px; color: var(--ink-muted); }
   #playgroundLink { font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: normal; text-decoration: none; margin-left: 8px; }
   .source {
-    border: 1px solid light-dark(#ddd, #3a3a3e);
+    border: 1px solid var(--line);
     border-radius: 8px;
     padding: 12px 14px;
     margin-bottom: 10px;
   }
   .source-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .source-head h4 { margin: 0; font-size: 14px; font-family: ui-monospace, monospace; }
-  .status-ok { color: light-dark(#166534, #86efac); }
-  .status-error { color: light-dark(#991b1b, #f87171); }
+  .status-ok { color: var(--good); }
+  .status-error { color: var(--bad); }
   .tool-list { margin: 8px 0 0; padding-left: 0; font-size: 12px; }
   .tool-list li {
     margin-bottom: 2px;
@@ -194,11 +123,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .delete-btn {
     flex-shrink: 0;
     font-size: 12px;
-    color: light-dark(#991b1b, #f87171);
-    background: light-dark(#fee2e2, #3a1f1f);
-    border-color: light-dark(#f3b4b4, #6b3232);
+    color: var(--bad);
+    background: var(--bad-soft);
+    border-color: var(--bad);
   }
-  .delete-btn:hover { background: light-dark(#fecaca, #4a1f1f); }
+  .delete-btn:hover { background: var(--bad-soft); }
   /* Explicit rather than relying on inherited font-size: .edit-rule-btn
      sits inside a 12px table, but .edit-skill-btn sits in .source-head
      (no font-size of its own, so it'd otherwise inherit the page's
@@ -219,7 +148,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
      once there's nowhere left to wrap normally. */
   .tool-picker-label { flex: 1; min-width: 0; overflow-wrap: break-word; }
   form.add-source {
-    border: 1px solid light-dark(#ddd, #3a3a3e);
+    border: 1px solid var(--line);
     border-radius: 8px;
     padding: 14px;
     display: grid;
@@ -248,9 +177,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .body-field-head { display: flex; align-items: center; justify-content: space-between; }
   .md-toggle { display: flex; gap: 4px; }
   .md-toggle-btn { padding: 2px 8px; font-size: 11px; background: transparent; }
-  .md-toggle-btn.active { background: light-dark(#e8e8ea, #333338); font-weight: 600; }
+  .md-toggle-btn.active { background: var(--surface-2); font-weight: 600; }
   .markdown-body {
-    border: 1px solid light-dark(#ccc, #444);
+    border: 1px solid var(--line);
     border-radius: 6px;
     padding: 10px 14px;
     min-height: 280px;
@@ -258,17 +187,17 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     overflow-y: auto;
   }
   .markdown-body h1, .markdown-body h2 {
-    border-bottom: 1px solid light-dark(#eee, #333338);
+    border-bottom: 1px solid var(--line);
     padding-bottom: 4px;
   }
   .markdown-body pre {
-    background: light-dark(#f6f8fa, #26262b);
+    background: var(--surface);
     padding: 10px 12px;
     border-radius: 6px;
     overflow-x: auto;
   }
   .markdown-body code {
-    background: light-dark(#eee, #2a2a2e);
+    background: var(--line);
     padding: 1px 5px;
     border-radius: 4px;
     font-family: ui-monospace, monospace;
@@ -285,7 +214,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .tool-picker-list {
     max-height: 240px;
     overflow-y: auto;
-    border: 1px solid light-dark(#ddd, #3a3a3e);
+    border: 1px solid var(--line);
     border-radius: 6px;
     padding: 6px 8px;
   }
@@ -305,7 +234,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     gap: 8px;
     padding: 5px 2px;
     font-size: 12px;
-    border-bottom: 1px solid light-dark(#eee, #2a2a2e);
+    border-bottom: 1px solid var(--line);
   }
   .tool-picker-item:last-child { border-bottom: none; }
   /* Higher specificity than "form.add-source input { width: 100%; }" —
@@ -373,31 +302,17 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   }
 </style>
 </head>
-<body>
-<nav class="topnav">
-  <a href="/agents">Agents</a>
-  <a href="/agents/config" class="active">Config</a>
-  <a href="/playground">Playground</a>
-</nav>
-<div class="page-body">
-<nav class="section-sidebar">
-  <a href="/agents/config" class="active">Agents</a>
-  <a href="/config?section=models">Models</a>
-  <a href="/config?section=gateways">Gateways</a>
-</nav>
-<div class="layout">
-<nav class="sidebar">
-  <ul id="agentList"></ul>
-</nav>
-<main>
-  <div id="empty">Pick an agent to see its config.</div>
-  <div id="detail" style="display:none"></div>
+<body data-le-page="agent-config">
+<div class="le-app">
+${consoleSidebarHtml}
+<main class="le-main">
+  <div id="empty">Loading agents&hellip;</div>
+  <div id="detail" style="display:none;flex-direction:column;flex:1;min-height:0"></div>
 </main>
 </div>
-</div>
+${consoleShellScript}
 <script>
 (function () {
-  var agentList = document.getElementById('agentList');
   var empty = document.getElementById('empty');
   var detail = document.getElementById('detail');
   var currentName = null;
@@ -575,14 +490,31 @@ export const agentsConfigPageHtml: string = `<!doctype html>
 
   // ---- Overview tab ----
 
+  // Whether a call to this tool runs on its own, waits for a person, or
+  // never runs — read off the agent's resolved rules (cfg.permissions).
+  // A tool whose rules disagree by tenant/environment, or depend on a
+  // "when" condition, shows "depends" rather than picking one.
+  function runsPill(toolName) {
+    var perms = currentCfg && currentCfg.permissions;
+    if (!perms) return '';
+    var matching = perms.rules.filter(function (r) { return r.tool === toolName || r.tool === '*'; });
+    var decisions = [];
+    matching.forEach(function (r) { if (decisions.indexOf(r.decision) === -1) decisions.push(r.decision); });
+    var conditional = matching.some(function (r) { return r.when; });
+    if (!matching.length) return '<span class="le-pill ' + perms.defaultDecision + '" title="No rule names this tool; the default applies">' + escapeHtml(perms.defaultDecision) + '</span>';
+    if (decisions.length === 1 && !conditional) return '<span class="le-pill ' + decisions[0] + '">' + escapeHtml(decisions[0]) + '</span>';
+    return '<span class="le-pill neutral" title="' + escapeHtml(decisions.join(' / ')) + ', depending on tenant, environment or condition">depends</span>';
+  }
+
   function renderTools(tools) {
-    if (!tools.length) return '<p class="muted">No tools.</p>';
+    if (!tools.length) return '<p class="muted">None.</p>';
     var rows = tools.map(function (t) {
       return '<tr><td><code>' + escapeHtml(t.name) + '</code></td>' +
         '<td>' + escapeHtml(t.description) + '</td>' +
+        '<td>' + runsPill(t.name) + '</td>' +
         '<td>' + (t.safe ? 'yes' : 'no') + '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Name</th><th>Description</th><th>Parallel-safe</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Parallel-safe</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // Local tools' own table, unlike renderTools above (shared by Agent as
@@ -594,17 +526,18 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   // has no spec to repopulate an edit form from, so it just gets a blank
   // cell — not a button that would 404 the moment it's clicked.
   function renderLocalTools(tools) {
-    if (!tools.length) return '<p class="muted">No tools.</p>';
+    if (!tools.length) return '<p class="muted">No tools yet. Add one below, install an ability, or connect an integration.</p>';
     var rows = tools.map(function (t) {
       var actions = t.httpToolEditable
         ? '<button type="button" class="edit-http-tool-btn" data-name="' + escapeHtml(t.name) + '">Edit</button>'
         : '';
       return '<tr><td><code>' + escapeHtml(t.name) + '</code></td>' +
         '<td>' + escapeHtml(t.description) + '</td>' +
+        '<td>' + runsPill(t.name) + '</td>' +
         '<td>' + (t.safe ? 'yes' : 'no') + '</td>' +
         '<td>' + actions + '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Name</th><th>Description</th><th>Parallel-safe</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Parallel-safe</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // Overview's own tools table, unlike the Tools tab's three separately-
@@ -647,6 +580,34 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         '<td>' + escapeHtml(s.description) + '</td></tr>';
     }).join('');
     return '<table><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  // The top of Overview: one card per other tab, each a summary that
+  // links to the tab with the detail — Overview itself no longer repeats
+  // the full tool/skill/rule tables those tabs already show.
+  function renderOverviewCards(cfg) {
+    var rules = cfg.permissions.rules;
+    var asks = rules.filter(function (r) { return r.decision === 'ask'; }).length;
+    var toolNames = cfg.tools.map(function (t) { return t.name; });
+    var modelValue = typeof cfg.model === 'string' ? cfg.model : (cfg.model.model || cfg.model.provider);
+    var modelDetail = typeof cfg.model === 'string' ? 'custom createModelCall' : cfg.model.provider + (cfg.model.maxTokens != null ? ' \u00b7 max tokens ' + cfg.model.maxTokens : '');
+    function card(tab, label, value, detailText) {
+      var inner = '<span class="le-card-label"><span>' + label + '</span>' + (tab ? '<span aria-hidden="true">&rarr;</span>' : '') + '</span>' +
+        '<span class="le-card-value">' + value + '</span>' +
+        '<span class="le-card-detail">' + detailText + '</span>';
+      return tab
+        ? '<a class="le-card" data-tab="' + tab + '" href="' + leShell.tabHref(cfg.name, tab) + '">' + inner + '</a>'
+        : '<div class="le-card">' + inner + '</div>';
+    }
+    return '<div class="le-cards" style="margin-bottom:28px">' +
+      card(null, 'Model', escapeHtml(modelValue), escapeHtml(modelDetail)) +
+      card('tools', 'Tools', String(cfg.tools.length), escapeHtml(toolNames.slice(0, 3).join(', ') + (toolNames.length > 3 ? ', \u2026' : '')) || 'None yet') +
+      card('actauth', 'Permissions', rules.length + (rules.length === 1 ? ' rule' : ' rules'),
+        (asks ? asks + ' need approval \u00b7 ' : '') + 'unmatched calls: ' + escapeHtml(cfg.permissions.defaultDecision)) +
+      card('skills', 'Skills', String(cfg.skills.length), escapeHtml(cfg.skills.map(function (k) { return k.name; }).join(', ')) || 'None yet') +
+      card('abilities', 'Abilities', 'Browse', 'Add tools, skills and rules in one install') +
+      card('env', 'Environment', 'Settings', '<span data-le-env-count="' + escapeHtml(cfg.name) + '">' + leShell.envCountHtml(cfg.name) + '</span> Values your installed abilities read') +
+    '</div>';
   }
 
   function renderOverviewHtml(cfg) {
@@ -704,11 +665,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
         '</form>';
     }
 
-    return '<section>' + systemPromptSection + '</section>' +
+    return renderOverviewCards(cfg) +
+      '<section>' + systemPromptSection + '</section>' +
       '<section>' + modelSection + '</section>' +
-      '<section><h3>Skills (' + cfg.skills.length + ')</h3>' + renderSkills(cfg.skills) + '</section>' +
-      '<section><h3>Tools (' + cfg.tools.length + ')</h3>' + renderToolsWithType(cfg) + '</section>' +
-      '<section><h3>ActAuth</h3>' + renderRules(cfg.permissions) + '</section>' +
       '<section><h3>Hooks</h3><dl class="kv">' +
         '<dt>sessionIdFor</dt><dd>' + badge(cfg.sessionIdFor.indexOf('custom') === 0 ? 'custom' : 'default') + ' <span class="muted">' + escapeHtml(cfg.sessionIdFor) + '</span></dd>' +
         '<dt>tenantFor</dt><dd>' + badge(cfg.tenantFor.indexOf('custom') === 0 ? 'custom' : 'default') + ' <span class="muted">' + escapeHtml(cfg.tenantFor) + '</span></dd>' +
@@ -944,20 +903,22 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       '<td><code>' + escapeHtml(r.name || '') + '</code></td>' +
       '<td><code>' + escapeHtml(r.scope) + '</code></td>' +
       '<td><code>' + escapeHtml(r.tool) + '</code></td>' +
-      '<td class="' + decisionClass(r.decision) + '">' + escapeHtml(r.decision) + '</td>' +
+      '<td><span class="le-pill ' + escapeHtml(r.decision) + '">' + escapeHtml(r.decision) + '</span></td>' +
       '<td>' + actionsHtml + '</td>' +
       '</tr>';
   }
 
   function renderActauthConfigHtml(cfg) {
     var rulesHtml = cfg.rules.length
-      ? '<table><thead><tr><th>Name</th><th>Scope</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
+      ? '<table><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
         cfg.rules.map(renderActauthRuleRow).join('') + '</tbody></table>'
       : '<p class="hint">No explicit rules — every tool call falls through to the default decision.</p>';
 
-    return '<section><h3>Default decision</h3>' +
-        '<form class="add-source" id="defaultDecisionForm" style="max-width:220px">' +
-          '<label>Applies when no rule matches' +
+    return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own, which wait for a person, and which never run. Stored in <code>actauth.yml</code> in this agent&#39;s folder.</p>' +
+      '<section><h3>Rules (' + cfg.rules.length + ')</h3>' + rulesHtml + '</section>' +
+      '<section><h3>When no rule matches</h3>' +
+        '<form class="add-source" id="defaultDecisionForm" style="max-width:260px">' +
+          '<label>Decision' +
             '<select name="defaultDecision" id="defaultDecisionSelect">' +
               '<option value="allow"' + (cfg.defaultDecision === 'allow' ? ' selected' : '') + '>allow</option>' +
               '<option value="ask"' + (cfg.defaultDecision === 'ask' ? ' selected' : '') + '>ask</option>' +
@@ -967,13 +928,12 @@ export const agentsConfigPageHtml: string = `<!doctype html>
           '<button type="submit">Save</button>' +
           '<div id="defaultDecisionError" class="error"></div>' +
         '</form></section>' +
-      '<section><h3>Rules (' + cfg.rules.length + ')</h3>' + rulesHtml + '</section>' +
       '<section><h3 id="ruleFormHeading">Add a rule</h3>' +
         '<form class="add-source" id="ruleForm">' +
           '<label>Name' +
             '<input name="name" id="ruleNameInput" required placeholder="my-rule-name">' +
           '</label>' +
-          '<label>Scope <span class="hint">(tenant/environment — e.g. "default/production" or "*/*"; the agent segment is appended automatically)</span>' +
+          '<label>Who <span class="hint">(tenant/environment, e.g. "default/production" or "*/*" for everyone)</span>' +
             '<input name="scope" id="ruleScopeInput" required placeholder="default/production">' +
           '</label>' +
           '<label>Tool' +
@@ -1158,104 +1118,86 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     return '<section id="envSection"><div id="envContent"><p class="hint">Loading&hellip;</p></div></section>';
   }
 
-  function renderEnvRow(v) {
-    // More than one ability declaring the same name doesn't get resolved
-    // here — there's one .env per project, so both read whatever single
-    // value ends up set, whether that's actually correct or a coincidence
-    // (see env-admin.ts's own doc comment). Naming every declaring
-    // ability instead of just the first one seen makes that visible to
-    // whoever's looking, instead of silently hiding all but one — shown
-    // here (not a separate "Required by" column, now that rows are
-    // already grouped under one ability's own card) only when there
-    // actually is more than one, since inside its own card which ability
-    // this is is already obvious from context.
-    var sharedNote = v.abilityNames.length > 1
-      ? ' <span class="hint" title="Also declared by: ' + escapeHtml(v.abilityNames.join(', ')) + '. There is only one value for it project-wide, so check whether they actually need the same one.">(shared)</span>'
-      : '';
-    // A secret's value is never sent to the browser at all (see
-    // env-admin.ts) — "set" is the most this tab can ever say about one.
-    // A non-secret var's actual value comes through, so show it instead
-    // of a bare "set", since the whole point of looking here is usually
-    // to check *what* something is currently configured to, not just
-    // whether it has a value.
-    // An agent row (v.slot === 'agent' — this agent's own value, see
-    // env-admin.ts's DeclaredEnvVar.slot) for an overridable var isn't a
-    // problem when unset: it just falls back to the shared row. One for
-    // an agent-scoped var has no fallback, so unset really is missing.
-    var statusHtml = !v.set
-      ? (v.slot === 'agent' && v.scope === 'overridable'
-          ? '<span class="hint">not set &mdash; uses shared value</span>'
-          : '<span class="error">not set</span>')
+  // One slot's cell: its current value (never a secret's), a form to set
+  // it, and Remove once set. Slot "shared" is the project .env, slot
+  // "agent" this agent's own agents/<name>/.env — see env-admin.ts's
+  // DeclaredEnvVar.slot. The form/button classes and data-* attributes
+  // are what wireEnvHandlers below binds to.
+  function renderEnvSlotCell(v) {
+    var status = !v.set
+      ? (v.slot === 'agent' && v.scope === 'agent'
+          ? '<span class="le-pill bad">missing</span>'
+          : v.slot === 'agent'
+            ? '<span class="hint">uses project-wide</span>'
+            : '<span class="hint">not set</span>')
       : v.secret
-        ? '<span class="hint">set</span>'
+        ? '<span class="le-pill good">set</span>'
         : '<code>' + escapeHtml(v.value || '') + '</code>';
     if (v.set && v.source === 'legacy') {
-      statusHtml += ' <span class="hint" title="Read from the older prefixed project variable. Saving a value here moves it into this agent&#39;s own .env.">(from ' + escapeHtml(v.legacyName || '') + ')</span>';
+      status += ' <span class="hint" title="Read from the older prefixed project variable. Saving a value here moves it into this agent&#39;s own .env.">(from ' + escapeHtml(v.legacyName || '') + ')</span>';
     }
-    var slotNote = v.slot === 'agent'
-      ? ' <span class="hint">' + (v.scope === 'agent' ? 'this agent only' : 'this agent&#39;s override') + '</span>'
-      : (v.scope === 'overridable' ? ' <span class="hint">shared</span>' : '');
-    // A var with a closed set of valid values (AbilityEnvDecl.options,
-    // e.g. a provider switch) gets a <select> instead of a free-text
-    // field, so there's nothing to mistype — the same "value" form field
-    // name either element uses means wireEnvHandlers's own submit
-    // handler doesn't need to know which one it's looking at.
-    // A naturally multi-line value (AbilityEnvDecl.multiline, e.g. a
-    // pasted JSON key file) gets a <textarea> — a single-line <input>
-    // (even type="text") strips embedded line breaks from its value
-    // entirely per the HTML spec's own value sanitization, mangling
-    // exactly this kind of paste. No password-style masking for it
-    // either — <textarea> has no such mode, and masking a large blob
-    // secret buys little anyway compared to being able to paste it
-    // correctly at all.
-    var fieldHtml = v.options
+    var field = v.options
       ? '<select name="value">' + v.options.map(function (opt) {
           return '<option value="' + escapeHtml(opt) + '"' + (v.value === opt ? ' selected' : '') + '>' + escapeHtml(opt) + '</option>';
         }).join('') + '</select>'
       : v.multiline
-        ? '<textarea name="value" rows="8" placeholder="' + (v.set ? 'unchanged unless you paste a new value' : 'paste the full value') + '" required></textarea>'
-        : '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'unchanged unless you type a new value' : 'value') + '" required>';
-    // Only offered once something is actually set — removing what's
-    // already absent has nothing to do, and the button would just be
-    // clutter for every var an operator hasn't touched yet (most of
-    // them, on a freshly installed ability — see renderEnvConfigHtml's
-    // own comment on why "not set" isn't itself treated as a problem).
-    var removeHtml = v.set
-      ? ' <button type="button" class="env-var-remove" data-name="' + escapeHtml(v.name) + '" data-slot="' + escapeHtml(v.slot) + '">Remove</button>'
+        ? '<textarea name="value" rows="4" placeholder="' + (v.set ? 'paste a new value to replace it' : 'paste the full value') + '" required></textarea>'
+        : '<input type="' + (v.secret ? 'password' : 'text') + '" name="value" placeholder="' + (v.set ? 'new value' : 'value') + '" required>';
+    var remove = v.set
+      ? '<button type="button" class="env-var-remove" data-name="' + escapeHtml(v.name) + '" data-slot="' + escapeHtml(v.slot) + '">Remove</button>'
       : '';
+    return '<div class="env-cell"><div>' + status + '</div>' +
+      '<form class="add-source env-var-form env-inline" data-name="' + escapeHtml(v.name) + '" data-slot="' + escapeHtml(v.slot) + '">' +
+        field + '<button type="submit">' + (v.set ? 'Change' : 'Set') + '</button>' + remove +
+      '</form></div>';
+  }
+
+  var ENV_SCOPE_LABELS = {
+    shared: 'Shared by every agent',
+    overridable: 'Shared; an agent can set its own',
+    agent: 'Set per agent; never shared',
+  };
+
+  // One setting per row, its project-wide and per-agent values side by
+  // side, plus which one this agent's tools actually read.
+  function renderEnvSettingRow(shared, own) {
+    var v = own || shared;
+    var description = (shared && shared.description) || (own && own.description) || '';
+    var alsoDeclared = v.abilityNames.length > 1
+      ? ' <span class="hint" title="Also declared by: ' + escapeHtml(v.abilityNames.join(', ')) + '">(+' + (v.abilityNames.length - 1) + ' more)</span>'
+      : '';
+    var used = own && own.set
+      ? 'this agent'
+      : v.scope === 'agent'
+        ? '<span class="error">nothing &mdash; its tools fail</span>'
+        : shared && shared.set ? 'project-wide' : '<span class="hint">not set</span>';
     return '<tr>' +
-      '<td><code>' + escapeHtml(v.name) + '</code>' + slotNote + sharedNote + '</td>' +
-      '<td style="max-width:320px">' + escapeHtml(v.description || '') + '</td>' +
-      '<td>' + statusHtml + '</td>' +
-      '<td><form class="add-source env-var-form" data-name="' + escapeHtml(v.name) + '" data-slot="' + escapeHtml(v.slot) + '">' +
-        fieldHtml +
-        '<button type="submit">Save</button>' +
-      '</form>' + removeHtml + '</td>' +
+      '<td style="min-width:200px"><code>' + escapeHtml(v.name) + '</code>' + (v.secret ? ' <span class="le-pill neutral">secret</span>' : '') + alsoDeclared +
+        '<div class="hint">' + escapeHtml(ENV_SCOPE_LABELS[v.scope] || '') + '</div>' +
+        (description ? '<div class="hint env-desc" title="' + escapeHtml(description) + '">' + escapeHtml(description) + '</div>' : '') + '</td>' +
+      '<td>' + (shared ? renderEnvSlotCell(shared) : '<span class="hint">not used</span>') + '</td>' +
+      '<td>' + (own ? renderEnvSlotCell(own) : '<span class="hint">&mdash;</span>') + '</td>' +
+      '<td>' + used + '</td>' +
       '</tr>';
   }
 
-  // One card per ability, matching the same .source/.source-head look
-  // Gateway Tools sources already use — so an operator scanning the tab
-  // sees, per ability, which env vars it declared, instead of hunting
-  // through one long flat table for rows that belong to whichever
-  // ability they're actually trying to set up right now. Deliberately no
-  // "not set" count here (or in renderEnvConfigHtml's own summary) — a
-  // declared var not being set doesn't mean anything is broken, since
-  // plenty of them have working defaults (see each var's own
-  // description) and are only ever declared so an operator *can*
-  // override them, not because every single one is required.
   function renderEnvAbilityCard(abilityName, vars) {
-    var rows = vars.map(renderEnvRow).join('');
-    return '<div class="source">' +
-      '<div class="source-head"><h4>' + escapeHtml(abilityName) + '</h4><span class="hint">' + vars.length + ' var' + (vars.length === 1 ? '' : 's') + '</span></div>' +
-      '<table><thead><tr><th>Name</th><th style="max-width:320px">Description</th><th>Current value</th><th>Set value</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-      '</div>';
+    var names = [];
+    var bySlot = {};
+    vars.forEach(function (v) {
+      if (!bySlot[v.name]) { bySlot[v.name] = {}; names.push(v.name); }
+      bySlot[v.name][v.slot] = v;
+    });
+    var rows = names.map(function (n) { return renderEnvSettingRow(bySlot[n].shared, bySlot[n].agent); }).join('');
+    return '<section><h3>' + escapeHtml(abilityName) + '</h3>' +
+      '<div class="le-table-wrap"><table><thead><tr><th>Setting</th><th>Project-wide</th><th>This agent</th><th>Used</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '</section>';
   }
 
   function renderEnvConfigHtml(vars) {
     if (!vars.length) return '<p class="hint">No installed ability has declared any environment variables for this agent yet.</p>';
 
-    var summaryHtml = '<p class="hint">' + vars.length + ' environment variable' + (vars.length === 1 ? '' : 's') + ' across every installed ability.</p>';
+    var summaryHtml = '<p class="muted" style="margin:0 0 20px">Settings your installed abilities read. A secret is never shown again after it is saved. Project-wide values live in the project <code>.env</code>; this agent&#39;s own values in <code>agents/&lt;name&gt;/.env</code>.</p>';
 
     // Grouped by declaring ability, not a single flat list — a var
     // declared by more than one ability (rare, but see renderEnvRow's
@@ -1905,14 +1847,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   // describeGatewayTools), a real cost not worth paying up front. ----
 
   function renderToolsTabHtml(cfg) {
-    return '<section><h3>Local tools (' + cfg.localTools.length + ')</h3>' + renderLocalTools(cfg.localTools) +
+    return '<p class="muted" style="margin:0 0 20px">Everything this agent can call. <strong>Runs</strong> comes from Permissions: allow runs on its own, ask waits for a person, deny never runs.</p>' +
+      '<section><h3>Your tools (' + cfg.localTools.length + ')</h3>' + renderLocalTools(cfg.localTools) +
       '<div class="admin-subsection"><h4 id="httpToolFormHeading">Create an HTTP tool</h4>' + renderHttpToolFormHtml() + '</div>' +
       '</section>' +
       '<section id="gatewayToolsSection">' +
-        '<h3>Gateway Tools <button type="button" id="gatewayToolsRefreshBtn" class="hint-btn">Refresh</button></h3>' +
+        '<h3>From integrations <button type="button" id="gatewayToolsRefreshBtn" class="hint-btn">Refresh</button></h3>' +
         '<div id="gatewayToolsContent"><p class="hint">Loading&hellip;</p></div>' +
       '</section>' +
-      '<section><h3>Agent as Tools (' + cfg.agentAsTools.length + ')</h3>' + renderTools(cfg.agentAsTools) + '</section>';
+      '<section><h3>Subagents (' + cfg.agentAsTools.length + ')</h3>' + renderTools(cfg.agentAsTools) + '</section>';
   }
 
   // ---- Create an HTTP tool: generates a real agents/:name/tools/<tool>.ts
@@ -2481,12 +2424,17 @@ export const agentsConfigPageHtml: string = `<!doctype html>
 
   // ---- Tab switching + agent selection ----
 
+  var CONFIG_TABS = ['overview', 'tools', 'skills', 'abilities', 'actauth', 'env'];
+
   function switchTab(tab) {
+    if (CONFIG_TABS.indexOf(tab) === -1) tab = 'overview';
     currentTab = tab;
-    var buttons = detail.querySelectorAll('.tabs button');
-    for (var i = 0; i < buttons.length; i++) {
-      buttons[i].classList.toggle('active', buttons[i].dataset.tab === tab);
-    }
+    leShell.setTab(tab);
+    // Same URL a fresh load of this tab would have, so reload, back/forward
+    // and a copied link all land here — without a navigation per click.
+    var url = new URL(location.href);
+    if (tab === 'overview') url.searchParams.delete('tab'); else url.searchParams.set('tab', tab);
+    history.replaceState(null, '', url.pathname + url.search);
     var panels = detail.querySelectorAll('.tab-panel');
     for (var i = 0; i < panels.length; i++) {
       panels[i].style.display = panels[i].dataset.tabPanel === tab ? 'block' : 'none';
@@ -2577,30 +2525,29 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       .catch(function () {});
   }
 
+  function modelChip(cfg) {
+    if (typeof cfg.model === 'string') return { text: cfg.model, mono: true };
+    return { text: cfg.model.provider + ' \u00b7 ' + (cfg.model.model || 'default model'), mono: true };
+  }
+
   function renderDetail(cfg) {
     currentCfg = cfg;
     detail.innerHTML =
-      '<h2>' + escapeHtml(cfg.name) +
-      ' <a id="playgroundLink" href="/playground?agent=' + encodeURIComponent(cfg.name) + '">Open in playground &rarr;</a></h2>' +
-      '<div class="tabs">' +
-        '<button class="tab" data-tab="overview">Overview</button>' +
-        '<button class="tab" data-tab="skills">Skills</button>' +
-        '<button class="tab" data-tab="tools">Tools</button>' +
-        '<button class="tab" data-tab="actauth">ActAuth</button>' +
-        '<button class="tab" data-tab="abilities">Abilities</button>' +
-        '<button class="tab" data-tab="env">Environment</button>' +
-      '</div>' +
+      leShell.renderHead({
+        name: cfg.name,
+        prompt: cfg.systemPrompt,
+        chips: [modelChip(cfg), { text: 'unmatched calls: ' + cfg.permissions.defaultDecision }],
+        tab: currentTab,
+        counts: { tools: cfg.tools.length, skills: cfg.skills.length, actauth: cfg.permissions.rules.length },
+      }) +
+      '<div class="le-scroll"><div class="le-page" style="display:block">' +
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="skills">' + renderSkillsTabHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="tools">' + renderToolsTabHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="actauth">' + renderActauthTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="env">' + renderEnvTabPlaceholder() + '</div>' +
-      '<div class="tab-panel" data-tab-panel="abilities">' + renderAbilitiesTabPlaceholder() + '</div>';
-
-    var buttons = detail.querySelectorAll('.tabs button');
-    for (var i = 0; i < buttons.length; i++) {
-      buttons[i].addEventListener('click', function (ev) { switchTab(ev.currentTarget.dataset.tab); });
-    }
+      '<div class="tab-panel" data-tab-panel="abilities">' + renderAbilitiesTabPlaceholder() + '</div>' +
+      '</div></div>';
 
     wireSkillsHandlers(cfg.name);
     wireOverviewHandlers(cfg.name);
@@ -2611,7 +2558,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     }
 
     empty.style.display = 'none';
-    detail.style.display = 'block';
+    detail.style.display = 'flex';
     switchTab(currentTab);
   }
 
@@ -2621,13 +2568,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     actauthLoadedFor = null;
     envLoadedFor = null;
     abilitiesLoadedFor = null;
-    var items = agentList.querySelectorAll('li');
-    for (var i = 0; i < items.length; i++) {
-      items[i].classList.toggle('active', items[i].dataset.name === name);
-    }
-    detail.innerHTML = '<p class="muted">Loading&hellip;</p>';
+    leShell.setActive(name);
+    detail.innerHTML = '<p class="muted" style="padding:24px">Loading&hellip;</p>';
     empty.style.display = 'none';
-    detail.style.display = 'block';
+    detail.style.display = 'flex';
     fetch('/agents/' + encodeURIComponent(name) + '/config')
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (result) {
@@ -2648,37 +2592,27 @@ export const agentsConfigPageHtml: string = `<!doctype html>
       });
   }
 
-  fetch('/agents')
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      var agents = data.agents || [];
-      agentList.textContent = '';
-      for (var i = 0; i < agents.length; i++) {
-        (function (name) {
-          var li = document.createElement('li');
-          li.dataset.name = name;
-          // A real <a href>, not a click handler calling selectAgent —
-          // switching agents is a full navigation to this same page with
-          // a different ?agent=, so the URL, browser back/forward, and
-          // bookmarking all reflect which agent is open, instead of the
-          // URL staying frozen at whatever it was on first load while
-          // the panel silently swaps underneath it via fetch.
-          var a = document.createElement('a');
-          a.href = '/agents/config?agent=' + encodeURIComponent(name);
-          a.textContent = name;
-          li.appendChild(a);
-          agentList.appendChild(li);
-        })(agents[i].name);
-      }
-      if (agents.length) {
-        var requested = new URLSearchParams(location.search).get('agent');
-        var initial = agents.some(function (a) { return a.name === requested; }) ? requested : agents[0].name;
-        selectAgent(initial);
-      }
-    })
-    .catch(function (err) {
-      empty.textContent = 'Could not load agents: ' + err.message;
-    });
+  // Chat is a real link to the playground; every other tab, and every
+  // Overview card pointing at one, switches in place. Delegated once
+  // here because Overview's cards are re-rendered after every edit.
+  detail.addEventListener('click', function (ev) {
+    var link = ev.target.closest('a[data-tab]');
+    if (!link || link.dataset.tab === 'chat' || ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+    ev.preventDefault();
+    switchTab(link.dataset.tab);
+  });
+
+  var initialParams = new URLSearchParams(location.search);
+  currentTab = CONFIG_TABS.indexOf(initialParams.get('tab')) === -1 ? 'overview' : initialParams.get('tab');
+  leShell.ready.then(function (agents) {
+    if (!agents.length) {
+      empty.innerHTML = 'No agents yet. <a href="/agents?new=1">Create one</a> or add a folder under agents/.';
+      return;
+    }
+    var requested = initialParams.get('agent');
+    var initial = agents.some(function (a) { return a.name === requested; }) ? requested : agents[0].name;
+    selectAgent(initial);
+  });
 })();
 </script>
 </body>

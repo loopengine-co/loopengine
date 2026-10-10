@@ -20,68 +20,20 @@
 // hazard (template-literal escapes run twice: once when this constant
 // is built, once when a browser parses the served <script> as JS).
 import { devUiCss } from './dev-ui-styles.js'
+import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
 export const globalConfigPageHtml: string = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoopEngine Config</title>
+<title>LoopEngine Settings</title>
 <style>${devUiCss}
-  body {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  .layout { flex: 1; display: flex; min-height: 0; }
-  nav.sidebar {
-    width: 180px;
-    flex-shrink: 0;
-    border-right: 1px solid light-dark(#ddd, #333);
-    padding: 6px;
-  }
-  nav.sidebar button, nav.sidebar a {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 13px;
-    cursor: pointer;
-    text-decoration: none;
-    color: inherit;
-    box-sizing: border-box;
-  }
-  nav.sidebar button:hover, nav.sidebar a:hover { background: light-dark(#eee, #26262b); }
-  nav.sidebar button.active { background: light-dark(#dbeafe, #1e3a5f); font-weight: 600; }
-  main {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px 28px;
-  }
-  h2 { font-size: 20px; margin: 0 0 4px; font-family: ui-monospace, monospace; }
-  section { margin-bottom: 22px; }
-  section h3 {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: light-dark(#666, #999);
-    margin: 0 0 8px;
-    border-bottom: 1px solid light-dark(#eee, #2a2a2e);
-    padding-bottom: 4px;
-  }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td {
-    text-align: left;
-    padding: 6px 8px;
-    border-bottom: 1px solid light-dark(#eee, #2a2a2e);
-    vertical-align: top;
-  }
-  th { color: light-dark(#666, #999); font-weight: 600; }
+  section { margin-bottom: 28px; }
+  section h3 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
+  section > table { border: 1px solid var(--line); border-radius: var(--radius); border-collapse: separate; border-spacing: 0; overflow: hidden; }
   .source {
-    border: 1px solid light-dark(#ddd, #3a3a3e);
+    border: 1px solid var(--line);
     border-radius: 8px;
     padding: 12px 14px;
     margin-bottom: 10px;
@@ -89,10 +41,10 @@ export const globalConfigPageHtml: string = `<!doctype html>
   .source.unsupported { opacity: 0.6; }
   .source-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .source-head h4 { margin: 0; font-size: 14px; font-family: ui-monospace, monospace; }
-  .hint { font-size: 11px; color: light-dark(#666, #999); }
+  .hint { font-size: 11px; color: var(--ink-muted); }
   pre {
-    background: light-dark(#fff, #26262b);
-    border: 1px solid light-dark(#ddd, #3a3a3e);
+    background: var(--bg);
+    border: 1px solid var(--line);
     border-radius: 6px;
     padding: 8px 10px;
     font-size: 12px;
@@ -106,36 +58,30 @@ export const globalConfigPageHtml: string = `<!doctype html>
      this pink-for-destructive convention is meant to drift between them. */
   .delete-btn {
     font-size: 12px;
-    color: light-dark(#991b1b, #f87171);
-    background: light-dark(#fee2e2, #3a1f1f);
-    border-color: light-dark(#f3b4b4, #6b3232);
+    color: var(--bad);
+    background: var(--bad-soft);
+    border-color: var(--bad);
   }
-  .delete-btn:hover { background: light-dark(#fecaca, #4a1f1f); }
+  .delete-btn:hover { background: var(--bad-soft); }
 </style>
 </head>
-<body>
-<nav class="topnav">
-  <a href="/agents">Agents</a>
-  <a href="/agents/config" class="active">Config</a>
-  <a href="/playground">Playground</a>
-</nav>
-<div class="layout">
-<nav class="sidebar">
-  <a href="/agents/config">Agents</a>
-  <button class="section-btn active" data-section="models">Models</button>
-  <button class="section-btn" data-section="gateways">Gateways</button>
-</nav>
-<main>
-  <div class="section-panel" data-section-panel="models">
-    <h2>Models</h2>
-    <div id="modelsContent"><p class="hint">Loading&hellip;</p></div>
+<body data-le-page="config">
+<div class="le-app">
+${consoleSidebarHtml}
+<main class="le-main">
+  <div class="section-panel" data-section-panel="models" style="display:contents">
+    <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+      <div><h1>Models</h1><p>Which model providers have an API key set, and which agents use each one.</p></div></div></div>
+    <div class="le-scroll"><div class="le-page" style="display:block"><div id="modelsContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
   <div class="section-panel" data-section-panel="gateways" style="display:none">
-    <h2>Gateways</h2>
-    <div id="gatewaysContent"><p class="hint">Loading&hellip;</p></div>
+    <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+      <div><h1>Integrations</h1><p>Outside tool sources (such as Composio) that agents can add tools from.</p></div></div></div>
+    <div class="le-scroll"><div class="le-page" style="display:block"><div id="gatewaysContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
 </main>
 </div>
+${consoleShellScript}
 <script>
 (function () {
   var main = document.querySelector('main');
@@ -280,7 +226,7 @@ export const globalConfigPageHtml: string = `<!doctype html>
     }
     var panels = main.querySelectorAll('.section-panel');
     for (var j = 0; j < panels.length; j++) {
-      panels[j].style.display = panels[j].dataset.sectionPanel === section ? 'block' : 'none';
+      panels[j].style.display = panels[j].dataset.sectionPanel === section ? 'contents' : 'none';
     }
     if (section === 'models' && !loadedSections.models) loadModels();
     if (section === 'gateways' && !loadedSections.gateways) loadGateways();

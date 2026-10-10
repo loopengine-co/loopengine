@@ -147,11 +147,9 @@ export function listDeclaredEnvVars(agentName: string): DeclaredEnvVar[] {
     for (const decl of record.env) {
       const scope = envScopeOf(decl)
       if (scope !== 'agent') upsert('shared', abilityName, decl, decl.description)
-      if (scope === 'overridable') {
-        upsert('agent', abilityName, decl, `This agent's own value — if unset, falls back to the shared value.${decl.description ? ` ${decl.description}` : ''}`)
-      } else if (scope === 'agent') {
-        upsert('agent', abilityName, decl, `Set per agent — never shared with or borrowed from other agents.${decl.description ? ` ${decl.description}` : ''}`)
-      }
+      // `slot` and `scope` already say whose value a row is and whether
+      // it falls back, so the agent row keeps the ability's own words.
+      if (scope !== 'shared') upsert('agent', abilityName, decl, decl.description)
     }
   }
 
