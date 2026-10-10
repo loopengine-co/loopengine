@@ -7,6 +7,7 @@ import type { AgentConfig, ToolDefinition, PendingQuestion } from '#core/agent-c
 import type { LoopEvent } from '#core/loop-events.js'
 import { answerQuestion } from '#core/system-tools/index.js'
 import { setAgentDir } from '#core/agent-env.js'
+import { setUsageSink, type UsageEvent } from '#core/usage.js'
 
 function baseConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
@@ -1606,5 +1607,34 @@ describe('runAgent ToolContext', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('runAgent usage events', () => {
+  afterEach(() => setUsageSink(undefined))
+
+  it('records nothing unless a sink is configured, then one event per model call with its tokens', async () => {
+    const events: UsageEvent[] = []
+    let turn = 0
+    const modelCall: ModelCall = async () => ({
+      ...(turn++ === 0 ? toolUseResponse({ id: 't1', name: 'echo', input: {} }) : textResponse('done')),
+      usage: { input_tokens: 100 + turn, output_tokens: 10 },
+    })
+    const echo: ToolDefinition = { name: 'echo', description: 'Echo', input_schema: { type: 'object', properties: {} }, execute: async () => 'ok' }
+    const config = baseConfig({
+      model: { provider: 'anthropic', model: 'claude-test' },
+      tools: [echo],
+      rules: [{ scopePattern: 'default/production/test-agent', tool: 'echo', decision: 'allow' }],
+    })
+
+    await runAgent(config, modelCall, 'hi')
+    expect(events).toEqual([])
+
+    turn = 0
+    setUsageSink((e) => events.push(e))
+    await runAgent(config, modelCall, 'hi', [], { sessionId: 's-u' })
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ agent: 'test-agent', tenant: 'default', sessionId: 's-u', provider: 'anthropic', model: 'claude-test', inputTokens: 101, outputTokens: 10 })
   })
 })

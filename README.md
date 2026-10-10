@@ -332,3 +332,20 @@ docker compose up --build
 Builds the HTTP adapter into a container and starts it alongside Redis.
 For production, push the image to any container platform with `REDIS_URL`
 and your model/tool API keys set as environment variables.
+
+### Hosting behind a platform
+
+These settings are for running LoopEngine inside a hosting platform
+(one workspace per user, behind a router that has already authenticated
+them). All are off by default; a self-hosted install that doesn't set
+them behaves exactly as described above.
+
+| Setting | What it does |
+| --- | --- |
+| `LOOPENGINE_TRUSTED_PROXY_SECRET` | Every request must carry an `X-LoopEngine-Identity` header signed with this secret (`signProxyIdentity` creates one; unsigned requests get 401). `LOOPENGINE_ADMIN_AUTH`, if also set, still works for direct access. Also enables `GET /internal/activity`: in-flight turns, open streams and idle time, so the host never stops a server mid-turn. |
+| `LOOPENGINE_EXIT_ON_CODE_CHANGE=1` | After an ability install, upgrade, uninstall or dependency install through the Admin UI, the server drains and exits so the platform restarts it with the new code loaded. Only set this when something restarts the process. |
+| `LOOPENGINE_USAGE_LOG` | `stdout` (one JSON line per model call) or a file path (JSON lines) — tokens per call with agent, tenant, session and model. Or call `setUsageSink()` in code. |
+| `setSecretStore()` | In code, at startup: keep env values set through the Admin UI somewhere other than `.env` files (a vault, a secret manager). The default `FileSecretStore` is today's behaviour. |
+
+`deploy/workspace/Dockerfile` is a runtime image for this: it serves a
+scaffolded project mounted at `/workspace` instead of baking agents in.

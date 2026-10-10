@@ -17,6 +17,9 @@ export type {
 
 export type { AgentConfig, AgentModelConfig, ToolSchema, ToolDefinition, ToolContext, AgentEnv } from '#core/agent-config.js'
 export { createAgentEnv, agentDirFor, envScopeOf, type EnvScope } from '#core/agent-env.js'
+export { FileSecretStore, setSecretStore, getSecretStore, type SecretStore } from '#core/secret-store.js'
+export { signProxyIdentity, verifyProxyIdentity, TRUSTED_PROXY_IDENTITY_HEADER, type ProxyIdentity } from '#core/trusted-proxy.js'
+export { setUsageSink, recordUsage, type UsageEvent, type UsageSink } from '#core/usage.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via

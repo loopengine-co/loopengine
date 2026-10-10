@@ -74,6 +74,7 @@ export function createAnthropicModelCall(options: AnthropicModelCallOptions = {}
       return { type: block.type }
     })
 
-    return { stop_reason: response.stop_reason ?? 'end_turn', content }
+    const usage = response.usage ? { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens } : undefined
+    return { stop_reason: response.stop_reason ?? 'end_turn', content, usage }
   }
 }

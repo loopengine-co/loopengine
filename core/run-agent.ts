@@ -16,6 +16,7 @@ import { Recovery } from './recovery.js'
 import { collectKnownUrls, correctToolUseInput, recordKnownUrlsFromResult } from './known-urls.js'
 import type { AgentConfig, ApproverChannel, QuestionHandler, ToolContext, ToolDefinition, ToolSchema } from '#core/agent-config.js'
 import { agentDirFor, createAgentEnv, setAgentDir } from './agent-env.js'
+import { recordUsage } from './usage.js'
 import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
 import { loadGatewayToolsFromDir } from './gateway-tools.js'
@@ -117,6 +118,9 @@ export interface ModelContentBlock {
 export interface ModelResponse {
   stop_reason: string
   content: ModelContentBlock[]
+  /** Tokens this call used, when the provider reports them — recorded
+   * per call by core/usage.ts if a usage sink is configured. */
+  usage?: { input_tokens: number; output_tokens: number }
 }
 
 /** loopengine's own conversation-message type — a superset of
@@ -579,6 +583,8 @@ interface TurnContext {
   httpNotifier: ReturnType<typeof resolveHttpNotifier>
   /** Passed to every tool's execute — see ToolContext's own doc comment. */
   toolContext: ToolContext
+  /** AgentConfig.model's provider/model, for usage events (core/usage.ts). */
+  modelLabel: { provider?: string; model?: string }
 }
 
 async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, options: RunAgentOptions): Promise<TurnContext> {
@@ -770,6 +776,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     askUserTool,
     questionHandler,
     httpNotifier,
+    modelLabel: { provider: config.model?.provider, model: config.model?.model },
     toolContext: {
       agentName: config.name,
       tenant: scope.tenant,
@@ -788,7 +795,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
  * fresh in each case) but mutated here via pushMessage, same as the
  * single function this was split out of always did. */
 async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
-  const { modelCall, log, scope, sessionId, skillGarden, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext } = ctx
+  const { modelCall, log, scope, sessionId, skillGarden, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel } = ctx
 
   function pushMessage(message: Message): void {
     messages.push(message)
@@ -868,7 +875,23 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
     // and there's no second type yet to justify a second, more generic
     // event just to aggregate it (see PromptCompactionEvent's own doc
     // comment for the removed 'recovery:summary').
-    const { value: response } = await recovery.call((msgs) => modelCall(msgs, systemPrompt, toolSchemas), messages)
+    // Recorded inside the retried call, not after it, so a retry that
+    // spent tokens and then failed is still counted.
+    const { value: response } = await recovery.call(async (msgs) => {
+      const result = await modelCall(msgs, systemPrompt, toolSchemas)
+      if (result.usage) {
+        recordUsage({
+          at: new Date().toISOString(),
+          agent: toolContext.agentName,
+          tenant: toolContext.tenant,
+          sessionId: toolContext.sessionId,
+          ...modelLabel,
+          inputTokens: result.usage.input_tokens,
+          outputTokens: result.usage.output_tokens,
+        })
+      }
+      return result
+    }, messages)
 
     // The model's full response — text and tool_use blocks alike, with
     // real ids — becomes this turn's assistant message verbatim. Every

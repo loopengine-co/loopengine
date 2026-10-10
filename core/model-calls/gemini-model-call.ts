@@ -70,6 +70,7 @@ export function createGeminiModelCall(options: GeminiModelCallOptions): ModelCal
         : undefined,
     })
 
-    return toModelResponse(response.choices[0])
+    const usage = response.usage ? { input_tokens: response.usage.prompt_tokens, output_tokens: response.usage.completion_tokens } : undefined
+    return { ...toModelResponse(response.choices[0]), usage }
   }
 }

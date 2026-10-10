@@ -69,6 +69,7 @@ import {
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
+import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
@@ -1010,7 +1011,7 @@ function envSlotOf(req: IncomingMessage): 'shared' | 'agent' | undefined {
 // LOOPENGINE_ADMIN_AUTH being optional today is an acceptable gap for
 // config, not for secrets).
 async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName: string, varName: string): Promise<void> {
-  if (!adminAuth) {
+  if (!secretsProtected) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({ error: 'Refusing to set an env var without LOOPENGINE_ADMIN_AUTH configured — set it before managing secrets through this route.' }),
     )
@@ -1052,8 +1053,8 @@ async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName
     return
   }
   try {
-    if (slot === 'agent') setAgentEnvVar(agentName, varName, body.value)
-    else setEnvVar(varName, body.value)
+    if (slot === 'agent') await setAgentEnvVar(agentName, varName, body.value)
+    else await setEnvVar(varName, body.value)
   } catch (err) {
     const status = err instanceof EnvVarNameError ? 400 : 500
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
@@ -1067,7 +1068,7 @@ async function handleEnvPut(req: IncomingMessage, res: ServerResponse, agentName
 // not just config, so this refuses outright rather than proceeding
 // open when LOOPENGINE_ADMIN_AUTH isn't configured at all.
 async function handleEnvDelete(req: IncomingMessage, res: ServerResponse, agentName: string, varName: string): Promise<void> {
-  if (!adminAuth) {
+  if (!secretsProtected) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({ error: 'Refusing to unset an env var without LOOPENGINE_ADMIN_AUTH configured — set it before managing secrets through this route.' }),
     )
@@ -1083,8 +1084,8 @@ async function handleEnvDelete(req: IncomingMessage, res: ServerResponse, agentN
     return
   }
   try {
-    if (slot === 'agent') unsetAgentEnvVar(agentName, varName)
-    else unsetEnvVar(varName)
+    if (slot === 'agent') await unsetAgentEnvVar(agentName, varName)
+    else await unsetEnvVar(varName)
   } catch (err) {
     const status = err instanceof EnvVarNameError ? 400 : 500
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
@@ -1167,7 +1168,7 @@ async function handleAbilitiesSearchGet(res: ServerResponse, agentName: string, 
 // LOOPENGINE_ADMIN_AUTH isn't configured at all, rather than proceeding
 // open like most routes here do.
 async function handleAbilityInstallPost(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
-  if (!adminAuth) {
+  if (!secretsProtected) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({ error: 'Refusing to install an ability without LOOPENGINE_ADMIN_AUTH configured — set it before installing abilities through this route.' }),
     )
@@ -1202,7 +1203,7 @@ async function handleAbilityInstallPost(req: IncomingMessage, res: ServerRespons
 // third-party code inside the agent's project the next time it's
 // loaded, same as install does.
 async function handleAbilityUpgradePost(req: IncomingMessage, res: ServerResponse, agentName: string, abilityName: string): Promise<void> {
-  if (!adminAuth) {
+  if (!secretsProtected) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({ error: 'Refusing to upgrade an ability without LOOPENGINE_ADMIN_AUTH configured — set it before upgrading abilities through this route.' }),
     )
@@ -1237,7 +1238,7 @@ async function handleAbilityUpgradePost(req: IncomingMessage, res: ServerRespons
 // behavior, is a normal partial outcome the Admin UI shows and offers
 // to retry with force, not a failure).
 async function handleAbilityUninstallDelete(res: ServerResponse, agentName: string, abilityName: string, force: boolean): Promise<void> {
-  if (!adminAuth) {
+  if (!secretsProtected) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({ error: 'Refusing to uninstall an ability without LOOPENGINE_ADMIN_AUTH configured — set it before uninstalling abilities through this route.' }),
     )
@@ -1279,7 +1280,7 @@ const NPM_INSTALL_DEPS_TIMEOUT_MS = 180_000
 // package.json happened to declare, not something to trust for shell
 // interpolation.
 async function handleAbilityInstallDepsPost(req: IncomingMessage, res: ServerResponse, agentName: string, abilityName: string): Promise<void> {
-  if (!adminAuth) {
+  if (!secretsProtected) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({ error: 'Refusing to run npm install without LOOPENGINE_ADMIN_AUTH configured — set it before installing dependencies through this route.' }),
     )
@@ -1693,6 +1694,8 @@ async function handleMessagesStream(req: IncomingMessage, res: ServerResponse, a
   }
   const { entry, message, rawSessionId, storageSessionId, tenant } = parsed.value
 
+  openStreams++
+  res.on('close', () => openStreams--)
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache',
@@ -1796,7 +1799,15 @@ async function handleMessagesStream(req: IncomingMessage, res: ServerResponse, a
 // default. A real deployment opts in by setting it; either way, a
 // startup warning makes "I forgot to set this" loud instead of silent.
 const adminAuth = process.env.LOOPENGINE_ADMIN_AUTH
-if (!adminAuth) {
+// Hosted mode (see core/trusted-proxy.ts): every request must carry an
+// X-LoopEngine-Identity header signed with this secret by the router in
+// front of this server. Unset (the default, and every self-hosted
+// install) means this file behaves exactly as it always has.
+const trustedProxySecret = process.env.LOOPENGINE_TRUSTED_PROXY_SECRET
+// Routes that write secrets or install code refuse to run on a server
+// with no auth at all — either form of auth counts.
+const secretsProtected = Boolean(adminAuth || trustedProxySecret)
+if (!adminAuth && !trustedProxySecret) {
   console.warn(
     '[loopengine] LOOPENGINE_ADMIN_AUTH is not set — every route on this server (including tool-call approvals, conversation history, and permission rules) is open to anyone who can reach it. Set LOOPENGINE_ADMIN_AUTH="user:pass" to require HTTP Basic Auth.',
   )
@@ -1809,7 +1820,12 @@ if (!adminAuth) {
 // first; a length mismatch isn't sensitive information worth spending a
 // constant-time comparison to protect.
 function isAuthorized(req: IncomingMessage): boolean {
-  if (!adminAuth) return true
+  if (trustedProxySecret && verifyProxyIdentity(req.headers[TRUSTED_PROXY_IDENTITY_HEADER], trustedProxySecret)) return true
+  // Basic Auth still works alongside trusted-proxy mode (direct operator
+  // access to one workspace) — but with neither form of credentials, a
+  // trusted-proxy server is closed, never open the way a server with no
+  // auth configured at all is.
+  if (!adminAuth) return !trustedProxySecret
   const header = req.headers.authorization
   if (!header || !header.startsWith('Basic ')) return false
   const provided = Buffer.from(header.slice('Basic '.length), 'base64')
@@ -2250,11 +2266,43 @@ async function handleLocalFile(req: IncomingMessage, res: ServerResponse): Promi
   createReadStream(resolved).pipe(res)
 }
 
+// Opt-in (LOOPENGINE_EXIT_ON_CODE_CHANGE=1): Node caches an imported
+// module, so a tool file an ability install/upgrade/uninstall just wrote
+// isn't picked up until the process restarts. Under a supervisor that
+// restarts it (a hosting platform, Docker's restart policy, systemd),
+// exiting cleanly right after the change is the simplest way to apply
+// it. Off by default — a plain `loopengine serve` has nothing to restart
+// it, so exiting there would just take the server down.
+const exitOnCodeChange = process.env.LOOPENGINE_EXIT_ON_CODE_CHANGE === '1'
+function exitIfCodeChanged(res: ServerResponse): void {
+  if (!exitOnCodeChange || res.statusCode >= 300) return
+  console.log('[loopengine] ability code changed — exiting so the supervisor restarts this server with it loaded')
+  // shutdown() drains in-flight requests (this one's response included)
+  // before exiting.
+  setImmediate(() => void shutdown())
+}
+
+// Backs GET /internal/activity (trusted-proxy mode only) — what a host
+// checks before stopping an idle server, so it never stops one mid-turn.
+let openStreams = 0
+let lastRequestAt = Date.now()
+
+function handleActivityGet(res: ServerResponse): void {
+  res.writeHead(200, { 'content-type': 'application/json' }).end(
+    JSON.stringify({
+      inFlightTurns: sessionTurns.size,
+      openStreams,
+      lastRequestAt: new Date(lastRequestAt).toISOString(),
+      idleSeconds: Math.floor((Date.now() - lastRequestAt) / 1000),
+    }),
+  )
+}
+
 const server = createServer(async (req, res) => {
   if (!isAuthorized(req)) {
-    res
-      .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Basic realm="loopengine"' })
-      .end(JSON.stringify({ error: 'authorization required' }))
+    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    if (adminAuth) headers['www-authenticate'] = 'Basic realm="loopengine"'
+    res.writeHead(401, headers).end(JSON.stringify({ error: 'authorization required' }))
     return
   }
 
@@ -2273,6 +2321,14 @@ const server = createServer(async (req, res) => {
     // ever expected a bare path — stripped once here rather than in each
     // route individually.
     const pathname = (req.url ?? '/').split('?')[0]
+
+    // Only exists in trusted-proxy mode, and polling it doesn't count as
+    // activity itself.
+    if (trustedProxySecret && req.method === 'GET' && pathname === '/internal/activity') {
+      handleActivityGet(res)
+      return
+    }
+    lastRequestAt = Date.now()
 
     const streamMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/messages\/stream$/)
     if (streamMatch) {
@@ -2651,17 +2707,20 @@ const server = createServer(async (req, res) => {
     const abilityUpgradeMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)\/upgrade$/)
     if (abilityUpgradeMatch && req.method === 'POST') {
       await handleAbilityUpgradePost(req, res, decodeURIComponent(abilityUpgradeMatch[1]), decodeURIComponent(abilityUpgradeMatch[2]))
+      exitIfCodeChanged(res)
       return
     }
     const abilityInstallDepsMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)\/install-deps$/)
     if (abilityInstallDepsMatch && req.method === 'POST') {
       await handleAbilityInstallDepsPost(req, res, decodeURIComponent(abilityInstallDepsMatch[1]), decodeURIComponent(abilityInstallDepsMatch[2]))
+      exitIfCodeChanged(res)
       return
     }
     const abilityMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/([^/]+)$/)
     if (abilityMatch && req.method === 'DELETE') {
       const force = new URL(req.url ?? '/', 'http://localhost').searchParams.get('force') === 'true'
       await handleAbilityUninstallDelete(res, decodeURIComponent(abilityMatch[1]), decodeURIComponent(abilityMatch[2]), force)
+      exitIfCodeChanged(res)
       return
     }
     const abilitiesMatch = pathname.match(/^\/agents\/([^/]+)\/abilities$/)
@@ -2671,6 +2730,7 @@ const server = createServer(async (req, res) => {
     }
     if (abilitiesMatch && req.method === 'POST') {
       await handleAbilityInstallPost(req, res, decodeURIComponent(abilitiesMatch[1]))
+      exitIfCodeChanged(res)
       return
     }
 

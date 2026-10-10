@@ -3,13 +3,14 @@
 // but several agents can install the same ability and each need their
 // own value for some of its settings (a Telegram bot token, a default
 // chat ID). Rather than every ability's tool code deriving a prefixed
-// name (`<AGENT>_<VAR>`) itself, the runtime resolves it here, from an
-// agent-private agents/<name>/.env file layered over the project's own.
+// name (`<AGENT>_<VAR>`) itself, the runtime resolves it here, from the
+// agent's own values (agents/<name>/.env by default — see
+// core/secret-store.ts) layered over the project's own.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseEnv } from 'node:util'
 import type { AgentConfig, AgentEnv } from '#core/agent-config.js'
 import { agentDir } from './gateway-tools.js'
+import { agentEnvFilePath, getSecretStore } from './secret-store.js'
 
 /** How a declared ability env var (AbilityEnvDecl.scope) is shared
  * across the agents that install the ability:
@@ -37,21 +38,6 @@ export function envScopeOf(decl: { scope?: EnvScope; perAgent?: boolean }): EnvS
 export function agentScopedEnvVarName(agentName: string, varName: string): string {
   const prefix = agentName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
   return `${/^[0-9]/.test(prefix) ? '_' : ''}${prefix}_${varName}`
-}
-
-export function agentEnvFilePath(dir: string): string {
-  return join(dir, '.env')
-}
-
-/** Parsed with Node's own --env-file parser (util.parseEnv), so a value
- * web/env-admin.ts's serializeEnvValue writes reads back exactly the way
- * it does from the project .env. Read fresh on every call, not cached —
- * it's a few lines, read at most a handful of times per tool call, and
- * this way an edit (from the Admin UI or by hand) is seen immediately. */
-export function readAgentEnvFile(dir: string): Record<string, string> {
-  const path = agentEnvFilePath(dir)
-  if (!existsSync(path)) return {}
-  return parseEnv(readFileSync(path, 'utf8')) as Record<string, string>
 }
 
 /** Every env var name an ability installed in `dir` declared as
@@ -87,7 +73,8 @@ export function agentDirFor(config: AgentConfig): string {
 }
 
 /** Lookup order for `get(name)`:
- * 1. `name` in this agent's own `<dir>/.env`
+ * 1. `name` among this agent's own values (the secret store's
+ *    readAgentValues — `<dir>/.env` by default)
  * 2. the legacy prefixed project var (agentScopedEnvVarName)
  * 3. `process.env[name]` — skipped when an installed ability declared
  *    `name` with `scope: 'agent'`
@@ -95,7 +82,7 @@ export function agentDirFor(config: AgentConfig): string {
  * same order, so it can be overridden per agent too. */
 export function createAgentEnv(agentName: string, dir: string): AgentEnv {
   function get(name: string): string | undefined {
-    const own = readAgentEnvFile(dir)[name]
+    const own = getSecretStore().readAgentValues(agentName, dir)[name]
     if (own !== undefined) return own
     const legacy = process.env[agentScopedEnvVarName(agentName, name)]
     if (legacy !== undefined) return legacy
