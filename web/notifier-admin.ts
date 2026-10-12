@@ -1,4 +1,4 @@
-// Backs the console's Permissions → Approvals section: where an agent's
+// Backs the console's Permissions tab ("Where approval requests and questions are sent"): where an agent's
 // durable approvals/questions go (core/http-notifier.ts's describeNotifier
 // plus the deployment-wide default webhook), editing its
 // agents/<name>/notifier.yml, a test send, recent deliveries, and the
@@ -8,6 +8,7 @@
 import type { AgentConfig } from '../core/agent-config.js'
 import { agentDirFor, createAgentEnv } from '../core/agent-env.js'
 import type { CheckpointStore } from '../core/durable-approvals.js'
+import { decidePath } from '../core/approval-links.js'
 import { describeNotifier } from '../core/http-notifier.js'
 import { sendTestSlackMessage } from '../core/http-notify-triggers/slack.js'
 import { sendTestWebhook, type DeliveryResult } from '../core/http-notify-triggers/webhook.js'
@@ -102,6 +103,8 @@ export async function listAgentPending(store: CheckpointStore, agentName: string
         tenant: checkpoint.tenant,
         createdAt: checkpoint.createdAt ?? null,
         ...(kind === 'question' ? { answerPath: `/pending-questions/${pendingId}/answer` } : { resolvePath: `/pending-approvals/${pendingId}/resolve` }),
+        // A signed link anyone can open to decide (core/approval-links.ts).
+        decidePath: decidePath(pendingId, kind),
       })
     }
   }

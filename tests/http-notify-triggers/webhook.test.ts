@@ -98,6 +98,28 @@ describe('WebhookNotifier', () => {
   })
 })
 
+describe('WebhookNotifier decision links', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+
+  it('always carries a decidePath, and a full decideUrl from its publicUrl option (LOOPENGINE_PUBLIC_URL wins)', async () => {
+    vi.stubEnv('LOOPENGINE_LINK_SECRET', 'test-secret')
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const webhook = new WebhookNotifier({ webhookUrl: 'https://example.com/hook', signingSecret: 'shh', publicUrl: 'https://from-file.example' })
+
+    webhook.requestDurableApproval('t', {}, { tenant: 'acme', environment: 'production', agent: 'support' }, 'r')
+    vi.stubEnv('LOOPENGINE_PUBLIC_URL', 'https://from-env.example')
+    webhook.notifyPendingQuestion('Which?', undefined, 'support', 's-1')
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const approval = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    const question = JSON.parse(fetchMock.mock.calls[1][1]?.body as string)
+    expect(approval.decidePath).toMatch(/^\/decide\//)
+    expect(approval.decideUrl).toBe('https://from-file.example' + approval.decidePath)
+    expect(question.decideUrl).toBe('https://from-env.example' + question.decidePath)
+  })
+})
+
 describe('sendTestWebhook', () => {
   afterEach(() => vi.unstubAllGlobals())
 

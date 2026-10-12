@@ -71,6 +71,8 @@ import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgent
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { NotifierFileError } from '#core/notifier-file.js'
+import { verifyDecisionToken } from '#core/approval-links.js'
+import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
 import { describeAgentNotifier, listAgentPending, removeAgentNotifier, saveAgentNotifier, testAgentNotifier } from '#web/notifier-admin.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
@@ -1004,7 +1006,7 @@ function handleEnvGet(res: ServerResponse, agentName: string): void {
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(listDeclaredEnvVars(agentName)))
 }
 
-// Backs the console's Permissions → Approvals section — see
+// Backs the console's Permissions tab (where approval requests and questions are sent) — see
 // web/notifier-admin.ts. Reading is open like the rest of the admin
 // surface; saving or removing writes a secret and a file, so it gets the
 // same refuse-without-auth gate as the env routes below.
@@ -1014,7 +1016,7 @@ function handleNotifierGet(res: ServerResponse, agentName: string): void {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(describeAgentNotifier(entry.config, defaultWebhook)))
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...describeAgentNotifier(entry.config, defaultWebhook), canSave: secretsProtected }))
 }
 
 async function handleNotifierPut(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
@@ -1036,7 +1038,7 @@ async function handleNotifierPut(req: IncomingMessage, res: ServerResponse, agen
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(describeAgentNotifier(entry.config, defaultWebhook)))
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...describeAgentNotifier(entry.config, defaultWebhook), canSave: secretsProtected }))
 }
 
 function handleNotifierDelete(res: ServerResponse, agentName: string): void {
@@ -1052,7 +1054,7 @@ function handleNotifierDelete(res: ServerResponse, agentName: string): void {
     return
   }
   removeAgentNotifier(entry.config)
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(describeAgentNotifier(entry.config, defaultWebhook)))
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...describeAgentNotifier(entry.config, defaultWebhook), canSave: secretsProtected }))
 }
 
 async function handleNotifierTest(res: ServerResponse, agentName: string): Promise<void> {
@@ -1998,7 +2000,11 @@ async function createCheckpointFromPending(
  * response here is authoritative on its own, not a fallback for some
  * other channel. */
 async function handlePendingApprovalResolve(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<void> {
-  const body = await readJsonBody(req)
+  await resolvePendingApproval(res, pendingId, await readJsonBody(req))
+}
+
+// The resolve itself, shared with the decision page's POST /decide/<token>.
+async function resolvePendingApproval(res: ServerResponse, pendingId: string, body: Record<string, unknown>): Promise<void> {
   const decision = body.decision === 'approve' || body.decision === 'deny' ? body.decision : undefined
   if (!decision) {
     res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: "decision must be 'approve' or 'deny'" }))
@@ -2110,7 +2116,10 @@ async function handlePendingApprovalResolve(req: IncomingMessage, res: ServerRes
  * either answered or it isn't. Shares the same "outstanding empty →
  * resume, else report remaining count" tail via respondAfterResolution. */
 async function handlePendingQuestionAnswer(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<void> {
-  const body = await readJsonBody(req)
+  await answerPendingQuestion(res, pendingId, await readJsonBody(req))
+}
+
+async function answerPendingQuestion(res: ServerResponse, pendingId: string, body: Record<string, unknown>): Promise<void> {
   if (typeof body.answer !== 'string') {
     res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: "'answer' must be a string" }))
     return
@@ -2397,7 +2406,59 @@ function handleActivityGet(res: ServerResponse): void {
   )
 }
 
+// A decision link (core/approval-links.ts): GET shows the decision page,
+// POST makes the decision. The signed token is the credential, so these
+// sit outside the admin login on purpose — the link is meant for
+// whoever gets the notification, not only admins.
+async function handleDecide(req: IncomingMessage, res: ServerResponse, rawToken: string): Promise<void> {
+  const html = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }
+  const json = { 'content-type': 'application/json', 'cache-control': 'no-store' }
+  const token = verifyDecisionToken(rawToken)
+  if (!token) {
+    if (req.method === 'GET') res.writeHead(404, html).end(renderDecideInvalidPage())
+    else res.writeHead(400, json).end(JSON.stringify({ error: 'This link is not valid or has expired.' }))
+    return
+  }
+  const checkpoint = await checkpoints.get(token.pendingId)
+  const item = checkpoint?.outstanding[token.pendingId]
+  if (!checkpoint || !item || (item.kind ?? 'approval') !== token.kind) {
+    if (req.method === 'GET') res.writeHead(410, html).end(renderDecideGonePage())
+    else res.writeHead(410, json).end(JSON.stringify({ error: 'This decision has already been made.' }))
+    return
+  }
+  if (req.method === 'GET') {
+    res.writeHead(200, html).end(
+      renderDecidePage({
+        kind: token.kind,
+        agent: checkpoint.agent,
+        tool: item.tool,
+        args: item.args,
+        reason: item.reason,
+        sessionId: checkpoint.sessionId,
+        tenant: checkpoint.tenant,
+        createdAt: checkpoint.createdAt,
+        expiresAt: token.expiresAt,
+      }),
+    )
+    return
+  }
+  const body = await readJsonBody(req)
+  if (token.kind === 'question') await answerPendingQuestion(res, token.pendingId, { answer: body.answer })
+  else await resolvePendingApproval(res, token.pendingId, { decision: body.decision, editedArgs: body.editedArgs })
+}
+
 const server = createServer(async (req, res) => {
+  const decideMatch = (req.method === 'GET' || req.method === 'POST') && (req.url ?? '/').split('?')[0].match(/^\/decide\/([A-Za-z0-9_.-]+)$/)
+  if (decideMatch) {
+    try {
+      await handleDecide(req, res, decideMatch[1])
+    } catch (err) {
+      console.error('[loopengine] decision link failed:', err)
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Something went wrong; try again.' }))
+    }
+    return
+  }
+
   if (!isAuthorized(req)) {
     const headers: Record<string, string> = { 'content-type': 'application/json' }
     if (adminAuth) headers['www-authenticate'] = 'Basic realm="loopengine"'

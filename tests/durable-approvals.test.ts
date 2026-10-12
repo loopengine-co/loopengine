@@ -27,6 +27,15 @@ function makeInput(overrides: Partial<CreateCheckpointInput> = {}): CreateCheckp
 }
 
 describe('FileCheckpointStore', () => {
+  it('gets the open checkpoint a pendingId belongs to, and nothing once it is decided', async () => {
+    const store = new FileCheckpointStore(tmpDir())
+    const created = await store.create(makeInput())
+    expect((await store.get('p1'))?.id).toBe(created.id)
+    expect(await store.get('unknown')).toBeUndefined()
+    await store.withCheckpoint('p1', async (checkpoint) => ({ checkpoint: { ...checkpoint!, closed: true }, result: undefined }))
+    expect(await store.get('p1')).toBeUndefined()
+  })
+
   it('lists only checkpoints still waiting on a decision, oldest first', async () => {
     const store = new FileCheckpointStore(tmpDir())
     const first = await store.create(makeInput({ outstanding: { a1: { toolUseId: 't', tool: 'x', args: {}, reason: 'r' } } }))

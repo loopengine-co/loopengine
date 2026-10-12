@@ -26,14 +26,32 @@
 import { randomUUID } from 'node:crypto'
 import type { DurableApprover, Scope } from 'actauth'
 import type { DurableQuestionHandler } from '../agent-config.js'
+import { decidePath } from '../approval-links.js'
+import { publicBaseUrl } from './webhook.js'
 
 export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
   private readonly botToken: string
   private readonly channelId: string
+  private readonly publicUrl?: string
+  private readonly buttons: boolean
 
-  constructor(options: { botToken: string; channelId: string }) {
+  /** `publicUrl`: where this server is reachable (LOOPENGINE_PUBLIC_URL
+   * wins when set) — when known, each message links to a decision page
+   * (core/approval-links.ts) anyone in the channel can open. `buttons`:
+   * whether to add interactive Approve/Deny buttons, which only work with
+   * a Slack interactivity endpoint deployed (examples/notifier-handler/
+   * slack.ts); default true, false for a console-configured notifier,
+   * which relies on the link instead. */
+  constructor(options: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean }) {
     this.botToken = options.botToken
     this.channelId = options.channelId
+    this.publicUrl = options.publicUrl
+    this.buttons = options.buttons ?? true
+  }
+
+  private decideLine(pendingId: string, kind: 'approval' | 'question'): string {
+    const base = publicBaseUrl(this.publicUrl)
+    return base ? `\n<${base}${decidePath(pendingId, kind)}|${kind === 'approval' ? 'Open to approve or deny' : 'Open to answer'}>` : ''
   }
 
   requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
@@ -43,16 +61,18 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Approval requested*\n*tool:* ${tool}\n*args:* \`${JSON.stringify(args)}\`\n*scope:* ${scope.tenant}/${scope.environment}/${scope.agent}\n*reason:* ${reason}`,
+          text: `*Approval requested*\n*tool:* ${tool}\n*args:* \`${JSON.stringify(args)}\`\n*scope:* ${scope.tenant}/${scope.environment}/${scope.agent}\n*reason:* ${reason}${this.decideLine(pendingId, 'approval')}`,
         },
       },
-      {
-        type: 'actions',
-        elements: [
-          { type: 'button', text: { type: 'plain_text', text: 'Approve' }, style: 'primary', action_id: 'approve', value: pendingId },
-          { type: 'button', text: { type: 'plain_text', text: 'Deny' }, style: 'danger', action_id: 'deny', value: pendingId },
-        ],
-      },
+      ...(this.buttons
+        ? [{
+            type: 'actions',
+            elements: [
+              { type: 'button', text: { type: 'plain_text', text: 'Approve' }, style: 'primary', action_id: 'approve', value: pendingId },
+              { type: 'button', text: { type: 'plain_text', text: 'Deny' }, style: 'danger', action_id: 'deny', value: pendingId },
+            ],
+          }]
+        : []),
     ])
     return { pendingId }
   }
@@ -66,8 +86,10 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       action_id: 'answer_option',
     }))
     this.postMessage(`Question from ${agent}: ${question}`, [
-      { type: 'section', text: { type: 'mrkdwn', text: `*Question from ${agent}${sessionId ? ` (session ${sessionId})` : ''}:*\n${question}` } },
-      { type: 'actions', elements: [...optionButtons, { type: 'button', text: { type: 'plain_text', text: 'Other…' }, action_id: 'open_answer_modal', value: pendingId }] },
+      { type: 'section', text: { type: 'mrkdwn', text: `*Question from ${agent}${sessionId ? ` (session ${sessionId})` : ''}:*\n${question}${this.decideLine(pendingId, 'question')}` } },
+      ...(this.buttons
+        ? [{ type: 'actions', elements: [...optionButtons, { type: 'button', text: { type: 'plain_text', text: 'Other…' }, action_id: 'open_answer_modal', value: pendingId }] }]
+        : []),
     ])
     return { pendingId }
   }

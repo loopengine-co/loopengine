@@ -84,6 +84,10 @@ export interface CheckpointStore {
    * first — backs GET /agents/:name/pending. Reads without locking: a
    * snapshot for display, not something to act on without withCheckpoint. */
   listOpen(): Promise<TurnCheckpoint[]>
+  /** The open checkpoint `pendingId` belongs to, read without locking —
+   * for showing a decision page, not for acting on it (use
+   * withCheckpoint for that). undefined once it's decided or unknown. */
+  get(pendingId: string): Promise<TurnCheckpoint | undefined>
   close(): Promise<void>
 }
 
@@ -153,6 +157,15 @@ export class FileCheckpointStore implements CheckpointStore {
       }
       return result
     })
+  }
+
+  async get(pendingId: string): Promise<TurnCheckpoint | undefined> {
+    const indexPath = this.indexPath(pendingId)
+    if (!existsSync(indexPath)) return undefined
+    const checkpointPath = this.checkpointPath(readFileSync(indexPath, 'utf8'))
+    if (!existsSync(checkpointPath)) return undefined
+    const checkpoint = JSON.parse(readFileSync(checkpointPath, 'utf8')) as TurnCheckpoint
+    return !checkpoint.closed && checkpoint.outstanding[pendingId] ? checkpoint : undefined
   }
 
   async listOpen(): Promise<TurnCheckpoint[]> {
@@ -256,6 +269,15 @@ export class RedisCheckpointStore implements CheckpointStore {
       }
       return result
     })
+  }
+
+  async get(pendingId: string): Promise<TurnCheckpoint | undefined> {
+    const checkpointId = await this.redis.get(this.indexKey(pendingId))
+    if (!checkpointId) return undefined
+    const raw = await this.redis.get(this.checkpointKey(checkpointId))
+    if (!raw) return undefined
+    const checkpoint = JSON.parse(raw) as TurnCheckpoint
+    return !checkpoint.closed && checkpoint.outstanding[pendingId] ? checkpoint : undefined
   }
 
   async listOpen(): Promise<TurnCheckpoint[]> {

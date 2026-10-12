@@ -126,7 +126,8 @@ export const config: AgentConfig = {
 }
 ```
 
-Or, with no code at all, from the console: **Permissions → Approvals**
+Or, with no code at all, from the console: the Permissions tab's **Where
+approval requests and questions are sent** section
 writes `agents/<name>/notifier.yml` (webhook, Slack or Lark, plus which
 events) and stores the channel's one secret in the agent's own env —
 `LOOPENGINE_NOTIFIER_WEBHOOK_SECRET`, `LOOPENGINE_NOTIFIER_SLACK_BOT_TOKEN`
@@ -207,6 +208,24 @@ has `kind: "question"` and `answerPath`. Set `LOOPENGINE_PUBLIC_URL` (e.g.
 `https://agents.example.com`) and each also carries the full `resolveUrl`
 / `answerUrl`. A delivery that fails or gets a non-2xx answer is retried
 after 2 s, 10 s and 30 s; every attempt is logged in the console.
+
+**Decision links.** Every webhook payload also carries `decidePath` (and
+`decideUrl` once the server's address is known), and Slack messages link
+to it: a page at `/decide/<token>` where whoever has the link approves,
+denies, edits the arguments, or answers a question — no admin login. The
+token is HMAC-signed, names one pending decision, expires after 7 days
+(`LOOPENGINE_LINK_TTL_HOURS`), and is single-use by construction: once
+decided, the page says so. The signing secret is `LOOPENGINE_LINK_SECRET`,
+or one generated into `.checkpoints/link-secret` on first use; a
+deployment with more than one server must set the env var so all of them
+accept the same links. The server's address comes from
+`LOOPENGINE_PUBLIC_URL`, else the "Link address" saved in `notifier.yml`
+(the console fills it in from the address you're using it at). A
+console-configured Slack notifier sends the link instead of interactive
+buttons, which would need an interactivity endpoint; `httpNotifier` in
+code keeps the buttons unless `buttons: false`. The console's waiting
+list has a **Copy link** button for each decision, to send it to someone
+by hand.
 
 **What the caller gets back.** The paused `POST /agents/<name>/messages`
 reply carries `stopReason: "pending_approval"` (or

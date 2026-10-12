@@ -50,6 +50,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import type { DurableApprover, Scope } from 'actauth'
 import type { DurableQuestionHandler } from '../agent-config.js'
 import { recordDelivery, type NotifierDeliveryKind } from '../notifier-deliveries.js'
+import { decidePath } from '../approval-links.js'
 
 /** Waits before each retry after the first attempt — four tries in all,
  * spread over about 40 seconds. */
@@ -65,12 +66,18 @@ function sign(body: string, secret: string): string {
   return `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`
 }
 
-/** LOOPENGINE_PUBLIC_URL (e.g. https://acme.loopengine.app), read per
- * call so a change takes effect without a restart; undefined when unset,
- * in which case payloads carry only the relative path. */
-function publicUrl(path: string): string | undefined {
-  const base = process.env.LOOPENGINE_PUBLIC_URL
-  return base ? base.replace(/\/+$/, '') + path : undefined
+/** Where this server is reachable: LOOPENGINE_PUBLIC_URL (e.g.
+ * https://acme.loopengine.app) when set, read per call so a change takes
+ * effect without a restart, else `fallback` (a notifier.yml's own
+ * publicUrl, remembered from the console). undefined when neither is
+ * known, in which case payloads carry only relative paths. */
+export function publicBaseUrl(fallback?: string): string | undefined {
+  const base = process.env.LOOPENGINE_PUBLIC_URL || fallback
+  return base ? base.replace(/\/+$/, '') : undefined
+}
+
+function absolute(base: string | undefined, path: string): string | undefined {
+  return base ? base + path : undefined
 }
 
 async function attemptOnce(url: string, body: string, headers: Record<string, string>): Promise<DeliveryResult> {
@@ -108,20 +115,26 @@ export class WebhookNotifier implements DurableApprover, DurableQuestionHandler 
   private readonly webhookUrl: string
   private readonly signingSecret: string
   private readonly retryDelaysMs: number[]
+  private readonly publicUrl?: string
 
-  constructor(options: { webhookUrl: string; signingSecret: string; retryDelaysMs?: number[] }) {
+  constructor(options: { webhookUrl: string; signingSecret: string; retryDelaysMs?: number[]; publicUrl?: string }) {
     this.webhookUrl = options.webhookUrl
     this.signingSecret = options.signingSecret
     this.retryDelaysMs = options.retryDelaysMs ?? RETRY_DELAYS_MS
+    this.publicUrl = options.publicUrl
   }
 
   requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
     const pendingId = randomUUID()
     const requestedAt = new Date().toISOString()
     const resolvePath = `/pending-approvals/${pendingId}/resolve`
+    const decide = decidePath(pendingId, 'approval')
+    const base = publicBaseUrl(this.publicUrl)
     const body = JSON.stringify({
       pendingId, tool, args, scope, reason, requestedAt,
-      kind: 'approval', agent: scope.agent, resolvePath, resolveUrl: publicUrl(resolvePath),
+      kind: 'approval', agent: scope.agent, resolvePath, resolveUrl: absolute(base, resolvePath),
+      // A signed link a person can open to decide, no login needed.
+      decidePath: decide, decideUrl: absolute(base, decide),
     })
     void deliver(this.webhookUrl, body, { 'X-Actauth-Signature': sign(body, this.signingSecret) }, { agent: scope.agent, kind: 'approval', pendingId }, this.retryDelaysMs)
     return { pendingId }
@@ -131,9 +144,12 @@ export class WebhookNotifier implements DurableApprover, DurableQuestionHandler 
     const pendingId = randomUUID()
     const requestedAt = new Date().toISOString()
     const answerPath = `/pending-questions/${pendingId}/answer`
+    const decide = decidePath(pendingId, 'question')
+    const base = publicBaseUrl(this.publicUrl)
     const body = JSON.stringify({
       pendingId, question, options, agent, sessionId, requestedAt,
-      kind: 'question', answerPath, answerUrl: publicUrl(answerPath),
+      kind: 'question', answerPath, answerUrl: absolute(base, answerPath),
+      decidePath: decide, decideUrl: absolute(base, decide),
     })
     void deliver(this.webhookUrl, body, { 'X-Askuser-Signature': sign(body, this.signingSecret) }, { agent, kind: 'question', pendingId }, this.retryDelaysMs)
     return { pendingId }

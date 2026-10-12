@@ -65,3 +65,21 @@ describe('SlackNotifier', () => {
     await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('chat.postMessage failed'), 'channel_not_found'))
   })
 })
+
+describe('SlackNotifier decision links', () => {
+  it('links to the decision page and can leave out the interactive buttons', async () => {
+    vi.stubEnv('LOOPENGINE_LINK_SECRET', 'test-secret')
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const slack = new SlackNotifier({ botToken: 'xoxb', channelId: 'C1', publicUrl: 'https://agents.example.com', buttons: false })
+
+    slack.requestDurableApproval('issue_refund', { orderId: '1' }, { tenant: 'default', environment: 'production', agent: 'support' }, 'ask rule')
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(body.blocks).toHaveLength(1)
+    expect(body.blocks[0].text.text).toMatch(/<https:\/\/agents\.example\.com\/decide\/[^|]+\|Open to approve or deny>/)
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+})

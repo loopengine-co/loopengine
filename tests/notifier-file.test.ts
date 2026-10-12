@@ -34,6 +34,8 @@ describe('notifier.yml', () => {
     expect(() => validateNotifierFile({ channel: 'webhook', events: ['approval'], url: 'ftp://x' })).toThrow(/url/)
     expect(() => validateNotifierFile({ channel: 'slack', events: ['approval'] })).toThrow(/channelId/)
     expect(() => validateNotifierFile({ channel: 'lark', events: ['approval'], appId: 'a' })).toThrow(/chatId/)
+    expect(() => validateNotifierFile({ channel: 'webhook', events: ['approval'], url: 'https://x', publicUrl: 'not a url' })).toThrow(/publicUrl/)
+    expect(validateNotifierFile({ channel: 'slack', events: ['approval'], channelId: 'C1', publicUrl: 'https://agents.example.com/' }).publicUrl).toBe('https://agents.example.com')
   })
 })
 

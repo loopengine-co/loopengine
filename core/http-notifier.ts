@@ -111,11 +111,11 @@ function buildResolved(httpNotifier: HttpNotifierConfig): ResolvedHttpNotifier {
 
   switch (httpNotifier.channel) {
     case 'webhook': {
-      const { webhookUrl, webhookSecret } = httpNotifier.config
+      const { webhookUrl, webhookSecret, publicUrl } = httpNotifier.config
       // One shared instance for both concerns, same "it's channel-
       // specific, not concern-specific" reasoning every other channel's
       // own file already has — see WebhookNotifier's own doc comment.
-      const webhook = new WebhookNotifier({ webhookUrl, signingSecret: webhookSecret })
+      const webhook = new WebhookNotifier({ webhookUrl, signingSecret: webhookSecret, publicUrl })
       resolved = {
         approver: events.has('approval') ? webhook : undefined,
         questionHandler: events.has('question') ? webhook : undefined,
@@ -125,13 +125,13 @@ function buildResolved(httpNotifier: HttpNotifierConfig): ResolvedHttpNotifier {
       break
     }
     case 'slack': {
-      const { botToken, channelId } = httpNotifier.config
+      const { botToken, channelId, publicUrl, buttons } = httpNotifier.config
       // One shared instance for every concern this httpNotifier actually
       // covers — same "it's Slack-specific, not approval/question/
       // lifecycle-specific" reasoning SlackNotifier's own doc
       // comment works out; cheap to construct (holds two strings, does no
       // I/O itself) so there's no reason to build one per event kind.
-      const slack = new SlackNotifier({ botToken, channelId })
+      const slack = new SlackNotifier({ botToken, channelId, publicUrl, buttons })
       resolved = {
         approver: events.has('approval') ? slack : undefined,
         questionHandler: events.has('question') ? slack : undefined,

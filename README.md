@@ -171,11 +171,20 @@ export const config: AgentConfig = {
 }
 ```
 
-Or skip the code: in the console, **Permissions → Approvals** sets a
+Or skip the code: in the console, the Permissions tab's **Where approval
+requests and questions are sent** section sets a
 webhook, Slack or Lark target for one agent (saved to
 `agents/<name>/notifier.yml`, with its secret in the agent's own `.env`),
 sends a test, shows recent deliveries, and lists every decision still
-waiting with Approve/Deny buttons.
+waiting with Approve/Deny buttons. The tab warns you when an agent has
+`ask` rules but nobody would be told.
+
+Every notification links to a **decision page**: a signed, single-use
+link (`/decide/<token>`, valid 7 days) where whoever got the message can
+approve, deny, edit the arguments or answer a question, with no login and
+no app of your own. So the quickest setup is Slack: paste a bot token,
+pick a channel, save; each approval arrives with an "Open to approve or
+deny" link.
 
 For a third-party app calling an agent over plain HTTP:
 

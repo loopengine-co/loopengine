@@ -1,6 +1,6 @@
 // agents/<name>/notifier.yml — where an agent's "ask" approvals and
 // questions go when nobody is watching a live chat, set from the console
-// (Permissions → Approvals) instead of in code. Only consulted when the
+// (Permissions → "Where approval requests and questions are sent") instead of in code. Only consulted when the
 // agent's own AgentConfig.httpNotifier is unset; code always wins.
 //
 // The file holds only non-secret settings. The one secret each channel
@@ -25,6 +25,10 @@ export interface NotifierFile {
   /** lark: app id and chat to post into. */
   appId?: string
   chatId?: string
+  /** Where this server is reachable, for the links in each message —
+   * remembered from the console's own address when saving.
+   * LOOPENGINE_PUBLIC_URL, when set, wins over it. */
+  publicUrl?: string
 }
 
 /** The env var each channel's secret is read from, per agent. */
@@ -55,6 +59,11 @@ export function validateNotifierFile(input: unknown): NotifierFile {
   }
   const str = (key: string): string | undefined => (typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim() : undefined)
   const file: NotifierFile = { channel, events: events as HttpNotifierEvent[] }
+  const publicUrl = str('publicUrl')
+  if (publicUrl) {
+    if (!/^https?:\/\/[^/]+/.test(publicUrl)) throw new NotifierFileError('publicUrl must be an http(s) URL')
+    file.publicUrl = publicUrl.replace(/\/+$/, '')
+  }
   if (channel === 'webhook') {
     const url = str('url')
     if (!url || !/^https?:\/\//.test(url)) throw new NotifierFileError('url must be an http(s) URL')
@@ -83,8 +92,8 @@ export function readNotifierFile(dir: string): NotifierFile | undefined {
 export function writeNotifierFile(dir: string, input: unknown): NotifierFile {
   const file = validateNotifierFile(input)
   const header =
-    '# Where this agent sends "ask" approvals and questions when nobody is in a live chat.\n' +
-    `# Edited from the console (Permissions > Approvals). The secret lives in this agent's env as ${NOTIFIER_SECRET_VARS[file.channel]}.\n`
+    '# Where this agent sends approval requests and questions when it is called over HTTP.\n' +
+    `# Edited from the console (Permissions tab). The secret lives in this agent's env as ${NOTIFIER_SECRET_VARS[file.channel]}.\n`
   writeFileSync(notifierFilePath(dir), header + stringifyYaml(file))
   return file
 }
@@ -102,9 +111,11 @@ export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv): { con
   if (!secret) return { missingSecret: secretVar }
   switch (file.channel) {
     case 'webhook':
-      return { config: { channel: 'webhook', config: { webhookUrl: file.url!, webhookSecret: secret }, events: file.events } }
+      return { config: { channel: 'webhook', config: { webhookUrl: file.url!, webhookSecret: secret, publicUrl: file.publicUrl }, events: file.events } }
     case 'slack':
-      return { config: { channel: 'slack', config: { botToken: secret, channelId: file.channelId! }, events: file.events } }
+      // No interactive buttons: a console-configured Slack notifier has
+      // no interactivity endpoint behind it; the decision link replaces them.
+      return { config: { channel: 'slack', config: { botToken: secret, channelId: file.channelId!, publicUrl: file.publicUrl, buttons: false }, events: file.events } }
     case 'lark':
       return { config: { channel: 'lark', config: { appId: file.appId!, appSecret: secret, chatId: file.chatId! }, events: file.events } }
   }

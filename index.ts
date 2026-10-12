@@ -23,6 +23,8 @@ export { setUsageSink, recordUsage, type UsageEvent, type UsageSink } from '#cor
 export { readNotifierFile, writeNotifierFile, removeNotifierFile, validateNotifierFile, notifierConfigFromFile, NotifierFileError, NOTIFIER_SECRET_VARS, type NotifierFile } from '#core/notifier-file.js'
 export { listDeliveries, recordDelivery, type NotifierDelivery } from '#core/notifier-deliveries.js'
 export { describeNotifier } from '#core/http-notifier.js'
+export { createDecisionToken, verifyDecisionToken, decidePath, decideLinkMaker, decisionLinkTtlMs, type DecisionKind } from '#core/approval-links.js'
+export { renderDecidePage, renderDecideGonePage, renderDecideInvalidPage, type DecidePageItem } from './web/decide-page.js'
 export { sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
 export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, type DefaultWebhook } from './web/notifier-admin.js'
 

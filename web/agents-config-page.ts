@@ -40,6 +40,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
      panels' own content. */
   #empty { color: var(--ink-muted); font-size: 13px; padding: 24px; }
   .env-cell { display: grid; gap: 6px; }
+  .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
   .env-desc { max-width: 340px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   form.add-source.env-inline { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-width: 320px; }
   form.add-source.env-inline input, form.add-source.env-inline select { flex: 1 1 140px; width: auto; min-width: 0; }
@@ -956,7 +957,7 @@ ${consoleShellScript}
         '</form></section>';
   }
 
-  // ---- Permissions → Approvals: where "ask" decisions go when nobody is
+  // ---- Permissions → "Where approval requests and questions are sent": where "ask" decisions go when nobody is
   // in Chat (web/notifier-admin.ts behind GET/PUT/DELETE .../notifier),
   // the decisions still waiting (GET .../pending), and recent webhook
   // deliveries. Reloaded every time the tab opens, so the waiting list is
@@ -981,6 +982,9 @@ ${consoleShellScript}
           ? '<form class="pending-answer" data-id="' + escapeHtml(p.pendingId) + '" style="display:flex;gap:6px"><input name="answer" placeholder="Answer" required style="min-width:0"><button type="submit">Answer</button></form>'
           : '<div style="display:flex;gap:6px"><button type="button" class="primary pending-decide" data-id="' + escapeHtml(p.pendingId) + '" data-decision="approve">Approve</button>' +
             '<button type="button" class="pending-decide" data-id="' + escapeHtml(p.pendingId) + '" data-decision="deny">Deny</button></div>';
+        if (p.decidePath) {
+          actions += '<button type="button" class="pending-copy" data-path="' + escapeHtml(p.decidePath) + '" title="A link anyone can open to decide, no login needed" style="margin-top:6px">Copy link</button>';
+        }
         return '<tr><td><span class="le-pill ' + (p.kind === 'question' ? 'accent' : 'ask') + '">' + (p.kind === 'question' ? 'question' : 'approval') + '</span>' +
           (p.createdAt ? '<div class="hint">' + escapeHtml(new Date(p.createdAt).toLocaleString()) + '</div>' : '') + '</td>' +
           '<td>' + details + '</td><td><code>' + escapeHtml(p.sessionId) + '</code></td><td>' + actions + '</td></tr>';
@@ -992,12 +996,15 @@ ${consoleShellScript}
     if (n.source === 'file') return 'Sending to <strong>' + escapeHtml(n.channel) + '</strong> for: ' + escapeHtml((n.events || []).join(', ')) + '.';
     if (n.missingSecret) return 'Saved, but not sending yet: set the secret below (<code>' + escapeHtml(n.missingSecret) + '</code>).';
     if (n.source === 'default') return 'Using the project-wide default webhook (<code>LOOPENGINE_DEFAULT_WEBHOOK_URL</code>, ' + escapeHtml(n.defaultWebhookUrl) + '). Set one below to use a different target for this agent.';
-    return 'Not set up. A call that needs approval only reaches someone in Chat; set a webhook or Slack channel so apps calling this agent over HTTP can get approvals.';
+    return '<strong>Nowhere yet</strong>, so nobody is notified. Choose a webhook, Slack channel or Lark chat below.';
   }
 
   function renderNotifierForm(n) {
     var f = n.file || { channel: 'webhook', events: ['approval', 'question'] };
     var events = f.events || [];
+    function eventBox(e) {
+      return '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
+    }
     function field(channel, html) {
       return '<div class="notifier-fields" data-channel="' + channel + '"' + (f.channel === channel ? '' : ' hidden') + '>' + html + '</div>';
     }
@@ -1014,15 +1021,18 @@ ${consoleShellScript}
       field('webhook', '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField('webhook', 'Signing secret')) +
       field('slack', '<label>Channel ID<input name="channelId" placeholder="C0123ABC456" value="' + escapeHtml(f.channelId || '') + '"></label>' + secretField('slack', 'Bot token')) +
       field('lark', '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField('lark', 'App secret')) +
-      '<div class="body-field">Send<div style="display:flex;gap:14px;flex-wrap:wrap">' +
-        NOTIFIER_EVENTS.map(function (e) {
-          return '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
-        }).join('') + '</div></div>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="submit">Save</button><button type="button" id="notifierTestBtn">Send test</button>' +
+      '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
+        '<input type="url" name="publicUrl" id="notifierPublicUrl" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
+      '<div class="body-field">Send' +
+        '<div style="display:flex;gap:14px;flex-wrap:wrap">' + NOTIFIER_EVENTS.slice(0, 2).map(eventBox).join('') + '</div>' +
+        '<details' + (events.indexOf('run_finish') !== -1 || events.indexOf('run_start') !== -1 ? ' open' : '') + '><summary>More events</summary>' +
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">' + NOTIFIER_EVENTS.slice(2).map(eventBox).join('') + '</div>' +
+        '<p class="hint" style="margin:4px 0 0">Run finished tells your app the agent&#39;s final reply once a decision lets it finish.</p></details></div>' +
+      (n.canSave === false ? '<p class="error" style="margin:0">Saving needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server, because this stores a secret. Add <code>LOOPENGINE_ADMIN_AUTH=user:pass</code> to <code>.env</code> and restart.</p>' : '') +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="submit"' + (n.canSave === false ? ' disabled' : '') + '>Save</button><button type="button" id="notifierTestBtn">Send test</button>' +
         (n.file ? '<button type="button" class="delete-btn" id="notifierRemoveBtn">Remove</button>' : '') + '</div>' +
       '<div id="notifierResult" class="hint"></div>' +
-      '<p class="hint" style="margin:0">Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries <code>pendingId</code> and <code>resolvePath</code>; your app sends <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> there.' +
-        (n.publicUrl ? '' : ' Set <code>LOOPENGINE_PUBLIC_URL</code> to include a full <code>resolveUrl</code> too.') + '</p>' +
+      '<p class="hint" style="margin:0">For a webhook: your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can simply forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>' +
       '</form>';
   }
 
@@ -1035,14 +1045,35 @@ ${consoleShellScript}
       }).join('') + '</tbody></table></div>';
   }
 
-  // Shown at the top of the tab, and only when something is waiting.
-  function renderPendingHtml(pending) {
-    if (!pending.length) return '';
-    return '<section><h3>Waiting for a decision (' + pending.length + ')</h3>' + renderPendingTable(pending) + '</section>';
+  // Tools that can stop for approval: a rule that asks, or "ask" as the
+  // decision when no rule matches.
+  function askingTools() {
+    var perms = currentCfg && currentCfg.permissions;
+    if (!perms) return [];
+    var tools = [];
+    perms.rules.forEach(function (r) { if (r.decision === 'ask' && tools.indexOf(r.tool) === -1) tools.push(r.tool); });
+    if (perms.defaultDecision === 'ask') tools.push('any tool without a rule');
+    return tools;
+  }
+
+  // The top of the tab: a nudge when approvals over HTTP would reach
+  // nobody, and whatever is waiting right now.
+  function renderPendingHtml(pending, n) {
+    var html = '';
+    var tools = askingTools();
+    if (tools.length && n && n.source === 'none') {
+      html += '<div class="approvals-nudge"><strong>Approval requests aren&#39;t sent anywhere yet.</strong> ' +
+        escapeHtml(tools.slice(0, 3).join(', ')) + (tools.length > 3 ? ' and more' : '') + ' can stop for approval, but when an app calls this agent over HTTP nobody is notified. ' +
+        '<a href="#approvalsSetup" class="approvals-nudge-link">Choose where they go</a></div>';
+    }
+    if (pending.length) html += '<section><h3>Waiting for a decision (' + pending.length + ')</h3>' + renderPendingTable(pending) + '</section>';
+    return html;
   }
 
   function renderApprovalsHtml(n) {
-    return '<section><h3>Approvals when nobody is in Chat</h3><p class="muted" style="margin:0 0 12px">' + renderNotifierStatus(n) + '</p>' +
+    return '<section id="approvalsSetup"><h3>Where approval requests and questions are sent</h3>' +
+      '<p class="muted" style="margin:0 0 8px">When an app calls this agent over HTTP and a tool call needs approval, or the agent asks a question, it&#39;s sent here. In Chat it shows up in the conversation instead.</p>' +
+      '<p class="muted" style="margin:0 0 12px">Currently: ' + renderNotifierStatus(n) + '</p>' +
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
         (n.source === 'code' ? '' : renderNotifierForm(n)) + '</section>' +
       '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
@@ -1051,6 +1082,24 @@ ${consoleShellScript}
   function wirePendingHandlers(name) {
     var content = detail.querySelector('#pendingContent');
     if (!content) return;
+    var nudgeLink = content.querySelector('.approvals-nudge-link');
+    if (nudgeLink) {
+      nudgeLink.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        var target = detail.querySelector('#approvalsSetup');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+    var copyBtns = content.querySelectorAll('.pending-copy');
+    for (var c = 0; c < copyBtns.length; c++) {
+      copyBtns[c].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var link = location.origin + btn.dataset.path;
+        var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy link'; }, 1500); };
+        if (navigator.clipboard) navigator.clipboard.writeText(link).then(done, function () { window.prompt('Copy this link', link); });
+        else window.prompt('Copy this link', link);
+      });
+    }
     var decideBtns = content.querySelectorAll('.pending-decide');
     for (var i = 0; i < decideBtns.length; i++) {
       decideBtns[i].addEventListener('click', function (ev) {
@@ -1098,7 +1147,7 @@ ${consoleShellScript}
       ev.preventDefault();
       var data = new FormData(form);
       var channel = data.get('channel');
-      var body = { channel: channel, events: data.getAll('events'), url: data.get('url'), channelId: data.get('channelId'), appId: data.get('appId'), chatId: data.get('chatId') };
+      var body = { channel: channel, events: data.getAll('events'), url: data.get('url'), channelId: data.get('channelId'), appId: data.get('appId'), chatId: data.get('chatId'), publicUrl: data.get('publicUrl') };
       var secret = data.get('secret_' + channel);
       if (secret) body.secret = secret;
       result.textContent = 'Saving…';
@@ -1138,7 +1187,7 @@ ${consoleShellScript}
       wireApprovalsHandlers(name);
       var pendingEl = detail.querySelector('#pendingContent');
       if (pendingEl) {
-        pendingEl.innerHTML = renderPendingHtml((results[1].ok && results[1].body.pending) || []);
+        pendingEl.innerHTML = renderPendingHtml((results[1].ok && results[1].body.pending) || [], results[0].body);
         wirePendingHandlers(name);
       }
       if (message) { var r = content.querySelector('#notifierResult'); if (r) r.textContent = message; }
