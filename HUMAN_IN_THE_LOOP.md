@@ -126,6 +126,27 @@ export const config: AgentConfig = {
 }
 ```
 
+Or, with no code at all, from the console: **Permissions → Approvals**
+writes `agents/<name>/notifier.yml` (webhook, Slack or Lark, plus which
+events) and stores the channel's one secret in the agent's own env —
+`LOOPENGINE_NOTIFIER_WEBHOOK_SECRET`, `LOOPENGINE_NOTIFIER_SLACK_BOT_TOKEN`
+or `LOOPENGINE_NOTIFIER_LARK_APP_SECRET`. Precedence: `httpNotifier` in
+code, then `notifier.yml`, then the deployment-wide default webhook. The
+file is re-read on every turn, so an edit applies immediately; a file
+whose secret isn't set yet sends nothing.
+
+```yaml
+# agents/support/notifier.yml
+channel: webhook
+events: [approval, question, run_finish]
+url: https://your-app.example.com/hooks/loopengine
+```
+
+The same section sends a test (`POST /agents/<name>/notifier/test`),
+shows the last deliveries (each attempt, with the receiver's status), and
+lists every decision still waiting (`GET /agents/<name>/pending`) with
+Approve/Deny/Answer controls.
+
 `AgentConfig.httpNotifier` replaces what used to be up to four separate
 fields (a channel-keyed `approvers.http` override, `questionHandlers.http`,
 `onRunStart`, `onRunFinish`) with the single shape almost every real
@@ -178,6 +199,21 @@ under `examples/notifier-handler/`:
 Every one of these four files is receiving-side-only: an HTTP endpoint
 you still have to deploy yourself (an example, not a library export),
 regardless of which channel.
+
+**What the webhook carries.** An approval payload has `pendingId`,
+`tool`, `args`, `scope`, `reason`, `requestedAt`, plus `kind: "approval"`,
+`agent`, and `resolvePath` (`/pending-approvals/<id>/resolve`); a question
+has `kind: "question"` and `answerPath`. Set `LOOPENGINE_PUBLIC_URL` (e.g.
+`https://agents.example.com`) and each also carries the full `resolveUrl`
+/ `answerUrl`. A delivery that fails or gets a non-2xx answer is retried
+after 2 s, 10 s and 30 s; every attempt is logged in the console.
+
+**What the caller gets back.** The paused `POST /agents/<name>/messages`
+reply carries `stopReason: "pending_approval"` (or
+`"pending_question"`) and a `pending` list — each item's `pendingId`,
+`tool`, `args`, `reason` and `resolvePath`/`answerPath` — so an app can
+resolve straight from it, without waiting for the webhook. An app that
+can't receive webhooks can poll `GET /agents/<name>/pending` instead.
 
 ### 3. Resolve, once a human decides
 

@@ -12,7 +12,9 @@ import { LarkNotifier } from './http-notify-triggers/lark.js'
 import { EmailNotifier } from './http-notify-triggers/email.js'
 import { DatabaseApprover } from './http-notify-triggers/database.js'
 import { RedisQueueApprover } from './http-notify-triggers/redis.js'
-import type { AgentConfig, QuestionHandler } from './agent-config.js'
+import type { AgentConfig, HttpNotifierConfig, QuestionHandler } from './agent-config.js'
+import { agentDirFor, createAgentEnv } from './agent-env.js'
+import { notifierConfigFromFile, readNotifierFile, type NotifierFile } from './notifier-file.js'
 
 interface ResolvedHttpNotifier {
   approver?: Approver
@@ -50,13 +52,60 @@ function formatEmailLifecycleSubject(event: 'run_start' | 'run_finish', context:
   return event === 'run_start' ? `${context.agent} started` : `${context.agent} finished`
 }
 
+/** Where an agent's durable approvals/questions go, for the console:
+ * `code` (AgentConfig.httpNotifier), `file` (agents/<name>/notifier.yml),
+ * or `none`. A file whose secret isn't set yet is reported, not used. */
+export function describeNotifier(config: AgentConfig): {
+  source: 'code' | 'file' | 'none'
+  channel?: HttpNotifierConfig['channel']
+  events?: string[]
+  file?: NotifierFile
+  missingSecret?: string
+  error?: string
+} {
+  if (config.httpNotifier) return { source: 'code', channel: config.httpNotifier.channel, events: [...config.httpNotifier.events] }
+  const dir = agentDirFor(config)
+  let file: NotifierFile | undefined
+  try {
+    file = readNotifierFile(dir)
+  } catch (err) {
+    return { source: 'none', error: `notifier.yml is invalid: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  if (!file) return { source: 'none' }
+  const { missingSecret } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
+  return { source: missingSecret ? 'none' : 'file', channel: file.channel, events: file.events, file, missingSecret }
+}
+
+/** AgentConfig.httpNotifier when the agent sets one in code; otherwise
+ * its agents/<name>/notifier.yml (see core/notifier-file.ts), re-read on
+ * every call so a console edit applies to the very next turn. */
 export function resolveHttpNotifier(config: AgentConfig): ResolvedHttpNotifier {
   const httpNotifier = config.httpNotifier
-  if (!httpNotifier) return EMPTY
+  if (!httpNotifier) return resolveFromFile(config)
 
   const cached = cache.get(config)
   if (cached) return cached
 
+  const resolved = buildResolved(httpNotifier)
+  cache.set(config, resolved)
+  return resolved
+}
+
+function resolveFromFile(config: AgentConfig): ResolvedHttpNotifier {
+  const dir = agentDirFor(config)
+  let file: NotifierFile | undefined
+  try {
+    file = readNotifierFile(dir)
+  } catch (err) {
+    console.error(`[loopengine] ignoring agents/${config.name}/notifier.yml:`, err instanceof Error ? err.message : err)
+    return EMPTY
+  }
+  if (!file) return EMPTY
+  const { config: httpNotifier } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
+  return httpNotifier ? buildResolved(httpNotifier) : EMPTY
+}
+
+function buildResolved(httpNotifier: HttpNotifierConfig): ResolvedHttpNotifier {
   const events = new Set(httpNotifier.events)
   let resolved: ResolvedHttpNotifier
 
@@ -134,6 +183,5 @@ export function resolveHttpNotifier(config: AgentConfig): ResolvedHttpNotifier {
     }
   }
 
-  cache.set(config, resolved)
   return resolved
 }

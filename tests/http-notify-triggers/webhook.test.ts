@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { WebhookNotifier, postLifecycleWebhook } from '#core/http-notify-triggers/webhook.js'
+import { WebhookNotifier, postLifecycleWebhook, sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
+import { clearDeliveries, listDeliveries } from '#core/notifier-deliveries.js'
 
 function verify(rawBody: string, signatureHeader: string, signingSecret: string): boolean {
   const expected = `sha256=${createHmac('sha256', signingSecret).update(rawBody).digest('hex')}`
@@ -50,15 +51,67 @@ describe('WebhookNotifier', () => {
     expect(JSON.parse(body)).toMatchObject({ pendingId, question: 'Which warehouse?', options: ['east', 'west'], agent: 'support', sessionId: 'session-1' })
   })
 
-  it('logs, rather than throws, when webhook delivery rejects', async () => {
+  it('retries a failed delivery, then logs rather than throws once every attempt fails', async () => {
     const fetchMock = vi.fn(async () => Promise.reject(new Error('network down')))
     vi.stubGlobal('fetch', fetchMock)
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const webhook = new WebhookNotifier({ webhookUrl: 'https://example.com/hook', signingSecret: 'shh' })
+    const webhook = new WebhookNotifier({ webhookUrl: 'https://example.com/hook', signingSecret: 'shh', retryDelaysMs: [0, 0] })
 
     const { pendingId } = webhook.requestDurableApproval('t', {}, { tenant: 'acme', environment: 'production', agent: 'a' }, 'r')
 
-    await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(`webhook delivery failed for pendingId '${pendingId}'`), expect.any(Error)))
+    await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(`failed after 3 attempts (approval ${pendingId})`)))
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('treats a non-2xx answer as a failure and stops retrying once one succeeds, recording each attempt', async () => {
+    clearDeliveries()
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValueOnce(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const webhook = new WebhookNotifier({ webhookUrl: 'https://example.com/hook', signingSecret: 'shh', retryDelaysMs: [0, 0, 0] })
+
+    const { pendingId } = webhook.requestDurableApproval('t', {}, { tenant: 'acme', environment: 'production', agent: 'retry-agent' }, 'r')
+
+    await vi.waitFor(() => expect(listDeliveries('retry-agent')).toHaveLength(2))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(listDeliveries('retry-agent')).toMatchObject([
+      { attempt: 2, ok: true, status: 200, kind: 'approval', pendingId },
+      { attempt: 1, ok: false, status: 503, error: 'HTTP 503' },
+    ])
+  })
+
+  it('tells the receiver where to send the decision back, with a full URL once LOOPENGINE_PUBLIC_URL is set', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const webhook = new WebhookNotifier({ webhookUrl: 'https://example.com/hook', signingSecret: 'shh' })
+
+    const { pendingId: relativeId } = webhook.requestDurableApproval('t', {}, { tenant: 'acme', environment: 'production', agent: 'support' }, 'r')
+    vi.stubEnv('LOOPENGINE_PUBLIC_URL', 'https://acme.loopengine.app/')
+    const { pendingId: questionId } = webhook.notifyPendingQuestion('Which?', undefined, 'support', 's-1')
+    vi.unstubAllEnvs()
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const approval = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    const question = JSON.parse(fetchMock.mock.calls[1][1]?.body as string)
+    expect(approval).toMatchObject({ kind: 'approval', agent: 'support', resolvePath: `/pending-approvals/${relativeId}/resolve` })
+    expect(approval.resolveUrl).toBeUndefined()
+    expect(question).toMatchObject({ kind: 'question', answerPath: `/pending-questions/${questionId}/answer`, answerUrl: `https://acme.loopengine.app/pending-questions/${questionId}/answer` })
+  })
+})
+
+describe('sendTestWebhook', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('sends one signed test event and reports the receiver\'s answer', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await sendTestWebhook('https://example.com/hook', 'shh', 'support')
+
+    expect(result).toEqual({ ok: false, status: 401, error: 'HTTP 401' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const init = fetchMock.mock.calls[0][1]
+    expect(JSON.parse(init?.body as string)).toMatchObject({ event: 'test', agent: 'support' })
+    expect(verify(init?.body as string, (init?.headers as Record<string, string>)['X-Lifecycle-Signature'], 'shh')).toBe(true)
   })
 })
 

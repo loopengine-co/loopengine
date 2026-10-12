@@ -39,53 +39,104 @@
 // pending-approval/pending-question one hitting the same URL (see
 // examples/notifier-handler/webhook.ts's own `verifyWebhookNotifier` for
 // the receiving side of all three).
+// Delivery is retried (RETRY_DELAYS_MS, a non-2xx answer counts as a
+// failure), every attempt is recorded for the console's delivery log
+// (core/notifier-deliveries.ts), and each payload carries where to send
+// the decision back (`resolvePath`/`answerPath`, plus a full
+// `resolveUrl`/`answerUrl` when LOOPENGINE_PUBLIC_URL says where this
+// server is reachable) — all additive fields, so existing receivers keep
+// working unchanged.
 import { createHmac, randomUUID } from 'node:crypto'
 import type { DurableApprover, Scope } from 'actauth'
 import type { DurableQuestionHandler } from '../agent-config.js'
+import { recordDelivery, type NotifierDeliveryKind } from '../notifier-deliveries.js'
+
+/** Waits before each retry after the first attempt — four tries in all,
+ * spread over about 40 seconds. */
+const RETRY_DELAYS_MS = [2_000, 10_000, 30_000]
+
+export interface DeliveryResult {
+  ok: boolean
+  status?: number
+  error?: string
+}
+
+function sign(body: string, secret: string): string {
+  return `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`
+}
+
+/** LOOPENGINE_PUBLIC_URL (e.g. https://acme.loopengine.app), read per
+ * call so a change takes effect without a restart; undefined when unset,
+ * in which case payloads carry only the relative path. */
+function publicUrl(path: string): string | undefined {
+  const base = process.env.LOOPENGINE_PUBLIC_URL
+  return base ? base.replace(/\/+$/, '') + path : undefined
+}
+
+async function attemptOnce(url: string, body: string, headers: Record<string, string>): Promise<DeliveryResult> {
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body })
+    return res.ok ? { ok: true, status: res.status } : { ok: false, status: res.status, error: `HTTP ${res.status}` }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/** Sends one signed POST, retrying on a network error or non-2xx answer,
+ * and records every attempt. Resolves with the last attempt's result —
+ * callers that must return right away (a pending decision is already
+ * recorded either way) don't await it. */
+async function deliver(
+  url: string,
+  body: string,
+  headers: Record<string, string>,
+  meta: { agent: string; kind: NotifierDeliveryKind; pendingId?: string },
+  retryDelaysMs: number[],
+): Promise<DeliveryResult> {
+  let result: DeliveryResult = { ok: false }
+  for (let attempt = 1; attempt <= retryDelaysMs.length + 1; attempt++) {
+    if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt - 2]))
+    result = await attemptOnce(url, body, headers)
+    recordDelivery({ at: new Date().toISOString(), url, attempt, ...meta, ...result })
+    if (result.ok) return result
+  }
+  console.error(`[loopengine] webhook delivery to ${url} failed after ${retryDelaysMs.length + 1} attempts (${meta.kind}${meta.pendingId ? ` ${meta.pendingId}` : ''}): ${result.error}`)
+  return result
+}
 
 export class WebhookNotifier implements DurableApprover, DurableQuestionHandler {
   private readonly webhookUrl: string
   private readonly signingSecret: string
+  private readonly retryDelaysMs: number[]
 
-  constructor(options: { webhookUrl: string; signingSecret: string }) {
+  constructor(options: { webhookUrl: string; signingSecret: string; retryDelaysMs?: number[] }) {
     this.webhookUrl = options.webhookUrl
     this.signingSecret = options.signingSecret
+    this.retryDelaysMs = options.retryDelaysMs ?? RETRY_DELAYS_MS
   }
 
   requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
     const pendingId = randomUUID()
     const requestedAt = new Date().toISOString()
-    const body = JSON.stringify({ pendingId, tool, args, scope, reason, requestedAt })
-    this.post(body, 'X-Actauth-Signature', pendingId)
+    const resolvePath = `/pending-approvals/${pendingId}/resolve`
+    const body = JSON.stringify({
+      pendingId, tool, args, scope, reason, requestedAt,
+      kind: 'approval', agent: scope.agent, resolvePath, resolveUrl: publicUrl(resolvePath),
+    })
+    void deliver(this.webhookUrl, body, { 'X-Actauth-Signature': sign(body, this.signingSecret) }, { agent: scope.agent, kind: 'approval', pendingId }, this.retryDelaysMs)
     return { pendingId }
   }
 
   notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined): { pendingId: string } {
     const pendingId = randomUUID()
     const requestedAt = new Date().toISOString()
-    const body = JSON.stringify({ pendingId, question, options, agent, sessionId, requestedAt })
-    this.post(body, 'X-Askuser-Signature', pendingId)
-    return { pendingId }
-  }
-
-  /** Shared by both methods above — the one place either used to
-   * independently build the same signed fetch() call. Not awaited by its
-   * own callers, same fire-and-forget contract each had on its own: both
-   * requestDurableApproval/notifyPendingQuestion return immediately, by
-   * contract (see DurableApprover/DurableQuestionHandler's own doc
-   * comments), so a delivery failure here has no synchronous way to
-   * surface to the caller — logged instead of thrown, since throwing
-   * would blow up a decision that has already, correctly, been recorded
-   * as pending. */
-  private post(body: string, signatureHeader: string, pendingId: string): void {
-    const signature = `sha256=${createHmac('sha256', this.signingSecret).update(body).digest('hex')}`
-    fetch(this.webhookUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', [signatureHeader]: signature },
-      body,
-    }).catch((err) => {
-      console.error(`[loopengine] WebhookNotifier: webhook delivery failed for pendingId '${pendingId}':`, err)
+    const answerPath = `/pending-questions/${pendingId}/answer`
+    const body = JSON.stringify({
+      pendingId, question, options, agent, sessionId, requestedAt,
+      kind: 'question', answerPath, answerUrl: publicUrl(answerPath),
     })
+    void deliver(this.webhookUrl, body, { 'X-Askuser-Signature': sign(body, this.signingSecret) }, { agent, kind: 'question', pendingId }, this.retryDelaysMs)
+    return { pendingId }
   }
 }
 
@@ -96,12 +147,13 @@ export function postLifecycleWebhook(
   context: Record<string, unknown>,
 ): void {
   const payload = JSON.stringify({ event, ...context, occurredAt: new Date().toISOString() })
-  const signature = `sha256=${createHmac('sha256', webhookSecret).update(payload).digest('hex')}`
-  fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'X-Lifecycle-Signature': signature },
-    body: payload,
-  }).catch((err) => {
-    console.error(`[loopengine] httpNotifier ${event} webhook delivery failed:`, err)
-  })
+  void deliver(webhookUrl, payload, { 'X-Lifecycle-Signature': sign(payload, webhookSecret) }, { agent: String(context.agent ?? ''), kind: event }, RETRY_DELAYS_MS)
+}
+
+/** One signed `{event: "test"}` POST (lifecycle signature header), no
+ * retries, awaited — backs the console's "Send test" button so an
+ * operator sees right away whether the receiver accepts it. */
+export function sendTestWebhook(webhookUrl: string, webhookSecret: string, agent: string): Promise<DeliveryResult> {
+  const payload = JSON.stringify({ event: 'test', agent, occurredAt: new Date().toISOString() })
+  return deliver(webhookUrl, payload, { 'X-Lifecycle-Signature': sign(payload, webhookSecret) }, { agent, kind: 'test' }, [])
 }

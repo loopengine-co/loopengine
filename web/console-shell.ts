@@ -102,15 +102,23 @@ export const consoleShellScript: string = `<script>
     });
   }
 
-  var ready = fetch('/agents')
-    .then(function (r) { return r.json(); })
+  var loadError = null;
+  var ready = fetch('/agents', { headers: { accept: 'application/json' } })
+    .then(function (r) {
+      if (!r.ok) throw new Error(r.status === 401 ? 'sign-in required (HTTP 401)' : 'HTTP ' + r.status);
+      return r.json();
+    })
     .then(function (data) {
       agents = data.agents || [];
       renderList();
       loadToSet();
       return agents;
     })
-    .catch(function () { return []; });
+    .catch(function (err) {
+      loadError = err.message;
+      if (list) list.innerHTML = '<li class="le-agent-item"><span></span><span class="le-meta">Could not load agents: ' + esc(err.message) + '</span><span></span></li>';
+      return [];
+    });
 
   // opts: { name, prompt, chips: [{ text, mono }], tab, counts: { tools, skills, abilities, actauth } }
   function renderHead(opts) {
@@ -164,6 +172,6 @@ export const consoleShellScript: string = `<script>
     if (app.classList.contains('nav-open') && !ev.target.closest('.le-sidebar')) app.classList.remove('nav-open');
   });
 
-  window.leShell = { ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount };
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount };
 })();
 </script>`

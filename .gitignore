@@ -1,6 +1,7 @@
 node_modules
 dist
 .sessions
+.checkpoints
 *.log
 .env
 .DS_Store

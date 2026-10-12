@@ -171,6 +171,25 @@ export const config: AgentConfig = {
 }
 ```
 
+Or skip the code: in the console, **Permissions → Approvals** sets a
+webhook, Slack or Lark target for one agent (saved to
+`agents/<name>/notifier.yml`, with its secret in the agent's own `.env`),
+sends a test, shows recent deliveries, and lists every decision still
+waiting with Approve/Deny buttons.
+
+For a third-party app calling an agent over plain HTTP:
+
+1. `POST /agents/<name>/messages` → when a call needs approval, the reply
+   has `stopReason: "pending_approval"` and a `pending` list, each item
+   with its `pendingId` and `resolvePath`.
+2. The webhook carries the same `pendingId`, `resolvePath` (and a full
+   `resolveUrl` when `LOOPENGINE_PUBLIC_URL` is set), signed with
+   `X-Actauth-Signature`. Failed deliveries are retried.
+3. `POST <resolvePath>` with `{"decision":"approve"}` (or `"deny"`) runs
+   the tool, resumes the turn, and returns the agent's reply.
+   `GET /agents/<name>/pending` lists what's waiting, for apps that poll
+   instead of receiving webhooks.
+
 Reference implementations for the receiving side (verifying a Slack
 click, a webhook HMAC signature, a magic-link token) ship under
 `examples/notifier-handler/` for the four channels that need one. See

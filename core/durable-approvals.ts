@@ -10,7 +10,7 @@
 // does (see HUMAN_IN_THE_LOOP.md's own "request + raw resolve only"
 // division of labor).
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { Redis } from 'ioredis'
 import type { ModelContentBlock } from './run-agent.js'
@@ -48,6 +48,9 @@ export interface TurnCheckpoint {
    * and is what DurableApprover.requestDurableApproval handed out. */
   outstanding: Record<string, OutstandingItem>
   closed: boolean
+  /** When the turn paused. Optional only because checkpoints written
+   * before this field existed don't have it. */
+  createdAt?: string
 }
 
 export interface CreateCheckpointInput {
@@ -77,7 +80,15 @@ export interface CheckpointStore {
     pendingId: string,
     fn: (checkpoint: TurnCheckpoint | undefined) => Promise<{ checkpoint: TurnCheckpoint | undefined; result: T }>,
   ): Promise<T>
+  /** Every checkpoint still waiting on at least one decision, oldest
+   * first — backs GET /agents/:name/pending. Reads without locking: a
+   * snapshot for display, not something to act on without withCheckpoint. */
+  listOpen(): Promise<TurnCheckpoint[]>
   close(): Promise<void>
+}
+
+function sortOldestFirst(list: TurnCheckpoint[]): TurnCheckpoint[] {
+  return list.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
 }
 
 const fileMutex = new KeyedMutex()
@@ -106,7 +117,7 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   async create(input: CreateCheckpointInput): Promise<TurnCheckpoint> {
-    const checkpoint: TurnCheckpoint = { id: randomUUID(), closed: false, ...input }
+    const checkpoint: TurnCheckpoint = { id: randomUUID(), closed: false, createdAt: new Date().toISOString(), ...input }
     writeFileSync(this.checkpointPath(checkpoint.id), JSON.stringify(checkpoint))
     for (const pendingId of Object.keys(checkpoint.outstanding)) {
       writeFileSync(this.indexPath(pendingId), checkpoint.id)
@@ -142,6 +153,20 @@ export class FileCheckpointStore implements CheckpointStore {
       }
       return result
     })
+  }
+
+  async listOpen(): Promise<TurnCheckpoint[]> {
+    const open: TurnCheckpoint[] = []
+    for (const name of readdirSync(this.checkpointsDir)) {
+      if (!name.endsWith('.json')) continue
+      try {
+        const checkpoint = JSON.parse(readFileSync(path.join(this.checkpointsDir, name), 'utf8')) as TurnCheckpoint
+        if (!checkpoint.closed && Object.keys(checkpoint.outstanding).length) open.push(checkpoint)
+      } catch {
+        // A checkpoint mid-write or removed between readdir and read.
+      }
+    }
+    return sortOldestFirst(open)
   }
 
   async close(): Promise<void> {}
@@ -201,7 +226,7 @@ export class RedisCheckpointStore implements CheckpointStore {
   }
 
   async create(input: CreateCheckpointInput): Promise<TurnCheckpoint> {
-    const checkpoint: TurnCheckpoint = { id: randomUUID(), closed: false, ...input }
+    const checkpoint: TurnCheckpoint = { id: randomUUID(), closed: false, createdAt: new Date().toISOString(), ...input }
     await this.redis.set(this.checkpointKey(checkpoint.id), JSON.stringify(checkpoint))
     for (const pendingId of Object.keys(checkpoint.outstanding)) {
       await this.redis.set(this.indexKey(pendingId), checkpoint.id)
@@ -231,6 +256,24 @@ export class RedisCheckpointStore implements CheckpointStore {
       }
       return result
     })
+  }
+
+  async listOpen(): Promise<TurnCheckpoint[]> {
+    const open: TurnCheckpoint[] = []
+    let cursor = '0'
+    do {
+      // checkpoint:<id> only — checkpoint-lock:/checkpoint-pending-index:
+      // keys use a hyphen, so this pattern never matches them.
+      const [next, keys] = await this.redis.scan(cursor, 'MATCH', 'checkpoint:*', 'COUNT', 200)
+      cursor = next
+      for (const key of keys) {
+        const raw = await this.redis.get(key)
+        if (!raw) continue
+        const checkpoint = JSON.parse(raw) as TurnCheckpoint
+        if (!checkpoint.closed && Object.keys(checkpoint.outstanding).length) open.push(checkpoint)
+      }
+    } while (cursor !== '0')
+    return sortOldestFirst(open)
   }
 
   async close(): Promise<void> {

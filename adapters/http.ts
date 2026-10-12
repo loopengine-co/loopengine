@@ -70,6 +70,8 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
+import { NotifierFileError } from '#core/notifier-file.js'
+import { describeAgentNotifier, listAgentPending, removeAgentNotifier, saveAgentNotifier, testAgentNotifier } from '#web/notifier-admin.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
@@ -143,6 +145,10 @@ const defaultHttpWebhookNotifier =
   defaultHttpWebhookUrl && defaultHttpWebhookSecret
     ? new WebhookNotifier({ webhookUrl: defaultHttpWebhookUrl, signingSecret: defaultHttpWebhookSecret })
     : undefined
+// The same default, as plain settings, for the console's Approvals
+// section (web/notifier-admin.ts) to show and test.
+const defaultWebhook =
+  defaultHttpWebhookUrl && defaultHttpWebhookSecret ? { webhookUrl: defaultHttpWebhookUrl, webhookSecret: defaultHttpWebhookSecret } : undefined
 
 // Used when an AgentConfig doesn't define its own sessionIdFor — a plain
 // client-supplied key, same shape adapters/cli.ts's --session flag
@@ -998,6 +1004,76 @@ function handleEnvGet(res: ServerResponse, agentName: string): void {
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(listDeclaredEnvVars(agentName)))
 }
 
+// Backs the console's Permissions → Approvals section — see
+// web/notifier-admin.ts. Reading is open like the rest of the admin
+// surface; saving or removing writes a secret and a file, so it gets the
+// same refuse-without-auth gate as the env routes below.
+function handleNotifierGet(res: ServerResponse, agentName: string): void {
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(describeAgentNotifier(entry.config, defaultWebhook)))
+}
+
+async function handleNotifierPut(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  if (!secretsProtected) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'Refusing to save a notifier without LOOPENGINE_ADMIN_AUTH configured — set it first, since this stores a secret.' }),
+    )
+    return
+  }
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  try {
+    await saveAgentNotifier(entry.config, await readJsonBody(req))
+  } catch (err) {
+    const status = err instanceof NotifierFileError ? 400 : 500
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(describeAgentNotifier(entry.config, defaultWebhook)))
+}
+
+function handleNotifierDelete(res: ServerResponse, agentName: string): void {
+  if (!secretsProtected) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({ error: 'Refusing to remove a notifier without LOOPENGINE_ADMIN_AUTH configured.' }),
+    )
+    return
+  }
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  removeAgentNotifier(entry.config)
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(describeAgentNotifier(entry.config, defaultWebhook)))
+}
+
+async function handleNotifierTest(res: ServerResponse, agentName: string): Promise<void> {
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await testAgentNotifier(entry.config, defaultWebhook)))
+}
+
+// Every approval/question still waiting for this agent — for an app that
+// can't receive webhooks (it polls this instead) and for the console.
+async function handlePendingGet(res: ServerResponse, agentName: string): Promise<void> {
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ pending: await listAgentPending(checkpoints, agentName) }))
+}
+
 // `?slot=agent` targets this agent's own agents/<name>/.env (a per-agent
 // value, read by its tools through ToolContext.env) instead of the
 // project-wide .env — see web/env-admin.ts's DeclaredEnvVar.slot.
@@ -1449,7 +1525,25 @@ async function handleSessionGet(req: IncomingMessage, res: ServerResponse, agent
 }
 
 type PendingSignal = { type: 'question'; entry: PendingQuestion } | { type: 'approval'; entry: PendingApproval }
-type FinishedTurn = { text: string; stopReason?: 'max_turns' | 'denied' | 'pending_approval' | 'pending_question' }
+type FinishedTurn = { text: string; stopReason?: 'max_turns' | 'denied' | 'pending_approval' | 'pending_question'; pending?: PendingSummary[] }
+
+// What a caller needs to act on a turn that paused for a durable
+// decision: which decision, and where to send it — the same pendingId and
+// path the notifier's webhook carries, so an app can resolve straight
+// from this response instead of waiting for the webhook or polling.
+type PendingSummary = { pendingId: string; kind: 'approval' | 'question'; tool: string; args: Record<string, unknown>; reason: string; resolvePath?: string; answerPath?: string }
+
+function pendingSummary(pending: RunAgentResult['pending']): PendingSummary[] | undefined {
+  if (!pending?.outstanding.length) return undefined
+  return pending.outstanding.map((item) => ({
+    pendingId: item.pendingId,
+    kind: item.kind,
+    tool: item.tool,
+    args: item.args,
+    reason: item.reason,
+    ...(item.kind === 'question' ? { answerPath: `/pending-questions/${item.pendingId}/answer` } : { resolvePath: `/pending-approvals/${item.pendingId}/resolve` }),
+  }))
+}
 
 // One entry per turn currently in flight for the plain (non-streaming)
 // /messages route, keyed by "<agentName>:<rawSessionId>" — the same
@@ -1585,6 +1679,7 @@ async function raceAndRespond(res: ServerResponse, agentName: string, rawSession
   // final-text summary of it.
   const responseBody: Record<string, unknown> = { text: winner.turnResult.text, sessionId: rawSessionId, events: state.events }
   if (winner.turnResult.stopReason) responseBody.stopReason = winner.turnResult.stopReason
+  if (winner.turnResult.pending) responseBody.pending = winner.turnResult.pending
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(responseBody))
 }
 
@@ -1663,7 +1758,7 @@ async function handleMessages(req: IncomingMessage, res: ServerResponse, agentNa
     // raceAndRespond) always ends the same way regardless of which route
     // produced it.
     state.events.push({ type: 'done', text: result.text, ...(result.stopReason ? { stopReason: result.stopReason } : {}) })
-    return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason } }
+    return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pending: pendingSummary(result.pending) } }
   })
   state.turnPromise = turnPromise
 
@@ -1769,7 +1864,7 @@ async function handleMessagesStream(req: IncomingMessage, res: ServerResponse, a
     const doneEvent: LoopEvent = { type: 'done', text: result.text, ...(result.stopReason ? { stopReason: result.stopReason } : {}) }
     writeSseEvent(res, doneEvent)
     state.events.push(doneEvent)
-    return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason } }
+    return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pending: pendingSummary(result.pending) } }
   })
   state.turnPromise = turnPromise
 
@@ -2111,11 +2206,11 @@ async function respondAfterResolution(res: ServerResponse, finalCheckpoint: Turn
     if (result.pending) {
       await createCheckpointFromPending(finalCheckpoint.agent, finalCheckpoint.tenant, finalCheckpoint.sessionId, result.pending)
     }
-    return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason } }
+    return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pending: pendingSummary(result.pending) } }
   })
 
   res.writeHead(200, { 'content-type': 'application/json' }).end(
-    JSON.stringify({ text: responseBody.text, sessionId: finalCheckpoint.sessionId, ...(responseBody.stopReason ? { stopReason: responseBody.stopReason } : {}) }),
+    JSON.stringify({ text: responseBody.text, sessionId: finalCheckpoint.sessionId, ...(responseBody.stopReason ? { stopReason: responseBody.stopReason } : {}), ...(responseBody.pending ? { pending: responseBody.pending } : {}) }),
   )
 }
 
@@ -2675,6 +2770,32 @@ const server = createServer(async (req, res) => {
     }
     if (skillMatch && req.method === 'DELETE') {
       handleSkillDelete(res, decodeURIComponent(skillMatch[1]), decodeURIComponent(skillMatch[2]))
+      return
+    }
+
+    // Backs the console's Approvals section and polling clients — see
+    // handleNotifierGet/handlePendingGet above.
+    const notifierMatch = pathname.match(/^\/agents\/([^/]+)\/notifier$/)
+    if (notifierMatch && req.method === 'GET') {
+      handleNotifierGet(res, decodeURIComponent(notifierMatch[1]))
+      return
+    }
+    if (notifierMatch && req.method === 'PUT') {
+      await handleNotifierPut(req, res, decodeURIComponent(notifierMatch[1]))
+      return
+    }
+    if (notifierMatch && req.method === 'DELETE') {
+      handleNotifierDelete(res, decodeURIComponent(notifierMatch[1]))
+      return
+    }
+    const notifierTestMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/notifier\/test$/)
+    if (notifierTestMatch) {
+      await handleNotifierTest(res, decodeURIComponent(notifierTestMatch[1]))
+      return
+    }
+    const pendingListMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/pending$/)
+    if (pendingListMatch) {
+      await handlePendingGet(res, decodeURIComponent(pendingListMatch[1]))
       return
     }
 

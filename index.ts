@@ -20,6 +20,11 @@ export { createAgentEnv, agentDirFor, envScopeOf, type EnvScope } from '#core/ag
 export { FileSecretStore, setSecretStore, getSecretStore, type SecretStore } from '#core/secret-store.js'
 export { signProxyIdentity, verifyProxyIdentity, TRUSTED_PROXY_IDENTITY_HEADER, type ProxyIdentity } from '#core/trusted-proxy.js'
 export { setUsageSink, recordUsage, type UsageEvent, type UsageSink } from '#core/usage.js'
+export { readNotifierFile, writeNotifierFile, removeNotifierFile, validateNotifierFile, notifierConfigFromFile, NotifierFileError, NOTIFIER_SECRET_VARS, type NotifierFile } from '#core/notifier-file.js'
+export { listDeliveries, recordDelivery, type NotifierDelivery } from '#core/notifier-deliveries.js'
+export { describeNotifier } from '#core/http-notifier.js'
+export { sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
+export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, type DefaultWebhook } from './web/notifier-admin.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via

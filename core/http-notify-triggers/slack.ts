@@ -95,3 +95,21 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       })
   }
 }
+
+/** One plain chat.postMessage, awaited, reporting whether Slack accepted
+ * it — backs the console's "Send test" for a Slack notifier, where
+ * SlackNotifier.postMessage's fire-and-forget contract would hide the
+ * answer (a bad token, a channel the bot isn't in). */
+export async function sendTestSlackMessage(botToken: string, channelId: string, text: string): Promise<{ ok: boolean; status?: number; error?: string }> {
+  try {
+    const res = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${botToken}`, 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ channel: channelId, text }),
+    })
+    const body = (await res.json()) as { ok: boolean; error?: string }
+    return body.ok ? { ok: true, status: res.status } : { ok: false, status: res.status, error: body.error ?? `HTTP ${res.status}` }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}

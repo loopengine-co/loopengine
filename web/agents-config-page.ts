@@ -890,7 +890,9 @@ ${consoleShellScript}
   // opened. ----
 
   function renderActauthTabPlaceholder() {
-    return '<section id="actauthSection"><div id="actauthContent"><p class="hint">Loading&hellip;</p></div></section>';
+    return '<div id="pendingContent"></div>' +
+      '<section id="actauthSection"><div id="actauthContent"><p class="hint">Loading&hellip;</p></div></section>' +
+      '<div id="approvalsContent"><p class="hint">Loading&hellip;</p></div>';
   }
 
   function renderActauthRuleRow(r) {
@@ -952,6 +954,198 @@ ${consoleShellScript}
           '<button type="button" id="ruleCancelBtn" style="display:none">Cancel</button>' +
           '<div id="ruleFormError" class="error"></div>' +
         '</form></section>';
+  }
+
+  // ---- Permissions → Approvals: where "ask" decisions go when nobody is
+  // in Chat (web/notifier-admin.ts behind GET/PUT/DELETE .../notifier),
+  // the decisions still waiting (GET .../pending), and recent webhook
+  // deliveries. Reloaded every time the tab opens, so the waiting list is
+  // current. ----
+
+  var NOTIFIER_EVENTS = [
+    ['approval', 'Approvals'], ['question', 'Questions'], ['run_finish', 'Run finished'], ['run_start', 'Run started']
+  ];
+
+  function approvalsContentEl() {
+    return detail.querySelector('#approvalsContent');
+  }
+
+  function renderPendingTable(pending) {
+    if (!pending.length) return '<p class="hint">Nothing is waiting for a decision.</p>';
+    return '<div class="le-table-wrap"><table><thead><tr><th>Waiting</th><th>Details</th><th>Session</th><th></th></tr></thead><tbody>' +
+      pending.map(function (p) {
+        var details = p.kind === 'question'
+          ? escapeHtml((p.args && p.args.question) || p.reason)
+          : '<code>' + escapeHtml(p.tool) + '</code> <span class="hint">' + escapeHtml(JSON.stringify(p.args)) + '</span>';
+        var actions = p.kind === 'question'
+          ? '<form class="pending-answer" data-id="' + escapeHtml(p.pendingId) + '" style="display:flex;gap:6px"><input name="answer" placeholder="Answer" required style="min-width:0"><button type="submit">Answer</button></form>'
+          : '<div style="display:flex;gap:6px"><button type="button" class="primary pending-decide" data-id="' + escapeHtml(p.pendingId) + '" data-decision="approve">Approve</button>' +
+            '<button type="button" class="pending-decide" data-id="' + escapeHtml(p.pendingId) + '" data-decision="deny">Deny</button></div>';
+        return '<tr><td><span class="le-pill ' + (p.kind === 'question' ? 'accent' : 'ask') + '">' + (p.kind === 'question' ? 'question' : 'approval') + '</span>' +
+          (p.createdAt ? '<div class="hint">' + escapeHtml(new Date(p.createdAt).toLocaleString()) + '</div>' : '') + '</td>' +
+          '<td>' + details + '</td><td><code>' + escapeHtml(p.sessionId) + '</code></td><td>' + actions + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  function renderNotifierStatus(n) {
+    if (n.source === 'code') return 'Set in this agent&#39;s <code>index.ts</code> (<code>httpNotifier</code>, ' + escapeHtml(n.channel) + '). Edit it there; code always wins over the form below.';
+    if (n.source === 'file') return 'Sending to <strong>' + escapeHtml(n.channel) + '</strong> for: ' + escapeHtml((n.events || []).join(', ')) + '.';
+    if (n.missingSecret) return 'Saved, but not sending yet: set the secret below (<code>' + escapeHtml(n.missingSecret) + '</code>).';
+    if (n.source === 'default') return 'Using the project-wide default webhook (<code>LOOPENGINE_DEFAULT_WEBHOOK_URL</code>, ' + escapeHtml(n.defaultWebhookUrl) + '). Set one below to use a different target for this agent.';
+    return 'Not set up. A call that needs approval only reaches someone in Chat; set a webhook or Slack channel so apps calling this agent over HTTP can get approvals.';
+  }
+
+  function renderNotifierForm(n) {
+    var f = n.file || { channel: 'webhook', events: ['approval', 'question'] };
+    var events = f.events || [];
+    function field(channel, html) {
+      return '<div class="notifier-fields" data-channel="' + channel + '"' + (f.channel === channel ? '' : ' hidden') + '>' + html + '</div>';
+    }
+    function secretField(channel, label) {
+      var isSet = n.secretsSet && n.secretsSet[channel];
+      return '<label>' + label + ' <span class="hint">(' + (isSet ? 'set &mdash; leave blank to keep it' : 'not set') + '; stored in this agent&#39;s env as ' + escapeHtml(n.secretVars[channel]) + ')</span>' +
+        '<span style="display:flex;gap:6px"><input type="password" name="secret_' + channel + '" autocomplete="off" style="flex:1;min-width:0">' +
+        (channel === 'webhook' ? '<button type="button" class="notifier-generate">Generate</button>' : '') + '</span></label>';
+    }
+    return '<form class="add-source" id="notifierForm" style="max-width:560px">' +
+      '<label>Send to<select name="channel" id="notifierChannel">' +
+        ['webhook', 'slack', 'lark'].map(function (c) { return '<option value="' + c + '"' + (f.channel === c ? ' selected' : '') + '>' + { webhook: 'Webhook (your app)', slack: 'Slack channel', lark: 'Lark / Feishu chat' }[c] + '</option>'; }).join('') +
+      '</select></label>' +
+      field('webhook', '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField('webhook', 'Signing secret')) +
+      field('slack', '<label>Channel ID<input name="channelId" placeholder="C0123ABC456" value="' + escapeHtml(f.channelId || '') + '"></label>' + secretField('slack', 'Bot token')) +
+      field('lark', '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField('lark', 'App secret')) +
+      '<div class="body-field">Send<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+        NOTIFIER_EVENTS.map(function (e) {
+          return '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
+        }).join('') + '</div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="submit">Save</button><button type="button" id="notifierTestBtn">Send test</button>' +
+        (n.file ? '<button type="button" class="delete-btn" id="notifierRemoveBtn">Remove</button>' : '') + '</div>' +
+      '<div id="notifierResult" class="hint"></div>' +
+      '<p class="hint" style="margin:0">Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries <code>pendingId</code> and <code>resolvePath</code>; your app sends <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> there.' +
+        (n.publicUrl ? '' : ' Set <code>LOOPENGINE_PUBLIC_URL</code> to include a full <code>resolveUrl</code> too.') + '</p>' +
+      '</form>';
+  }
+
+  function renderDeliveries(list) {
+    if (!list.length) return '<p class="hint">No deliveries since the server started.</p>';
+    return '<div class="le-table-wrap"><table><thead><tr><th>When</th><th>What</th><th>Attempt</th><th>Result</th></tr></thead><tbody>' +
+      list.slice(0, 15).map(function (d) {
+        return '<tr><td>' + escapeHtml(new Date(d.at).toLocaleTimeString()) + '</td><td>' + escapeHtml(d.kind) + '</td><td>' + d.attempt + '</td>' +
+          '<td>' + (d.ok ? '<span class="le-pill good">' + (d.status || 'ok') + '</span>' : '<span class="le-pill bad">' + escapeHtml(d.error || 'failed') + '</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  // Shown at the top of the tab, and only when something is waiting.
+  function renderPendingHtml(pending) {
+    if (!pending.length) return '';
+    return '<section><h3>Waiting for a decision (' + pending.length + ')</h3>' + renderPendingTable(pending) + '</section>';
+  }
+
+  function renderApprovalsHtml(n) {
+    return '<section><h3>Approvals when nobody is in Chat</h3><p class="muted" style="margin:0 0 12px">' + renderNotifierStatus(n) + '</p>' +
+        (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
+        (n.source === 'code' ? '' : renderNotifierForm(n)) + '</section>' +
+      '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
+  }
+
+  function wirePendingHandlers(name) {
+    var content = detail.querySelector('#pendingContent');
+    if (!content) return;
+    var decideBtns = content.querySelectorAll('.pending-decide');
+    for (var i = 0; i < decideBtns.length; i++) {
+      decideBtns[i].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        btn.disabled = true;
+        fetchJsonRetryOnce('/pending-approvals/' + encodeURIComponent(btn.dataset.id) + '/resolve', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: btn.dataset.decision }),
+        }).then(function () { loadApprovalsSection(name); });
+      });
+    }
+    var answerForms = content.querySelectorAll('.pending-answer');
+    for (var j = 0; j < answerForms.length; j++) {
+      answerForms[j].addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var form = ev.currentTarget;
+        fetchJsonRetryOnce('/pending-questions/' + encodeURIComponent(form.dataset.id) + '/answer', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answer: new FormData(form).get('answer') }),
+        }).then(function () { loadApprovalsSection(name); });
+      });
+    }
+  }
+
+  function wireApprovalsHandlers(name) {
+    var content = approvalsContentEl();
+    if (!content) return;
+    var form = content.querySelector('#notifierForm');
+    if (!form) return;
+    var result = content.querySelector('#notifierResult');
+    content.querySelector('#notifierChannel').addEventListener('change', function (ev) {
+      var groups = form.querySelectorAll('.notifier-fields');
+      for (var k = 0; k < groups.length; k++) groups[k].hidden = groups[k].dataset.channel !== ev.currentTarget.value;
+    });
+    var generate = form.querySelector('.notifier-generate');
+    if (generate) {
+      generate.addEventListener('click', function () {
+        var bytes = new Uint8Array(24);
+        crypto.getRandomValues(bytes);
+        var input = form.querySelector('input[name="secret_webhook"]');
+        input.type = 'text';
+        input.value = Array.prototype.map.call(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+        result.textContent = 'Copy this secret into your app before saving; it is not shown again.';
+      });
+    }
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var data = new FormData(form);
+      var channel = data.get('channel');
+      var body = { channel: channel, events: data.getAll('events'), url: data.get('url'), channelId: data.get('channelId'), appId: data.get('appId'), chatId: data.get('chatId') };
+      var secret = data.get('secret_' + channel);
+      if (secret) body.secret = secret;
+      result.textContent = 'Saving…';
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      }).then(function (r) {
+        if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
+        loadApprovalsSection(name, 'Saved.');
+      });
+    });
+    content.querySelector('#notifierTestBtn').addEventListener('click', function () {
+      result.textContent = 'Sending…';
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/test', { method: 'POST' }).then(function (r) {
+        var t = r.body;
+        loadApprovalsSection(name, t.ok ? 'Test delivered (' + (t.status || 'ok') + ').' : 'Test failed: ' + (t.error || 'unknown error'));
+      });
+    });
+    var removeBtn = content.querySelector('#notifierRemoveBtn');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function () {
+        if (removeBtn.dataset.confirming !== '1') { removeBtn.dataset.confirming = '1'; removeBtn.textContent = 'Click again to remove'; return; }
+        fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier', { method: 'DELETE' }).then(function () { loadApprovalsSection(name, 'Removed.'); });
+      });
+    }
+  }
+
+  function loadApprovalsSection(name, message) {
+    var content = approvalsContentEl();
+    if (!content) return;
+    Promise.all([
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier'),
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/pending'),
+    ]).then(function (results) {
+      if (currentName !== name) return;
+      if (!results[0].ok) throw new Error(results[0].body.error || 'request failed');
+      content.innerHTML = renderApprovalsHtml(results[0].body);
+      wireApprovalsHandlers(name);
+      var pendingEl = detail.querySelector('#pendingContent');
+      if (pendingEl) {
+        pendingEl.innerHTML = renderPendingHtml((results[1].ok && results[1].body.pending) || []);
+        wirePendingHandlers(name);
+      }
+      if (message) { var r = content.querySelector('#notifierResult'); if (r) r.textContent = message; }
+    }).catch(function (err) {
+      if (currentName !== name) return;
+      content.innerHTML = '<p class="error">Could not load approvals: ' + escapeHtml(err.message) + '</p>';
+    });
   }
 
   function actauthContentEl() {
@@ -2449,6 +2643,7 @@ ${consoleShellScript}
     if (tab === 'actauth' && actauthLoadedFor !== currentName) {
       loadActauthTab(currentName);
     }
+    if (tab === 'actauth') loadApprovalsSection(currentName);
     if (tab === 'env' && envLoadedFor !== currentName) {
       loadEnvTab(currentName);
     }
@@ -2610,7 +2805,9 @@ ${consoleShellScript}
   currentTab = CONFIG_TABS.indexOf(initialParams.get('tab')) === -1 ? 'overview' : initialParams.get('tab');
   leShell.ready.then(function (agents) {
     if (!agents.length) {
-      empty.innerHTML = 'No agents yet. <a href="/agents?new=1">Create one</a> or add a folder under agents/.';
+      empty.innerHTML = leShell.loadError()
+        ? 'Could not load agents: ' + escapeHtml(leShell.loadError()) + '. Reload the page to try again.'
+        : 'No agents yet. <a href="/agents?new=1">Create one</a> or add a folder under agents/.';
       return;
     }
     var requested = initialParams.get('agent');

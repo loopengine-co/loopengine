@@ -29,6 +29,11 @@ class FakeRedis {
     return 1
   }
 
+  async scan(_cursor: string, _match: string, pattern: string): Promise<[string, string[]]> {
+    const prefix = pattern.replace(/\*$/, '')
+    return ['0', [...this.store.keys()].filter((k) => k.startsWith(prefix))]
+  }
+
   async quit(): Promise<'OK'> {
     return 'OK'
   }
@@ -46,6 +51,16 @@ function makeInput(overrides: Partial<CreateCheckpointInput> = {}): CreateCheckp
 }
 
 describe('RedisCheckpointStore', () => {
+  it('lists open checkpoints and skips lock/index keys and closed ones', async () => {
+    const store = new RedisCheckpointStore('unused://', new FakeRedis() as never)
+    const open = await store.create(makeInput())
+    await store.create(makeInput({ outstanding: { p9: { toolUseId: 't9', tool: 'z', args: {}, reason: 'r' } } }))
+    await store.withCheckpoint('p9', async (checkpoint) => ({ checkpoint: { ...checkpoint!, closed: true }, result: undefined }))
+
+    expect((await store.listOpen()).map((c) => c.id)).toEqual([open.id])
+    await store.close()
+  })
+
   it('creates a checkpoint reachable by its pendingId', async () => {
     const store = new RedisCheckpointStore('unused://', new FakeRedis() as never)
     const created = await store.create(makeInput())
