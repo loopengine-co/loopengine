@@ -13,7 +13,8 @@ import { describeNotifier } from '../core/http-notifier.js'
 import { sendTestSlackMessage } from '../core/http-notify-triggers/slack.js'
 import { sendTestWebhook, type DeliveryResult } from '../core/http-notify-triggers/webhook.js'
 import { listDeliveries } from '../core/notifier-deliveries.js'
-import { NOTIFIER_SECRET_VARS, notifierConfigFromFile, readNotifierFile, removeNotifierFile, writeNotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
+import { NOTIFIER_SECRET_VARS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, notifierConfigFromFile, readNotifierFile, removeNotifierFile, writeNotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
+import { listSlackChannels, slackAppManifest, type SlackChannel } from '../core/slack-interactions.js'
 import { setAgentEnvVar } from './env-admin.js'
 
 /** The deployment-wide default webhook (LOOPENGINE_DEFAULT_WEBHOOK_URL /
@@ -38,6 +39,15 @@ export function describeAgentNotifier(config: AgentConfig, defaultWebhook?: Defa
     publicUrl: process.env.LOOPENGINE_PUBLIC_URL ?? null,
     secretVars: NOTIFIER_SECRET_VARS,
     secretsSet,
+    slack: {
+      signingSecretVar: NOTIFIER_SLACK_SIGNING_SECRET_VAR,
+      signingSecretSet: env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR) !== undefined,
+      // Where the Slack app's Interactivity Request URL should point.
+      interactivityPath: `/hooks/slack/${encodeURIComponent(config.name)}`,
+      // The console swaps __INTERACTIVITY_URL__ for the link address +
+      // interactivityPath as you type.
+      manifestTemplate: slackAppManifest({ agentName: config.name, interactivityUrl: '__INTERACTIVITY_URL__' }),
+    },
     deliveries: listDeliveries(config.name),
   }
 }
@@ -50,6 +60,27 @@ export async function saveAgentNotifier(config: AgentConfig, body: Record<string
   if (typeof body.secret === 'string' && body.secret.trim()) {
     await setAgentEnvVar(config.name, NOTIFIER_SECRET_VARS[file.channel], body.secret.trim())
   }
+  if (file.channel === 'slack' && typeof body.signingSecret === 'string' && body.signingSecret.trim()) {
+    await setAgentEnvVar(config.name, NOTIFIER_SLACK_SIGNING_SECRET_VAR, body.signingSecret.trim())
+  }
+}
+
+/** The bot token and signing secret behind an agent's Slack notifier —
+ * from AgentConfig.httpNotifier when it's Slack, else from the agent's
+ * env (the console-saved ones). The signing secret always comes from the
+ * agent env. */
+export function slackCredentialsFor(config: AgentConfig): { botToken?: string; signingSecret?: string } {
+  const env = createAgentEnv(config.name, agentDirFor(config))
+  const botToken = config.httpNotifier?.channel === 'slack' ? config.httpNotifier.config.botToken : env.get(NOTIFIER_SECRET_VARS.slack)
+  return { botToken, signingSecret: env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR) }
+}
+
+/** Channels for the console's picker, with the token being typed in or,
+ * when none is given, the one already saved. */
+export async function listAgentSlackChannels(config: AgentConfig, botToken?: string): Promise<SlackChannel[]> {
+  const token = botToken?.trim() || slackCredentialsFor(config).botToken
+  if (!token) throw new Error('Enter the bot token first')
+  return listSlackChannels(token)
 }
 
 /** Removes notifier.yml; the stored secret is left alone, so turning the

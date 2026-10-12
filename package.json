@@ -1,6 +1,6 @@
 {
   "name": "loopengine",
-  "version": "0.1.68",
+  "version": "0.1.69",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
   "license": "MIT",
@@ -50,6 +50,8 @@
     "dist/core/notifier-deliveries.d.ts",
     "dist/core/approval-links.js",
     "dist/core/approval-links.d.ts",
+    "dist/core/slack-interactions.js",
+    "dist/core/slack-interactions.d.ts",
     "dist/core/session-store.js",
     "dist/core/session-store.d.ts",
     "dist/core/vector-index.js",

@@ -42,6 +42,21 @@ describe('LarkNotifier', () => {
     expect(actions.actions.map((a: { value: { decision: string } }) => a.value.decision)).toEqual(['approve', 'deny'])
   })
 
+  it('links to the decision page and leaves out the card buttons when asked to', async () => {
+    vi.stubEnv('LOOPENGINE_LINK_SECRET', 'test-secret')
+    const fetchMock = mockFetchSequence([{ code: 0, msg: 'ok', tenant_access_token: 'tok', expire: 7200 }, { code: 0, msg: 'ok' }])
+    vi.stubGlobal('fetch', fetchMock)
+    const lark = new LarkNotifier({ appId: 'app', appSecret: 'secret', chatId: 'oc_123', publicUrl: 'https://agents.example.com', buttons: false })
+
+    lark.requestDurableApproval('issue_refund', { amount: 50 }, { tenant: 'acme', environment: 'production', agent: 'support' }, 'ask rule')
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const card = JSON.parse(JSON.parse(fetchMock.mock.calls[1][1]?.body as string).content)
+    expect(card.elements.find((e: { tag: string }) => e.tag === 'action')).toBeUndefined()
+    expect(card.elements[0].text.content).toMatch(/\[Open to approve or deny\]\(https:\/\/agents\.example\.com\/decide\/[^)]+\)/)
+    vi.unstubAllEnvs()
+  })
+
   it('notifyPendingQuestion posts option buttons plus a free-text form using LARK_ANSWER_FIELD_TAG', async () => {
     const fetchMock = mockFetchSequence([{ code: 0, msg: 'ok', tenant_access_token: 'tok', expire: 7200 }, { code: 0, msg: 'ok' }])
     vi.stubGlobal('fetch', fetchMock)

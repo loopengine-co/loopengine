@@ -182,9 +182,14 @@ waiting with Approve/Deny buttons. The tab warns you when an agent has
 Every notification links to a **decision page**: a signed, single-use
 link (`/decide/<token>`, valid 7 days) where whoever got the message can
 approve, deny, edit the arguments or answer a question, with no login and
-no app of your own. So the quickest setup is Slack: paste a bot token,
-pick a channel, save; each approval arrives with an "Open to approve or
-deny" link.
+no app of your own. So the quickest setup is Slack: create the Slack app
+from the manifest the console shows, paste its bot token, pick a channel
+from the list, save; each approval arrives with an "Open to approve or
+deny" link. Add the app's signing secret too and the message also gets
+Approve/Deny buttons, handled by LoopEngine itself at
+`/hooks/slack/<agent>`, with no handler to deploy. Lark cards carry the
+same link. Links and buttons need the server to be reachable from where
+people click (a public HTTPS address or a tunnel).
 
 For a third-party app calling an agent over plain HTTP:
 

@@ -1,3 +1,9 @@
+// Not needed anymore for most setups: the server handles Slack button
+// clicks itself at POST /hooks/slack/<agent> once the agent has a Slack
+// signing secret (see core/slack-interactions.ts and the console's
+// Permissions tab). Kept as a reference for running the handler
+// somewhere else.
+//
 // The Slack channel's *receiving* side — verifying a Slack Interactivity
 // callback and dispatching it back into loopengine's own resolve/answer
 // routes. The *sending* side needs no example anymore: `AgentConfig.httpNotifier`'s

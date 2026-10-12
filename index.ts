@@ -23,10 +23,12 @@ export { setUsageSink, recordUsage, type UsageEvent, type UsageSink } from '#cor
 export { readNotifierFile, writeNotifierFile, removeNotifierFile, validateNotifierFile, notifierConfigFromFile, NotifierFileError, NOTIFIER_SECRET_VARS, type NotifierFile } from '#core/notifier-file.js'
 export { listDeliveries, recordDelivery, type NotifierDelivery } from '#core/notifier-deliveries.js'
 export { describeNotifier } from '#core/http-notifier.js'
+export { verifySlackRequest, parseSlackInteraction, openSlackAnswerModal, replyInSlack, slackOutcomeText, listSlackChannels, slackAppManifest, type SlackInteraction, type SlackChannel } from '#core/slack-interactions.js'
+export { NOTIFIER_SLACK_SIGNING_SECRET_VAR } from '#core/notifier-file.js'
 export { createDecisionToken, verifyDecisionToken, decidePath, decideLinkMaker, decisionLinkTtlMs, type DecisionKind } from '#core/approval-links.js'
 export { renderDecidePage, renderDecideGonePage, renderDecideInvalidPage, type DecidePageItem } from './web/decide-page.js'
 export { sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
-export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, type DefaultWebhook } from './web/notifier-admin.js'
+export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, listAgentSlackChannels, type DefaultWebhook } from './web/notifier-admin.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via

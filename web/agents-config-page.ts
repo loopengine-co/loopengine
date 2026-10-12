@@ -963,6 +963,7 @@ ${consoleShellScript}
   // deliveries. Reloaded every time the tab opens, so the waiting list is
   // current. ----
 
+  var lastNotifier = null;
   var NOTIFIER_EVENTS = [
     ['approval', 'Approvals'], ['question', 'Questions'], ['run_finish', 'Run finished'], ['run_start', 'Run started']
   ];
@@ -1018,8 +1019,27 @@ ${consoleShellScript}
       '<label>Send to<select name="channel" id="notifierChannel">' +
         ['webhook', 'slack', 'lark'].map(function (c) { return '<option value="' + c + '"' + (f.channel === c ? ' selected' : '') + '>' + { webhook: 'Webhook (your app)', slack: 'Slack channel', lark: 'Lark / Feishu chat' }[c] + '</option>'; }).join('') +
       '</select></label>' +
-      field('webhook', '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField('webhook', 'Signing secret')) +
-      field('slack', '<label>Channel ID<input name="channelId" placeholder="C0123ABC456" value="' + escapeHtml(f.channelId || '') + '"></label>' + secretField('slack', 'Bot token')) +
+      field('webhook', '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField('webhook', 'Signing secret') +
+        '<p class="hint" style="margin:0">Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can simply forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>') +
+      field('slack',
+        '<details class="slack-step"' + (n.secretsSet && n.secretsSet.slack ? '' : ' open') + '><summary>Create the Slack app (once)</summary>' +
+          '<ol class="hint" style="margin:6px 0;padding-left:18px">' +
+            '<li>Open <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noopener">Slack apps</a> &rarr; Create New App &rarr; From a manifest, and pick your workspace.</li>' +
+            '<li>Paste the manifest below, create the app, then Install to Workspace.</li>' +
+            '<li>Copy the <strong>Bot User OAuth Token</strong> (starts with xoxb-) from OAuth &amp; Permissions into the field below.</li>' +
+          '</ol>' +
+          '<textarea id="slackManifest" readonly rows="8" style="font-family:var(--font-mono);font-size:11.5px"></textarea>' +
+          '<button type="button" id="slackManifestCopy" style="margin-top:6px">Copy manifest</button>' +
+        '</details>' +
+        secretField('slack', 'Bot token') +
+        '<label>Channel <span class="hint">(invite the bot to a private channel first: /invite @its-name)</span>' +
+          '<span style="display:flex;gap:6px"><select id="slackChannelSelect" style="flex:1;min-width:0"><option value="">' + (f.channelId ? 'Saved: ' + escapeHtml(f.channelId) : 'Load channels to pick one') + '</option></select>' +
+          '<button type="button" id="slackLoadChannels">Load channels</button></span></label>' +
+        '<label>Channel ID <span class="hint">(filled in when you pick a channel)</span><input name="channelId" placeholder="C0123ABC456" value="' + escapeHtml(f.channelId || '') + '"></label>' +
+        '<label>Signing secret <span class="hint">(optional, from Basic Information; ' +
+          (n.slack && n.slack.signingSecretSet ? 'set &mdash; Approve/Deny buttons are on' : 'adds Approve/Deny buttons inside Slack; without it, messages carry the approval link') + ')</span>' +
+          '<input type="password" name="signingSecret" autocomplete="off"></label>' +
+        '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>') +
       field('lark', '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField('lark', 'App secret')) +
       '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
         '<input type="url" name="publicUrl" id="notifierPublicUrl" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
@@ -1032,7 +1052,7 @@ ${consoleShellScript}
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="submit"' + (n.canSave === false ? ' disabled' : '') + '>Save</button><button type="button" id="notifierTestBtn">Send test</button>' +
         (n.file ? '<button type="button" class="delete-btn" id="notifierRemoveBtn">Remove</button>' : '') + '</div>' +
       '<div id="notifierResult" class="hint"></div>' +
-      '<p class="hint" style="margin:0">For a webhook: your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can simply forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>' +
+
       '</form>';
   }
 
@@ -1143,6 +1163,51 @@ ${consoleShellScript}
         result.textContent = 'Copy this secret into your app before saving; it is not shown again.';
       });
     }
+    // Slack: manifest follows the link address; Load channels fills the picker.
+    var n0 = lastNotifier;
+    var manifestEl = form.querySelector('#slackManifest');
+    var linkInput = form.querySelector('#notifierPublicUrl');
+    function refreshSlackManifest() {
+      if (!manifestEl || !n0 || !n0.slack) return;
+      var url = (linkInput.value || location.origin).replace(/[/]+$/, '') + n0.slack.interactivityPath;
+      manifestEl.value = JSON.stringify(n0.slack.manifestTemplate, null, 2).replace('__INTERACTIVITY_URL__', url);
+      var urlEl = form.querySelector('#slackInteractivityUrl');
+      if (urlEl) urlEl.textContent = url;
+    }
+    if (linkInput) linkInput.addEventListener('input', refreshSlackManifest);
+    refreshSlackManifest();
+    var copyManifest = form.querySelector('#slackManifestCopy');
+    if (copyManifest) {
+      copyManifest.addEventListener('click', function () {
+        manifestEl.select();
+        var done = function () { copyManifest.textContent = 'Copied'; setTimeout(function () { copyManifest.textContent = 'Copy manifest'; }, 1500); };
+        if (navigator.clipboard) navigator.clipboard.writeText(manifestEl.value).then(done, done); else done();
+      });
+    }
+    var loadChannels = form.querySelector('#slackLoadChannels');
+    var channelSelect = form.querySelector('#slackChannelSelect');
+    if (loadChannels) {
+      loadChannels.addEventListener('click', function () {
+        loadChannels.disabled = true;
+        result.textContent = 'Loading channels' + String.fromCharCode(8230);
+        var token = form.querySelector('input[name="secret_slack"]').value;
+        fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/slack-channels', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ botToken: token }),
+        }).then(function (r) {
+          loadChannels.disabled = false;
+          if (!r.ok) { result.textContent = r.body.error || 'Could not load channels'; return; }
+          var current = form.querySelector('input[name="channelId"]').value;
+          channelSelect.innerHTML = '<option value="">Pick a channel</option>' + r.body.channels.map(function (c) {
+            return '<option value="' + escapeHtml(c.id) + '"' + (c.id === current ? ' selected' : '') + '>' + (c.isPrivate ? '&#128274; ' : '#') + escapeHtml(c.name) + (c.isMember ? '' : ' (bot not in channel yet)') + '</option>';
+          }).join('');
+          result.textContent = r.body.channels.length + ' channels found.';
+        });
+      });
+      channelSelect.addEventListener('change', function () {
+        if (channelSelect.value) form.querySelector('input[name="channelId"]').value = channelSelect.value;
+      });
+    }
+
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var data = new FormData(form);
@@ -1150,6 +1215,7 @@ ${consoleShellScript}
       var body = { channel: channel, events: data.getAll('events'), url: data.get('url'), channelId: data.get('channelId'), appId: data.get('appId'), chatId: data.get('chatId'), publicUrl: data.get('publicUrl') };
       var secret = data.get('secret_' + channel);
       if (secret) body.secret = secret;
+      if (channel === 'slack' && data.get('signingSecret')) body.signingSecret = data.get('signingSecret');
       result.textContent = 'Saving…';
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier', {
         method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -1183,6 +1249,7 @@ ${consoleShellScript}
     ]).then(function (results) {
       if (currentName !== name) return;
       if (!results[0].ok) throw new Error(results[0].body.error || 'request failed');
+      lastNotifier = results[0].body;
       content.innerHTML = renderApprovalsHtml(results[0].body);
       wireApprovalsHandlers(name);
       var pendingEl = detail.querySelector('#pendingContent');

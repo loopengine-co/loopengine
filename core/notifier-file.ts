@@ -38,6 +38,11 @@ export const NOTIFIER_SECRET_VARS: Record<NotifierFileChannel, string> = {
   lark: 'LOOPENGINE_NOTIFIER_LARK_APP_SECRET',
 }
 
+/** Optional: a Slack app's signing secret, per agent. Set, it turns on
+ * Approve/Deny buttons in Slack, handled by the server itself at
+ * POST /hooks/slack/<agent>; unset, messages carry only the decision link. */
+export const NOTIFIER_SLACK_SIGNING_SECRET_VAR = 'LOOPENGINE_NOTIFIER_SLACK_SIGNING_SECRET'
+
 const CHANNELS: NotifierFileChannel[] = ['webhook', 'slack', 'lark']
 const EVENTS: HttpNotifierEvent[] = ['approval', 'question', 'run_start', 'run_finish']
 
@@ -113,10 +118,19 @@ export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv): { con
     case 'webhook':
       return { config: { channel: 'webhook', config: { webhookUrl: file.url!, webhookSecret: secret, publicUrl: file.publicUrl }, events: file.events } }
     case 'slack':
-      // No interactive buttons: a console-configured Slack notifier has
-      // no interactivity endpoint behind it; the decision link replaces them.
-      return { config: { channel: 'slack', config: { botToken: secret, channelId: file.channelId!, publicUrl: file.publicUrl, buttons: false }, events: file.events } }
+      // Buttons only once the agent has a signing secret, i.e. the Slack
+      // app's interactivity points at /hooks/slack/<agent>; otherwise the
+      // decision link does the job.
+      return {
+        config: {
+          channel: 'slack',
+          config: { botToken: secret, channelId: file.channelId!, publicUrl: file.publicUrl, buttons: Boolean(env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR)) },
+          events: file.events,
+        },
+      }
     case 'lark':
-      return { config: { channel: 'lark', config: { appId: file.appId!, appSecret: secret, chatId: file.chatId! }, events: file.events } }
+      // No card buttons: nothing built in handles Lark's card callbacks yet,
+      // so a console-configured Lark notifier relies on the decision link.
+      return { config: { channel: 'lark', config: { appId: file.appId!, appSecret: secret, chatId: file.chatId!, publicUrl: file.publicUrl, buttons: false }, events: file.events } }
   }
 }

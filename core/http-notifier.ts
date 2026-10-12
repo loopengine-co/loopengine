@@ -141,8 +141,8 @@ function buildResolved(httpNotifier: HttpNotifierConfig): ResolvedHttpNotifier {
       break
     }
     case 'lark': {
-      const { appId, appSecret, chatId } = httpNotifier.config
-      const lark = new LarkNotifier({ appId, appSecret, chatId })
+      const { appId, appSecret, chatId, publicUrl, buttons } = httpNotifier.config
+      const lark = new LarkNotifier({ appId, appSecret, chatId, publicUrl, buttons })
       resolved = {
         approver: events.has('approval') ? lark : undefined,
         questionHandler: events.has('question') ? lark : undefined,

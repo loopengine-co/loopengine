@@ -221,9 +221,19 @@ deployment with more than one server must set the env var so all of them
 accept the same links. The server's address comes from
 `LOOPENGINE_PUBLIC_URL`, else the "Link address" saved in `notifier.yml`
 (the console fills it in from the address you're using it at). A
-console-configured Slack notifier sends the link instead of interactive
-buttons, which would need an interactivity endpoint; `httpNotifier` in
-code keeps the buttons unless `buttons: false`. The console's waiting
+console-configured Slack notifier sends the link, and adds interactive
+Approve/Deny buttons once the agent has a Slack signing secret
+(`LOOPENGINE_NOTIFIER_SLACK_SIGNING_SECRET`, set in the console): the
+server then handles the clicks itself at `POST /hooks/slack/<agent>` —
+verified with that signing secret, outside the admin login — and
+replaces the message with what happened ("Approved by @someone" and the
+agent's reply). The console shows a ready Slack app manifest (bot scopes
+`chat:write`, `channels:read`, `groups:read`, interactivity pointed at
+that URL) and a channel picker. `httpNotifier` in code keeps its buttons
+unless `buttons: false`, and can use the same built-in endpoint by
+setting the signing secret for that agent. Lark cards carry the link too;
+console-configured Lark cards leave out their buttons, since nothing
+built in handles Lark callbacks yet. The console's waiting
 list has a **Copy link** button for each decision, to send it to someone
 by hand.
 

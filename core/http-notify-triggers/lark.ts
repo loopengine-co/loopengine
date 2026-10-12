@@ -40,6 +40,8 @@
 import { randomUUID } from 'node:crypto'
 import type { DurableApprover, Scope } from 'actauth'
 import type { DurableQuestionHandler } from '../agent-config.js'
+import { decidePath } from '../approval-links.js'
+import { publicBaseUrl } from './webhook.js'
 
 /** Fixed id for the question form card's own input field — used both
  * when *building* the card (notifyPendingQuestion below) and when
@@ -66,11 +68,24 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
   private readonly appId: string
   private readonly appSecret: string
   private readonly chatId: string
+  private readonly publicUrl?: string
+  private readonly buttons: boolean
 
-  constructor(options: { appId: string; appSecret: string; chatId: string }) {
+  /** `publicUrl` / `buttons`: same meaning as SlackNotifier's — a decision
+   * link in each card when the server's address is known, and whether to
+   * add card buttons, which only work with a card-callback handler
+   * deployed (examples/notifier-handler/lark.ts). */
+  constructor(options: { appId: string; appSecret: string; chatId: string; publicUrl?: string; buttons?: boolean }) {
     this.appId = options.appId
     this.appSecret = options.appSecret
     this.chatId = options.chatId
+    this.publicUrl = options.publicUrl
+    this.buttons = options.buttons ?? true
+  }
+
+  private decideLine(pendingId: string, kind: 'approval' | 'question'): string {
+    const base = publicBaseUrl(this.publicUrl)
+    return base ? `\n[${kind === 'approval' ? 'Open to approve or deny' : 'Open to answer'}](${base}${decidePath(pendingId, kind)})` : ''
   }
 
   requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
@@ -86,16 +101,18 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
               tag: 'div',
               text: {
                 tag: 'lark_md',
-                content: `**tool:** ${tool}\n**args:** \`${JSON.stringify(args)}\`\n**scope:** ${scope.tenant}/${scope.environment}/${scope.agent}\n**reason:** ${reason}`,
+                content: `**tool:** ${tool}\n**args:** \`${JSON.stringify(args)}\`\n**scope:** ${scope.tenant}/${scope.environment}/${scope.agent}\n**reason:** ${reason}${this.decideLine(pendingId, 'approval')}`,
               },
             },
-            {
-              tag: 'action',
-              actions: [
-                { tag: 'button', text: { tag: 'plain_text', content: 'Approve' }, type: 'primary', value: { pendingId, decision: 'approve' } },
-                { tag: 'button', text: { tag: 'plain_text', content: 'Deny' }, type: 'danger', value: { pendingId, decision: 'deny' } },
-              ],
-            },
+            ...(this.buttons
+              ? [{
+                  tag: 'action',
+                  actions: [
+                    { tag: 'button', text: { tag: 'plain_text', content: 'Approve' }, type: 'primary', value: { pendingId, decision: 'approve' } },
+                    { tag: 'button', text: { tag: 'plain_text', content: 'Deny' }, type: 'danger', value: { pendingId, decision: 'deny' } },
+                  ],
+                }]
+              : []),
           ],
         }
         await this.sendCard(token, card, pendingId)
@@ -121,19 +138,23 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
           config: { wide_screen_mode: true },
           header: { title: { tag: 'plain_text', content: `Question from ${agent}` } },
           elements: [
-            { tag: 'div', text: { tag: 'lark_md', content: question + (sessionId ? `\n_(session ${sessionId})_` : '') } },
-            ...(optionButtons.length ? [{ tag: 'action', actions: optionButtons }] : []),
-            {
-              tag: 'form',
-              name: 'answer_form',
-              elements: [
-                { tag: 'input', name: LARK_ANSWER_FIELD_TAG, placeholder: { tag: 'plain_text', content: 'Or type your own answer…' } },
-                {
-                  tag: 'action',
-                  actions: [{ tag: 'button', text: { tag: 'plain_text', content: 'Send' }, type: 'primary', action_type: 'form_submit', value: { pendingId } }],
-                },
-              ],
-            },
+            { tag: 'div', text: { tag: 'lark_md', content: question + (sessionId ? `\n_(session ${sessionId})_` : '') + this.decideLine(pendingId, 'question') } },
+            ...(this.buttons
+              ? [
+              ...(optionButtons.length ? [{ tag: 'action', actions: optionButtons }] : []),
+              {
+                tag: 'form',
+                name: 'answer_form',
+                elements: [
+                  { tag: 'input', name: LARK_ANSWER_FIELD_TAG, placeholder: { tag: 'plain_text', content: 'Or type your own answer…' } },
+                  {
+                    tag: 'action',
+                    actions: [{ tag: 'button', text: { tag: 'plain_text', content: 'Send' }, type: 'primary', action_type: 'form_submit', value: { pendingId } }],
+                  },
+                ],
+              },
+                ]
+              : []),
           ],
         }
         await this.sendCard(token, card, pendingId)

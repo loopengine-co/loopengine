@@ -73,7 +73,8 @@ import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/truste
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { describeAgentNotifier, listAgentPending, removeAgentNotifier, saveAgentNotifier, testAgentNotifier } from '#web/notifier-admin.js'
+import { describeAgentNotifier, listAgentPending, listAgentSlackChannels, removeAgentNotifier, saveAgentNotifier, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { openSlackAnswerModal, parseSlackInteraction, replyInSlack, slackOutcomeText, verifySlackRequest } from '#core/slack-interactions.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
@@ -195,6 +196,15 @@ function resolveTenant(
   if (!config.tenantFor) return { ok: true, value: 'default' }
   const result = config.tenantFor(headers, body)
   return result === undefined ? { ok: false } : { ok: true, value: result }
+}
+
+function readRawBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = ''
+    req.on('data', (chunk) => (data += chunk))
+    req.on('end', () => resolve(data))
+    req.on('error', reject)
+  })
 }
 
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -1064,6 +1074,23 @@ async function handleNotifierTest(res: ServerResponse, agentName: string): Promi
     return
   }
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await testAgentNotifier(entry.config, defaultWebhook)))
+}
+
+// Backs the console's Slack channel picker. A bot token typed into the form
+// (not saved yet) can be sent in the body; otherwise the saved one is used.
+async function handleSlackChannels(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  const body = await readJsonBody(req)
+  try {
+    const channels = await listAgentSlackChannels(entry.config, typeof body.botToken === 'string' ? body.botToken : undefined)
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ channels }))
+  } catch (err) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
 }
 
 // Every approval/question still waiting for this agent — for an app that
@@ -2447,7 +2474,82 @@ async function handleDecide(req: IncomingMessage, res: ServerResponse, rawToken:
   else await resolvePendingApproval(res, token.pendingId, { decision: body.decision, editedArgs: body.editedArgs })
 }
 
+// Runs one of the resolve/answer handlers above without a real HTTP
+// response to write to — for the Slack endpoint below, which has already
+// answered Slack and reports the outcome back into the Slack message.
+function captureResponse(): { res: ServerResponse; done: Promise<{ status: number; body: Record<string, unknown> }> } {
+  let resolveDone: (value: { status: number; body: Record<string, unknown> }) => void
+  const done = new Promise<{ status: number; body: Record<string, unknown> }>((resolve) => (resolveDone = resolve))
+  let status = 200
+  const res = {
+    headersSent: false,
+    writeHead(code: number) {
+      status = code
+      return res
+    },
+    end(chunk?: string) {
+      let body: Record<string, unknown> = {}
+      try {
+        body = chunk ? (JSON.parse(chunk) as Record<string, unknown>) : {}
+      } catch {}
+      resolveDone({ status, body })
+      return res
+    },
+  }
+  return { res: res as unknown as ServerResponse, done }
+}
+
+// A Slack app's Interactivity Request URL (core/slack-interactions.ts):
+// Approve/Deny, an answer option, or the "Other…" modal, from a Slack
+// notifier's message. Outside the admin login on purpose — Slack can't
+// send it — and verified with that agent's Slack signing secret instead.
+// Slack wants an answer within three seconds, so the decision is acked
+// right away and its outcome posted back into the message afterwards.
+async function handleSlackInteraction(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  const rawBody = await readRawBody(req)
+  const entry = getEntry(agentName)
+  const { botToken, signingSecret } = entry ? slackCredentialsFor(entry.config) : {}
+  if (!entry || !signingSecret) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('No Slack signing secret is set for this agent.')
+    return
+  }
+  const timestamp = req.headers['x-slack-request-timestamp']
+  const signature = req.headers['x-slack-signature']
+  if (!verifySlackRequest(rawBody, typeof timestamp === 'string' ? timestamp : undefined, typeof signature === 'string' ? signature : undefined, signingSecret)) {
+    res.writeHead(401, { 'content-type': 'text/plain' }).end('Invalid Slack signature.')
+    return
+  }
+  const interaction = parseSlackInteraction(rawBody)
+  if (interaction.type === 'open_answer') {
+    if (botToken) await openSlackAnswerModal(botToken, interaction.triggerId, interaction.pendingId).catch((err) => console.error('[loopengine] Slack modal failed:', err))
+    res.writeHead(200).end()
+    return
+  }
+  res.writeHead(200).end()
+  if (interaction.type === 'ignore') return
+
+  const capture = captureResponse()
+  if (interaction.type === 'decide') await resolvePendingApproval(capture.res, interaction.pendingId, { decision: interaction.decision })
+  else await answerPendingQuestion(capture.res, interaction.pendingId, { answer: interaction.answer })
+  const outcome = await capture.done
+  if (interaction.responseUrl) {
+    const text = slackOutcomeText(interaction.type === 'decide' ? interaction.decision : 'answer', outcome.status, outcome.body, interaction.user)
+    await replyInSlack(interaction.responseUrl, text).catch((err) => console.error('[loopengine] Slack reply failed:', err))
+  }
+}
+
 const server = createServer(async (req, res) => {
+  const slackHookMatch = req.method === 'POST' && (req.url ?? '/').split('?')[0].match(/^\/hooks\/slack\/([^/]+)$/)
+  if (slackHookMatch) {
+    try {
+      await handleSlackInteraction(req, res, decodeURIComponent(slackHookMatch[1]))
+    } catch (err) {
+      console.error('[loopengine] Slack interaction failed:', err)
+      if (!res.headersSent) res.writeHead(500).end()
+    }
+    return
+  }
+
   const decideMatch = (req.method === 'GET' || req.method === 'POST') && (req.url ?? '/').split('?')[0].match(/^\/decide\/([A-Za-z0-9_.-]+)$/)
   if (decideMatch) {
     try {
@@ -2852,6 +2954,11 @@ const server = createServer(async (req, res) => {
     const notifierTestMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/notifier\/test$/)
     if (notifierTestMatch) {
       await handleNotifierTest(res, decodeURIComponent(notifierTestMatch[1]))
+      return
+    }
+    const slackChannelsMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/notifier\/slack-channels$/)
+    if (slackChannelsMatch) {
+      await handleSlackChannels(req, res, decodeURIComponent(slackChannelsMatch[1]))
       return
     }
     const pendingListMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/pending$/)
