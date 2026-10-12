@@ -12,6 +12,8 @@ import type { ToolDefinition } from '../agent-config.js'
 
 export const systemTools: ToolDefinition[] = [readFile]
 
+export { createScheduleTools } from './schedule.js'
+
 export {
   createAskUserTool,
   listQuestions,

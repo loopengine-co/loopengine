@@ -40,6 +40,13 @@ export const agentsConfigPageHtml: string = `<!doctype html>
      panels' own content. */
   #empty { color: var(--ink-muted); font-size: 13px; padding: 24px; }
   .env-cell { display: grid; gap: 6px; }
+  .schedule-result { max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; }
+  .schedule-history { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+  form.add-source .schedule-when { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+  form.add-source .schedule-when label { display: inline; font-size: 13px; }
+  form.add-source .schedule-when input[type="radio"] { width: auto; margin: 0; }
+  form.add-source .schedule-when input[type="number"] { width: 80px; }
+  form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
   .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
   .env-desc { max-width: 340px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   form.add-source.env-inline { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-width: 320px; }
@@ -1261,6 +1268,151 @@ ${consoleShellScript}
     }).catch(function (err) {
       if (currentName !== name) return;
       content.innerHTML = '<p class="error">Could not load approvals: ' + escapeHtml(err.message) + '</p>';
+    });
+  }
+
+  // ---- Schedules tab: messages this agent receives on a timer (core/
+  // scheduler.ts behind GET/POST .../schedules and POST /schedules/:id/
+  // run|pause|resume|cancel). Reloaded every time the tab opens, and
+  // every few seconds while a run is in progress. ----
+
+  var schedulesRefreshTimer = null;
+
+  function schedulesContentEl() {
+    return detail.querySelector('#schedulesContent');
+  }
+
+  function renderSchedulesTabPlaceholder() {
+    return '<div id="schedulesContent"><p class="hint">Loading&hellip;</p></div>';
+  }
+
+  var SCHEDULE_PILLS = {
+    scheduled: 'good', running: 'accent', awaiting_approval: 'ask', paused: 'neutral', done: 'neutral', cancelled: 'neutral'
+  };
+  var SCHEDULE_LABELS = {
+    scheduled: 'scheduled', running: 'running', awaiting_approval: 'waiting for approval', paused: 'paused', done: 'done', cancelled: 'cancelled'
+  };
+
+  function scheduleText(s) {
+    return s.run_at ? 'Once, ' + new Date(s.run_at).toLocaleString() : 'Every ' + escapeHtml(s.every);
+  }
+
+  function renderScheduleRow(t) {
+    var actions = [];
+    if (t.status !== 'running' && t.status !== 'awaiting_approval' && t.status !== 'cancelled') actions.push(['run', 'Run now']);
+    if (t.status === 'scheduled') actions.push(['pause', 'Pause']);
+    if (t.status === 'paused') actions.push(['resume', 'Resume']);
+    if (t.status !== 'cancelled' && t.status !== 'done') actions.push(['cancel', 'Cancel']);
+    if (t.status === 'cancelled' || t.status === 'done') actions.push(['delete', 'Delete']);
+    var last = t.last_run_at
+      ? '<span class="le-pill ' + (t.last_status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(t.last_status) + '</span> ' +
+        '<span class="hint">' + escapeHtml(new Date(t.last_run_at).toLocaleString()) + '</span>' +
+        '<div class="schedule-result">' + escapeHtml(t.last_status === 'ok' ? (t.last_result || '') : (t.last_error || '')) + '</div>'
+      : '<span class="hint">not run yet</span>';
+    var history = (t.history || []).slice().reverse().map(function (h) {
+      return '<li><span class="le-pill ' + (h.status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(h.status) + '</span> <span class="hint">' + escapeHtml(new Date(h.ran_at).toLocaleString()) + '</span>' +
+        '<div class="schedule-result">' + escapeHtml(h.status === 'ok' ? (h.result || '') : (h.error || '')) + '</div></li>';
+    }).join('');
+    return '<tr>' +
+      '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' + (t.notify ? ' <span class="le-pill accent" title="Each result goes through this agent&#39;s notifier">notifies</span>' : '') +
+        '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div></td>' +
+      '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(new Date(t.next_run_at).toLocaleString()) + '</div>' : '') + '</td>' +
+      '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
+        (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Permissions</a></div>' : '') + '</td>' +
+      '<td style="min-width:200px">' + last + (history ? '<details><summary class="hint">History (' + (t.history || []).length + ')</summary><ul class="schedule-history">' + history + '</ul></details>' : '') + '</td>' +
+      '<td><div style="display:flex;gap:6px;flex-wrap:wrap">' + actions.map(function (a) {
+        return '<button type="button" class="schedule-action' + (a[0] === 'run' ? ' primary' : '') + (a[0] === 'cancel' || a[0] === 'delete' ? ' delete-btn' : '') + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + a[0] + '">' + a[1] + '</button>';
+      }).join('') + '</div></td></tr>';
+  }
+
+  function renderSchedulesHtml(tasks) {
+    var active = tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; });
+    var list = tasks.length
+      ? '<div class="le-table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Status</th><th>Last run</th><th></th></tr></thead><tbody>' + tasks.map(renderScheduleRow).join('') + '</tbody></table></div>'
+      : '<p class="hint">Nothing scheduled yet.</p>';
+    return '<p class="muted" style="margin:0 0 20px">Messages this agent receives on a timer, like a cron job. Each run works like an app calling it over HTTP: an approval goes wherever the Permissions tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
+      '<section><h3>Scheduled (' + active.length + ' active)</h3>' + list + '</section>' +
+      '<section><h3>New schedule</h3>' +
+        '<form class="add-source" id="scheduleForm" style="max-width:560px">' +
+          '<label>Message <span class="hint">(what the agent receives each time, as if someone typed it)</span><textarea name="message" required placeholder="Summarize yesterday&#39;s support tickets and post the summary."></textarea></label>' +
+          '<div class="body-field">When' +
+            '<div class="schedule-when"><input type="radio" name="when" value="every" id="whenEvery" checked><label for="whenEvery">Every</label>' +
+              '<input type="number" name="everyN" value="1" min="1" aria-label="How many">' +
+              '<select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option></select></div>' +
+            '<div class="schedule-when"><input type="radio" name="when" value="once" id="whenOnce"><label for="whenOnce">Once at</label>' +
+              '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
+          '</div>' +
+          '<label>Name <span class="hint">(optional)</span><input name="task_name" placeholder="Daily ticket summary"></label>' +
+          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send each result through this agent&#39;s notifier (set in the Permissions tab)</label>' +
+          '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
+          '<div id="scheduleResult" class="hint"></div>' +
+        '</form></section>';
+  }
+
+  function wireSchedulesHandlers(name) {
+    var content = schedulesContentEl();
+    if (!content) return;
+    var actionBtns = content.querySelectorAll('.schedule-action');
+    for (var i = 0; i < actionBtns.length; i++) {
+      actionBtns[i].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var action = btn.dataset.action;
+        if ((action === 'cancel' || action === 'delete') && btn.dataset.confirming !== '1') {
+          btn.dataset.confirming = '1';
+          btn.textContent = 'Click again to ' + action;
+          return;
+        }
+        btn.disabled = true;
+        var request = action === 'delete'
+          ? fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
+          : fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' });
+        request.then(function () { setTimeout(function () { loadSchedulesTab(name); }, action === 'run' ? 800 : 0); });
+      });
+    }
+    var toApprovals = content.querySelectorAll('.schedule-to-approvals');
+    for (var j = 0; j < toApprovals.length; j++) {
+      toApprovals[j].addEventListener('click', function (ev) { ev.preventDefault(); switchTab('actauth'); });
+    }
+    var form = content.querySelector('#scheduleForm');
+    var result = content.querySelector('#scheduleResult');
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var data = new FormData(form);
+      var schedule;
+      if (data.get('when') === 'once') {
+        if (!data.get('runAt')) { result.textContent = 'Pick a date and time.'; return; }
+        schedule = { run_at: new Date(data.get('runAt')).toISOString() };
+      } else {
+        schedule = { every: String(data.get('everyN')) + data.get('everyUnit') };
+      }
+      result.textContent = 'Scheduling' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: data.get('message'), schedule: schedule, task_name: data.get('task_name'), notify: data.get('notify') === 'on' }),
+      }).then(function (r) {
+        if (!r.ok) { result.textContent = r.body.error || 'Could not schedule'; return; }
+        loadSchedulesTab(name);
+      });
+    });
+  }
+
+  function loadSchedulesTab(name) {
+    var content = schedulesContentEl();
+    if (!content) return;
+    if (schedulesRefreshTimer) { clearTimeout(schedulesRefreshTimer); schedulesRefreshTimer = null; }
+    fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules').then(function (r) {
+      if (currentName !== name) return;
+      if (!r.ok) throw new Error(r.body.error || 'request failed');
+      var tasks = r.body.tasks || [];
+      content.innerHTML = renderSchedulesHtml(tasks);
+      wireSchedulesHandlers(name);
+      leShell.setCount('schedules', tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; }).length);
+      if (tasks.some(function (t) { return t.status === 'running'; }) && currentTab === 'schedules') {
+        schedulesRefreshTimer = setTimeout(function () { loadSchedulesTab(name); }, 3000);
+      }
+    }).catch(function (err) {
+      if (currentName !== name) return;
+      content.innerHTML = '<p class="error">Could not load schedules: ' + escapeHtml(err.message) + '</p>';
     });
   }
 
@@ -2738,7 +2890,7 @@ ${consoleShellScript}
 
   // ---- Tab switching + agent selection ----
 
-  var CONFIG_TABS = ['overview', 'tools', 'skills', 'abilities', 'actauth', 'env'];
+  var CONFIG_TABS = ['overview', 'tools', 'skills', 'abilities', 'actauth', 'schedules', 'env'];
 
   function switchTab(tab) {
     if (CONFIG_TABS.indexOf(tab) === -1) tab = 'overview';
@@ -2766,6 +2918,7 @@ ${consoleShellScript}
     if (tab === 'abilities' && abilitiesLoadedFor !== currentName) {
       loadAbilitiesTab(currentName);
     }
+    if (tab === 'schedules') loadSchedulesTab(currentName);
   }
 
   // Refreshes just Overview's own summary — used after anything that
@@ -2862,6 +3015,7 @@ ${consoleShellScript}
       '<div class="tab-panel" data-tab-panel="actauth">' + renderActauthTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="env">' + renderEnvTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="abilities">' + renderAbilitiesTabPlaceholder() + '</div>' +
+      '<div class="tab-panel" data-tab-panel="schedules">' + renderSchedulesTabPlaceholder() + '</div>' +
       '</div></div>';
 
     wireSkillsHandlers(cfg.name);

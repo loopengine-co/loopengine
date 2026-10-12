@@ -73,7 +73,8 @@ import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/truste
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { describeAgentNotifier, listAgentPending, listAgentSlackChannels, removeAgentNotifier, saveAgentNotifier, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, removeAgentNotifier, saveAgentNotifier, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { openSlackAnswerModal, parseSlackInteraction, replyInSlack, slackOutcomeText, verifySlackRequest } from '#core/slack-interactions.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
@@ -112,7 +113,7 @@ import {
 import { describeModelProviders, describeGateways } from '#web/global-config.js'
 import { scaffoldAgent, AgentNameError, AgentExistsError, AgentModelError, type AgentTemplateOptions } from '#bin/cli.js'
 import { createTrackedApprover, listApprovals, decideApproval, findApproval } from '#web/web-approver.js'
-import { listQuestions, answerQuestion, findQuestion, createAskUserTool, type PendingQuestion } from '#core/system-tools/index.js'
+import { listQuestions, answerQuestion, findQuestion, createAskUserTool, createScheduleTools, type PendingQuestion } from '#core/system-tools/index.js'
 import { WebhookNotifier } from '#core/http-notify-triggers/webhook.js'
 import type { Decision, PendingApproval } from 'actauth'
 import type { LoopEvent } from '#core/loop-events.js'
@@ -375,7 +376,7 @@ async function describeAgent(entry: RegistryEntry): Promise<Record<string, unkno
     // createAskUserTool() with no onPending, purely to describe its
     // schema here — never executed, so the console-prompt fallback its
     // own doc comment mentions never applies to this call.
-    systemTools: [...systemTools, createAskUserTool({ agent: config.name })].map(describeTool),
+    systemTools: [...systemTools, createAskUserTool({ agent: config.name }), ...(config.selfScheduling === false ? [] : createScheduleTools(config.name))].map(describeTool),
     localTools: localTools.map((t) => ({ ...describeTool(t), httpToolEditable: editableHttpToolNames.has(t.name) })),
     agentAsTools: agentAsTools.map(describeTool),
     gatewayTools: gatewayTools.map(describeTool),
@@ -1014,6 +1015,92 @@ function handleEnvGet(res: ServerResponse, agentName: string): void {
     return
   }
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(listDeclaredEnvVars(agentName)))
+}
+
+// ---- Scheduled tasks (core/scheduler.ts). A task fires through the same
+// path as a plain POST /agents/:name/messages: the session is kept, an
+// "ask" goes to the agent's notifier (or the default webhook) as a
+// durable approval, and with no notifier at all it's denied rather than
+// left waiting on nobody — a scheduled run has no one live in it. ----
+
+const NO_HUMAN_ANSWER = 'No human is available to answer — this is an unattended scheduled run. Use your own best judgement and proceed without waiting for a response.'
+
+async function fireScheduledTask(task: ScheduledTask, rawSessionId: string): Promise<{ kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }> {
+  const entry = getEntry(task.agent)
+  if (!entry) throw new Error(`no agent named "${task.agent}" in this project`)
+  const tenant = 'default'
+  const environment = process.env.LOOPENGINE_ENV ?? 'production'
+  const outcome = await sessions.withSession(`${tenant}:${environment}:${task.agent}:${rawSessionId}`, async (history) => {
+    const result = await runAgent(entry.config, entry.createModelCall(), task.message, history, {
+      tenant,
+      sessionId: rawSessionId,
+      channel: 'http',
+      approver: defaultHttpWebhookNotifier ?? { requestApproval: async () => false },
+      questionHandler: defaultHttpWebhookNotifier ?? { requestQuestion: async () => NO_HUMAN_ANSWER },
+    })
+    if (result.pending) await createCheckpointFromPending(task.agent, tenant, rawSessionId, result.pending)
+    return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pendingIds: result.pending?.outstanding.map((o) => o.pendingId) } }
+  })
+  if (outcome.pendingIds?.length) return { kind: 'pending', pendingIds: outcome.pendingIds }
+  // run-agent's "you denied" wording is for someone live in a chat; in a
+  // scheduled run nobody denied anything, so say what actually happened.
+  if (outcome.stopReason === 'denied') {
+    const tools = /denied: (.+?)\. Send/.exec(outcome.text)?.[1] ?? 'a tool call'
+    throw new Error(`Not allowed: ${tools}. A call that needs approval is denied in a scheduled run unless the Permissions tab sends approval requests somewhere (or a rule denies it outright).`)
+  }
+  return { kind: 'done', text: outcome.text }
+}
+
+// A task with `notify` on reports each run through its agent's notifier.
+function announceScheduledRun(task: ScheduledTask, run: ScheduledTaskRun): void {
+  if (!task.notify) return
+  const entry = getEntry(task.agent)
+  if (!entry) return
+  const label = task.task_name ? `"${task.task_name}"` : `(${describeSchedule(task.schedule)})`
+  const text = run.status === 'ok' ? `Scheduled task ${label} for ${task.agent} ran:\n${run.result ?? ''}` : `Scheduled task ${label} for ${task.agent} failed: ${run.error ?? 'unknown error'}`
+  announceToNotifier(entry.config, text, { scheduledTaskId: task.task_id, taskName: task.task_name ?? null, status: run.status, result: run.result ?? null, error: run.error ?? null }, defaultWebhook)
+}
+
+const scheduler = new Scheduler({ fire: fireScheduledTask, onSettled: announceScheduledRun })
+
+function scheduleJson(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
+}
+
+async function handleSchedulesGet(res: ServerResponse, agentName: string): Promise<void> {
+  if (!getEntry(agentName)) return scheduleJson(res, 404, { error: `unknown agent '${agentName}'` })
+  scheduleJson(res, 200, { tasks: await listScheduledTasks({ agent: agentName }) })
+}
+
+async function handleSchedulesPost(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  if (!getEntry(agentName)) return scheduleJson(res, 404, { error: `unknown agent '${agentName}'` })
+  const body = await readJsonBody(req)
+  try {
+    const task = await createScheduledTask({
+      agent: agentName,
+      message: String(body.message ?? ''),
+      schedule: (body.schedule ?? {}) as { run_at?: unknown; every?: unknown },
+      task_name: typeof body.task_name === 'string' ? body.task_name : undefined,
+      notify: body.notify === true,
+    })
+    scheduleJson(res, 201, task)
+  } catch (err) {
+    scheduleJson(res, err instanceof ScheduleError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleScheduleAction(res: ServerResponse, taskId: string, action: string): Promise<void> {
+  try {
+    if (action === 'run') await runScheduledTaskNow(taskId)
+    else if (action === 'pause') await pauseScheduledTask(taskId)
+    else if (action === 'resume') await resumeScheduledTask(taskId)
+    else if (action === 'cancel') await cancelScheduledTask(taskId)
+    else return scheduleJson(res, 404, { error: `unknown action '${action}'` })
+    if (action === 'run') void scheduler.tick()
+    scheduleJson(res, 200, await getScheduledTask(taskId))
+  } catch (err) {
+    scheduleJson(res, err instanceof ScheduleError ? 404 : 500, { error: err instanceof Error ? err.message : String(err) })
+  }
 }
 
 // Backs the console's Permissions tab (where approval requests and questions are sent) — see
@@ -2245,6 +2332,10 @@ async function respondAfterResolution(res: ServerResponse, finalCheckpoint: Turn
     return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pending: pendingSummary(result.pending) } }
   })
 
+  // A scheduled task's paused run (core/scheduler.ts) settles here.
+  void scheduler
+    .settleFromResume(finalCheckpoint.sessionId, { text: responseBody.text, pendingIds: responseBody.pending?.map((p) => p.pendingId) })
+    .catch((err) => console.error('[loopengine] could not settle scheduled run:', err))
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({ text: responseBody.text, sessionId: finalCheckpoint.sessionId, ...(responseBody.stopReason ? { stopReason: responseBody.stopReason } : {}), ...(responseBody.pending ? { pending: responseBody.pending } : {}) }),
   )
@@ -2422,10 +2513,14 @@ function exitIfCodeChanged(res: ServerResponse): void {
 let openStreams = 0
 let lastRequestAt = Date.now()
 
-function handleActivityGet(res: ServerResponse): void {
+async function handleActivityGet(res: ServerResponse): Promise<void> {
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({
-      inFlightTurns: sessionTurns.size,
+      inFlightTurns: sessionTurns.size + scheduler.running,
+      scheduledRuns: scheduler.running,
+      // When the next scheduled task is due — wake this server by then
+      // (POST /internal/scheduler/tick) if it's been stopped while idle.
+      nextWakeAt: (await nextScheduledWakeAt()) ?? null,
       openStreams,
       lastRequestAt: new Date(lastRequestAt).toISOString(),
       idleSeconds: Math.floor((Date.now() - lastRequestAt) / 1000),
@@ -2587,7 +2682,12 @@ const server = createServer(async (req, res) => {
     // Only exists in trusted-proxy mode, and polling it doesn't count as
     // activity itself.
     if (trustedProxySecret && req.method === 'GET' && pathname === '/internal/activity') {
-      handleActivityGet(res)
+      await handleActivityGet(res)
+      return
+    }
+    // A host waking this server for a due task: fire whatever is due now.
+    if (trustedProxySecret && req.method === 'POST' && pathname === '/internal/scheduler/tick') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ fired: await scheduler.tick() }))
       return
     }
     lastRequestAt = Date.now()
@@ -2956,6 +3056,28 @@ const server = createServer(async (req, res) => {
       await handleNotifierTest(res, decodeURIComponent(notifierTestMatch[1]))
       return
     }
+    // Backs the console's Schedules tab — see handleSchedulesGet above.
+    const schedulesMatch = pathname.match(/^\/agents\/([^/]+)\/schedules$/)
+    if (schedulesMatch && req.method === 'GET') {
+      await handleSchedulesGet(res, decodeURIComponent(schedulesMatch[1]))
+      return
+    }
+    if (schedulesMatch && req.method === 'POST') {
+      await handleSchedulesPost(req, res, decodeURIComponent(schedulesMatch[1]))
+      return
+    }
+    const scheduleActionMatch = req.method === 'POST' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)\/(run|pause|resume|cancel)$/)
+    if (scheduleActionMatch) {
+      await handleScheduleAction(res, scheduleActionMatch[1], scheduleActionMatch[2])
+      return
+    }
+    const scheduleDeleteMatch = req.method === 'DELETE' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)$/)
+    if (scheduleDeleteMatch) {
+      await deleteScheduledTask(scheduleDeleteMatch[1])
+      scheduleJson(res, 200, { ok: true })
+      return
+    }
+
     const slackChannelsMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/notifier\/slack-channels$/)
     if (slackChannelsMatch) {
       await handleSlackChannels(req, res, decodeURIComponent(slackChannelsMatch[1]))
@@ -3094,7 +3216,31 @@ const server = createServer(async (req, res) => {
 })
 
 const port = Number(process.env.PORT ?? 8787)
-server.listen(port, () => console.log(`agent API listening on :${port}`))
+server.listen(port, () => {
+  console.log(`agent API listening on :${port}`)
+  void warmAgentTools()
+  // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.
+  if (process.env.LOOPENGINE_SCHEDULER !== 'off') void scheduler.start().catch((err) => console.error('[loopengine] scheduler failed to start:', err))
+})
+
+// An agent that leaves `tools` unset gets its tools/ folder imported
+// lazily, on its first turn. Importing every agent's tools (and
+// subagents) right at startup instead means anything an ability's tool
+// file starts on load — a background timer, say — runs from boot, not
+// only after someone first talks to that agent. A broken tool file is
+// logged and skipped; its agent still fails loudly on its own first turn.
+async function warmAgentTools(): Promise<void> {
+  for (const name of listAgents()) {
+    const entry = getEntry(name)
+    if (!entry) continue
+    try {
+      if (entry.config.tools === undefined) await loadDefaultTools(entry.config)
+      await loadSubagentAsTools(entry.config)
+    } catch (err) {
+      console.error(`[loopengine] could not load tools for agent '${name}' at startup:`, err instanceof Error ? err.message : err)
+    }
+  }
+}
 
 // server.close() alone only stops accepting *new* connections — it
 // doesn't wait for existing ones, and the old code called process.exit
@@ -3125,6 +3271,7 @@ server.listen(port, () => console.log(`agent API listening on :${port}`))
 // process restart, just this one process's own event loop.
 async function shutdown() {
   console.log('[loopengine] shutting down — draining in-flight requests...')
+  scheduler.stop()
   const graceMs = Number(process.env.LOOPENGINE_SHUTDOWN_GRACE_MS ?? 30000)
   const closed = new Promise<void>((resolve) => server.close(() => resolve()))
   // HTTP keep-alive means a connection whose last request already

@@ -121,6 +121,7 @@ code changes or redeploy needed for most of it:
 | **Tools** | Your hand-written tools, tools from integrations (e.g. [Composio](https://composio.dev)) and subagents, with whether each call runs on its own, asks first, or is denied. Build an HTTP tool or connect an integration without touching a file. |
 | **Skills** | Create, edit, and delete `SKILL.md` files for this agent directly in the browser — write the body, preview the rendered markdown, save. |
 | **Permissions** | Add, edit, and delete permission rules (actauth) — who, tool, decision — and choose what happens when no rule matches. |
+| **Schedules** | Messages the agent receives on a timer — once at a set time, or every N minutes/hours/days. Run now, pause, resume, cancel, see each run's result, and optionally send results through the agent's notifier. |
 | **Environment** | Every setting an installed ability reads, with its project-wide value and this agent's own value side by side, and which one the agent actually uses. A secret is never shown again once set. |
 
 Models and Integrations in the sidebar show which model providers have a
@@ -210,6 +211,30 @@ click, a webhook HMAC signature, a magic-link token) ship under
 [`HUMAN_IN_THE_LOOP.md`](HUMAN_IN_THE_LOOP.md) for the full setup guide —
 live and durable, worked examples, and how resumption actually works
 under the hood.
+
+## Scheduled tasks
+
+The server runs one scheduler (`core/scheduler.ts`) that sends a message
+to an agent later — once (`run_at`) or on an interval (`every: "1h"`) —
+from the console's **Schedules** tab, the `GET/POST
+/agents/<name>/schedules` API, or the agent itself: every agent has
+built-in `system_schedule_task`, `system_list_scheduled_tasks`,
+`system_check_scheduled_task` and `system_cancel_scheduled_task` tools,
+so "remind me tomorrow at 9" just works. An
+agent can only schedule, see or cancel its own tasks, up to 25 active at
+a time (`LOOPENGINE_SCHEDULER_MAX_PER_AGENT`); `selfScheduling: false` in
+its config removes the tools. Tasks left by the old `lp-task-scheduler`
+ability are imported at start. Each run goes through the same
+path as an HTTP call: an approval goes wherever the Permissions tab sends
+it (and resumes the run once decided); with nowhere set, a call that
+needs approval is denied. Intervals keep their original slot (an hourly
+task created at 10:07 stays on :07); a run missed while the server was
+down fires once when it's back. Tasks live in `.scheduler/` (or
+`LOOPENGINE_SCHEDULER_DIR`); the tick is `LOOPENGINE_SCHEDULER_TICK_MS`
+(10 s); `LOOPENGINE_SCHEDULER=off` turns the loop off for this process.
+Behind a hosting platform, `GET /internal/activity` reports `nextWakeAt`
+and `POST /internal/scheduler/tick` fires whatever is due, so a stopped
+server can be woken in time.
 
 ## Ability system
 

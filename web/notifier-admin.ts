@@ -11,7 +11,10 @@ import type { CheckpointStore } from '../core/durable-approvals.js'
 import { decidePath } from '../core/approval-links.js'
 import { describeNotifier } from '../core/http-notifier.js'
 import { sendTestSlackMessage } from '../core/http-notify-triggers/slack.js'
-import { sendTestWebhook, type DeliveryResult } from '../core/http-notify-triggers/webhook.js'
+import { postLifecycleWebhook, sendTestWebhook, type DeliveryResult } from '../core/http-notify-triggers/webhook.js'
+import { SlackNotifier } from '../core/http-notify-triggers/slack.js'
+import { LarkNotifier } from '../core/http-notify-triggers/lark.js'
+import type { HttpNotifierConfig } from '../core/agent-config.js'
 import { listDeliveries } from '../core/notifier-deliveries.js'
 import { NOTIFIER_SECRET_VARS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, notifierConfigFromFile, readNotifierFile, removeNotifierFile, writeNotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
 import { listSlackChannels, slackAppManifest, type SlackChannel } from '../core/slack-interactions.js'
@@ -87,6 +90,47 @@ export async function listAgentSlackChannels(config: AgentConfig, botToken?: str
  * notifier back on doesn't need it re-entered. */
 export function removeAgentNotifier(config: AgentConfig): void {
   removeNotifierFile(agentDirFor(config))
+}
+
+/** The notifier settings that apply to an agent: its code httpNotifier,
+ * else its notifier.yml (once its secret is set), else the
+ * deployment-wide default webhook. */
+function activeNotifierTarget(config: AgentConfig, defaultWebhook?: DefaultWebhook): HttpNotifierConfig | undefined {
+  if (config.httpNotifier) return config.httpNotifier
+  const dir = agentDirFor(config)
+  const file = readNotifierFile(dir)
+  if (file) {
+    const { config: fromFile } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
+    if (fromFile) return fromFile
+  }
+  return defaultWebhook ? { channel: 'webhook', config: { webhookUrl: defaultWebhook.webhookUrl, webhookSecret: defaultWebhook.webhookSecret }, events: ['run_finish'] } : undefined
+}
+
+/** Posts a plain announcement through the agent's notifier — a scheduled
+ * task's result, for one — regardless of which events it subscribed to.
+ * A webhook gets a signed `run_finish` payload with `data` merged in;
+ * Slack and Lark get `text`. Does nothing when no notifier applies. */
+export function announceToNotifier(config: AgentConfig, text: string, data: Record<string, unknown>, defaultWebhook?: DefaultWebhook): boolean {
+  let target: HttpNotifierConfig | undefined
+  try {
+    target = activeNotifierTarget(config, defaultWebhook)
+  } catch {
+    return false
+  }
+  if (!target) return false
+  switch (target.channel) {
+    case 'webhook':
+      postLifecycleWebhook(target.config.webhookUrl, target.config.webhookSecret, 'run_finish', { agent: config.name, text, ...data })
+      return true
+    case 'slack':
+      new SlackNotifier({ botToken: target.config.botToken, channelId: target.config.channelId }).postMessage(text)
+      return true
+    case 'lark':
+      new LarkNotifier({ appId: target.config.appId, appSecret: target.config.appSecret, chatId: target.config.chatId }).postMessage(text)
+      return true
+    default:
+      return false
+  }
 }
 
 /** Sends a test through whichever notifier applies to this agent —

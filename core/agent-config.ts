@@ -352,6 +352,12 @@ export interface AgentConfig {
    * for `cli`/`http_stream`: both always get the library's own live
    * defaults, with nothing to configure. */
   httpNotifier?: HttpNotifierConfig
+  /** Whether this agent gets the built-in scheduling tools
+   * (system_schedule_task and friends, core/system-tools/schedule.ts),
+   * which let it schedule messages to itself — reminders, recurring
+   * checks — and list or cancel its own scheduled tasks. Default true;
+   * false leaves them out of this agent's tools entirely. */
+  selfScheduling?: boolean
   /** Fires once, fire-and-forget, at the start of every `runAgent()`/
    * `resumeAgent()` call on the `http` channel (or no channel at all —
    * see below) — the "someone triggered this agent" signal, for

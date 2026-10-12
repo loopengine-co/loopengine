@@ -2,6 +2,7 @@ node_modules
 dist
 .sessions
 .checkpoints
+.scheduler
 *.log
 .env
 .DS_Store

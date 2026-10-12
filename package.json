@@ -1,6 +1,6 @@
 {
   "name": "loopengine",
-  "version": "0.1.69",
+  "version": "0.1.70",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
   "license": "MIT",
@@ -52,6 +52,8 @@
     "dist/core/approval-links.d.ts",
     "dist/core/slack-interactions.js",
     "dist/core/slack-interactions.d.ts",
+    "dist/core/scheduler.js",
+    "dist/core/scheduler.d.ts",
     "dist/core/session-store.js",
     "dist/core/session-store.d.ts",
     "dist/core/vector-index.js",
@@ -102,7 +104,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc; s=$?; chmod +x dist/bin/cli.js; cp -r core/system-skills dist/core/system-skills; tsx scripts/write-dist-package-json.ts; exit $s",
+    "build": "tsc; s=$?; chmod +x dist/bin/cli.js; rm -rf dist/core/system-skills; cp -r core/system-skills dist/core/system-skills; tsx scripts/write-dist-package-json.ts; exit $s",
     "prepublishOnly": "npm run build",
     "start": "node --env-file-if-exists=.env dist/adapters/http.js",
     "test": "vitest run"

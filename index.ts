@@ -23,12 +23,13 @@ export { setUsageSink, recordUsage, type UsageEvent, type UsageSink } from '#cor
 export { readNotifierFile, writeNotifierFile, removeNotifierFile, validateNotifierFile, notifierConfigFromFile, NotifierFileError, NOTIFIER_SECRET_VARS, type NotifierFile } from '#core/notifier-file.js'
 export { listDeliveries, recordDelivery, type NotifierDelivery } from '#core/notifier-deliveries.js'
 export { describeNotifier } from '#core/http-notifier.js'
+export { Scheduler, ScheduleError, FileSchedulerStore, getSchedulerStore, setSchedulerStore, createScheduledTask, listScheduledTasks, getScheduledTask, cancelScheduledTask, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, deleteScheduledTask, nextScheduledWakeAt, importLegacyScheduledTasks, parseEvery, describeSchedule, type ScheduledTask, type ScheduledTaskRun, type ScheduledTaskStatus, type Schedule, type SchedulerStore, type FireTask, type CreateScheduledTaskInput } from '#core/scheduler.js'
 export { verifySlackRequest, parseSlackInteraction, openSlackAnswerModal, replyInSlack, slackOutcomeText, listSlackChannels, slackAppManifest, type SlackInteraction, type SlackChannel } from '#core/slack-interactions.js'
 export { NOTIFIER_SLACK_SIGNING_SECRET_VAR } from '#core/notifier-file.js'
 export { createDecisionToken, verifyDecisionToken, decidePath, decideLinkMaker, decisionLinkTtlMs, type DecisionKind } from '#core/approval-links.js'
 export { renderDecidePage, renderDecideGonePage, renderDecideInvalidPage, type DecidePageItem } from './web/decide-page.js'
 export { sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
-export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, listAgentSlackChannels, type DefaultWebhook } from './web/notifier-admin.js'
+export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via
@@ -159,7 +160,7 @@ export { WebhookNotifier } from './core/http-notify-triggers/webhook.js'
 // answerQuestion above (core/client.ts) is the HTTP client-side helper —
 // this is the server-side function that actually resolves a pending
 // question in-process, aliased to avoid colliding with that name.
-export { listQuestions, answerQuestion as resolvePendingQuestion, findQuestion, createAskUserTool } from './core/system-tools/index.js'
+export { listQuestions, answerQuestion as resolvePendingQuestion, findQuestion, createAskUserTool, createScheduleTools } from './core/system-tools/index.js'
 export type { PendingQuestion } from './core/system-tools/index.js'
 
 export { editAgentFile, AgentEditNotSupportedError, AgentFileNotFoundError } from './web/agent-file-admin.js'

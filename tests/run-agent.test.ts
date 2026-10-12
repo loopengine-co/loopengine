@@ -9,6 +9,8 @@ import { answerQuestion } from '#core/system-tools/index.js'
 import { setAgentDir } from '#core/agent-env.js'
 import { setUsageSink, type UsageEvent } from '#core/usage.js'
 
+const SCHEDULE_TOOLS = ['system_schedule_task', 'system_list_scheduled_tasks', 'system_check_scheduled_task', 'system_cancel_scheduled_task']
+
 function baseConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     name: 'test-agent',
@@ -535,7 +537,7 @@ describe('runAgent', () => {
     await runAgent(baseConfig({ tools: undefined }), modelCall, 'hi')
 
     const toolsSentToModel = (modelCall as ReturnType<typeof vi.fn>).mock.calls[0][2]
-    expect(toolsSentToModel.map((t: { name: string }) => t.name)).toEqual(['system_read_file', 'system_ask_user', 'Skill'])
+    expect(toolsSentToModel.map((t: { name: string }) => t.name)).toEqual(['system_read_file', 'system_ask_user', ...SCHEDULE_TOOLS, 'Skill'])
   })
 
   it('an explicit empty tools array opts out of the agent default, but not of the system tools', async () => {

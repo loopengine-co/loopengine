@@ -20,7 +20,7 @@ import { recordUsage } from './usage.js'
 import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
 import { loadGatewayToolsFromDir } from './gateway-tools.js'
-import { systemTools, createAskUserTool, CliQuestionHandler, isDurableQuestionHandler, type PendingQuestion } from './system-tools/index.js'
+import { systemTools, createAskUserTool, createScheduleTools, CliQuestionHandler, isDurableQuestionHandler, type PendingQuestion } from './system-tools/index.js'
 import { resolveHttpNotifier } from './http-notifier.js'
 import type { LoopEvent } from './loop-events.js'
 import { CRASH_RECOVERY_CONTINUATION } from './session-store.js'
@@ -616,10 +616,15 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // (options.onEvent's own fallback) — see RunAgentOptions.onQuestionPending's
   // own doc comment for why those two are deliberately not the same thing.
   const askUserTool = createAskUserTool({ agent: config.name, sessionId: options.sessionId }, options.onQuestionPending)
+  // Bound to this agent: it can schedule, list and cancel only its own
+  // tasks (see core/system-tools/schedule.ts). AgentConfig.selfScheduling
+  // false leaves them out.
+  const scheduleTools = config.selfScheduling === false ? [] : createScheduleTools(config.name)
 
   const tools = dedupeToolsByName([
     ...systemTools,
     askUserTool,
+    ...scheduleTools,
     ...(config.tools ?? (await loadDefaultTools(config))),
     ...(await loadSubagentAsTools(config)),
     ...(await loadGatewayToolsFromDir(join(process.cwd(), 'agents', config.name))),
@@ -716,7 +721,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // ('ask' or 'deny', see loadRules' own doc comment) would otherwise
   // catch it, since neither system tool ever appears in an agent's own
   // actauth.yml.
-  const systemToolInstances = new Set<ToolDefinition>([...systemTools, askUserTool])
+  const systemToolInstances = new Set<ToolDefinition>([...systemTools, askUserTool, ...scheduleTools])
   const toolSchemas: ToolSchema[] = tools.map(({ name, description, input_schema }) => ({
     name,
     description,

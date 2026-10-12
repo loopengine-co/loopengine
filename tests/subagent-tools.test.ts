@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runAgent, type Message, type ModelCall, type ModelResponse } from '#core/run-agent.js'
 import type { AgentConfig } from '#core/agent-config.js'
 
+const SCHEDULE_TOOLS = ['system_schedule_task', 'system_list_scheduled_tasks', 'system_check_scheduled_task', 'system_cancel_scheduled_task']
+
 // agentsRootDir (run-agent.ts) is resolved next to run-agent.ts itself,
 // not process.cwd() — but in this test run they're the same directory,
 // same assumption the existing 'defaults tools to .../tools/index' test
@@ -78,7 +80,7 @@ describe('subagent auto-loading (agents/<name>/subagents/*)', () => {
     // Plus the always-on system tool/skill (system_read_file, Skill) —
     // see run-agent.ts's systemTools/systemSkillsDir.
     const toolsSentToModel = (modelCall as ReturnType<typeof vi.fn>).mock.calls[0][2]
-    expect(toolsSentToModel.map((t: { name: string }) => t.name)).toEqual(['system_read_file', 'system_ask_user', 'billing-agent-merge', 'Skill'])
+    expect(toolsSentToModel.map((t: { name: string }) => t.name)).toEqual(['system_read_file', 'system_ask_user', ...SCHEDULE_TOOLS, 'billing-agent-merge', 'Skill'])
   })
 
   it('does not add any agent-specific tools when the agent has no subagents/ folder at all', async () => {
@@ -86,7 +88,7 @@ describe('subagent auto-loading (agents/<name>/subagents/*)', () => {
     await runAgent(baseConfig({ name: 'subagent-fixture-parent-with-no-folder' }), modelCall, 'hi')
 
     const toolsSentToModel = (modelCall as ReturnType<typeof vi.fn>).mock.calls[0][2]
-    expect(toolsSentToModel.map((t: { name: string }) => t.name)).toEqual(['system_read_file', 'system_ask_user', 'Skill'])
+    expect(toolsSentToModel.map((t: { name: string }) => t.name)).toEqual(['system_read_file', 'system_ask_user', ...SCHEDULE_TOOLS, 'Skill'])
   })
 
   it('calling the subagent tool runs the wrapped agent to completion and feeds its final text back as the tool result', async () => {
@@ -266,6 +268,6 @@ export function createModelCall() {
     // Just the always-on system tool/skill, not "flat_secret_tool" —
     // proves the subagent's tools default resolved against its own
     // nested (empty) folder, not the flat same-named top-level one.
-    expect(firstToolResult(secondCallMessages)?.content).toBe('"tools seen: Skill,system_ask_user,system_read_file"')
+    expect(firstToolResult(secondCallMessages)?.content).toBe('"tools seen: Skill,system_ask_user,system_cancel_scheduled_task,system_check_scheduled_task,system_list_scheduled_tasks,system_read_file,system_schedule_task"')
   })
 })
