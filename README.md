@@ -414,5 +414,9 @@ them behaves exactly as described above.
 | `LOOPENGINE_USAGE_LOG` | `stdout` (one JSON line per model call) or a file path (JSON lines) — tokens per call with agent, tenant, session and model. Or call `setUsageSink()` in code. |
 | `setSecretStore()` | In code, at startup: keep env values set through the Admin UI somewhere other than `.env` files (a vault, a secret manager). The default `FileSecretStore` is today's behaviour. |
 
+`GET /healthz` answers `{"ok":true}` with no login, on every server,
+for health checks; it returns 503 once the server starts shutting down,
+and doesn't count as activity.
+
 `deploy/workspace/Dockerfile` is a runtime image for this: it serves a
 scaffolded project mounted at `/workspace` instead of baking agents in.

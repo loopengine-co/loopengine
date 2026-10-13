@@ -2633,7 +2633,20 @@ async function handleSlackInteraction(req: IncomingMessage, res: ServerResponse,
   }
 }
 
+// Set once shutdown() starts, so /healthz turns 503 while the server
+// drains and a router or load balancer stops sending it new requests.
+let shuttingDown = false
+
 const server = createServer(async (req, res) => {
+  // Liveness for whatever runs this server (Docker, Fly, a router): no
+  // login, nothing about the server in the answer, and not counted as
+  // activity, so polling it never keeps an idle server awake.
+  if ((req.method === 'GET' || req.method === 'HEAD') && (req.url ?? '/').split('?')[0] === '/healthz') {
+    res.writeHead(shuttingDown ? 503 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ ok: !shuttingDown }))
+    return
+  }
+
   const slackHookMatch = req.method === 'POST' && (req.url ?? '/').split('?')[0].match(/^\/hooks\/slack\/([^/]+)$/)
   if (slackHookMatch) {
     try {
@@ -3271,6 +3284,7 @@ async function warmAgentTools(): Promise<void> {
 // process restart, just this one process's own event loop.
 async function shutdown() {
   console.log('[loopengine] shutting down — draining in-flight requests...')
+  shuttingDown = true
   scheduler.stop()
   const graceMs = Number(process.env.LOOPENGINE_SHUTDOWN_GRACE_MS ?? 30000)
   const closed = new Promise<void>((resolve) => server.close(() => resolve()))
