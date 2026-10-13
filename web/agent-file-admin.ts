@@ -34,9 +34,18 @@
 // package.json).
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import ts from 'typescript'
+import { createRequire } from 'node:module'
+import type TS from 'typescript'
 import { agentDir } from '../core/gateway-tools.js'
 import { AgentModelError } from '../bin/cli.js'
+
+// Loaded on the first edit, not at import: typescript is ~9 MB of JS and
+// index.ts re-exports this module, so importing it eagerly added more
+// than a second to every server's startup on a small machine.
+let ts: typeof TS
+function loadTypeScript(): typeof TS {
+  return (ts ??= createRequire(import.meta.url)('typescript') as typeof TS)
+}
 
 export class AgentEditNotSupportedError extends Error {}
 export class AgentFileNotFoundError extends Error {}
@@ -94,12 +103,12 @@ function tsStringLiteral(value: string): string {
 // character is a comma. Confirmed both cases live against a real parse
 // before landing this — `getTrailingCommentRanges` genuinely returns
 // undefined at the property's own end when a comma follows.
-function trailingCommentAfter(source: string, pos: number): ts.CommentRange | undefined {
+function trailingCommentAfter(source: string, pos: number): TS.CommentRange | undefined {
   const ranges = ts.getTrailingCommentRanges(source, pos) ?? (source[pos] === ',' ? ts.getTrailingCommentRanges(source, pos + 1) : undefined)
   return ranges?.[0]
 }
 
-function findConfigObjectLiteral(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | undefined {
+function findConfigObjectLiteral(sourceFile: TS.SourceFile): TS.ObjectLiteralExpression | undefined {
   for (const stmt of sourceFile.statements) {
     if (!ts.isVariableStatement(stmt)) continue
     if (!stmt.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) continue
@@ -112,7 +121,7 @@ function findConfigObjectLiteral(sourceFile: ts.SourceFile): ts.ObjectLiteralExp
   return undefined
 }
 
-function findProperty(obj: ts.ObjectLiteralExpression, name: string): ts.ObjectLiteralElementLike | undefined {
+function findProperty(obj: TS.ObjectLiteralExpression, name: string): TS.ObjectLiteralElementLike | undefined {
   return obj.properties.find((p) => p.name !== undefined && ts.isIdentifier(p.name) && p.name.text === name)
 }
 
@@ -137,8 +146,8 @@ interface TextEdit {
 // literal is still refused, same "don't guess" rule as everything else
 // in this file.
 function upsertNumericProperty(
-  configObj: ts.ObjectLiteralExpression,
-  sourceFile: ts.SourceFile,
+  configObj: TS.ObjectLiteralExpression,
+  sourceFile: TS.SourceFile,
   edits: TextEdit[],
   toInsert: string[],
   name: string,
@@ -165,6 +174,7 @@ function upsertNumericProperty(
  * needing to re-derive them. A field omitted from `fields` entirely is
  * left completely untouched, both on disk and in the return value. */
 export function editAgentFile(agentName: string, fields: AgentEditableFields): AgentEditResult {
+  loadTypeScript()
   const indexPath = join(agentDir(agentName), 'index.ts')
   let source: string
   try {
