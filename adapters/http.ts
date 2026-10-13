@@ -2722,6 +2722,13 @@ const server = createServer(async (req, res) => {
     // web/playground.ts. GET, not POST, and an exact path match
     // (neither has a :name segment), so no risk of colliding with the
     // regexes above (already partitioned by method).
+    // The bare address is the console itself, the same page as
+    // /agents/config (all its links and requests use absolute paths).
+    if (req.method === 'GET' && pathname === '/') {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(agentsConfigPageHtml)
+      return
+    }
+
     if (req.method === 'GET' && pathname === '/playground') {
       res.writeHead(200, { 'content-type': 'text/html' }).end(playgroundHtml)
       return
