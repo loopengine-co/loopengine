@@ -9,6 +9,7 @@
 // AgentConfig.
 import type { AgentConfig } from '../core/agent-config.js'
 import { getComposioAuthStatus } from '../core/gateway-tools.js'
+import { setEnvVar, unsetEnvVar } from './env-admin.js'
 
 export interface ModelProviderInfo {
   provider: 'anthropic' | 'openai' | 'deepseek' | 'kimi' | 'glm' | 'gemini'
@@ -26,6 +27,8 @@ export interface ModelsView {
   providers: ModelProviderInfo[]
   agents: AgentModelUsage[]
 }
+
+export class ModelKeyError extends Error {}
 
 // One entry per provider agent-config.ts's own AgentModelConfig union
 // actually supports (see its own doc comment) — kept here, not derived
@@ -113,4 +116,34 @@ export async function describeGateways(cliCommand = 'composio'): Promise<Gateway
       { provider: 'arcade', supported: false, connected: false },
     ],
   }
+}
+
+/** The env var a provider's key lives in, or undefined for an unknown
+ * provider. */
+export function modelKeyEnvVar(provider: string): string | undefined {
+  return KNOWN_PROVIDERS.find((p) => p.provider === provider)?.envVar
+}
+
+/**
+ * Saves a provider's API key from the console's Models page, through the
+ * same secret store as the Environment tab (the project's .env by
+ * default), and applies it to this process, so the next model call uses
+ * it without a restart. Write-only: nothing here or in describeModelProviders
+ * ever returns a key, only whether one is set.
+ */
+export async function setModelProviderKey(provider: string, key: unknown): Promise<void> {
+  const envVar = modelKeyEnvVar(provider)
+  if (!envVar) throw new ModelKeyError(`unknown provider '${provider}'`)
+  const value = typeof key === 'string' ? key.trim() : ''
+  // Keys are single tokens; whitespace inside one is a paste mistake.
+  if (value.length < 8 || value.length > 500 || /\s/.test(value)) {
+    throw new ModelKeyError('That doesn\'t look like an API key: paste the whole key, with no spaces or line breaks.')
+  }
+  await setEnvVar(envVar, value)
+}
+
+export async function clearModelProviderKey(provider: string): Promise<void> {
+  const envVar = modelKeyEnvVar(provider)
+  if (!envVar) throw new ModelKeyError(`unknown provider '${provider}'`)
+  await unsetEnvVar(envVar)
 }

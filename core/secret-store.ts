@@ -5,7 +5,7 @@
 // self-hosted install has always used. A host that keeps secrets
 // somewhere else (a hosted control plane's vault, Vault, a cloud secret
 // manager) swaps it in once at startup with setSecretStore().
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseEnv } from 'node:util'
 
@@ -87,7 +87,14 @@ function upsertEnvFileLine(path: string, name: string, value: string): void {
     lines[existingIndex] = newLine
   }
 
-  writeFileSync(path, lines.join('\n') + '\n')
+  writeEnvFile(path, lines.join('\n') + '\n')
+}
+
+/** .env files hold secrets: owner-only (0600), including one that
+ * already existed with wider permissions. */
+function writeEnvFile(path: string, content: string): void {
+  writeFileSync(path, content, { mode: 0o600 })
+  chmodSync(path, 0o600)
 }
 
 /** Removes NAME= from the .env file at `path`, if present. Only
@@ -98,7 +105,7 @@ function removeEnvFileLine(path: string, name: string): void {
   if (!existsSync(path)) return
   const lines = readFileSync(path, 'utf8').split('\n')
   const filtered = lines.filter((line) => !line.startsWith(`${name}=`))
-  if (filtered.length !== lines.length) writeFileSync(path, filtered.join('\n').replace(/\n*$/, '\n'))
+  if (filtered.length !== lines.length) writeEnvFile(path, filtered.join('\n').replace(/\n*$/, '\n'))
 }
 
 /** The project's .env for shared values, agents/<name>/.env for each

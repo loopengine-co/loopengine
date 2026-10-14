@@ -218,7 +218,7 @@ export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult } from '
 export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
 
-export { describeModelProviders, describeGateways } from './web/global-config.js'
+export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError } from './web/global-config.js'
 export type { ModelProviderInfo, AgentModelUsage, ModelsView, GatewayProviderInfo, GatewaysView } from './web/global-config.js'
 
 export { createTrackedApprover, listApprovals, decideApproval, findApproval } from './web/web-approver.js'

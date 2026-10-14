@@ -63,6 +63,11 @@ export const globalConfigPageHtml: string = `<!doctype html>
     border-color: var(--bad);
   }
   .delete-btn:hover { background: var(--bad-soft); }
+  form.key-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0; }
+  form.key-form input[type=password] { width: 240px; max-width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
+  form.key-form button { font-size: 12px; }
+  .key-msg { font-size: 11px; margin-top: 4px; }
+  .key-msg.bad { color: var(--bad); }
 </style>
 </head>
 <body data-le-page="config">
@@ -71,7 +76,7 @@ ${consoleSidebarHtml}
 <main class="le-main">
   <div class="section-panel" data-section-panel="models" style="display:contents">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Models</h1><p>Which model providers have an API key set, and which agents use each one.</p></div></div></div>
+      <div><h1>Models</h1><p>API keys for each model provider, and which agents use each one. A saved key is stored on this server and never shown again.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="modelsContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
   <div class="section-panel" data-section-panel="gateways" style="display:none">
@@ -103,9 +108,19 @@ ${consoleShellScript}
 
   function renderModels(data) {
     var providerRows = data.providers.map(function (p) {
+      // Write-only: the field is always empty; the server never sends a
+      // key back, only whether one is set.
+      var keyCell = data.canSave
+        ? '<form class="key-form" data-provider="' + escapeHtml(p.provider) + '">' +
+            '<input type="password" name="key" autocomplete="off" spellcheck="false" placeholder="' + (p.configured ? 'Paste a new key to replace it' : 'Paste API key') + '" aria-label="' + escapeHtml(p.provider) + ' API key">' +
+            '<button type="submit">Save</button>' +
+            (p.configured ? '<button type="button" class="delete-btn" data-remove-key="' + escapeHtml(p.provider) + '">Remove</button>' : '') +
+          '</form><div class="key-msg" data-key-msg="' + escapeHtml(p.provider) + '"></div>'
+        : '<span class="hint">Set LOOPENGINE_ADMIN_AUTH to manage keys here, or put ' + escapeHtml(p.envVar) + ' in .env.</span>';
       return '<tr><td><code>' + escapeHtml(p.provider) + '</code></td>' +
         '<td><code>' + escapeHtml(p.envVar) + '</code></td>' +
-        '<td>' + badge(p.configured, 'configured', 'not set') + '</td></tr>';
+        '<td>' + badge(p.configured, 'configured', 'not set') + '</td>' +
+        '<td>' + keyCell + '</td></tr>';
     }).join('');
 
     var agentRows = data.agents.length
@@ -117,12 +132,58 @@ ${consoleShellScript}
       : '<tr><td colspan="3"><p class="hint">No agents with a resolved model config (a custom createModelCall has nothing to report here).</p></td></tr>';
 
     return '<section><h3>Providers</h3>' +
-        '<table><thead><tr><th>Provider</th><th>Env var</th><th>Status</th></tr></thead><tbody>' + providerRows + '</tbody></table>' +
+        '<table><thead><tr><th>Provider</th><th>Env var</th><th>Status</th><th>Key</th></tr></thead><tbody>' + providerRows + '</tbody></table>' +
       '</section>' +
       '<section><h3>Agents</h3>' +
         '<table><thead><tr><th>Agent</th><th>Provider</th><th>Model</th></tr></thead><tbody>' + agentRows + '</tbody></table>' +
       '</section>';
   }
+
+  function keyMessage(provider, text, bad) {
+    var el = document.querySelector('[data-key-msg="' + provider + '"]');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'key-msg' + (bad ? ' bad' : '');
+  }
+
+  function sendKey(provider, method, body) {
+    keyMessage(provider, method === 'PUT' ? 'Saving' + String.fromCharCode(8230) : 'Removing' + String.fromCharCode(8230), false);
+    return fetch('/config/models/' + encodeURIComponent(provider) + '/key', {
+      method: method,
+      headers: body ? { 'content-type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'request failed');
+        loadModels();
+      })
+      .catch(function (err) { keyMessage(provider, err.message, true); });
+  }
+
+  document.getElementById('modelsContent').addEventListener('submit', function (ev) {
+    var form = ev.target.closest('form.key-form');
+    if (!form) return;
+    ev.preventDefault();
+    var input = form.querySelector('input[name=key]');
+    var key = input.value.trim();
+    if (!key) { keyMessage(form.getAttribute('data-provider'), 'Paste a key first.', true); return; }
+    // Cleared at once, so the key doesn't sit in the page while saving.
+    input.value = '';
+    sendKey(form.getAttribute('data-provider'), 'PUT', { key: key });
+  });
+
+  document.getElementById('modelsContent').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-remove-key]');
+    if (!btn) return;
+    var provider = btn.getAttribute('data-remove-key');
+    if (btn.getAttribute('data-armed') !== '1') {
+      btn.setAttribute('data-armed', '1');
+      btn.textContent = 'Remove ' + provider + ' key?';
+      return;
+    }
+    sendKey(provider, 'DELETE');
+  });
 
   function loadModels() {
     var content = document.getElementById('modelsContent');
