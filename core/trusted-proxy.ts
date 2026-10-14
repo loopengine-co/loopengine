@@ -17,6 +17,12 @@ export interface ProxyIdentity {
   sub: string
   workspace?: string
   role: string
+  /** The person's email, when the proxy knows it (shown in the console's
+   * sidebar). */
+  email?: string
+  /** Where the person manages this workspace on the host, shown as the
+   * console's "Dashboard" link. */
+  dashboardUrl?: string
   /** Expiry, Unix seconds. */
   exp: number
 }

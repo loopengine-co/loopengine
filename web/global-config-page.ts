@@ -84,6 +84,11 @@ ${consoleSidebarHtml}
       <div><h1>Integrations</h1><p>Outside tool sources (such as Composio) that agents can add tools from.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="gatewaysContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
+  <div class="section-panel" data-section-panel="settings" style="display:none">
+    <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+      <div><h1>Settings</h1><p>How this server is set up. These come from its deployment, not from this page.</p></div></div></div>
+    <div class="le-scroll"><div class="le-page" style="display:block"><div id="settingsContent"><p class="hint">Loading&hellip;</p></div></div></div>
+  </div>
 </main>
 </div>
 ${consoleShellScript}
@@ -278,6 +283,42 @@ ${consoleShellScript}
       });
   }
 
+  // ---- Settings section ----
+
+  function renderSettings(d) {
+    var si = d.signIn || {};
+    var signIn = si.mode === 'hosted'
+      ? 'Managed by your LoopEngine Cloud account' + (si.email ? ' (' + escapeHtml(si.email) + ')' : '') +
+        (si.dashboardUrl ? ' &middot; <a href="' + escapeHtml(si.dashboardUrl) + '">Dashboard</a>' : '')
+      : si.mode === 'basic'
+        ? 'Basic Auth (<code>LOOPENGINE_ADMIN_AUTH</code>)'
+        : '<span class="error">None: anyone who can reach this server can use it. Set <code>LOOPENGINE_ADMIN_AUTH</code>.</span>';
+    var rows = [
+      ['Admin sign-in', signIn],
+      ['LoopEngine version', '<code>' + escapeHtml(d.version) + '</code>'],
+      ['Environment name', '<code>' + escapeHtml(d.environment) + '</code> <span class="hint">(LOOPENGINE_ENV)</span>'],
+      ['Public address', d.publicUrl ? '<code>' + escapeHtml(d.publicUrl) + '</code>' : '<span class="hint">Not set (LOOPENGINE_PUBLIC_URL); links in notifications use the address saved with each notifier</span>'],
+      ['Scheduled tasks', d.scheduler === 'off' ? 'Off on this server (LOOPENGINE_SCHEDULER=off)' : 'Run by this server'],
+      ['Theme', 'Follows your system'],
+    ];
+    return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
+      rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
+      '</tbody></table></section>';
+  }
+
+  function loadSettings() {
+    var content = document.getElementById('settingsContent');
+    fetch('/config/settings')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        content.innerHTML = renderSettings(d);
+        loadedSections.settings = true;
+      })
+      .catch(function (err) {
+        content.innerHTML = '<p class="error">Could not load settings: ' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
   // ---- Section switching ----
 
   function switchSection(section) {
@@ -291,6 +332,7 @@ ${consoleShellScript}
     }
     if (section === 'models' && !loadedSections.models) loadModels();
     if (section === 'gateways' && !loadedSections.gateways) loadGateways();
+    if (section === 'settings' && !loadedSections.settings) loadSettings();
   }
 
   for (var i = 0; i < sectionButtons.length; i++) {
@@ -302,7 +344,7 @@ ${consoleShellScript}
   // real section, same "trust the query param only if it's valid"
   // caution playground.ts's own ?agent= handling already uses.
   var requestedSection = new URLSearchParams(location.search).get('section');
-  var initialSection = requestedSection === 'gateways' || requestedSection === 'models' ? requestedSection : currentSection;
+  var initialSection = requestedSection === 'gateways' || requestedSection === 'models' || requestedSection === 'settings' ? requestedSection : currentSection;
   switchSection(initialSection);
 })();
 </script>

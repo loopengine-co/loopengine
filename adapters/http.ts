@@ -70,6 +70,7 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
+import { loopengineVersion } from '#core/version.js'
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
@@ -2915,6 +2916,29 @@ const server = createServer(async (req, res) => {
     // separate module and page from web/agents-config-page.ts).
     if (req.method === 'GET' && pathname === '/config') {
       res.writeHead(200, { 'content-type': 'text/html' }).end(globalConfigPageHtml)
+      return
+    }
+    // What the sidebar's sign-in line and the Settings section show. In
+    // hosted mode the email and dashboard link come from the router's
+    // signed identity, so they can't be set by the caller.
+    if (req.method === 'GET' && pathname === '/config/settings') {
+      const identity = trustedProxySecret ? verifyProxyIdentity(req.headers[TRUSTED_PROXY_IDENTITY_HEADER], trustedProxySecret) : undefined
+      const signIn = identity
+        ? {
+            mode: 'hosted',
+            email: identity.email ?? null,
+            dashboardUrl: identity.dashboardUrl && /^https?:\/\//.test(identity.dashboardUrl) ? identity.dashboardUrl : null,
+          }
+        : { mode: adminAuth ? 'basic' : 'open' }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(
+        JSON.stringify({
+          signIn,
+          version: loopengineVersion(),
+          environment: process.env.LOOPENGINE_ENV ?? 'production',
+          publicUrl: process.env.LOOPENGINE_PUBLIC_URL ?? null,
+          scheduler: process.env.LOOPENGINE_SCHEDULER === 'off' ? 'off' : 'on',
+        }),
+      )
       return
     }
     if (req.method === 'GET' && pathname === '/config/models') {

@@ -28,6 +28,8 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <nav class="le-foot" aria-label="Settings">
     <a href="/config?section=models" data-le-nav="models">Models</a>
     <a href="/config?section=gateways" data-le-nav="integrations">Integrations</a>
+    <a href="/config?section=settings" data-le-nav="settings">Settings</a>
+    <div class="le-who" id="leWho" hidden></div>
   </nav>
 </aside>`
 
@@ -160,10 +162,31 @@ export const consoleShellScript: string = `<script>
     renderList();
   }
 
-  var foot = page === 'config' ? (params.get('section') === 'gateways' ? 'integrations' : 'models') : '';
+  var section = params.get('section');
+  var foot = page === 'config' ? (section === 'gateways' ? 'integrations' : section === 'settings' ? 'settings' : 'models') : '';
   var footLinks = document.querySelectorAll('[data-le-nav]');
   for (var i = 0; i < footLinks.length; i++) {
     if (footLinks[i].getAttribute('data-le-nav') === foot) footLinks[i].setAttribute('aria-current', 'page');
+  }
+
+  // Who is signed in: the email and a link back to the dashboard when a
+  // hosting router signs requests, otherwise how this server is protected.
+  var who = document.getElementById('leWho');
+  if (who) {
+    fetch('/config/settings')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) {
+        if (!s || !s.signIn) return;
+        var si = s.signIn;
+        if (si.mode === 'hosted') {
+          who.innerHTML = '<span class="le-who-name" title="' + esc(si.email || '') + '">' + esc(si.email || 'Signed in') + '</span>' +
+            (si.dashboardUrl ? '<a href="' + esc(si.dashboardUrl) + '">Dashboard</a>' : '');
+        } else {
+          who.innerHTML = '<span class="le-who-name">' + (si.mode === 'basic' ? 'Signed in with Basic Auth' : 'No sign-in configured') + '</span>';
+        }
+        who.hidden = false;
+      })
+      .catch(function () {});
   }
 
   document.addEventListener('click', function (ev) {

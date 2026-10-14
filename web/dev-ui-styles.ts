@@ -130,6 +130,11 @@ export const devUiCss: string = `
   .le-foot a { padding: 7px 8px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; }
   .le-foot a:hover { background: var(--surface-2); color: var(--ink); }
   .le-foot a[aria-current="page"] { background: var(--accent-soft); color: var(--ink); }
+  .le-who { padding: 10px 8px 4px; font-size: 12px; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
+  .le-who[hidden] { display: none; }
+  .le-who-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .le-foot .le-who a { padding: 0; flex: none; color: var(--accent-ink); }
+  .le-foot .le-who a:hover { background: none; text-decoration: underline; }
   .le-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
   .le-scroll { flex: 1; min-height: 0; overflow-y: auto; }
   .le-page { padding: 24px; max-width: 1100px; display: grid; gap: 24px; }

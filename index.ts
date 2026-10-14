@@ -219,6 +219,7 @@ export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilitie
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
 
 export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError } from './web/global-config.js'
+export { loopengineVersion } from './core/version.js'
 export type { ModelProviderInfo, AgentModelUsage, ModelsView, GatewayProviderInfo, GatewaysView } from './web/global-config.js'
 
 export { createTrackedApprover, listApprovals, decideApproval, findApproval } from './web/web-approver.js'
