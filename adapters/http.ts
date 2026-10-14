@@ -1499,7 +1499,9 @@ async function handleAbilityInstallDepsPost(req: IncomingMessage, res: ServerRes
     return
   }
   try {
-    await execFileAsync('npm', ['install', ...deps], { cwd: process.cwd(), timeout: NPM_INSTALL_DEPS_TIMEOUT_MS })
+    // --include=dev: under NODE_ENV=production npm would otherwise drop
+    // devDependencies, including tsx, which runs this project.
+    await execFileAsync('npm', ['install', '--include=dev', ...deps], { cwd: process.cwd(), timeout: NPM_INSTALL_DEPS_TIMEOUT_MS })
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ installed: deps }))
   } catch (err) {
     const stderr = err && typeof err === 'object' && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : undefined

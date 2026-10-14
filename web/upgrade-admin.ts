@@ -10,6 +10,9 @@
 // left exactly as it was (`--keep-edited`), so an unattended upgrade can
 // never leave conflict markers that stop the server from starting. The
 // files it may change are backed up first and restored if it fails.
+// Every npm install here passes --include=dev: with NODE_ENV=production
+// npm would drop devDependencies, and an older project still lists tsx,
+// which runs it, as one.
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -163,7 +166,7 @@ export async function runUpgrade(options: { busy: () => boolean; projectDir?: st
     const current = loopengineVersion()
     if (latest && semver.valid(current) && semver.gt(latest, current) && !result.dependencies.some((d) => d.name === 'loopengine')) {
       try {
-        await run('npm', ['install', '--no-audit', '--no-fund', `loopengine@^${latest}`], projectDir, 10 * 60_000)
+        await run('npm', ['install', '--include=dev', '--no-audit', '--no-fund', `loopengine@^${latest}`], projectDir, 10 * 60_000)
       } catch (err) {
         throw new UpgradeError(`Installing loopengine ${latest} failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`)
       }
@@ -178,7 +181,7 @@ export async function runUpgrade(options: { busy: () => boolean; projectDir?: st
   } catch (err) {
     restore(projectDir, saved)
     // package.json is back; put node_modules back in line with it.
-    await run('npm', ['install', '--no-audit', '--no-fund'], projectDir, 10 * 60_000).catch(() => {})
+    await run('npm', ['install', '--include=dev', '--no-audit', '--no-fund'], projectDir, 10 * 60_000).catch(() => {})
     throw err instanceof UpgradeError ? err : new UpgradeError(err instanceof Error ? err.message : String(err))
   } finally {
     running = false

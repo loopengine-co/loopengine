@@ -82,6 +82,8 @@ describe('runUpgrade', () => {
       expect(readFileSync(join(dir, 'package.json'), 'utf8')).toContain('^0.0.1')
       expect(existsSync(join(dir, '.upgrade-backups', 'pending'))).toBe(false)
     }
+    // The restore's reinstall keeps devDependencies (tsx) under NODE_ENV=production.
+    expect(calls).toContain('npm install --include=dev --no-audit --no-fund')
   })
 
   it('refuses while an agent is busy, or for a project not made by create-loopengine', async () => {
