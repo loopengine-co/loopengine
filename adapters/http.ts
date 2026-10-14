@@ -71,6 +71,7 @@ import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgent
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { loopengineVersion } from '#core/version.js'
+import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
@@ -2939,6 +2940,29 @@ const server = createServer(async (req, res) => {
           scheduler: process.env.LOOPENGINE_SCHEDULER === 'off' ? 'off' : 'on',
         }),
       )
+      return
+    }
+    // The Settings section's Upgrade button (web/upgrade-admin.ts).
+    if (req.method === 'GET' && pathname === '/config/upgrade') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(
+        JSON.stringify({ ...(await describeUpgrade()), canUpgrade: secretsProtected, restartsItself: exitOnCodeChange }),
+      )
+      return
+    }
+    if (req.method === 'POST' && pathname === '/config/upgrade') {
+      if (!secretsProtected) {
+        res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Refusing to upgrade without LOOPENGINE_ADMIN_AUTH configured.' }))
+        return
+      }
+      try {
+        const outcome = await runUpgrade({ busy: () => sessionTurns.size + scheduler.running > 0 })
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, outcome, restarting: exitOnCodeChange }))
+      } catch (err) {
+        const status = err instanceof UpgradeError ? 409 : 500
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+        return
+      }
+      exitIfCodeChanged(res)
       return
     }
     if (req.method === 'GET' && pathname === '/config/models') {

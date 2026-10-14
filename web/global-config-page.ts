@@ -303,8 +303,107 @@ ${consoleShellScript}
     ];
     return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
       rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
-      '</tbody></table></section>';
+      '</tbody></table></section>' +
+      '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
   }
+
+  // ---- Upgrade ----
+
+  var UPGRADE_NOTE = 'Updates this server' + String.fromCharCode(8217) + 's LoopEngine code and restarts it, which takes a minute or two. ' +
+    'Your agents, abilities, conversations, approvals, schedules and settings are kept. ' +
+    'A template file you edited (such as adapters/http.ts) is left exactly as it is.';
+
+  function upgradeBox() { return document.getElementById('upgradeBox'); }
+
+  function renderUpgrade(u) {
+    var box = upgradeBox();
+    if (!box) return;
+    if (u.unavailableReason && !u.updateAvailable) {
+      box.innerHTML = '<p class="hint">' + escapeHtml(u.unavailableReason) + '</p>';
+    } else if (!u.updateAvailable) {
+      box.innerHTML = '<p>You' + String.fromCharCode(8217) + 're on the latest version, <code>' + escapeHtml(u.current) + '</code>.</p>';
+    } else if (u.unavailableReason) {
+      box.innerHTML = '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p><p class="hint">' + escapeHtml(u.unavailableReason) + '</p>';
+    } else if (!u.canUpgrade) {
+      box.innerHTML = '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p><p class="hint">Set LOOPENGINE_ADMIN_AUTH to upgrade from here, or run <code>npx create-loopengine@latest upgrade</code>.</p>';
+    } else {
+      box.innerHTML = '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p>' +
+        '<p class="hint">' + UPGRADE_NOTE + (u.restartsItself ? '' : ' This server has nothing to restart it, so restart it yourself afterwards.') + '</p>' +
+        '<p><button type="button" class="primary" id="upgradeBtn">Upgrade to ' + escapeHtml(u.latest) + '</button></p>' +
+        '<div id="upgradeMsg" class="hint"></div>';
+    }
+  }
+
+  function loadUpgrade() {
+    fetch('/config/upgrade')
+      .then(function (r) { return r.json(); })
+      .then(renderUpgrade)
+      .catch(function (err) {
+        var box = upgradeBox();
+        if (box) box.innerHTML = '<p class="error">Could not check for updates: ' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function upgradeMsg(html, bad) {
+    var el = document.getElementById('upgradeMsg');
+    if (!el) return;
+    el.innerHTML = html;
+    el.className = bad ? 'error' : 'hint';
+  }
+
+  // After a successful upgrade the server restarts: wait for it to answer
+  // again on the new version, then reload so the page runs the new code.
+  function waitForRestart(target, tries) {
+    if (tries > 90) { upgradeMsg('The server hasn' + String.fromCharCode(8217) + 't come back yet. Reload this page in a minute.', true); return; }
+    setTimeout(function () {
+      fetch('/config/settings', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (s && s.version === target) location.reload();
+          else waitForRestart(target, tries + 1);
+        })
+        .catch(function () { waitForRestart(target, tries + 1); });
+    }, 2000);
+  }
+
+  document.getElementById('settingsContent').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('#upgradeBtn');
+    if (!btn) return;
+    if (btn.getAttribute('data-armed') !== '1') {
+      btn.setAttribute('data-armed', '1');
+      btn.textContent = 'Click again to upgrade';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Upgrading' + String.fromCharCode(8230);
+    upgradeMsg('Installing the new version. This takes a minute or two; keep this page open.', false);
+    fetch('/config/upgrade', { method: 'POST' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'upgrade failed');
+        var o = r.body.outcome;
+        var changed = o.files.filter(function (f) { return f.status === 'updated'; }).map(function (f) { return f.file; });
+        var kept = o.files.filter(function (f) { return f.status === 'kept'; }).map(function (f) { return f.file; });
+        var deps = o.dependencies.map(function (d) { return d.name + ' ' + d.from + ' ' + String.fromCharCode(8594) + ' ' + d.to; });
+        var target = (o.dependencies.filter(function (d) { return d.name === 'loopengine'; })[0] || {}).to;
+        var summary = (deps.length ? 'Installed ' + escapeHtml(deps.join(', ')) + '. ' : '') +
+          (changed.length ? 'Updated ' + escapeHtml(changed.join(', ')) + '. ' : '') +
+          (kept.length ? 'Left as you edited them: ' + escapeHtml(kept.join(', ')) + '. ' : '');
+        btn.textContent = 'Upgraded';
+        if (r.body.restarting && target) {
+          upgradeMsg(summary + 'Restarting' + String.fromCharCode(8230), false);
+          waitForRestart(target.replace(/[^0-9.]/g, ''), 0);
+        } else {
+          upgradeMsg(summary + 'Restart the server to finish.', false);
+        }
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.removeAttribute('data-armed');
+        btn.textContent = 'Try again';
+        upgradeMsg(escapeHtml(err.message) + ' Nothing was changed.', true);
+      });
+  });
 
   function loadSettings() {
     var content = document.getElementById('settingsContent');
@@ -313,6 +412,7 @@ ${consoleShellScript}
       .then(function (d) {
         content.innerHTML = renderSettings(d);
         loadedSections.settings = true;
+        loadUpgrade();
       })
       .catch(function (err) {
         content.innerHTML = '<p class="error">Could not load settings: ' + escapeHtml(err.message) + '</p>';
