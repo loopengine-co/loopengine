@@ -1195,7 +1195,7 @@ ${consoleShellScript}
         '<td><button type="button" class="delete-btn approver-remove" data-user="' + escapeHtml(a.user) + '"' + (n.canSave === false ? ' disabled' : '') + '>Remove</button></td></tr>';
     }).join('');
     return '<section id="approversSection"><h3>Approvers</h3>' +
-      '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request by replying in its thread, like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. Nothing runs on a typed reply alone: a yes shows exactly what will run with a Confirm button, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count too. Anyone in the channel can still ask about a request.</p>' +
+      '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request by replying in its thread, like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A plain &ldquo;yes&rdquo; runs it; a reply that&#39;s less clear (&ldquo;sure, send it&rdquo;, &ldquo;yes but check the amount&rdquo;) shows exactly what will run with a Confirm button first, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count too. Anyone in the channel can still ask about a request.</p>' +
       (approvers.length
         ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>Slack ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<p class="hint">No approvers yet. Until you add someone, anyone in the channel can use the buttons, and deciding by reply is off.</p>') +

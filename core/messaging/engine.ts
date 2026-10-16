@@ -21,10 +21,11 @@
 //   arguments (./decide.ts's proposeEdit), checked against the tool's
 //   schema and the permission rules, and shown as a change with Approve
 //   as changed / Keep original / Deny. Nothing runs until they approve.
-// - Confirm after a typed yes: an approver's typed approval never runs
-//   anything itself. It shows exactly what will run with a Confirm
-//   button, and only that click runs it. (A click on the request's own
-//   Approve button, or on Approve as changed, is already a click.)
+// - A plain typed yes ("yes", "approve", "go ahead": the whole message,
+//   matched as a fixed phrase, not by the model) runs it, showing what
+//   runs first. Anything else the decision step reads as approval
+//   ("sure, send it", "yes but check the amount") only shows exactly what
+//   will run with a Confirm button, and only that click runs it.
 // - What runs is always shown in the thread before it runs.
 // - The plan gate: LOOPENGINE_PLAN=free (set on LoopEngine Cloud) turns
 //   conversations off; unset, as when self-hosted, everything is on.
@@ -175,6 +176,12 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
 
       if (verdict.decision === 'approve') {
         const args = link.proposedArgs ?? item.args
+        // A plain "yes" runs it; anything less clear that still reads as
+        // approval asks for a Confirm click first.
+        if (isPlainApproval(message.text)) {
+          await runApproved(deps, link, item.tool, args, who)
+          return
+        }
         await connector.postChoice(message.conversation, threadTs, `Confirm to run \`${item.tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(item.tool))}`, [
           { action: 'confirm', label: 'Confirm', style: 'primary', pendingId: link.pendingId },
           { action: 'cancel_confirm', label: 'Cancel', pendingId: link.pendingId },
@@ -212,6 +219,63 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
     }
     if (reply) await say(reply)
   })
+}
+
+// Whole messages that approve and nothing else, in the languages people
+// most often reply in. Matched exactly after the clean-up in
+// isPlainApproval, so a condition or a second thought ("yes but…",
+// "好的，但是…") never counts as plain; a phrase that isn't here just gets
+// a Confirm click. Words that can also mean "hmm", "understood" or "no
+// thanks" (嗯, 了解, いいです) are left out on purpose.
+const PLAIN_APPROVAL_PHRASES = [
+  // English
+  'yes', 'y', 'yep', 'yeah', 'yup', 'sure', 'yes go ahead', 'go ahead', 'approve', 'approved', 'i approve', 'do it', 'yes do it',
+  'ok', 'okay', 'ok go ahead', 'lgtm', 'confirm', 'confirmed', 'send it', 'run it',
+  // Chinese (simplified and traditional)
+  '是', '是的', '好', '好的', '可以', '行', '同意', '批准', '确认', '確認', '没问题', '沒問題', '发吧', '發吧', '执行', '執行', '执行吧', '執行吧',
+  '请执行', '請執行', '好的发吧', '好的發吧', '可以执行', '可以執行', '同意执行', '同意執行',
+  // Japanese
+  'はい', '承認', '承認します', 'お願いします', 'はいお願いします', 'okです', '進めて', '進めてください', '実行してください',
+  // Korean
+  '네', '예', '승인', '승인합니다', '좋아요', '진행해주세요', '네진행해주세요',
+  // Spanish, Portuguese, Italian
+  'sí', 'si', 'aprobado', 'apruebo', 'adelante', 'sí adelante', 'dale', 'de acuerdo',
+  'sim', 'aprovado', 'aprovo', 'pode', 'pode mandar', 'manda', 'pode seguir',
+  'sì', 'approvato', 'approvo', 'vai', 'procedi', 'va bene',
+  // French, German
+  'oui', 'approuvé', "j'approuve", 'vas-y', 'allez-y', "d'accord", 'ok vas-y',
+  'ja', 'genehmigt', 'freigegeben', 'mach es', 'mach das', 'einverstanden', 'passt',
+  // Russian
+  'да', 'одобряю', 'одобрено', 'подтверждаю', 'давай',
+  // Emoji, typed or as Slack shortcodes
+  '👍', '✅', '👌', ':+1:', ':thumbsup:', ':white_check_mark:', ':heavy_check_mark:', ':ok_hand:',
+]
+
+// "Please" at either end of a reply doesn't change it.
+const PLEASE = /^(please|pls|por favor|bitte|svp|s'il vous plaît|per favore)\s+|\s+(please|pls|por favor|bitte|svp|s'il vous plaît|per favore)$/g
+
+function approvalKey(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/^\s*<@[a-z0-9]+>\s*/, '')
+    .replace(/:skin-tone-\d:/g, '')
+    .replace(/[\u{1F3FB}-\u{1F3FF}\u{FE0F}]/gu, '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[,，、;；]+/g, ' ')
+    .replace(/[.!?。！～~]+$/, (m) => (m.includes('?') ? '?' : ''))
+    .trim()
+    .replace(PLEASE, '')
+    .replace(/\s+/g, '')
+}
+
+const PLAIN_APPROVALS = new Set(PLAIN_APPROVAL_PHRASES.map(approvalKey))
+
+/** Whether a reply is a plain approval: lower-cased, a leading @mention,
+ * emoji skin tones and "please" dropped, punctuation and spaces
+ * (full-width ones too) ignored, then compared with the fixed list. A
+ * trailing question mark keeps it from matching ("yes?"). */
+export function isPlainApproval(text: string): boolean {
+  return PLAIN_APPROVALS.has(approvalKey(text))
 }
 
 /** Says what will run, runs it, reports the outcome and updates the

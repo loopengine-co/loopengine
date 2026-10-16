@@ -6,7 +6,7 @@ import type { TurnCheckpoint } from '#core/durable-approvals.js'
 import type { Message, ModelCall } from '#core/run-agent.js'
 import { SlackNotifier } from '#core/http-notify-triggers/slack.js'
 import type { InboundMessage, MessagingConnector, ThreadMessage } from '#core/messaging/connector.js'
-import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, handleMessagingAction, threadToMessages, type MessagingDeps } from '#core/messaging/engine.js'
+import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, handleMessagingAction, isPlainApproval, threadToMessages, type MessagingDeps } from '#core/messaging/engine.js'
 import { findThread, findThreadByPending, recordThread } from '#core/messaging/threads.js'
 import { createSlackConnector, parseSlackEvent } from '#core/messaging/connectors/slack/index.js'
 
@@ -126,6 +126,27 @@ describe('SlackNotifier question buttons', () => {
     const ids = bodies[0].blocks.find((b) => b.type === 'actions')!.elements!.map((e) => e.action_id)
     expect(ids).toEqual(['answer_option_0', 'answer_option_1', 'answer_option_2', 'open_answer_modal'])
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('isPlainApproval', () => {
+  it('matches whole plain approvals in many languages, ignoring case, a mention, please, punctuation and spaces', () => {
+    const plain = [
+      'yes', 'Yes!', 'YES.', '<@UBOT> yes', 'yes please', 'please approve', 'Yes, go ahead!', 'LGTM', 'ok',
+      '好的', '好的！', '是的。', '好的，发吧', '好的发吧', '確認', '沒問題', 'はい', '承認します。', '네', '승인합니다',
+      'Sí', 'si', 'sí, adelante', 'pode mandar', 'va bene', 'oui', 'D’accord', 'Ja!', 'bitte genehmigt', 'да',
+      '👍', '👍🏽', '✅', ':+1:', ':+1::skin-tone-3:',
+    ]
+    expect(plain.filter((t) => !isPlainApproval(t))).toEqual([])
+  })
+
+  it('never matches a question, a condition, a second thought, an ambiguous word or anything extra', () => {
+    const notPlain = [
+      'yes?', '好的？', 'yes but check the amount', '好的，但是先检查金额', 'sí pero mañana', 'oui mais attends', 'да, но позже',
+      'yes if the amount is right', 'sure, send it over', 'yes and also refund Bob', 'sounds ok I guess', 'not yet', 'no', '不',
+      '嗯', '了解', 'いいです',
+    ]
+    expect(notPlain.filter((t) => isPlainApproval(t))).toEqual([])
   })
 })
 
@@ -291,10 +312,20 @@ describe('handleInboundMessage', () => {
     expect(decisionCalls[0].system).not.toContain('Be kind.')
   })
 
-  it("never runs on a typed yes: it shows what will run with Confirm, and the click runs it", async () => {
+  it('runs a plain yes straight away, showing what runs first', async () => {
+    mapRequest()
+    const { deps, posts, decided, replaced, choices } = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
+    await handleInboundMessage(reply('Yes, go ahead!'), deps)
+    expect(choices).toEqual([])
+    expect(decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve' } }])
+    expect(posts).toEqual(['C1/1.0: Approved by @U1. Running `stripe_refund` with:\n**Amount:** 60', 'C1/1.0: Done.\n> Refunded $60.00.'])
+    expect(replaced).toEqual(['`stripe_refund` was approved by @U1 in the thread.'])
+  })
+
+  it("asks to confirm a yes that isn't plain, and the click runs it", async () => {
     mapRequest()
     const { deps, posts, decided, replaced, choices, calls } = setup({ approvers: () => [{ user: 'U1', name: 'Ana' }] }, { decision: 'approve' })
-    await handleInboundMessage(reply('yes, go ahead'), deps)
+    await handleInboundMessage(reply('sure, send it over'), deps)
     expect(decided).toEqual([])
     expect(choices).toEqual([{ text: 'Confirm to run `stripe_refund` with:\n**Amount:** 60', actions: ['confirm', 'cancel_confirm'] }])
     expect(calls).toEqual([])
@@ -346,9 +377,9 @@ describe('handleInboundMessage', () => {
     expect(edit.choices).toEqual([{ text: "Here's the change @U1 asked for:\n**Amount:** ~~60~~ → 40\nNothing else changes.", actions: ['approve_edited', 'keep_original', 'deny'] }])
     expect(findThread(dir, 'chat', 'C1', '1.0')?.proposedArgs).toEqual({ amount: 40 })
 
-    // A typed yes now asks to confirm the changed version, and Confirm runs it.
+    // A yes that isn't plain asks to confirm the changed version, and Confirm runs it.
     const yes = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
-    await handleInboundMessage(reply('yes, do that'), yes.deps)
+    await handleInboundMessage(reply('yes, do that one'), yes.deps)
     expect(yes.decided).toEqual([])
     expect(yes.choices).toEqual([{ text: 'Confirm to run `stripe_refund` with:\n**Amount:** 40', actions: ['confirm', 'cancel_confirm'] }])
     await handleMessagingAction('confirm', 'p1', 'U1', yes.deps)
