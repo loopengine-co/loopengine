@@ -2232,7 +2232,12 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
             sessionId: checkpoint.sessionId,
             env: createAgentEnv(entry.config.name, agentDirFor(entry.config)),
           })
-          resultBlock = { type: 'tool_result', tool_use_id: item.toolUseId, content: JSON.stringify(output), is_error: false }
+          // The agent's own history still shows the arguments it asked
+          // for, so say when the approver changed them; otherwise its
+          // reply describes what it asked for, not what ran.
+          const changed = editedArgs && JSON.stringify(editedArgs) !== JSON.stringify(item.args)
+          const content = changed ? `The approver changed the arguments before it ran: ${JSON.stringify(editedArgs)}. Result: ${JSON.stringify(output)}` : JSON.stringify(output)
+          resultBlock = { type: 'tool_result', tool_use_id: item.toolUseId, content, is_error: false }
         } catch (err) {
           resultBlock = { type: 'tool_result', tool_use_id: item.toolUseId, content: `ERROR: ${err}`, is_error: true }
         }
