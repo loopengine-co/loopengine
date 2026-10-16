@@ -129,7 +129,7 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
     const modelCall = deps.createModelCall()
     const request: DecisionRequest =
       link.kind === 'approval'
-        ? { kind: 'approval', tool: item.tool }
+        ? { kind: 'approval', tool: item.tool, changeShown: Boolean(link.proposedArgs) }
         : {
             kind: 'question',
             question: typeof item.args.question === 'string' ? item.args.question : JSON.stringify(item.args),

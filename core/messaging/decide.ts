@@ -21,7 +21,10 @@ export type ReplyDecision =
   | { decision: 'continue' }
 
 export type DecisionRequest =
-  | { kind: 'approval'; tool: string }
+  /** `changeShown`: the person was just shown a proposed change to the
+   * arguments, waiting for their approval (our own fixed fact, not text
+   * anyone else wrote). */
+  | { kind: 'approval'; tool: string; changeShown?: boolean }
   | { kind: 'question'; question: string; options?: string[] }
 
 const RECORD_TOOL = 'record_decision'
@@ -47,7 +50,7 @@ function recordTool(kind: DecisionRequest['kind']): ToolSchema {
 export function decisionPrompt(request: DecisionRequest): string {
   const about =
     request.kind === 'approval'
-      ? `An AI agent is waiting for approval to run the tool \`${request.tool}\`.`
+      ? `An AI agent is waiting for approval to run the tool \`${request.tool}\`.${request.changeShown ? ' The person was just shown a proposed change to its arguments, waiting for their approval: a plain yes or ok approves that change.' : ''}`
       : `An AI agent asked this question and is waiting for the answer: ${JSON.stringify(request.question)}${request.options?.length ? `\nOptions it offered: ${request.options.map((o) => JSON.stringify(o)).join(', ')}` : ''}`
   const rules =
     request.kind === 'approval'

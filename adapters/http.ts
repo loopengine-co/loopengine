@@ -78,6 +78,7 @@ import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from 
 import { agentApprovers, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
+import { describeChange } from '#core/messaging/decide.js'
 import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
@@ -2213,8 +2214,10 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
           // The agent's own history still shows the arguments it asked
           // for, so say when the approver changed them; otherwise its
           // reply describes what it asked for, not what ran.
-          const changed = editedArgs && JSON.stringify(editedArgs) !== JSON.stringify(item.args)
-          const content = changed ? `The approver changed the arguments before it ran: ${JSON.stringify(editedArgs)}. Result: ${JSON.stringify(output)}` : JSON.stringify(output)
+          const changes = editedArgs ? describeChange(item.args, editedArgs) : []
+          const content = changes.length
+            ? `A person approved this call after changing its arguments (${changes.join('; ')}). It ran with ${JSON.stringify(editedArgs)}. Result: ${JSON.stringify(output)}`
+            : JSON.stringify(output)
           resultBlock = { type: 'tool_result', tool_use_id: item.toolUseId, content, is_error: false }
         } catch (err) {
           resultBlock = { type: 'tool_result', tool_use_id: item.toolUseId, content: `ERROR: ${err}`, is_error: true }
