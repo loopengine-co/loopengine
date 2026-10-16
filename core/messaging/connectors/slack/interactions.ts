@@ -7,7 +7,7 @@
 //
 // Same button contract SlackNotifier (core/http-notify-triggers/slack.ts)
 // sends: action_id approve|deny with the pendingId as value,
-// answer_option with {pendingId, answer}, open_answer_modal with the
+// answer_option_<n> with {pendingId, answer}, open_answer_modal with the
 // pendingId, and the modal's answer under ANSWER_BLOCK_ID/ANSWER_ACTION_ID.
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
@@ -64,10 +64,13 @@ export function parseSlackInteraction(rawBody: string): SlackInteraction {
   if (payload.type !== 'block_actions') return { type: 'ignore' }
   const action = payload.actions?.[0]
   if (!action?.value) return { type: 'ignore' }
-  switch (action.action_id) {
+  // answer_option_<n> (one per option); a plain answer_option is from
+  // messages posted before each button got its own id.
+  const actionId = action.action_id?.startsWith('answer_option') ? 'answer_option' : action.action_id
+  switch (actionId) {
     case 'approve':
     case 'deny':
-      return { type: 'decide', pendingId: action.value, decision: action.action_id, responseUrl: payload.response_url, user }
+      return { type: 'decide', pendingId: action.value, decision: actionId, responseUrl: payload.response_url, user }
     case 'answer_option': {
       try {
         const { pendingId, answer } = JSON.parse(action.value) as { pendingId?: string; answer?: string }

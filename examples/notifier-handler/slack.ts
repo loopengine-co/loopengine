@@ -88,7 +88,8 @@ export class SlackNotifierHandler {
     // Slack's side, only a different shape of answer (see
     // core/http-notify-triggers/slack.ts's own doc comment on the sending side for the
     // full version of this reasoning).
-    switch (action.action_id) {
+    // answer_option_<n>: one id per option button, which Slack requires.
+    switch (action.action_id?.startsWith('answer_option') ? 'answer_option' : action.action_id) {
       case 'approve':
       case 'deny': {
         const decision = action.action_id

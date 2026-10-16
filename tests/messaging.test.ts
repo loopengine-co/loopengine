@@ -98,6 +98,21 @@ describe('thread map', () => {
   })
 })
 
+describe('SlackNotifier question buttons', () => {
+  it('gives each option button its own action_id, as Slack requires', async () => {
+    const bodies: { blocks: { type: string; elements?: { action_id: string }[] }[] }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)))
+      return new Response(JSON.stringify({ ok: true, channel: 'C9', ts: '1.0' }))
+    }))
+    new SlackNotifier({ botToken: 'xoxb', channelId: 'C9' }).notifyPendingQuestion('Which city?', ['Tokyo', 'Osaka', 'Kyoto'], 'a', 's')
+    await vi.waitFor(() => expect(bodies).toHaveLength(1))
+    const ids = bodies[0].blocks.find((b) => b.type === 'actions')!.elements!.map((e) => e.action_id)
+    expect(ids).toEqual(['answer_option_0', 'answer_option_1', 'answer_option_2', 'open_answer_modal'])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
 describe('threadToMessages', () => {
   const mention = (u: string) => `<@${u}>`
   it("keeps people's messages as user and the agent's as assistant, without the request itself", () => {

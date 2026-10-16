@@ -97,11 +97,13 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
 
   notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined): { pendingId: string } {
     const pendingId = randomUUID()
-    const optionButtons = (options ?? []).map((option) => ({
+    // Slack rejects a block whose buttons share an action_id
+    // (invalid_blocks), so each option gets its own: answer_option_<n>.
+    const optionButtons = (options ?? []).map((option, i) => ({
       type: 'button',
       text: { type: 'plain_text', text: option },
       value: JSON.stringify({ pendingId, answer: option }),
-      action_id: 'answer_option',
+      action_id: `answer_option_${i}`,
     }))
     this.postMessage(`Question from ${agent}: ${question}`, [
       { type: 'section', text: { type: 'mrkdwn', text: `*Question from ${agent}${sessionId ? ` (session ${sessionId})` : ''}:*\n${question}${this.decideLine(pendingId, 'question')}` } },

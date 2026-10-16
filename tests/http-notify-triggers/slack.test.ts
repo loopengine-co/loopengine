@@ -39,7 +39,7 @@ describe('SlackNotifier', () => {
     const body = JSON.parse(init?.body as string)
     const actionsBlock = body.blocks.find((b: { type: string }) => b.type === 'actions')
     const actionIds = actionsBlock.elements.map((e: { action_id: string }) => e.action_id)
-    expect(actionIds).toEqual(['answer_option', 'answer_option', 'open_answer_modal'])
+    expect(actionIds).toEqual(['answer_option_0', 'answer_option_1', 'open_answer_modal'])
   })
 
   it('postMessage omits blocks entirely when called with none, for a plain lifecycle announcement', async () => {

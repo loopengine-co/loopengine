@@ -25,6 +25,8 @@ describe('parseSlackInteraction', () => {
       .toEqual({ type: 'decide', pendingId: 'p1', decision: 'deny', responseUrl: 'https://r', user: 'U1' })
     expect(parseSlackInteraction(form({ type: 'block_actions', actions: [{ action_id: 'answer_option', value: JSON.stringify({ pendingId: 'p2', answer: 'east' }) }] })))
       .toMatchObject({ type: 'answer', pendingId: 'p2', answer: 'east' })
+    expect(parseSlackInteraction(form({ type: 'block_actions', actions: [{ action_id: 'answer_option_2', value: JSON.stringify({ pendingId: 'p2', answer: 'west' }) }] })))
+      .toMatchObject({ type: 'answer', pendingId: 'p2', answer: 'west' })
     expect(parseSlackInteraction(form({ type: 'block_actions', trigger_id: 'T', actions: [{ action_id: 'open_answer_modal', value: 'p3' }] })))
       .toEqual({ type: 'open_answer', pendingId: 'p3', triggerId: 'T' })
     expect(parseSlackInteraction(form({ type: 'view_submission', view: { private_metadata: 'p4', state: { values: { answer_block: { answer_input: { value: 'typed' } } } } } })))
