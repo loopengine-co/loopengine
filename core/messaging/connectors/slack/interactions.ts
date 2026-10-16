@@ -36,6 +36,8 @@ export type SlackInteraction =
   | { type: 'decide'; pendingId: string; decision: 'approve' | 'deny'; responseUrl?: string; user?: string }
   | { type: 'answer'; pendingId: string; answer: string; responseUrl?: string; user?: string }
   | { type: 'open_answer'; pendingId: string; triggerId: string; responseUrl?: string; user?: string }
+  /** A button under one of the engine's thread replies (core/messaging/engine.ts). */
+  | { type: 'action'; action: 'approve_edited' | 'keep_original' | 'confirm' | 'cancel_confirm'; pendingId: string; responseUrl?: string; user?: string }
   | { type: 'ignore' }
 
 /** Reads Slack's form-encoded `payload=<json>` body into the one thing
@@ -79,6 +81,11 @@ export function parseSlackInteraction(rawBody: string): SlackInteraction {
         return { type: 'ignore' }
       }
     }
+    case 'approve_edited':
+    case 'keep_original':
+    case 'confirm':
+    case 'cancel_confirm':
+      return { type: 'action', action: actionId, pendingId: action.value, responseUrl: payload.response_url, user }
     case 'open_answer_modal':
       return payload.trigger_id ? { type: 'open_answer', pendingId: action.value, triggerId: payload.trigger_id, responseUrl: payload.response_url, user } : { type: 'ignore' }
     default:

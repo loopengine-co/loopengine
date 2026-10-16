@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelCall } from '#core/run-agent.js'
-import { decideReply, decisionPrompt } from '#core/messaging/decide.js'
+import { decideReply, decisionPrompt, describeChange, proposeEdit } from '#core/messaging/decide.js'
 
 const answering = (content: unknown[]): ModelCall => async () => ({ stop_reason: 'tool_use', content: content as never })
 const record = (input: Record<string, unknown>) => answering([{ type: 'tool_use', id: 't', name: 'record_decision', input }])
@@ -40,5 +40,34 @@ describe('decideReply', () => {
     expect(seen!.messages).toEqual([{ role: 'user', content: '<message>\nhello\n</message>' }])
     expect(seen!.tools.map((t) => t.input_schema.properties.decision.enum)).toEqual([['approve', 'deny', 'edit', 'continue']])
     expect(decisionPrompt({ kind: 'approval', tool: 'x' })).toMatch(/When in doubt, choose continue/)
+  })
+})
+
+describe('proposeEdit', () => {
+  const propose = (args: unknown): ModelCall => answering([{ type: 'tool_use', id: 'e', name: 'propose_change', input: { args } }])
+  const request = { tool: 'send_note', schema: { type: 'object', properties: { to: { type: 'string' } } }, args: { to: 'Ana', text: 'hi' } }
+
+  it('returns the new arguments, and nothing when nothing changed or the answer is malformed', async () => {
+    expect(await proposeEdit(propose({ to: 'Raj', text: 'hi' }), request, 'send it to Raj')).toEqual({ to: 'Raj', text: 'hi' })
+    expect(await proposeEdit(propose({ to: 'Ana', text: 'hi' }), request, 'hmm')).toBeUndefined()
+    expect(await proposeEdit(propose(['x']), request, 'x')).toBeUndefined()
+    expect(await proposeEdit(answering([{ type: 'text', text: 'ok' }]), request, 'x')).toBeUndefined()
+  })
+
+  it("gives the model the tool's own schema for the arguments, and only the message", async () => {
+    let seen: { messages: unknown; tools: { input_schema: { properties: { args: unknown } } }[] } | undefined
+    const spy: ModelCall = async (messages, _system, tools) => {
+      seen = { messages, tools: tools as never }
+      return { stop_reason: 'end_turn', content: [] }
+    }
+    await proposeEdit(spy, request, 'send it to Raj')
+    expect(seen!.messages).toEqual([{ role: 'user', content: '<message>\nsend it to Raj\n</message>' }])
+    expect(seen!.tools[0].input_schema.properties.args).toEqual(request.schema)
+  })
+})
+
+describe('describeChange', () => {
+  it('lists each argument that differs, including added and removed ones', () => {
+    expect(describeChange({ a: 1, b: 'x', c: true }, { a: 2, b: 'x', d: 'new' })).toEqual(['`a`: 1 → 2', '`c`: true → (none)', '`d`: (none) → "new"'])
   })
 })

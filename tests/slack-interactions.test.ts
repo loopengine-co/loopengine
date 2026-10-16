@@ -45,6 +45,15 @@ describe('slackOutcomeText', () => {
   })
 })
 
+describe('parseSlackInteraction, the engine buttons', () => {
+  it('reads Approve as changed, Keep original, Confirm and Cancel with who clicked', () => {
+    for (const action of ['approve_edited', 'keep_original', 'confirm', 'cancel_confirm']) {
+      expect(parseSlackInteraction(form({ type: 'block_actions', user: { id: 'U1' }, response_url: 'https://r', actions: [{ action_id: action, value: 'p9' }] })))
+        .toEqual({ type: 'action', action, pendingId: 'p9', responseUrl: 'https://r', user: 'U1' })
+    }
+  })
+})
+
 describe('slackAppManifest and listSlackChannels', () => {
   it('builds a manifest with the bot scopes, interactivity URL and events URL', () => {
     const manifest = slackAppManifest({ agentName: 'support', interactivityUrl: 'https://a.example/hooks/slack/support' }) as Record<string, any>

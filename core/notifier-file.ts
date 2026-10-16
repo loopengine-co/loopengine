@@ -49,6 +49,8 @@ export interface NotifierFile {
   /** slack: the people who can decide a request by replying in its
    * thread, and whose button clicks count once any are listed. */
   approvers?: MessagingApprover[]
+  /** slack: tools whose approval by reply needs a Confirm click. */
+  confirmTools?: string[]
 }
 
 export interface MessagingApprover {
@@ -110,6 +112,11 @@ export function validateNotifierFile(input: unknown): NotifierFile {
       approvers.push({ user: entry.user, ...(typeof entry.name === 'string' && entry.name.trim() ? { name: entry.name.trim().slice(0, 80) } : {}) })
     }
     if (approvers.length) file.approvers = approvers
+  }
+  if (raw.confirmTools !== undefined && channel === 'slack') {
+    if (!Array.isArray(raw.confirmTools) || raw.confirmTools.some((t) => typeof t !== 'string' || !t.trim())) throw new NotifierFileError('confirmTools must be a list of tool names')
+    const tools = [...new Set((raw.confirmTools as string[]).map((t) => t.trim()))]
+    if (tools.length) file.confirmTools = tools
   }
   const publicUrl = str('publicUrl')
   if (publicUrl) {

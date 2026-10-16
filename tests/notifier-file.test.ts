@@ -9,7 +9,7 @@ import { NotifierFileError, readNotifierFile, removeNotifierFile, validateNotifi
 import { WebhookNotifier } from '#core/http-notify-triggers/webhook.js'
 import { notifierConfigFromFile } from '#core/notifier-file.js'
 import { createAgentEnv } from '#core/agent-env.js'
-import { agentApprovers, saveAgentNotifier, setAgentApprovers, slackClickAllowed, slackConversationsOn } from '#web/notifier-admin.js'
+import { agentApprovers, agentConfirmTools, saveAgentNotifier, setAgentApprovers, setAgentConfirmTools, slackClickAllowed, slackConversationsOn } from '#web/notifier-admin.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'loopengine-notifier-')) })
@@ -62,6 +62,17 @@ describe('messaging.yml', () => {
     await saveAgentNotifier(config, { channel: 'slack', events: ['approval', 'question'], channelId: 'C2' })
     expect(agentApprovers(config)).toEqual([{ user: 'U1', name: 'Ana' }, { user: 'U2' }])
     expect(readNotifierFile(dir)?.channelId).toBe('C2')
+  })
+
+  it('keeps Confirm-required tools on the Slack connection, through form saves and approver changes', async () => {
+    expect(() => validateNotifierFile({ channel: 'slack', events: ['approval'], channelId: 'C1', confirmTools: [''] })).toThrow(/confirmTools/)
+    const config = agent()
+    writeNotifierFile(dir, { channel: 'slack', events: ['approval'], channelId: 'C1' })
+    expect(setAgentConfirmTools(config, ['stripe_refund', 'stripe_refund', 'delete_customer'])).toEqual(['stripe_refund', 'delete_customer'])
+    setAgentApprovers(config, [{ user: 'U1' }])
+    await saveAgentNotifier(config, { channel: 'slack', events: ['approval'], channelId: 'C1' })
+    expect(agentConfirmTools(config)).toEqual(['stripe_refund', 'delete_customer'])
+    expect(agentApprovers(config)).toEqual([{ user: 'U1' }])
   })
 
   it("counts anyone's button click until approvers are listed, then only theirs", () => {

@@ -3,7 +3,7 @@
 // and replies in it.
 // Slack's buttons and the signing check live in ./interactions.ts, and
 // posting requests in core/http-notify-triggers/slack.ts.
-import type { InboundMessage, MessagingConnector, ThreadMessage } from '../../connector.js'
+import type { InboundMessage, MessagingChoice, MessagingConnector, ThreadMessage } from '../../connector.js'
 import { toSlackMrkdwn } from './format.js'
 
 export type SlackEvent = { type: 'url_verification'; challenge: string } | ({ type: 'message' } & InboundMessage) | { type: 'ignore' }
@@ -40,6 +40,12 @@ export function parseSlackEvent(rawBody: string): SlackEvent {
   }
 }
 
+/** The engine's buttons as Slack buttons: action_id is the action (deny
+ * is the same id as on a request), value the pendingId. */
+function slackButton(choice: MessagingChoice): Record<string, unknown> {
+  return { type: 'button', text: { type: 'plain_text', text: choice.label }, action_id: choice.action, value: choice.pendingId, ...(choice.style ? { style: choice.style } : {}) }
+}
+
 export function createSlackConnector(botToken: string): MessagingConnector {
   return {
     app: 'slack',
@@ -64,6 +70,21 @@ export function createSlackConnector(botToken: string): MessagingConnector {
       })
       const body = (await res.json()) as { ok: boolean; error?: string }
       if (!body.ok) console.error('[loopengine] chat.postMessage (thread reply) failed:', body.error)
+    },
+    async postChoice(conversation, threadTs, text, choices) {
+      const mrkdwn = toSlackMrkdwn(text)
+      const res = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${botToken}`, 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({
+          channel: conversation,
+          thread_ts: threadTs,
+          text: mrkdwn,
+          blocks: [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }, { type: 'actions', elements: choices.map(slackButton) }],
+        }),
+      })
+      const body = (await res.json()) as { ok: boolean; error?: string }
+      if (!body.ok) console.error('[loopengine] chat.postMessage (choice) failed:', body.error)
     },
     async replaceMessage(conversation, ts, text) {
       const mrkdwn = toSlackMrkdwn(text)

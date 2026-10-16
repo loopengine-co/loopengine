@@ -34,6 +34,21 @@ export interface ThreadMessage {
   ts: string
 }
 
+/** A button under a message the engine posts. The connector maps
+ * `action` to its own button id and carries `pendingId` with it, and
+ * hands the click back to handleMessagingAction (./engine.ts). */
+export interface MessagingChoice {
+  action: MessagingAction
+  label: string
+  style?: 'primary' | 'danger'
+  pendingId: string
+}
+
+/** approve_edited / keep_original: a proposed change. confirm /
+ * cancel_confirm: running a tool that needs a Confirm click. deny: the
+ * same Deny as on the request. */
+export type MessagingAction = 'approve_edited' | 'keep_original' | 'confirm' | 'cancel_confirm' | 'deny'
+
 /** A connector bound to one agent's credentials. */
 export interface MessagingConnector {
   app: string
@@ -44,6 +59,8 @@ export interface MessagingConnector {
   /** The thread's messages, oldest first, its first message included. */
   fetchThread(conversation: string, threadTs: string): Promise<ThreadMessage[]>
   postInThread(conversation: string, threadTs: string, text: string): Promise<void>
+  /** A thread reply with buttons. */
+  postChoice(conversation: string, threadTs: string, text: string, choices: MessagingChoice[]): Promise<void>
   /** Replaces the request message itself (and its buttons) with the
    * outcome, so nobody acts on a decision already made. Optional. */
   replaceMessage?(conversation: string, ts: string, text: string): Promise<void>

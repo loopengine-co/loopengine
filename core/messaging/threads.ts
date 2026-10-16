@@ -14,6 +14,9 @@ export interface ThreadLink {
   ts: string
   pendingId: string
   kind: 'approval' | 'question'
+  /** A change an approver asked for, waiting to be approved as changed.
+   * Recording the thread again without it drops the change. */
+  proposedArgs?: Record<string, unknown>
 }
 
 function threadsFile(agentDir: string): string {
@@ -25,23 +28,32 @@ function threadsFile(agentDir: string): string {
 export function recordThread(agentDir: string, link: ThreadLink): void {
   try {
     mkdirSync(join(agentDir, '.messaging'), { recursive: true })
-    appendFileSync(threadsFile(agentDir), JSON.stringify({ ...link, at: new Date().toISOString() }) + '\n')
+    const { app, conversation, ts, pendingId, kind, proposedArgs } = link
+    appendFileSync(threadsFile(agentDir), JSON.stringify({ app, conversation, ts, pendingId, kind, ...(proposedArgs ? { proposedArgs } : {}), at: new Date().toISOString() }) + '\n')
   } catch (err) {
     console.error('[loopengine] could not record the thread:', err instanceof Error ? err.message : err)
   }
 }
 
-/** The request a thread belongs to, or undefined for any other thread. */
-export function findThread(agentDir: string, app: string, conversation: string, ts: string): ThreadLink | undefined {
+/** The thread a request was posted in, found by its pendingId. */
+export function findThreadByPending(agentDir: string, pendingId: string): ThreadLink | undefined {
+  return readLinks(agentDir).filter((link) => link.pendingId === pendingId).at(-1)
+}
+
+function readLinks(agentDir: string): ThreadLink[] {
   const path = threadsFile(agentDir)
-  if (!existsSync(path)) return undefined
-  let found: ThreadLink | undefined
+  if (!existsSync(path)) return []
+  const links: ThreadLink[] = []
   for (const line of readFileSync(path, 'utf8').split('\n')) {
     if (!line) continue
     try {
-      const link = JSON.parse(line) as ThreadLink
-      if (link.app === app && link.conversation === conversation && link.ts === ts) found = link
+      links.push(JSON.parse(line) as ThreadLink)
     } catch {}
   }
-  return found
+  return links
+}
+
+/** The request a thread belongs to, or undefined for any other thread. */
+export function findThread(agentDir: string, app: string, conversation: string, ts: string): ThreadLink | undefined {
+  return readLinks(agentDir).filter((link) => link.app === app && link.conversation === conversation && link.ts === ts).at(-1)
 }

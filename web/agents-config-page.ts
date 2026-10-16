@@ -1195,7 +1195,7 @@ ${consoleShellScript}
         '<td><button type="button" class="delete-btn approver-remove" data-user="' + escapeHtml(a.user) + '"' + (n.canSave === false ? ' disabled' : '') + '>Remove</button></td></tr>';
     }).join('');
     return '<section id="approversSection"><h3>Approvers</h3>' +
-      '<p class="muted" style="margin:0 0 10px">People who can approve, deny or answer a request by replying in its thread, like &ldquo;yes, go ahead&rdquo;. Once anyone is listed, only approvers&#39; button clicks count too. Anyone in the channel can still ask about a request.</p>' +
+      '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request by replying in its thread, like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A change is shown to approve before anything runs. Once anyone is listed, only approvers&#39; button clicks count too. Anyone in the channel can still ask about a request.</p>' +
       (approvers.length
         ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>Slack ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<p class="hint">No approvers yet. Until you add someone, anyone in the channel can use the buttons, and deciding by reply is off.</p>') +
@@ -1204,6 +1204,39 @@ ${consoleShellScript}
         : '<p style="margin:10px 0 0"><button type="button" id="approversLoad">Add people from the channel</button></p>' +
           '<div id="approversPicker"></div>') +
       '<div id="approversResult" class="hint"></div></section>';
+  }
+
+  // Slack only: tools an approver can't approve with a typed yes; the
+  // agent asks for a Confirm click showing exactly what will run.
+  function renderConfirmToolsHtml(n) {
+    if (n.source === 'code' || !n.file || n.file.channel !== 'slack') return '';
+    var chosen = n.file.confirmTools || [];
+    var tools = ((currentCfg && currentCfg.tools) || []).map(function (t) { return t.name; });
+    chosen.forEach(function (t) { if (tools.indexOf(t) === -1) tools.push(t); });
+    var boxes = tools.map(function (t) {
+      return '<label class="tool-picker-item" style="justify-content:flex-start"><input type="checkbox" value="' + escapeHtml(t) + '"' + (chosen.indexOf(t) !== -1 ? ' checked' : '') + (n.canSave === false ? ' disabled' : '') + '> <code>' + escapeHtml(t) + '</code></label>';
+    }).join('');
+    return '<section id="confirmToolsSection"><h3>Confirm-required tools</h3>' +
+      '<p class="muted" style="margin:0 0 10px">For tools that move money or delete data: when an approver replies &ldquo;yes&rdquo;, the agent shows exactly what will run with a Confirm button, and only that click runs it. A click on the request&#39;s own Approve button still runs it straight away.</p>' +
+      (tools.length ? '<div class="tool-picker" style="max-width:560px">' + boxes + '</div>' : '<p class="hint">This agent has no tools.</p>') +
+      (n.canSave === false || !tools.length ? '' : '<p style="margin:8px 0 0"><button type="button" id="confirmToolsSave">Save</button></p>') +
+      '<div id="confirmToolsResult" class="hint"></div></section>';
+  }
+
+  function wireConfirmToolsHandlers(name) {
+    var section = detail.querySelector('#confirmToolsSection');
+    var btn = section && section.querySelector('#confirmToolsSave');
+    if (!btn) return;
+    var result = section.querySelector('#confirmToolsResult');
+    btn.addEventListener('click', function () {
+      var tools = Array.prototype.map.call(section.querySelectorAll('input:checked'), function (el) { return el.value; });
+      result.textContent = 'Saving' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/confirm-tools', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tools: tools }),
+      }).then(function (r) {
+        result.textContent = r.ok ? 'Saved.' : (r.body.error || 'Could not save');
+      });
+    });
   }
 
   function wireApproversHandlers(name, n) {
@@ -1262,11 +1295,7 @@ ${consoleShellScript}
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
         (n.source === 'code' ? '' : renderNotifierForm(n)) + '</section>' +
       renderApproversHtml(n) +
-      '<section><h3>More for deciding in Slack <span class="le-pill neutral">coming soon</span></h3>' +
-        '<ul class="muted" style="margin:0;padding-left:18px">' +
-          '<li><strong>Changing a request</strong> by replying (&ldquo;make it $40&rdquo;), shown as a change to approve before anything runs.</li>' +
-          '<li><strong>Confirm-required tools</strong>: tools, such as ones that move money or delete data, that always need a Confirm click, never just a typed yes.</li>' +
-        '</ul></section>' +
+      renderConfirmToolsHtml(n) +
       '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
   }
 
@@ -1428,6 +1457,7 @@ ${consoleShellScript}
       content.innerHTML = renderApprovalsHtml(results[0].body);
       wireApprovalsHandlers(name);
       wireApproversHandlers(name, results[0].body);
+      wireConfirmToolsHandlers(name);
       var pendingEl = detail.querySelector('#pendingContent');
       var pending = (results[1].ok && results[1].body.pending) || [];
       if (pendingEl) {

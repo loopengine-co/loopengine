@@ -6,8 +6,8 @@ import type { TurnCheckpoint } from '#core/durable-approvals.js'
 import type { Message, ModelCall } from '#core/run-agent.js'
 import { SlackNotifier } from '#core/http-notify-triggers/slack.js'
 import type { InboundMessage, MessagingConnector, ThreadMessage } from '#core/messaging/connector.js'
-import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, threadToMessages, type MessagingDeps } from '#core/messaging/engine.js'
-import { findThread, recordThread } from '#core/messaging/threads.js'
+import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, handleMessagingAction, threadToMessages, type MessagingDeps } from '#core/messaging/engine.js'
+import { findThread, findThreadByPending, recordThread } from '#core/messaging/threads.js'
 import { createSlackConnector, parseSlackEvent } from '#core/messaging/connectors/slack/index.js'
 
 let dir: string
@@ -163,6 +163,7 @@ describe('discussionPrompt', () => {
     expect(prompt).toContain('refund my duplicate charge')
     expect(prompt).toContain('Slack thread')
     expect(prompt).toContain("can't approve, deny or edit")
+    expect(prompt).toContain('make the amount 40')
     expect(prompt).toContain('Be kind.')
   })
 })
@@ -180,13 +181,17 @@ describe('handleInboundMessage', () => {
 
   // The fake model answers the decision step with `verdict` (as its
   // record_decision tool call) and the discussion turn with a reply.
-  function setup(over: Partial<MessagingDeps> = {}, verdict: Record<string, unknown> = { decision: 'continue' }) {
+  function setup(over: Partial<MessagingDeps> = {}, verdict: Record<string, unknown> = { decision: 'continue' }, proposal?: Record<string, unknown>) {
     const posts: string[] = []
+    const choices: { text: string; actions: string[] }[] = []
     const replaced: string[] = []
     const calls: { messages: Message[]; system: string; tools: unknown[] }[] = []
     const decisionCalls: { messages: Message[]; system: string }[] = []
     const decided: unknown[] = []
     const modelCall: ModelCall = async (messages, system, tools) => {
+      if (tools.some((t) => t.name === 'propose_change')) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'e1', name: 'propose_change', input: { args: proposal } }] }
+      }
       if (tools.some((t) => t.name === 'record_decision')) {
         decisionCalls.push({ messages, system })
         return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'd1', name: 'record_decision', input: verdict }] }
@@ -201,6 +206,7 @@ describe('handleInboundMessage', () => {
       fetchThread: async () => [{ fromBot: true, text: 'Approval requested', ts: '1.0' }],
       postInThread: async (conversation, threadTs, text) => void posts.push(`${conversation}/${threadTs}: ${text}`),
       replaceMessage: async (_conversation, _ts, text) => void replaced.push(text),
+      postChoice: async (_conversation, _threadTs, text, list) => void choices.push({ text, actions: list.map((c) => c.action) }),
     }
     const deps: MessagingDeps = {
       agentName: 'support',
@@ -215,9 +221,12 @@ describe('handleInboundMessage', () => {
         decided.push({ pendingId, decision })
         return { text: 'Refunded $60.00.' }
       },
+      confirmTools: () => [],
+      toolSchema: async () => ({ type: 'object', properties: { amount: { type: 'number' } }, required: ['amount'] }),
+      checkArgs: async () => undefined,
       ...over,
     }
-    return { deps, posts, calls, decisionCalls, decided, replaced }
+    return { deps, posts, calls, decisionCalls, decided, replaced, choices }
   }
   const reply = (text = 'were both captured?', threadTs: string | undefined = '1.0'): InboundMessage => ({
     app: 'chat',
@@ -325,13 +334,70 @@ describe('handleInboundMessage', () => {
     expect(posts[0]).toMatch(/add approvers in this agent's Messaging tab/)
   })
 
-  it('treats an edit as discussion for now, and says when someone else decided first', async () => {
+  it('proposes a change with three buttons, and runs nothing until it is approved', async () => {
     mapRequest()
-    const edit = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'edit' })
+    const edit = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'edit' }, { amount: 40 })
     await handleInboundMessage(reply('make it $40'), edit.deps)
     expect(edit.decided).toEqual([])
-    expect(edit.posts).toEqual(['C1/1.0: Both charges were captured.'])
+    expect(edit.choices).toEqual([{ text: "Here's the change @U1 asked for:\n• `amount`: 60 → 40\nNothing else changes.", actions: ['approve_edited', 'keep_original', 'deny'] }])
+    expect(findThread(dir, 'chat', 'C1', '1.0')?.proposedArgs).toEqual({ amount: 40 })
 
+    // A typed yes now approves the changed version.
+    const yes = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
+    await handleInboundMessage(reply('yes, do that'), yes.deps)
+    expect(yes.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 } } }])
+    expect(yes.posts[0]).toBe('C1/1.0: Approved as changed by @U1. Running `stripe_refund` with `{"amount":40}`.')
+    expect(yes.replaced).toEqual(['`stripe_refund` was approved as changed by @U1 in the thread.'])
+  })
+
+  it("refuses a change the tool's schema or a permission rule doesn't allow, and one it can't make out", async () => {
+    mapRequest()
+    const denied = setup({ approvers: () => [{ user: 'U1' }], checkArgs: async () => "a permission rule (big-refunds) doesn't allow it" }, { decision: 'edit' }, { amount: 5000 })
+    await handleInboundMessage(reply('make it 5000'), denied.deps)
+    expect(denied.posts).toEqual(["C1/1.0: I can't change it that way: a permission rule (big-refunds) doesn't allow it. The request is unchanged."])
+    expect(denied.choices).toEqual([])
+    expect(findThread(dir, 'chat', 'C1', '1.0')?.proposedArgs).toBeUndefined()
+
+    const unclear = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'edit' }, { amount: 60 })
+    await handleInboundMessage(reply('change it somehow'), unclear.deps)
+    expect(unclear.posts[0]).toMatch(/couldn't tell what to change/)
+  })
+
+  it('asks for a Confirm click on a Confirm-required tool instead of running it', async () => {
+    mapRequest()
+    const { deps, decided, choices } = setup({ approvers: () => [{ user: 'U1' }], confirmTools: () => ['stripe_refund'] }, { decision: 'approve' })
+    await handleInboundMessage(reply('yes'), deps)
+    expect(decided).toEqual([])
+    expect(choices).toEqual([{ text: '`stripe_refund` needs a Confirm click. It will run with `{"amount":60}`.', actions: ['confirm', 'cancel_confirm'] }])
+  })
+
+  it('handles the buttons: Confirm and Approve as changed run it, Keep original drops the change, Cancel runs nothing', async () => {
+    mapRequest()
+    const confirm = setup()
+    expect(await handleMessagingAction('confirm', 'p1', 'U1', confirm.deps)).toBe('Confirmed by @U1.')
+    expect(confirm.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve' } }])
+
+    const cancel = setup()
+    expect(await handleMessagingAction('cancel_confirm', 'p1', 'U1', cancel.deps)).toMatch(/cancelled\. Nothing ran/)
+    expect(cancel.decided).toEqual([])
+
+    recordThread(dir, { app: 'chat', conversation: 'C1', ts: '1.0', pendingId: 'p1', kind: 'approval', proposedArgs: { amount: 40 } })
+    const keep = setup()
+    expect(await handleMessagingAction('keep_original', 'p1', 'U1', keep.deps)).toMatch(/kept the original request/)
+    expect(findThreadByPending(dir, 'p1')?.proposedArgs).toBeUndefined()
+    expect(await handleMessagingAction('approve_edited', 'p1', 'U1', keep.deps)).toMatch(/change was dropped/)
+
+    recordThread(dir, { app: 'chat', conversation: 'C1', ts: '1.0', pendingId: 'p1', kind: 'approval', proposedArgs: { amount: 40 } })
+    const edited = setup()
+    expect(await handleMessagingAction('approve_edited', 'p1', 'U1', edited.deps)).toBe('Approved as changed by @U1.')
+    expect(edited.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 } } }])
+
+    const gone = setup({ getCheckpoint: async () => undefined })
+    expect(await handleMessagingAction('confirm', 'p1', 'U1', gone.deps)).toBe('This request has already been decided.')
+  })
+
+  it('says when someone else decided first', async () => {
+    mapRequest()
     const late = setup({ approvers: () => [{ user: 'U1' }], decide: async () => ({ alreadyResolved: true }) }, { decision: 'approve' })
     await handleInboundMessage(reply('go'), late.deps)
     expect(late.posts.at(-1)).toBe('C1/1.0: This was already decided elsewhere.')

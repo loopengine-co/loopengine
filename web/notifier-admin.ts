@@ -64,14 +64,15 @@ export function describeAgentNotifier(config: AgentConfig, defaultWebhook?: Defa
  * form includes one, the channel's secret into the agent's own env.
  * Throws NotifierFileError for an invalid form. */
 export async function saveAgentNotifier(config: AgentConfig, body: Record<string, unknown>): Promise<void> {
-  // The form doesn't carry the approvers (they have their own section),
-  // so saving it keeps whoever is already listed.
-  if (body.approvers === undefined) {
-    let existing: NotifierFile | undefined
-    try {
-      existing = readNotifierFile(agentDirFor(config))
-    } catch {}
-    if (existing?.approvers && body.channel === existing.channel) body = { ...body, approvers: existing.approvers }
+  // The form doesn't carry the approvers or the Confirm-required tools
+  // (they have their own sections), so saving it keeps them.
+  let existing: NotifierFile | undefined
+  try {
+    existing = readNotifierFile(agentDirFor(config))
+  } catch {}
+  if (existing && body.channel === existing.channel) {
+    if (body.approvers === undefined && existing.approvers) body = { ...body, approvers: existing.approvers }
+    if (body.confirmTools === undefined && existing.confirmTools) body = { ...body, confirmTools: existing.confirmTools }
   }
   const file = writeNotifierFile(agentDirFor(config), body)
   if (typeof body.secret === 'string' && body.secret.trim()) {
@@ -131,6 +132,25 @@ export function setAgentApprovers(config: AgentConfig, approvers: unknown): Mess
   const file = readNotifierFile(dir)
   if (!file || file.channel !== 'slack') throw new NotifierFileError('Save a Slack connection first')
   return writeNotifierFile(dir, { ...file, approvers: Array.isArray(approvers) ? approvers : [] }).approvers ?? []
+}
+
+/** Tools whose approval by reply needs a Confirm click. */
+export function agentConfirmTools(config: AgentConfig): string[] {
+  if (config.httpNotifier) return []
+  try {
+    return readNotifierFile(agentDirFor(config))?.confirmTools ?? []
+  } catch {
+    return []
+  }
+}
+
+/** Replaces the Confirm-required tools on the agent's saved Slack
+ * connection. Throws NotifierFileError without one. */
+export function setAgentConfirmTools(config: AgentConfig, tools: unknown): string[] {
+  const dir = agentDirFor(config)
+  const file = readNotifierFile(dir)
+  if (!file || file.channel !== 'slack') throw new NotifierFileError('Save a Slack connection first')
+  return writeNotifierFile(dir, { ...file, confirmTools: Array.isArray(tools) ? tools : [] }).confirmTools ?? []
 }
 
 /** The people in the agent's Slack channel, for picking approvers. */
