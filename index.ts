@@ -25,7 +25,7 @@ export { listDeliveries, recordDelivery, type NotifierDelivery } from '#core/not
 export { describeNotifier } from '#core/http-notifier.js'
 export { Scheduler, ScheduleError, FileSchedulerStore, getSchedulerStore, setSchedulerStore, createScheduledTask, listScheduledTasks, getScheduledTask, cancelScheduledTask, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, deleteScheduledTask, nextScheduledWakeAt, importLegacyScheduledTasks, parseEvery, describeSchedule, type ScheduledTask, type ScheduledTaskRun, type ScheduledTaskStatus, type Schedule, type SchedulerStore, type FireTask, type CreateScheduledTaskInput } from '#core/scheduler.js'
 export { NOTIFIER_SLACK_SIGNING_SECRET_VAR } from '#core/notifier-file.js'
-export { firstSighting, handleInboundMessage, handleMessagingAction, isPlainApproval, type MessagingDeps, type MessagingDecision, type DecisionOutcome } from '#core/messaging/engine.js'
+export { firstSighting, handleInboundMessage, handleMessagingAction, settleThreadChoice, isPlainApproval, type MessagingDeps, type MessagingDecision, type DecisionOutcome } from '#core/messaging/engine.js'
 export { formatArgs, formatChange, labelFor } from '#core/messaging/format-args.js'
 export { decideReply, proposeEdit, describeChange, type ReplyDecision, type DecisionRequest } from '#core/messaging/decide.js'
 export { recordThread, findThread, findThreadByPending, type ThreadLink } from '#core/messaging/threads.js'

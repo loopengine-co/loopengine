@@ -62,8 +62,8 @@ export interface MessagingConnector {
   /** The thread's messages, oldest first, its first message included. */
   fetchThread(conversation: string, threadTs: string): Promise<ThreadMessage[]>
   postInThread(conversation: string, threadTs: string, text: string): Promise<void>
-  /** A thread reply with buttons. */
-  postChoice(conversation: string, threadTs: string, text: string, choices: MessagingChoice[]): Promise<void>
+  /** A thread reply with buttons; resolves with the new message's id. */
+  postChoice(conversation: string, threadTs: string, text: string, choices: MessagingChoice[]): Promise<string | undefined>
   /** Replaces the request message itself (and its buttons) with the
    * outcome, so nobody acts on a decision already made. Optional. */
   replaceMessage?(conversation: string, ts: string, text: string): Promise<void>

@@ -160,10 +160,9 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
           await say(`I can't change it that way: ${problem}. The request is unchanged.`)
           return
         }
-        recordThread(deps.agentDir, { ...link, proposedArgs: proposed })
-        await connector.postChoice(
-          message.conversation,
-          threadTs,
+        await postChoice(
+          deps,
+          { ...link, proposedArgs: proposed },
           `Here's the change ${who} asked for:\n${formatChange(item.args, proposed, connector.escape, await deps.toolSchema(item.tool))}\nNothing else changes.`,
           [
             { action: 'approve_edited', label: 'Approve as changed', style: 'primary', pendingId: link.pendingId },
@@ -182,7 +181,7 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
           await runApproved(deps, link, item.tool, args, who)
           return
         }
-        await connector.postChoice(message.conversation, threadTs, `Confirm to run \`${item.tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(item.tool))}`, [
+        await postChoice(deps, link, `Confirm to run \`${item.tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(item.tool))}`, [
           { action: 'confirm', label: 'Confirm', style: 'primary', pendingId: link.pendingId },
           { action: 'cancel_confirm', label: 'Cancel', pendingId: link.pendingId },
         ])
@@ -195,6 +194,7 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
       if (!outcome.error && !outcome.alreadyResolved) {
         const what = link.kind === 'approval' ? `\`${item.tool}\`` : 'The question'
         await replaceRequest(connector, link, `${what} was ${verdict.decision === 'deny' ? 'denied' : `answered ("${answer}")`} by ${who} in the thread.`)
+        await settleChoice(deps, link, verdict.decision === 'deny' ? `Denied by ${who}.` : `Answered by ${who}.`)
       }
       return
     }
@@ -287,8 +287,35 @@ async function runApproved(deps: MessagingDeps, link: ThreadLink, tool: string, 
   await connector.postInThread(link.conversation, link.ts, `Approved${edited ? ' as changed' : ''} by ${who}. Running \`${tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(tool))}`)
   const outcome = await deps.decide(link.pendingId, { kind: 'approve', ...(edited ? { editedArgs: args } : {}) })
   await connector.postInThread(link.conversation, link.ts, outcomeText('approve', who, outcome))
-  if (!outcome.error && !outcome.alreadyResolved) await replaceRequest(connector, link, `\`${tool}\` was approved${edited ? ' as changed' : ''} by ${who} in the thread.`)
+  if (!outcome.error && !outcome.alreadyResolved) {
+    await replaceRequest(connector, link, `\`${tool}\` was approved${edited ? ' as changed' : ''} by ${who} in the thread.`)
+    await settleChoice(deps, link, `Approved${edited ? ' as changed' : ''} by ${who}.`)
+  }
   return outcome
+}
+
+/** Posts a message with buttons and remembers it, replacing the previous
+ * one (whose buttons no longer apply). `link` carries any other change
+ * to record with it, such as a proposed change. */
+async function postChoice(deps: MessagingDeps, link: ThreadLink, text: string, choices: Parameters<MessagingConnector['postChoice']>[3]): Promise<void> {
+  await settleChoice(deps, link, 'Replaced by the message below.')
+  const choiceTs = await deps.connector.postChoice(link.conversation, link.ts, text, choices)
+  recordThread(deps.agentDir, { ...link, choiceTs })
+}
+
+/** Replaces the thread's message with buttons, if there is one, so its
+ * buttons don't linger after the request is decided. */
+async function settleChoice(deps: MessagingDeps, link: ThreadLink, text: string): Promise<void> {
+  if (!link.choiceTs || !deps.connector.replaceMessage) return
+  await deps.connector.replaceMessage(link.conversation, link.choiceTs, text).catch((err) => console.error('[loopengine] could not update a message with buttons:', err))
+  recordThread(deps.agentDir, { ...link, choiceTs: undefined })
+}
+
+/** For a decision made outside the thread (the request's own buttons):
+ * replaces the thread's message with buttons, if any, with `text`. */
+export async function settleThreadChoice(deps: MessagingDeps, pendingId: string, text: string): Promise<void> {
+  const link = findThreadByPending(deps.agentDir, pendingId)
+  if (link) await settleChoice(deps, link, text)
 }
 
 async function replaceRequest(connector: MessagingConnector, link: ThreadLink, text: string): Promise<void> {
@@ -312,13 +339,18 @@ export async function handleMessagingAction(
     const item = checkpoint?.outstanding[pendingId]
     if (!item) return 'This request has already been decided.'
     const who = deps.connector.mention(user)
+    // The clicked message is the one with buttons; the caller replaces it
+    // with what this returns, so it's no longer tracked.
     if (action === 'keep_original') {
-      recordThread(deps.agentDir, { ...link, proposedArgs: undefined })
+      recordThread(deps.agentDir, { ...link, proposedArgs: undefined, choiceTs: undefined })
       return `${who} kept the original request. It's still waiting for a decision.`
     }
-    if (action === 'cancel_confirm') return `${who} cancelled. Nothing ran; the request is still waiting for a decision.`
+    if (action === 'cancel_confirm') {
+      recordThread(deps.agentDir, { ...link, choiceTs: undefined })
+      return `${who} cancelled. Nothing ran; the request is still waiting for a decision.`
+    }
     if (action === 'approve_edited' && !link.proposedArgs) return 'That change was dropped, so there is nothing to approve as changed.'
-    const outcome = await runApproved(deps, link, item.tool, link.proposedArgs ?? item.args, who)
+    const outcome = await runApproved(deps, { ...link, choiceTs: undefined }, item.tool, link.proposedArgs ?? item.args, who)
     if (outcome.alreadyResolved) return 'This request has already been decided.'
     return action === 'confirm' ? `Confirmed by ${who}.` : `Approved as changed by ${who}.`
   })

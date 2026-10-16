@@ -6,7 +6,7 @@ import type { TurnCheckpoint } from '#core/durable-approvals.js'
 import type { Message, ModelCall } from '#core/run-agent.js'
 import { SlackNotifier } from '#core/http-notify-triggers/slack.js'
 import type { InboundMessage, MessagingConnector, ThreadMessage } from '#core/messaging/connector.js'
-import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, handleMessagingAction, isPlainApproval, threadToMessages, type MessagingDeps } from '#core/messaging/engine.js'
+import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, handleMessagingAction, isPlainApproval, settleThreadChoice, threadToMessages, type MessagingDeps } from '#core/messaging/engine.js'
 import { findThread, findThreadByPending, recordThread } from '#core/messaging/threads.js'
 import { createSlackConnector, parseSlackEvent } from '#core/messaging/connectors/slack/index.js'
 
@@ -206,6 +206,7 @@ describe('handleInboundMessage', () => {
     const posts: string[] = []
     const choices: { text: string; actions: string[] }[] = []
     const replaced: string[] = []
+    const replacedAt: string[] = []
     const calls: { messages: Message[]; system: string; tools: unknown[] }[] = []
     const decisionCalls: { messages: Message[]; system: string }[] = []
     const decided: unknown[] = []
@@ -227,8 +228,14 @@ describe('handleInboundMessage', () => {
       escape: (t) => t,
       fetchThread: async () => [{ fromBot: true, text: 'Approval requested', ts: '1.0' }],
       postInThread: async (conversation, threadTs, text) => void posts.push(`${conversation}/${threadTs}: ${text}`),
-      replaceMessage: async (_conversation, _ts, text) => void replaced.push(text),
-      postChoice: async (_conversation, _threadTs, text, list) => void choices.push({ text, actions: list.map((c) => c.action) }),
+      replaceMessage: async (_conversation, ts, text) => {
+        replaced.push(text)
+        replacedAt.push(`${ts}: ${text}`)
+      },
+      postChoice: async (_conversation, _threadTs, text, list) => {
+        choices.push({ text, actions: list.map((c) => c.action) })
+        return `choice-${choices.length}`
+      },
     }
     const deps: MessagingDeps = {
       agentName: 'support',
@@ -247,7 +254,7 @@ describe('handleInboundMessage', () => {
       checkArgs: async () => undefined,
       ...over,
     }
-    return { deps, posts, calls, decisionCalls, decided, replaced, choices }
+    return { deps, posts, calls, decisionCalls, decided, replaced, replacedAt, choices }
   }
   const reply = (text = 'were both captured?', threadTs: string | undefined = '1.0'): InboundMessage => ({
     app: 'chat',
@@ -432,6 +439,40 @@ describe('handleInboundMessage', () => {
 
     const gone = setup({ getCheckpoint: async () => undefined })
     expect(await handleMessagingAction('confirm', 'p1', 'U1', gone.deps)).toBe('This request has already been decided.')
+  })
+
+  it("replaces a message with buttons once it no longer applies, so its buttons don't linger", async () => {
+    mapRequest()
+    // A change is proposed, then a plain yes runs it: the proposal is updated.
+    const edit = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'edit' }, { amount: 40 })
+    await handleInboundMessage(reply('make it $40'), edit.deps)
+    expect(findThreadByPending(dir, 'p1')?.choiceTs).toBe('choice-1')
+    const yes = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
+    await handleInboundMessage(reply('yes'), yes.deps)
+    expect(yes.replacedAt).toEqual(['1.0: `stripe_refund` was approved as changed by @U1 in the thread.', 'choice-1: Approved as changed by @U1.'])
+
+    // A yes that isn't plain swaps the proposal for a Confirm; a deny then settles the Confirm.
+    rmSync(join(dir, '.messaging'), { recursive: true, force: true })
+    mapRequest()
+    const edit2 = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'edit' }, { amount: 40 })
+    await handleInboundMessage(reply('make it $40'), edit2.deps)
+    const unsure = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
+    await handleInboundMessage(reply('sure, send it over'), unsure.deps)
+    expect(unsure.replacedAt).toEqual(['choice-1: Replaced by the message below.'])
+    expect(findThreadByPending(dir, 'p1')?.choiceTs).toBe('choice-1')
+    const no = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'deny' })
+    await handleInboundMessage(reply('no'), no.deps)
+    expect(no.replacedAt).toEqual(['1.0: `stripe_refund` was denied by @U1 in the thread.', 'choice-1: Denied by @U1.'])
+    expect(findThreadByPending(dir, 'p1')?.choiceTs).toBeUndefined()
+  })
+
+  it("settles the thread's message with buttons when the request's own buttons decide it", async () => {
+    recordThread(dir, { app: 'chat', conversation: 'C1', ts: '1.0', pendingId: 'p1', kind: 'approval', proposedArgs: { amount: 40 }, choiceTs: 'c9' })
+    const { deps, replacedAt } = setup()
+    await settleThreadChoice(deps, 'p1', 'Approved by @U1 with the request\'s own buttons.')
+    expect(replacedAt).toEqual(["c9: Approved by @U1 with the request's own buttons."])
+    await settleThreadChoice(deps, 'p1', 'again')
+    expect(replacedAt).toHaveLength(1)
   })
 
   it('says when someone else decided first', async () => {

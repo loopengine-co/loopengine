@@ -84,8 +84,9 @@ export function createSlackConnector(botToken: string): MessagingConnector {
           blocks: [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }, { type: 'actions', elements: choices.map(slackButton) }],
         }),
       })
-      const body = (await res.json()) as { ok: boolean; error?: string }
+      const body = (await res.json()) as { ok: boolean; error?: string; ts?: string }
       if (!body.ok) console.error('[loopengine] chat.postMessage (choice) failed:', body.error)
+      return body.ok ? body.ts : undefined
     },
     async replaceMessage(conversation, ts, text) {
       const mrkdwn = toSlackMrkdwn(text)

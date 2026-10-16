@@ -20,10 +20,10 @@ function project(withProvenance = true): void {
 
 /** A fake npm/npx: `npm view` answers `latest`; the upgrade either
  * rewrites files like create-loopengine would, or fails like it can. */
-function fakeRunner(opts: { latest: string; upgrade: 'ok' | 'error' | 'install-failed' | 'crash' }) {
+function fakeRunner(opts: { latest: string; latestTemplate?: string; upgrade: 'ok' | 'error' | 'install-failed' | 'crash' }) {
   return async (cmd: string, args: string[], cwd: string): Promise<string> => {
     calls.push(`${cmd} ${args.join(' ')}`)
-    if (cmd === 'npm' && args[0] === 'view') return `${opts.latest}\n`
+    if (cmd === 'npm' && args[0] === 'view') return `${args[1] === 'create-loopengine' ? (opts.latestTemplate ?? '0.0.1') : opts.latest}\n`
     if (cmd === 'npm') return ''
     // npx create-loopengine@latest upgrade --json --keep-edited
     writeFileSync(join(cwd, 'adapters', 'http.ts'), 'new http\n')
@@ -46,11 +46,21 @@ afterEach(() => {
 })
 
 describe('describeUpgrade', () => {
+  it('offers a template-only update when loopengine is current but create-loopengine is newer', async () => {
+    project()
+    setUpgradeRunner(fakeRunner({ latest: loopengineVersion(), latestTemplate: '0.0.2', upgrade: 'ok' }))
+    expect(await describeUpgrade(dir)).toMatchObject({ updateAvailable: true, templateUpdateAvailable: true, templateVersion: '0.0.1', latestTemplate: '0.0.2' })
+    setUpgradeRunner(fakeRunner({ latest: loopengineVersion(), latestTemplate: '0.0.1', upgrade: 'ok' }))
+    expect(await describeUpgrade(dir)).toMatchObject({ updateAvailable: false, templateUpdateAvailable: false })
+    setUpgradeRunner(fakeRunner({ latest: '99.0.0', latestTemplate: '0.0.2', upgrade: 'ok' }))
+    expect(await describeUpgrade(dir)).toMatchObject({ updateAvailable: true, templateUpdateAvailable: false })
+  })
+
   it('remembers what npm said for a minute, and Check again asks it anew', async () => {
     project()
     let latest = '1.0.0'
     const run = fakeRunner({ latest: '1.0.0', upgrade: 'ok' })
-    setUpgradeRunner(async (cmd, args, cwd) => (cmd === 'npm' && args[0] === 'view' ? `${latest}\n` : run(cmd, args, cwd)))
+    setUpgradeRunner(async (cmd, args, cwd) => (cmd === 'npm' && args[0] === 'view' ? `${args[1] === 'create-loopengine' ? '0.0.1' : latest}\n` : run(cmd, args, cwd)))
     const first = await describeUpgrade(dir)
     expect(first.latest).toBe('1.0.0')
     expect(first.checkedAt).toMatch(/^\d{4}-/)

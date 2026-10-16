@@ -32,11 +32,17 @@ export interface UpgradeStatus {
   latest: string | null
   /** When npm was last asked for `latest`. */
   checkedAt: string | null
+  /** A newer loopengine, or a newer template, or both. */
   updateAvailable: boolean
   /** The create-loopengine version this project was scaffolded or last
    * upgraded from (.create-loopengine.json); null when the project
    * wasn't made by create-loopengine, which the button can't upgrade. */
   templateVersion: string | null
+  /** Latest create-loopengine on npm; null when npm couldn't be reached. */
+  latestTemplate: string | null
+  /** Only the template is behind: a fix in adapters/http.ts and the
+   * other template files, with loopengine already current. */
+  templateUpdateAvailable: boolean
   /** Why the button is off, when it is. */
   unavailableReason?: string
   running: boolean
@@ -70,18 +76,26 @@ export function setUpgradeRunner(next: Runner | undefined): void {
 
 // A minute, so reloading Settings doesn't ask npm every time while a
 // release that just came out shows up soon (the page's Check again skips it).
-let latestCache: { value: string | null; until: number; at: string } | undefined
+let latestCache: { value: string | null; template: string | null; until: number; at: string } | undefined
+
+async function npmLatest(name: string, projectDir: string): Promise<string | null> {
+  try {
+    return (await run('npm', ['view', name, 'version'], projectDir, 15_000)).trim() || null
+  } catch {
+    return null
+  }
+}
+
+/** The latest loopengine and create-loopengine on npm, asked together. */
+async function latestVersions(projectDir: string): Promise<{ value: string | null; template: string | null }> {
+  if (latestCache && latestCache.until > Date.now()) return latestCache
+  const [value, template] = await Promise.all([npmLatest('loopengine', projectDir), npmLatest('create-loopengine', projectDir)])
+  latestCache = { value, template, until: Date.now() + 60_000, at: new Date().toISOString() }
+  return latestCache
+}
 
 async function latestLoopengine(projectDir: string): Promise<string | null> {
-  if (latestCache && latestCache.until > Date.now()) return latestCache.value
-  let value: string | null = null
-  try {
-    value = (await run('npm', ['view', 'loopengine', 'version'], projectDir, 15_000)).trim() || null
-  } catch {
-    value = null
-  }
-  latestCache = { value, until: Date.now() + 60_000, at: new Date().toISOString() }
-  return value
+  return (await latestVersions(projectDir)).value
 }
 
 function templateVersion(projectDir: string): string | null {
@@ -100,14 +114,18 @@ let running = false
 export async function describeUpgrade(projectDir = process.cwd(), options: { refresh?: boolean } = {}): Promise<UpgradeStatus> {
   if (options.refresh) latestCache = undefined
   const current = loopengineVersion()
-  const latest = await latestLoopengine(projectDir)
+  const { value: latest, template: latestTemplate } = await latestVersions(projectDir)
   const template = templateVersion(projectDir)
+  const loopengineBehind = Boolean(latest && semver.valid(current) && semver.gt(latest, current))
+  const templateBehind = Boolean(template && latestTemplate && semver.valid(template) && semver.valid(latestTemplate) && semver.gt(latestTemplate, template))
   const status: UpgradeStatus = {
     current,
     latest,
     checkedAt: latestCache?.at ?? null,
-    updateAvailable: Boolean(latest && semver.valid(current) && semver.gt(latest, current)),
+    updateAvailable: loopengineBehind || templateBehind,
     templateVersion: template,
+    latestTemplate,
+    templateUpdateAvailable: templateBehind && !loopengineBehind,
     running,
   }
   if (!template) status.unavailableReason = 'This project has no .create-loopengine.json, so it was not made by create-loopengine; upgrade it by hand.'

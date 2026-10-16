@@ -17,6 +17,10 @@ export interface ThreadLink {
   /** A change an approver asked for, waiting to be approved as changed.
    * Recording the thread again without it drops the change. */
   proposedArgs?: Record<string, unknown>
+  /** The latest message the agent posted with buttons in this thread (a
+   * proposed change, a Confirm), so it can be replaced once the request
+   * is decided and its buttons don't linger. */
+  choiceTs?: string
 }
 
 function threadsFile(agentDir: string): string {
@@ -28,8 +32,8 @@ function threadsFile(agentDir: string): string {
 export function recordThread(agentDir: string, link: ThreadLink): void {
   try {
     mkdirSync(join(agentDir, '.messaging'), { recursive: true })
-    const { app, conversation, ts, pendingId, kind, proposedArgs } = link
-    appendFileSync(threadsFile(agentDir), JSON.stringify({ app, conversation, ts, pendingId, kind, ...(proposedArgs ? { proposedArgs } : {}), at: new Date().toISOString() }) + '\n')
+    const { app, conversation, ts, pendingId, kind, proposedArgs, choiceTs } = link
+    appendFileSync(threadsFile(agentDir), JSON.stringify({ app, conversation, ts, pendingId, kind, ...(proposedArgs ? { proposedArgs } : {}), ...(choiceTs ? { choiceTs } : {}), at: new Date().toISOString() }) + '\n')
   } catch (err) {
     console.error('[loopengine] could not record the thread:', err instanceof Error ? err.message : err)
   }

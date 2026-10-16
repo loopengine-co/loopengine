@@ -328,15 +328,23 @@ ${consoleShellScript}
       box.innerHTML = '<p class="hint">' + escapeHtml(u.unavailableReason) + '</p>' + (u.templateVersion ? upgradeCheckedLine(u) : '');
     } else if (!u.updateAvailable) {
       box.innerHTML = '<p>You' + String.fromCharCode(8217) + 're on the latest version, <code>' + escapeHtml(u.current) + '</code>.</p>' + upgradeCheckedLine(u);
-    } else if (u.unavailableReason) {
-      box.innerHTML = '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p><p class="hint">' + escapeHtml(u.unavailableReason) + '</p>';
-    } else if (!u.canUpgrade) {
-      box.innerHTML = '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p><p class="hint">Set LOOPENGINE_ADMIN_AUTH to upgrade from here, or run <code>npx create-loopengine@latest upgrade</code>.</p>';
     } else {
-      box.innerHTML = '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p>' +
-        '<p class="hint">' + UPGRADE_NOTE + (u.restartsItself ? '' : ' This server has nothing to restart it, so restart it yourself afterwards.') + '</p>' +
-        '<p><button type="button" class="primary" id="upgradeBtn">Upgrade to ' + escapeHtml(u.latest) + '</button></p>' +
-        '<div id="upgradeMsg" class="hint"></div>';
+      // Only the template behind (a fix in adapters/http.ts and the like,
+      // with loopengine already current) is offered too.
+      var headline = u.templateUpdateAvailable
+        ? '<p>A template update is available: <code>' + escapeHtml(u.latestTemplate) + '</code> (this project' + String.fromCharCode(8217) + 's template is <code>' + escapeHtml(u.templateVersion) + '</code>). LoopEngine stays at <code>' + escapeHtml(u.current) + '</code>.</p>'
+        : '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p>';
+      var label = u.templateUpdateAvailable ? 'Update the template to ' + escapeHtml(u.latestTemplate) : 'Upgrade to ' + escapeHtml(u.latest);
+      if (u.unavailableReason) {
+        box.innerHTML = headline + '<p class="hint">' + escapeHtml(u.unavailableReason) + '</p>';
+      } else if (!u.canUpgrade) {
+        box.innerHTML = headline + '<p class="hint">Set LOOPENGINE_ADMIN_AUTH to upgrade from here, or run <code>npx create-loopengine@latest upgrade</code>.</p>';
+      } else {
+        box.innerHTML = headline +
+          '<p class="hint">' + UPGRADE_NOTE + (u.restartsItself ? '' : ' This server has nothing to restart it, so restart it yourself afterwards.') + '</p>' +
+          '<p><button type="button" class="primary" id="upgradeBtn">' + label + '</button></p>' +
+          '<div id="upgradeMsg" class="hint"></div>';
+      }
     }
   }
 
@@ -358,14 +366,16 @@ ${consoleShellScript}
   }
 
   // After a successful upgrade the server restarts: wait for it to answer
-  // again on the new version, then reload so the page runs the new code.
+  // again on the new versions (loopengine, and the template's), then
+  // reload so the page runs the new code.
   function waitForRestart(target, tries) {
     if (tries > 90) { upgradeMsg('The server hasn' + String.fromCharCode(8217) + 't come back yet. Reload this page in a minute.', true); return; }
     setTimeout(function () {
-      fetch('/config/settings', { cache: 'no-store' })
+      fetch('/config/upgrade', { cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (s) {
-          if (s && s.version === target) location.reload();
+        .then(function (u) {
+          var ready = u && !u.running && (!target.version || u.current === target.version) && (!target.template || u.templateVersion === target.template);
+          if (ready && tries > 0) location.reload();
           else waitForRestart(target, tries + 1);
         })
         .catch(function () { waitForRestart(target, tries + 1); });
@@ -399,14 +409,15 @@ ${consoleShellScript}
         var changed = o.files.filter(function (f) { return f.status === 'updated'; }).map(function (f) { return f.file; });
         var kept = o.files.filter(function (f) { return f.status === 'kept'; }).map(function (f) { return f.file; });
         var deps = o.dependencies.map(function (d) { return d.name + ' ' + d.from + ' ' + String.fromCharCode(8594) + ' ' + d.to; });
-        var target = (o.dependencies.filter(function (d) { return d.name === 'loopengine'; })[0] || {}).to;
+        var loopengineTo = (o.dependencies.filter(function (d) { return d.name === 'loopengine'; })[0] || {}).to;
+        var target = { version: loopengineTo ? loopengineTo.replace(/[^0-9.]/g, '') : null, template: o.toVersion || null };
         var summary = (deps.length ? 'Installed ' + escapeHtml(deps.join(', ')) + '. ' : '') +
           (changed.length ? 'Updated ' + escapeHtml(changed.join(', ')) + '. ' : '') +
           (kept.length ? 'Left as you edited them: ' + escapeHtml(kept.join(', ')) + '. ' : '');
         btn.textContent = 'Upgraded';
-        if (r.body.restarting && target) {
+        if (r.body.restarting && (target.version || target.template)) {
           upgradeMsg(summary + 'Restarting' + String.fromCharCode(8230), false);
-          waitForRestart(target.replace(/[^0-9.]/g, ''), 0);
+          waitForRestart(target, 0);
         } else {
           upgradeMsg(summary + 'Restart the server to finish.', false);
         }
