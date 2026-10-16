@@ -32,7 +32,7 @@ export { parseSlackEvent, createSlackConnector, verifySlackRequest, parseSlackIn
 export { createDecisionToken, verifyDecisionToken, decidePath, decideLinkMaker, decisionLinkTtlMs, type DecisionKind } from '#core/approval-links.js'
 export { renderDecidePage, renderDecideGonePage, renderDecideInvalidPage, type DecidePageItem } from './web/decide-page.js'
 export { sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
-export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
+export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, slackConversationsOn, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via

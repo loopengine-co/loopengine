@@ -61,9 +61,9 @@ describe('Slack connector', () => {
       { user: undefined, fromBot: true, text: 'Approval requested', ts: '1.0' },
       { user: 'U1', fromBot: false, text: 'why?', ts: '2.0' },
     ])
-    await slack.postInThread('C1', '1.0', 'Because.')
+    await slack.postInThread('C1', '1.0', 'Because **it moves money**.')
     const [, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
-    expect(JSON.parse(String(init.body))).toEqual({ channel: 'C1', thread_ts: '1.0', text: 'Because.' })
+    expect(JSON.parse(String(init.body))).toEqual({ channel: 'C1', thread_ts: '1.0', text: 'Because *it moves money*.' })
     expect(slack.mention('U1')).toBe('<@U1>')
   })
 })
@@ -95,6 +95,22 @@ describe('thread map', () => {
     const notifier = new SlackNotifier({ botToken: 'xoxb', channelId: 'C9', onThread: (p) => posted.push(p) })
     const { pendingId } = notifier.requestDurableApproval('refund', { amount: 60 }, { tenant: 't', environment: 'e', agent: 'a' } as never, 'money')
     await vi.waitFor(() => expect(posted).toEqual([{ channel: 'C9', ts: '111.222', pendingId, kind: 'approval' }]))
+  })
+})
+
+describe('SlackNotifier reply hint', () => {
+  it('says replies are answered only when told to', async () => {
+    const bodies: { blocks: { type: string }[] }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)))
+      return new Response(JSON.stringify({ ok: true, channel: 'C9', ts: '1.0' }))
+    }))
+    const scope = { tenant: 't', environment: 'e', agent: 'a' } as never
+    new SlackNotifier({ botToken: 'xoxb', channelId: 'C9', replyHint: true }).requestDurableApproval('refund', {}, scope, 'money')
+    new SlackNotifier({ botToken: 'xoxb', channelId: 'C9' }).requestDurableApproval('refund', {}, scope, 'money')
+    await vi.waitFor(() => expect(bodies).toHaveLength(2))
+    expect(JSON.stringify(bodies[0].blocks.at(-1))).toContain('Reply in this thread to ask about it.')
+    expect(bodies[1].blocks.some((b) => b.type === 'context')).toBe(false)
   })
 })
 

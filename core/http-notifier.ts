@@ -54,7 +54,7 @@ function formatEmailLifecycleSubject(event: 'run_start' | 'run_finish', context:
 }
 
 /** Where an agent's durable approvals/questions go, for the console:
- * `code` (AgentConfig.httpNotifier), `file` (agents/<name>/notifier.yml),
+ * `code` (AgentConfig.httpNotifier), `file` (agents/<name>/messaging.yml),
  * or `none`. A file whose secret isn't set yet is reported, not used. */
 export function describeNotifier(config: AgentConfig): {
   source: 'code' | 'file' | 'none'
@@ -70,7 +70,7 @@ export function describeNotifier(config: AgentConfig): {
   try {
     file = readNotifierFile(dir)
   } catch (err) {
-    return { source: 'none', error: `notifier.yml is invalid: ${err instanceof Error ? err.message : String(err)}` }
+    return { source: 'none', error: `The messaging settings are invalid: ${err instanceof Error ? err.message : String(err)}` }
   }
   if (!file) return { source: 'none' }
   const { missingSecret } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
@@ -78,7 +78,7 @@ export function describeNotifier(config: AgentConfig): {
 }
 
 /** AgentConfig.httpNotifier when the agent sets one in code; otherwise
- * its agents/<name>/notifier.yml (see core/notifier-file.ts), re-read on
+ * its agents/<name>/messaging.yml (see core/notifier-file.ts), re-read on
  * every call so a console edit applies to the very next turn. */
 export function resolveHttpNotifier(config: AgentConfig): ResolvedHttpNotifier {
   const httpNotifier = config.httpNotifier
@@ -98,7 +98,7 @@ function resolveFromFile(config: AgentConfig): ResolvedHttpNotifier {
   try {
     file = readNotifierFile(dir)
   } catch (err) {
-    console.error(`[loopengine] ignoring agents/${config.name}/notifier.yml:`, err instanceof Error ? err.message : err)
+    console.error(`[loopengine] ignoring the messaging settings in agents/${config.name}/:`, err instanceof Error ? err.message : err)
     return EMPTY
   }
   if (!file) return EMPTY
@@ -128,13 +128,13 @@ function buildResolved(httpNotifier: HttpNotifierConfig, agentDir: string): Reso
       break
     }
     case 'slack': {
-      const { botToken, channelId, publicUrl, buttons } = httpNotifier.config
+      const { botToken, channelId, publicUrl, buttons, replyHint } = httpNotifier.config
       // One shared instance for every concern this httpNotifier actually
       // covers — same "it's Slack-specific, not approval/question/
       // lifecycle-specific" reasoning SlackNotifier's own doc
       // comment works out; cheap to construct (holds two strings, does no
       // I/O itself) so there's no reason to build one per event kind.
-      const slack = new SlackNotifier({ botToken, channelId, publicUrl, buttons, onThread: ({ channel, ts, pendingId, kind }) => recordThread(agentDir, { app: 'slack', conversation: channel, ts, pendingId, kind }),
+      const slack = new SlackNotifier({ botToken, channelId, publicUrl, buttons, replyHint, onThread: ({ channel, ts, pendingId, kind }) => recordThread(agentDir, { app: 'slack', conversation: channel, ts, pendingId, kind }),
       })
       resolved = {
         approver: events.has('approval') ? slack : undefined,

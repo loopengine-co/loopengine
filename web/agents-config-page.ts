@@ -899,8 +899,13 @@ ${consoleShellScript}
 
   function renderActauthTabPlaceholder() {
     return '<div id="pendingContent"></div>' +
-      '<section id="actauthSection"><div id="actauthContent"><p class="hint">Loading&hellip;</p></div></section>' +
-      '<div id="approvalsContent"><p class="hint">Loading&hellip;</p></div>';
+      '<section id="actauthSection"><div id="actauthContent"><p class="hint">Loading&hellip;</p></div></section>';
+  }
+
+  // The Messaging tab: where approval requests and questions go, and
+  // whether the agent answers replies there. Filled by loadApprovalsSection.
+  function renderMessagingTabPlaceholder() {
+    return '<div id="approvalsContent"><p class="hint">Loading&hellip;</p></div>';
   }
 
   function renderActauthRuleRow(r) {
@@ -964,11 +969,12 @@ ${consoleShellScript}
         '</form></section>';
   }
 
-  // ---- Permissions → "Where approval requests and questions are sent": where "ask" decisions go when nobody is
-  // in Chat (web/notifier-admin.ts behind GET/PUT/DELETE .../notifier),
-  // the decisions still waiting (GET .../pending), and recent webhook
-  // deliveries. Reloaded every time the tab opens, so the waiting list is
-  // current. ----
+  // ---- Messaging tab: where "ask" decisions go when nobody is in Chat,
+  // and whether the agent answers replies there (web/notifier-admin.ts
+  // behind GET/PUT/DELETE .../notifier), plus recent deliveries. The
+  // decisions still waiting (GET .../pending) show at the top of
+  // Permissions. Reloaded every time either tab opens, so the waiting
+  // list is current. ----
 
   var lastNotifier = null;
   var NOTIFIER_EVENTS = [
@@ -1005,6 +1011,19 @@ ${consoleShellScript}
     if (n.missingSecret) return 'Saved, but not sending yet: set the secret below (<code>' + escapeHtml(n.missingSecret) + '</code>).';
     if (n.source === 'default') return 'Using the project-wide default webhook (<code>LOOPENGINE_DEFAULT_WEBHOOK_URL</code>, ' + escapeHtml(n.defaultWebhookUrl) + '). Set one below to use a different target for this agent.';
     return '<strong>Nowhere yet</strong>, so nobody is notified. Choose a webhook, Slack channel or Lark chat below.';
+  }
+
+  // Slack only: whether replies in a request's thread are answered. On
+  // unless turned off; locked on LoopEngine Cloud's free plan.
+  function renderConversationsField(n, f) {
+    var free = n.plan === 'free';
+    var on = !free && f.conversations !== false;
+    return '<div class="body-field" style="margin:4px 0 0">' +
+      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="conversations" id="slackConversations"' + (on ? ' checked' : '') + (free ? ' disabled' : '') + '> ' +
+      'Answer replies in a request&#39;s thread' + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
+      '<p class="hint" style="margin:2px 0 0">' + (free
+        ? 'Talking a request through in Slack needs LoopEngine Pro. Approve and Deny buttons work on every plan.'
+        : 'People can ask the agent about a request in its thread, and it answers there. It can&#39;t approve or change anything from the thread yet: deciding still uses the buttons.') + '</p></div>';
   }
 
   function renderNotifierForm(n) {
@@ -1047,6 +1066,7 @@ ${consoleShellScript}
           (n.slack && n.slack.signingSecretSet ? 'set &mdash; Approve/Deny buttons are on' : 'adds Approve/Deny buttons inside Slack; without it, messages carry the approval link') + ')</span>' +
           '<input type="password" name="signingSecret" autocomplete="off"></label>' +
         '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>' +
+        renderConversationsField(n, f) +
         '<p class="hint" style="margin:0" id="slackEventsNote"></p>') +
       field('lark', '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField('lark', 'App secret')) +
       '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
@@ -1092,32 +1112,29 @@ ${consoleShellScript}
     if (tools.length && n && n.source === 'none') {
       html += '<div class="approvals-nudge"><strong>Approval requests aren&#39;t sent anywhere yet.</strong> ' +
         escapeHtml(tools.slice(0, 3).join(', ')) + (tools.length > 3 ? ' and more' : '') + ' can stop for approval, but when an app calls this agent over HTTP nobody is notified. ' +
-        '<a href="#approvalsSetup" class="approvals-nudge-link">Choose where they go</a></div>';
+        '<a href="?tab=messaging" data-tab="messaging">Choose where they go</a></div>';
     }
     if (pending.length) html += '<section><h3>Waiting for a decision (' + pending.length + ')</h3>' + renderPendingTable(pending) + '</section>';
     return html;
   }
 
   function renderApprovalsHtml(n) {
-    return '<section id="approvalsSetup"><h3>Where approval requests and questions are sent</h3>' +
-      '<p class="muted" style="margin:0 0 8px">When an app calls this agent over HTTP and a tool call needs approval, or the agent asks a question, it&#39;s sent here. In Chat it shows up in the conversation instead.</p>' +
+    return '<p class="muted" style="margin:0 0 20px">Connect a messaging app, so this agent can reach people when nobody is in Chat. When an app calls it over HTTP or a scheduled task runs, and a tool call needs approval or the agent asks a question, the request is sent here. In Chat it shows up in the conversation instead.</p>' +
+      '<section id="approvalsSetup"><h3>Connection</h3>' +
       '<p class="muted" style="margin:0 0 12px">Currently: ' + renderNotifierStatus(n) + '</p>' +
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
         (n.source === 'code' ? '' : renderNotifierForm(n)) + '</section>' +
+      '<section><h3>Deciding in Slack <span class="le-pill neutral">coming soon</span></h3>' +
+        '<ul class="muted" style="margin:0;padding-left:18px">' +
+          '<li><strong>Approvers</strong>: link Slack people to LoopEngine users, so they can approve, deny or change a request by replying in its thread.</li>' +
+          '<li><strong>Confirm-required tools</strong>: tools, such as ones that move money or delete data, that always need a Confirm click, never just a typed yes.</li>' +
+        '</ul></section>' +
       '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
   }
 
   function wirePendingHandlers(name) {
     var content = detail.querySelector('#pendingContent');
     if (!content) return;
-    var nudgeLink = content.querySelector('.approvals-nudge-link');
-    if (nudgeLink) {
-      nudgeLink.addEventListener('click', function (ev) {
-        ev.preventDefault();
-        var target = detail.querySelector('#approvalsSetup');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
     var copyBtns = content.querySelectorAll('.pending-copy');
     for (var c = 0; c < copyBtns.length; c++) {
       copyBtns[c].addEventListener('click', function (ev) {
@@ -1232,6 +1249,10 @@ ${consoleShellScript}
       var secret = data.get('secret_' + channel);
       if (secret) body.secret = secret;
       if (channel === 'slack' && data.get('signingSecret')) body.signingSecret = data.get('signingSecret');
+      var conversationsBox = form.querySelector('#slackConversations');
+      // A locked switch (free plan) keeps whatever was saved before.
+      if (channel === 'slack' && conversationsBox && !conversationsBox.disabled) body.conversations = conversationsBox.checked;
+      else if (channel === 'slack' && lastNotifier && lastNotifier.file && lastNotifier.file.conversations !== undefined) body.conversations = lastNotifier.file.conversations;
       result.textContent = 'Saving…';
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier', {
         method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -1339,7 +1360,7 @@ ${consoleShellScript}
     var list = tasks.length
       ? '<div class="le-table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Status</th><th>Last run</th><th></th></tr></thead><tbody>' + tasks.map(renderScheduleRow).join('') + '</tbody></table></div>'
       : '<p class="hint">Nothing scheduled yet.</p>';
-    return '<p class="muted" style="margin:0 0 20px">Messages this agent receives on a timer, like a cron job. Each run works like an app calling it over HTTP: an approval goes wherever the Permissions tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
+    return '<p class="muted" style="margin:0 0 20px">Messages this agent receives on a timer, like a cron job. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
       '<section><h3>Scheduled (' + active.length + ' active)</h3>' + list + '</section>' +
       '<section><h3>New schedule</h3>' +
         '<form class="add-source" id="scheduleForm" style="max-width:560px">' +
@@ -1352,7 +1373,7 @@ ${consoleShellScript}
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
           '<label>Name <span class="hint">(optional)</span><input name="task_name" placeholder="Daily ticket summary"></label>' +
-          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send each result through this agent&#39;s notifier (set in the Permissions tab)</label>' +
+          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send each result through this agent&#39;s messaging connection (set in the Messaging tab)</label>' +
           '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
           '<div id="scheduleResult" class="hint"></div>' +
         '</form></section>';
@@ -2899,7 +2920,7 @@ ${consoleShellScript}
 
   // ---- Tab switching + agent selection ----
 
-  var CONFIG_TABS = ['overview', 'tools', 'skills', 'abilities', 'actauth', 'schedules', 'env'];
+  var CONFIG_TABS = ['overview', 'tools', 'skills', 'abilities', 'actauth', 'messaging', 'schedules', 'env'];
 
   function switchTab(tab) {
     if (CONFIG_TABS.indexOf(tab) === -1) tab = 'overview';
@@ -2920,7 +2941,7 @@ ${consoleShellScript}
     if (tab === 'actauth' && actauthLoadedFor !== currentName) {
       loadActauthTab(currentName);
     }
-    if (tab === 'actauth') loadApprovalsSection(currentName);
+    if (tab === 'actauth' || tab === 'messaging') loadApprovalsSection(currentName);
     if (tab === 'env' && envLoadedFor !== currentName) {
       loadEnvTab(currentName);
     }
@@ -3022,6 +3043,7 @@ ${consoleShellScript}
       '<div class="tab-panel" data-tab-panel="skills">' + renderSkillsTabHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="tools">' + renderToolsTabHtml(cfg) + '</div>' +
       '<div class="tab-panel" data-tab-panel="actauth">' + renderActauthTabPlaceholder() + '</div>' +
+      '<div class="tab-panel" data-tab-panel="messaging">' + renderMessagingTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="env">' + renderEnvTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="abilities">' + renderAbilitiesTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="schedules">' + renderSchedulesTabPlaceholder() + '</div>' +

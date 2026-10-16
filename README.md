@@ -172,13 +172,15 @@ export const config: AgentConfig = {
 }
 ```
 
-Or skip the code: in the console, the Permissions tab's **Where approval
-requests and questions are sent** section sets a
+Or skip the code: in the console, the agent's **Messaging** tab sets a
 webhook, Slack or Lark target for one agent (saved to
-`agents/<name>/notifier.yml`, with its secret in the agent's own `.env`),
-sends a test, shows recent deliveries, and lists every decision still
-waiting with Approve/Deny buttons. The tab warns you when an agent has
-`ask` rules but nobody would be told.
+`agents/<name>/messaging.yml`, with its secret in the agent's own `.env`;
+an older `notifier.yml` is still read), sends a test and shows recent
+deliveries. With Slack, people can also reply in a request's thread to
+ask the agent about it, and it answers there (**Answer replies in a
+request's thread**, on by default). The Permissions tab lists every
+decision still waiting with Approve/Deny buttons, and warns you when an
+agent has `ask` rules but nobody would be told.
 
 Every notification links to a **decision page**: a signed, single-use
 link (`/decide/<token>`, valid 7 days) where whoever got the message can

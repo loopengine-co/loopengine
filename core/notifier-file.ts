@@ -1,7 +1,21 @@
-// agents/<name>/notifier.yml — where an agent's "ask" approvals and
-// questions go when nobody is watching a live chat, set from the console
-// (Permissions → "Where approval requests and questions are sent") instead of in code. Only consulted when the
-// agent's own AgentConfig.httpNotifier is unset; code always wins.
+// agents/<name>/messaging.yml — where an agent's "ask" approvals and
+// questions go when nobody is watching a live chat, and whether it
+// answers replies there, set from the console's Messaging tab instead of
+// in code. Only consulted when the agent's own AgentConfig.httpNotifier
+// is unset; code always wins.
+//
+// The file holds a list of connections, though only the first is used
+// for now:
+//
+//   connections:
+//     - app: slack
+//       channelId: C0123456
+//       events: [approval, question]
+//       conversations: true
+//
+// An older agents/<name>/notifier.yml (one connection, `channel:` for
+// `app:`) is still read; saving from the console replaces it with
+// messaging.yml.
 //
 // The file holds only non-secret settings. The one secret each channel
 // needs (a webhook signing secret, a Slack bot token, a Lark app secret)
@@ -29,6 +43,9 @@ export interface NotifierFile {
    * remembered from the console's own address when saving.
    * LOOPENGINE_PUBLIC_URL, when set, wins over it. */
   publicUrl?: string
+  /** slack: answer replies in a request's thread (core/messaging/).
+   * Unset counts as on. */
+  conversations?: boolean
 }
 
 /** The env var each channel's secret is read from, per agent. */
@@ -48,8 +65,13 @@ const EVENTS: HttpNotifierEvent[] = ['approval', 'question', 'run_start', 'run_f
 
 export class NotifierFileError extends Error {}
 
+/** The older single-connection file, still read when messaging.yml is absent. */
 export function notifierFilePath(dir: string): string {
   return join(dir, 'notifier.yml')
+}
+
+export function messagingFilePath(dir: string): string {
+  return join(dir, 'messaging.yml')
 }
 
 /** Throws NotifierFileError naming the first problem. */
@@ -64,6 +86,10 @@ export function validateNotifierFile(input: unknown): NotifierFile {
   }
   const str = (key: string): string | undefined => (typeof raw[key] === 'string' && (raw[key] as string).trim() ? (raw[key] as string).trim() : undefined)
   const file: NotifierFile = { channel, events: events as HttpNotifierEvent[] }
+  if (raw.conversations !== undefined) {
+    if (typeof raw.conversations !== 'boolean') throw new NotifierFileError('conversations must be true or false')
+    if (channel === 'slack') file.conversations = raw.conversations
+  }
   const publicUrl = str('publicUrl')
   if (publicUrl) {
     if (!/^https?:\/\/[^/]+/.test(publicUrl)) throw new NotifierFileError('publicUrl must be an http(s) URL')
@@ -87,27 +113,43 @@ export function validateNotifierFile(input: unknown): NotifierFile {
   return file
 }
 
-/** undefined when the agent has no notifier.yml. */
+/** The agent's connection: messaging.yml's first, else the older
+ * notifier.yml's; undefined when it has neither. */
 export function readNotifierFile(dir: string): NotifierFile | undefined {
+  const messagingPath = messagingFilePath(dir)
+  if (existsSync(messagingPath)) {
+    const parsed = parseYaml(readFileSync(messagingPath, 'utf8')) as { connections?: unknown } | null
+    if (parsed?.connections !== undefined && !Array.isArray(parsed.connections)) throw new NotifierFileError('connections must be a list')
+    const first = (parsed?.connections as unknown[] | undefined)?.[0]
+    if (first === undefined) return undefined
+    if (!first || typeof first !== 'object') throw new NotifierFileError('each connection must be an object')
+    const { app, ...rest } = first as Record<string, unknown>
+    return validateNotifierFile({ channel: app, ...rest })
+  }
   const path = notifierFilePath(dir)
   if (!existsSync(path)) return undefined
   return validateNotifierFile(parseYaml(readFileSync(path, 'utf8')))
 }
 
+/** Writes messaging.yml (and drops an older notifier.yml it replaces). */
 export function writeNotifierFile(dir: string, input: unknown): NotifierFile {
   const file = validateNotifierFile(input)
+  const { channel, ...rest } = file
   const header =
-    '# Where this agent sends approval requests and questions when it is called over HTTP.\n' +
-    `# Edited from the console (Permissions tab). The secret lives in this agent's env as ${NOTIFIER_SECRET_VARS[file.channel]}.\n`
-  writeFileSync(notifierFilePath(dir), header + stringifyYaml(file))
+    '# Where this agent sends approval requests and questions when it is called over HTTP,\n' +
+    '# and whether it answers replies there. Edited from the console (Messaging tab).\n' +
+    `# The secret lives in this agent's env as ${NOTIFIER_SECRET_VARS[channel]}.\n`
+  writeFileSync(messagingFilePath(dir), header + stringifyYaml({ connections: [{ app: channel, ...rest }] }))
+  rmSync(notifierFilePath(dir), { force: true })
   return file
 }
 
 export function removeNotifierFile(dir: string): void {
+  rmSync(messagingFilePath(dir), { force: true })
   rmSync(notifierFilePath(dir), { force: true })
 }
 
-/** The HttpNotifierConfig a notifier.yml describes, with its secret read
+/** The HttpNotifierConfig a connection describes, with its secret read
  * from `env` — or which secret is missing, so nothing is sent unsigned
  * or unauthenticated. */
 export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv): { config?: HttpNotifierConfig; missingSecret?: string } {
@@ -124,7 +166,14 @@ export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv): { con
       return {
         config: {
           channel: 'slack',
-          config: { botToken: secret, channelId: file.channelId!, publicUrl: file.publicUrl, buttons: Boolean(env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR)) },
+          config: {
+            botToken: secret,
+            channelId: file.channelId!,
+            publicUrl: file.publicUrl,
+            buttons: Boolean(env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR)),
+            // Says replies in the thread are answered, when they are.
+            replyHint: Boolean(env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR)) && file.conversations !== false && process.env.LOOPENGINE_PLAN !== 'free',
+          },
           events: file.events,
         },
       }

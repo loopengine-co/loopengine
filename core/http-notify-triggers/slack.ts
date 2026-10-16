@@ -43,6 +43,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
   private readonly channelId: string
   private readonly publicUrl?: string
   private readonly buttons: boolean
+  private readonly replyHint: boolean
   private readonly onThread?: (posted: SlackPostedRequest) => void
 
   /** `publicUrl`: where this server is reachable (LOOPENGINE_PUBLIC_URL
@@ -53,13 +54,21 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
    * slack.ts); default true, false for a console-configured notifier,
    * which relies on the link instead. `onThread`: told where each
    * approval request or question landed, so a reply in its thread can be
-   * matched to it (core/messaging/threads.ts). */
-  constructor(options: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean; onThread?: (posted: SlackPostedRequest) => void }) {
+   * matched to it (core/messaging/threads.ts). `replyHint`: add a line
+   * saying replies in the thread are answered, when they are. */
+  constructor(options: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean; replyHint?: boolean; onThread?: (posted: SlackPostedRequest) => void }) {
     this.botToken = options.botToken
     this.channelId = options.channelId
     this.publicUrl = options.publicUrl
     this.buttons = options.buttons ?? true
+    this.replyHint = options.replyHint ?? false
     this.onThread = options.onThread
+  }
+
+  private replyHintBlocks(kind: SlackPostedRequest['kind']): unknown[] {
+    if (!this.replyHint) return []
+    const text = kind === 'approval' ? 'Reply in this thread to ask about it.' : 'Reply in this thread to ask about the question.'
+    return [{ type: 'context', elements: [{ type: 'mrkdwn', text }] }]
   }
 
   private threadRecorder(pendingId: string, kind: SlackPostedRequest['kind']): ((posted: { channel: string; ts: string }) => void) | undefined {
@@ -91,6 +100,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
             ],
           }]
         : []),
+      ...this.replyHintBlocks('approval'),
     ], this.threadRecorder(pendingId, 'approval'))
     return { pendingId }
   }
@@ -110,6 +120,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       ...(this.buttons
         ? [{ type: 'actions', elements: [...optionButtons, { type: 'button', text: { type: 'plain_text', text: 'Other…' }, action_id: 'open_answer_modal', value: pendingId }] }]
         : []),
+      ...this.replyHintBlocks('question'),
     ], this.threadRecorder(pendingId, 'question'))
     return { pendingId }
   }

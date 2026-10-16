@@ -193,7 +193,7 @@ export interface PendingApprovalsRepository {
  * replacement for everything those can express. */
 export type HttpNotifierConfig =
   | { channel: 'webhook'; config: { webhookUrl: string; webhookSecret: string; publicUrl?: string }; events: HttpNotifierEvent[] }
-  | { channel: 'slack'; config: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean }; events: HttpNotifierEvent[] }
+  | { channel: 'slack'; config: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean; replyHint?: boolean }; events: HttpNotifierEvent[] }
   | { channel: 'lark'; config: { appId: string; appSecret: string; chatId: string; publicUrl?: string; buttons?: boolean }; events: HttpNotifierEvent[] }
   | {
       channel: 'email'

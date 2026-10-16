@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +7,9 @@ import { setAgentDir } from '#core/agent-env.js'
 import { describeNotifier, resolveHttpNotifier } from '#core/http-notifier.js'
 import { NotifierFileError, readNotifierFile, removeNotifierFile, validateNotifierFile, writeNotifierFile } from '#core/notifier-file.js'
 import { WebhookNotifier } from '#core/http-notify-triggers/webhook.js'
+import { notifierConfigFromFile } from '#core/notifier-file.js'
+import { createAgentEnv } from '#core/agent-env.js'
+import { slackConversationsOn } from '#web/notifier-admin.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'loopengine-notifier-')) })
@@ -18,13 +21,53 @@ function agent(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return config
 }
 
-describe('notifier.yml', () => {
-  it('round-trips a webhook config, with a header naming where the secret lives', () => {
+describe('messaging.yml', () => {
+  it('round-trips a webhook config as a list of connections, with a header naming where the secret lives', () => {
     writeNotifierFile(dir, { channel: 'webhook', events: ['approval', 'question'], url: 'https://app.example.com/hooks/loopengine' })
-    expect(readFileSync(join(dir, 'notifier.yml'), 'utf8')).toContain('LOOPENGINE_NOTIFIER_WEBHOOK_SECRET')
+    const text = readFileSync(join(dir, 'messaging.yml'), 'utf8')
+    expect(text).toContain('LOOPENGINE_NOTIFIER_WEBHOOK_SECRET')
+    expect(text).toMatch(/connections:\n  - app: webhook/)
     expect(readNotifierFile(dir)).toEqual({ channel: 'webhook', events: ['approval', 'question'], url: 'https://app.example.com/hooks/loopengine' })
     removeNotifierFile(dir)
     expect(readNotifierFile(dir)).toBeUndefined()
+  })
+
+  it('still reads an older notifier.yml, and replaces it on the next save', () => {
+    writeFileSync(join(dir, 'notifier.yml'), 'channel: slack\nevents: [approval]\nchannelId: C1\n')
+    expect(readNotifierFile(dir)).toEqual({ channel: 'slack', events: ['approval'], channelId: 'C1' })
+    writeNotifierFile(dir, { channel: 'slack', events: ['approval'], channelId: 'C1', conversations: false })
+    expect(existsSync(join(dir, 'notifier.yml'))).toBe(false)
+    expect(readNotifierFile(dir)).toEqual({ channel: 'slack', events: ['approval'], channelId: 'C1', conversations: false })
+  })
+
+  it('keeps the Conversations switch for Slack only, and treats unset as on', () => {
+    expect(() => validateNotifierFile({ channel: 'slack', events: ['approval'], channelId: 'C1', conversations: 'yes' })).toThrow(/conversations/)
+    expect(validateNotifierFile({ channel: 'webhook', events: ['approval'], url: 'https://x', conversations: true })).not.toHaveProperty('conversations')
+
+    const config = agent()
+    writeNotifierFile(dir, { channel: 'slack', events: ['approval'], channelId: 'C1' })
+    expect(slackConversationsOn(config)).toBe(true)
+    writeNotifierFile(dir, { channel: 'slack', events: ['approval'], channelId: 'C1', conversations: false })
+    expect(slackConversationsOn(config)).toBe(false)
+  })
+
+  it('adds the reply hint to Slack requests only with buttons on, Conversations on and a plan that allows it', () => {
+    const env = (vars: string) => {
+      writeFileSync(join(dir, '.env'), vars)
+      return createAgentEnv('notify-agent', dir)
+    }
+    const slack = (file: Parameters<typeof notifierConfigFromFile>[0], vars: string) => {
+      const { config } = notifierConfigFromFile(file, env(vars))
+      return config?.channel === 'slack' ? config.config.replyHint : undefined
+    }
+    const file = { channel: 'slack' as const, events: ['approval' as const], channelId: 'C1' }
+    const both = 'LOOPENGINE_NOTIFIER_SLACK_BOT_TOKEN=x\nLOOPENGINE_NOTIFIER_SLACK_SIGNING_SECRET=y\n'
+    expect(slack(file, both)).toBe(true)
+    expect(slack({ ...file, conversations: false }, both)).toBe(false)
+    expect(slack(file, 'LOOPENGINE_NOTIFIER_SLACK_BOT_TOKEN=x\n')).toBe(false)
+    vi.stubEnv('LOOPENGINE_PLAN', 'free')
+    expect(slack(file, both)).toBe(false)
+    vi.unstubAllEnvs()
   })
 
   it('rejects an unknown channel, an empty or unknown event, a non-http url, and missing channel fields', () => {
@@ -39,7 +82,7 @@ describe('notifier.yml', () => {
   })
 })
 
-describe('resolveHttpNotifier falling back to notifier.yml', () => {
+describe('resolveHttpNotifier falling back to the messaging settings', () => {
   it('uses the file once its secret is set in the agent env, and re-reads it on every call', () => {
     writeNotifierFile(dir, { channel: 'webhook', events: ['approval'], url: 'https://app.example.com/hook' })
     const config = agent()
@@ -72,7 +115,7 @@ describe('resolveHttpNotifier falling back to notifier.yml', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const config = agent()
     expect(resolveHttpNotifier(config)).toEqual({})
-    expect(describeNotifier(config).error).toMatch(/notifier.yml is invalid/)
+    expect(describeNotifier(config).error).toMatch(/messaging settings are invalid/)
     consoleError.mockRestore()
   })
 })

@@ -4,6 +4,7 @@
 // Slack's buttons and the signing check live in ./interactions.ts, and
 // posting requests in core/http-notify-triggers/slack.ts.
 import type { InboundMessage, MessagingConnector, ThreadMessage } from '../../connector.js'
+import { toSlackMrkdwn } from './format.js'
 
 export type SlackEvent = { type: 'url_verification'; challenge: string } | ({ type: 'message' } & InboundMessage) | { type: 'ignore' }
 
@@ -59,7 +60,7 @@ export function createSlackConnector(botToken: string): MessagingConnector {
       const res = await fetch('https://slack.com/api/chat.postMessage', {
         method: 'POST',
         headers: { Authorization: `Bearer ${botToken}`, 'content-type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ channel: conversation, thread_ts: threadTs, text }),
+        body: JSON.stringify({ channel: conversation, thread_ts: threadTs, text: toSlackMrkdwn(text) }),
       })
       const body = (await res.json()) as { ok: boolean; error?: string }
       if (!body.ok) console.error('[loopengine] chat.postMessage (thread reply) failed:', body.error)

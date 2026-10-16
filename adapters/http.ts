@@ -75,7 +75,7 @@ import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, removeAgentNotifier, saveAgentNotifier, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, removeAgentNotifier, saveAgentNotifier, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage } from '#core/messaging/engine.js'
 import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
@@ -2687,7 +2687,7 @@ async function handleSlackEvents(req: IncomingMessage, res: ServerResponse, agen
   }
   // Slack wants an answer within three seconds; the reply is posted after.
   res.writeHead(200).end()
-  if (event.type !== 'message' || !firstSighting(event)) return
+  if (event.type !== 'message' || !firstSighting(event) || !slackConversationsOn(entry.config)) return
   const environment = process.env.LOOPENGINE_ENV ?? 'production'
   await handleInboundMessage(event, {
     agentName,

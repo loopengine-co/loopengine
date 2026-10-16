@@ -1,8 +1,8 @@
-// Backs the console's Permissions tab ("Where approval requests and questions are sent"): where an agent's
-// durable approvals/questions go (core/http-notifier.ts's describeNotifier
-// plus the deployment-wide default webhook), editing its
-// agents/<name>/notifier.yml, a test send, recent deliveries, and the
-// decisions still waiting. Plain functions over loopengine's own modules
+// Backs the console's Messaging tab: where an agent's durable
+// approvals/questions go (core/http-notifier.ts's describeNotifier plus
+// the deployment-wide default webhook), whether it answers replies there,
+// editing its agents/<name>/messaging.yml, a test send and recent
+// deliveries — and the decisions still waiting, shown in Permissions. Plain functions over loopengine's own modules
 // so adapters/http.ts (and the scaffolded copy create-loopengine ships)
 // only needs thin route handlers.
 import type { AgentConfig } from '../core/agent-config.js'
@@ -40,6 +40,9 @@ export function describeAgentNotifier(config: AgentConfig, defaultWebhook?: Defa
     source,
     defaultWebhookUrl: defaultWebhook?.webhookUrl ?? null,
     publicUrl: process.env.LOOPENGINE_PUBLIC_URL ?? null,
+    // LOOPENGINE_PLAN ('free' on LoopEngine Cloud's free plan): the
+    // console locks Conversations on free. null when self-hosted.
+    plan: process.env.LOOPENGINE_PLAN ?? null,
     secretVars: NOTIFIER_SECRET_VARS,
     secretsSet,
     slack: {
@@ -47,6 +50,8 @@ export function describeAgentNotifier(config: AgentConfig, defaultWebhook?: Defa
       signingSecretSet: env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR) !== undefined,
       // Where the Slack app's Interactivity Request URL should point.
       interactivityPath: `/hooks/slack/${encodeURIComponent(config.name)}`,
+      // Where replies in a request's thread arrive (core/messaging/).
+      eventsPath: `/hooks/slack/${encodeURIComponent(config.name)}/events`,
       // The console swaps __INTERACTIVITY_URL__ for the link address +
       // interactivityPath as you type.
       manifestTemplate: slackAppManifest({ agentName: config.name, interactivityUrl: '__INTERACTIVITY_URL__' }),
@@ -55,7 +60,7 @@ export function describeAgentNotifier(config: AgentConfig, defaultWebhook?: Defa
   }
 }
 
-/** Writes agents/<name>/notifier.yml from the console form and, when the
+/** Writes agents/<name>/messaging.yml from the console form and, when the
  * form includes one, the channel's secret into the agent's own env.
  * Throws NotifierFileError for an invalid form. */
 export async function saveAgentNotifier(config: AgentConfig, body: Record<string, unknown>): Promise<void> {
@@ -78,6 +83,18 @@ export function slackCredentialsFor(config: AgentConfig): { botToken?: string; s
   return { botToken, signingSecret: env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR) }
 }
 
+/** Whether replies in a Slack request's thread are answered: on unless
+ * the Messaging tab turned Conversations off. An agent whose Slack
+ * notifier is set in code always answers. */
+export function slackConversationsOn(config: AgentConfig): boolean {
+  if (config.httpNotifier) return config.httpNotifier.channel === 'slack'
+  try {
+    return readNotifierFile(agentDirFor(config))?.conversations !== false
+  } catch {
+    return false
+  }
+}
+
 /** Channels for the console's picker, with the token being typed in or,
  * when none is given, the one already saved. */
 export async function listAgentSlackChannels(config: AgentConfig, botToken?: string): Promise<SlackChannel[]> {
@@ -86,14 +103,14 @@ export async function listAgentSlackChannels(config: AgentConfig, botToken?: str
   return listSlackChannels(token)
 }
 
-/** Removes notifier.yml; the stored secret is left alone, so turning the
+/** Removes the messaging settings; the stored secret is left alone, so turning the
  * notifier back on doesn't need it re-entered. */
 export function removeAgentNotifier(config: AgentConfig): void {
   removeNotifierFile(agentDirFor(config))
 }
 
 /** The notifier settings that apply to an agent: its code httpNotifier,
- * else its notifier.yml (once its secret is set), else the
+ * else its messaging.yml (once its secret is set), else the
  * deployment-wide default webhook. */
 function activeNotifierTarget(config: AgentConfig, defaultWebhook?: DefaultWebhook): HttpNotifierConfig | undefined {
   if (config.httpNotifier) return config.httpNotifier
