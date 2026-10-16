@@ -1102,10 +1102,24 @@ ${consoleShellScript}
     function field(channel, html) {
       return '<div class="notifier-fields" data-channel="' + channel + '"' + (f.channel === channel ? '' : ' hidden') + '>' + html + '</div>';
     }
+    // A secret's state at a glance: a pill by the label, and a placeholder
+    // saying whether typing replaces a saved one. Its value is never shown.
+    function secretPill(isSet) {
+      return isSet ? '<span class="le-pill good">Saved</span>' : '<span class="le-pill warn">Not set</span>';
+    }
+    // The field's name and its pill on one line (form labels stack their
+    // children, which would stretch the pill across the row).
+    function secretHead(name, isSet) {
+      return '<span style="display:flex;align-items:center;gap:8px">' + name + secretPill(isSet) + '</span>';
+    }
+    function secretPlaceholder(isSet, missing) {
+      return isSet ? 'Saved ' + String.fromCharCode(8212) + ' type a new one only to replace it' : missing;
+    }
+    var SECRET_HINTS = { slack: 'xoxb-' + String.fromCharCode(8230) + ' from OAuth & Permissions', webhook: 'A long random string, or Generate', lark: 'App Secret from the Lark developer console' };
     function secretField(channel, label) {
       var isSet = n.secretsSet && n.secretsSet[channel];
-      return '<label>' + label + ' <span class="hint">(' + (isSet ? 'set &mdash; leave blank to keep it' : 'not set') + '; stored in this agent&#39;s env as ' + escapeHtml(n.secretVars[channel]) + ')</span>' +
-        '<span style="display:flex;gap:6px"><input type="password" name="secret_' + channel + '" autocomplete="off" style="flex:1;min-width:0">' +
+      return '<label>' + secretHead(label, isSet) + '<span class="hint">(stored in this agent&#39;s env as ' + escapeHtml(n.secretVars[channel]) + ')</span>' +
+        '<span style="display:flex;gap:6px"><input type="password" name="secret_' + channel + '" autocomplete="off" style="flex:1;min-width:0" placeholder="' + escapeHtml(secretPlaceholder(isSet, SECRET_HINTS[channel] || '')) + '">' +
         (channel === 'webhook' ? '<button type="button" class="notifier-generate">Generate</button>' : '') + '</span></label>';
     }
     return '<form class="add-source" id="notifierForm" style="max-width:560px">' +
@@ -1129,9 +1143,9 @@ ${consoleShellScript}
           '<span style="display:flex;gap:6px"><select id="slackChannelSelect" style="flex:1;min-width:0"><option value="">' + (f.channelId ? 'Saved: ' + escapeHtml(f.channelId) : 'Load channels to pick one') + '</option></select>' +
           '<button type="button" id="slackLoadChannels">Load channels</button></span></label>' +
         '<label>Channel ID <span class="hint">(filled in when you pick a channel)</span><input name="channelId" placeholder="C0123ABC456" value="' + escapeHtml(f.channelId || '') + '"></label>' +
-        '<label>Signing secret <span class="hint">(optional, from Basic Information; ' +
-          (n.slack && n.slack.signingSecretSet ? 'set &mdash; Approve/Deny buttons are on' : 'adds Approve/Deny buttons inside Slack; without it, messages carry the approval link') + ')</span>' +
-          '<input type="password" name="signingSecret" autocomplete="off"></label>' +
+        '<label>' + secretHead('Signing secret', n.slack && n.slack.signingSecretSet) + '<span class="hint">(from Basic Information ' + String.fromCharCode(8594) + ' App Credentials; ' +
+          (n.slack && n.slack.signingSecretSet ? 'buttons and replies in Slack are on' : 'needed for buttons and replies in Slack; without it, messages only carry the approval link') + ')</span>' +
+          '<input type="password" name="signingSecret" autocomplete="off" placeholder="' + escapeHtml(secretPlaceholder(n.slack && n.slack.signingSecretSet, 'Paste the Signing Secret')) + '"></label>' +
         '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>' +
         renderConversationsField(n, f) +
         '<p class="hint" style="margin:0" id="slackEventsNote"></p>') +
