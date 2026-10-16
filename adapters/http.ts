@@ -77,7 +77,8 @@ import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
 import { announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, removeAgentNotifier, saveAgentNotifier, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
-import { openSlackAnswerModal, parseSlackInteraction, replyInSlack, slackOutcomeText, verifySlackRequest } from '#core/slack-interactions.js'
+import { firstSighting, handleInboundMessage } from '#core/messaging/engine.js'
+import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
@@ -2598,7 +2599,7 @@ function captureResponse(): { res: ServerResponse; done: Promise<{ status: numbe
   return { res: res as unknown as ServerResponse, done }
 }
 
-// A Slack app's Interactivity Request URL (core/slack-interactions.ts):
+// A Slack app's Interactivity Request URL (core/messaging/connectors/slack/interactions.ts):
 // Approve/Deny, an answer option, or the "Other…" modal, from a Slack
 // notifier's message. Outside the admin login on purpose — Slack can't
 // send it — and verified with that agent's Slack signing secret instead.
@@ -2637,6 +2638,52 @@ async function handleSlackInteraction(req: IncomingMessage, res: ServerResponse,
   }
 }
 
+// A Slack app's Event Subscriptions Request URL (core/messaging/):
+// a reply in the thread under an approval request or a question, which
+// the agent answers about that request. Outside the admin login like the
+// button endpoint above, and verified with the same signing secret.
+// Slack's URL check is answered before that, since the app is created
+// before its signing secret can be saved here; it only echoes Slack's
+// own challenge back.
+async function handleSlackEvents(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  const rawBody = await readRawBody(req)
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('No such agent.')
+    return
+  }
+  const event = parseSlackEvent(rawBody)
+  if (event.type === 'url_verification') {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ challenge: event.challenge }))
+    return
+  }
+  const { botToken, signingSecret } = slackCredentialsFor(entry.config)
+  if (!signingSecret || !botToken) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('No Slack bot token and signing secret are set for this agent.')
+    return
+  }
+  const timestamp = req.headers['x-slack-request-timestamp']
+  const signature = req.headers['x-slack-signature']
+  if (!verifySlackRequest(rawBody, typeof timestamp === 'string' ? timestamp : undefined, typeof signature === 'string' ? signature : undefined, signingSecret)) {
+    res.writeHead(401, { 'content-type': 'text/plain' }).end('Invalid Slack signature.')
+    return
+  }
+  // Slack wants an answer within three seconds; the reply is posted after.
+  res.writeHead(200).end()
+  if (event.type !== 'message' || !firstSighting(event)) return
+  const environment = process.env.LOOPENGINE_ENV ?? 'production'
+  await handleInboundMessage(event, {
+    agentName,
+    agentDir: agentDirFor(entry.config),
+    systemPrompt: entry.config.systemPrompt,
+    connector: createSlackConnector(botToken),
+    createModelCall: () => entry.createModelCall(),
+    getCheckpoint: (pendingId) => checkpoints.get(pendingId),
+    getHistory: (checkpoint) => sessions.getHistory(`${checkpoint.tenant}:${environment}:${checkpoint.agent}:${checkpoint.sessionId}`),
+    plan: process.env.LOOPENGINE_PLAN,
+  })
+}
+
 // Set once shutdown() starts, so /healthz turns 503 while the server
 // drains and a router or load balancer stops sending it new requests.
 let shuttingDown = false
@@ -2648,6 +2695,17 @@ const server = createServer(async (req, res) => {
   if ((req.method === 'GET' || req.method === 'HEAD') && (req.url ?? '/').split('?')[0] === '/healthz') {
     res.writeHead(shuttingDown ? 503 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
     res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ ok: !shuttingDown }))
+    return
+  }
+
+  const slackEventsMatch = req.method === 'POST' && (req.url ?? '/').split('?')[0].match(/^\/hooks\/slack\/([^/]+)\/events$/)
+  if (slackEventsMatch) {
+    try {
+      await handleSlackEvents(req, res, decodeURIComponent(slackEventsMatch[1]))
+    } catch (err) {
+      console.error('[loopengine] Slack event failed:', err)
+      if (!res.headersSent) res.writeHead(500).end()
+    }
     return
   }
 

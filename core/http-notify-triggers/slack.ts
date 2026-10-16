@@ -29,11 +29,21 @@ import type { DurableQuestionHandler } from '../agent-config.js'
 import { decidePath } from '../approval-links.js'
 import { publicBaseUrl } from './webhook.js'
 
+/** Where a request landed: its channel and its message ts (the id of
+ * the thread under it). */
+export interface SlackPostedRequest {
+  channel: string
+  ts: string
+  pendingId: string
+  kind: 'approval' | 'question'
+}
+
 export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
   private readonly botToken: string
   private readonly channelId: string
   private readonly publicUrl?: string
   private readonly buttons: boolean
+  private readonly onThread?: (posted: SlackPostedRequest) => void
 
   /** `publicUrl`: where this server is reachable (LOOPENGINE_PUBLIC_URL
    * wins when set) — when known, each message links to a decision page
@@ -41,12 +51,20 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
    * whether to add interactive Approve/Deny buttons, which only work with
    * a Slack interactivity endpoint deployed (examples/notifier-handler/
    * slack.ts); default true, false for a console-configured notifier,
-   * which relies on the link instead. */
-  constructor(options: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean }) {
+   * which relies on the link instead. `onThread`: told where each
+   * approval request or question landed, so a reply in its thread can be
+   * matched to it (core/messaging/threads.ts). */
+  constructor(options: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean; onThread?: (posted: SlackPostedRequest) => void }) {
     this.botToken = options.botToken
     this.channelId = options.channelId
     this.publicUrl = options.publicUrl
     this.buttons = options.buttons ?? true
+    this.onThread = options.onThread
+  }
+
+  private threadRecorder(pendingId: string, kind: SlackPostedRequest['kind']): ((posted: { channel: string; ts: string }) => void) | undefined {
+    const onThread = this.onThread
+    return onThread ? (posted) => onThread({ ...posted, pendingId, kind }) : undefined
   }
 
   private decideLine(pendingId: string, kind: 'approval' | 'question'): string {
@@ -73,7 +91,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
             ],
           }]
         : []),
-    ])
+    ], this.threadRecorder(pendingId, 'approval'))
     return { pendingId }
   }
 
@@ -90,15 +108,16 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       ...(this.buttons
         ? [{ type: 'actions', elements: [...optionButtons, { type: 'button', text: { type: 'plain_text', text: 'Other…' }, action_id: 'open_answer_modal', value: pendingId }] }]
         : []),
-    ])
+    ], this.threadRecorder(pendingId, 'question'))
     return { pendingId }
   }
 
   /** Public, not private: core/http-notifier.ts's own onRunStart/onRunFinish
    * lifecycle sender for `channel: 'slack'` calls this directly with no
    * `blocks` — a plain announcement, since there's nothing to resolve and
-   * so nothing to attach buttons to. */
-  postMessage(text: string, blocks?: unknown[]): void {
+   * so nothing to attach buttons to. `onPosted` gets the channel and ts
+   * Slack answered with. */
+  postMessage(text: string, blocks?: unknown[], onPosted?: (posted: { channel: string; ts: string }) => void): void {
     // Not awaited — both requestDurableApproval/notifyPendingQuestion
     // above return immediately, by contract (see DurableApprover's own
     // doc comment); a delivery failure here has no synchronous way to
@@ -108,9 +127,10 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       headers: { Authorization: `Bearer ${this.botToken}`, 'content-type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ channel: this.channelId, text, ...(blocks ? { blocks } : {}) }),
     })
-      .then((res) => res.json() as Promise<{ ok: boolean; error?: string }>)
+      .then((res) => res.json() as Promise<{ ok: boolean; error?: string; channel?: string; ts?: string }>)
       .then((body) => {
         if (!body.ok) console.error('[loopengine] SlackNotifier: chat.postMessage failed:', body.error)
+        else if (onPosted && body.ts) onPosted({ channel: body.channel ?? this.channelId, ts: body.ts })
       })
       .catch((err) => {
         console.error('[loopengine] SlackNotifier: chat.postMessage failed:', err)

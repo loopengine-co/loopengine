@@ -1,6 +1,6 @@
 // Not needed anymore for most setups: the server handles Slack button
 // clicks itself at POST /hooks/slack/<agent> once the agent has a Slack
-// signing secret (see core/slack-interactions.ts and the console's
+// signing secret (see core/messaging/connectors/slack/interactions.ts and the console's
 // Permissions tab). Kept as a reference for running the handler
 // somewhere else.
 //

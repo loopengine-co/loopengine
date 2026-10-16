@@ -1046,7 +1046,8 @@ ${consoleShellScript}
         '<label>Signing secret <span class="hint">(optional, from Basic Information; ' +
           (n.slack && n.slack.signingSecretSet ? 'set &mdash; Approve/Deny buttons are on' : 'adds Approve/Deny buttons inside Slack; without it, messages carry the approval link') + ')</span>' +
           '<input type="password" name="signingSecret" autocomplete="off"></label>' +
-        '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>') +
+        '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>' +
+        '<p class="hint" style="margin:0" id="slackEventsNote"></p>') +
       field('lark', '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField('lark', 'App secret')) +
       '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
         '<input type="url" name="publicUrl" id="notifierPublicUrl" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
@@ -1177,7 +1178,15 @@ ${consoleShellScript}
     function refreshSlackManifest() {
       if (!manifestEl || !n0 || !n0.slack) return;
       var url = (linkInput.value || location.origin).replace(/[/]+$/, '') + n0.slack.interactivityPath;
-      manifestEl.value = JSON.stringify(n0.slack.manifestTemplate, null, 2).replace('__INTERACTIVITY_URL__', url);
+      // Slack checks an events URL when the app is created, which a
+      // local address can't answer, so thread replies are left out there.
+      var manifest = JSON.parse(JSON.stringify(n0.slack.manifestTemplate));
+      var host = url.split('//')[1] || '';
+      var local = host.indexOf('localhost') === 0 || host.indexOf('127.0.0.1') === 0 || host.indexOf('.localhost') !== -1;
+      if (local && manifest.settings) delete manifest.settings.event_subscriptions;
+      manifestEl.value = JSON.stringify(manifest, null, 2).split('__INTERACTIVITY_URL__').join(url);
+      var eventsNote = form.querySelector('#slackEventsNote');
+      if (eventsNote) eventsNote.textContent = local ? 'Replies in a request thread need a public link address; the agent answers them once the manifest has one.' : 'Replies in a request thread go to ' + url + '/events, and the agent answers questions about the request there.';
       var urlEl = form.querySelector('#slackInteractivityUrl');
       if (urlEl) urlEl.textContent = url;
     }

@@ -15,6 +15,7 @@ import { RedisQueueApprover } from './http-notify-triggers/redis.js'
 import type { AgentConfig, HttpNotifierConfig, QuestionHandler } from './agent-config.js'
 import { agentDirFor, createAgentEnv } from './agent-env.js'
 import { notifierConfigFromFile, readNotifierFile, type NotifierFile } from './notifier-file.js'
+import { recordThread } from './messaging/threads.js'
 
 interface ResolvedHttpNotifier {
   approver?: Approver
@@ -86,7 +87,7 @@ export function resolveHttpNotifier(config: AgentConfig): ResolvedHttpNotifier {
   const cached = cache.get(config)
   if (cached) return cached
 
-  const resolved = buildResolved(httpNotifier)
+  const resolved = buildResolved(httpNotifier, agentDirFor(config))
   cache.set(config, resolved)
   return resolved
 }
@@ -102,10 +103,12 @@ function resolveFromFile(config: AgentConfig): ResolvedHttpNotifier {
   }
   if (!file) return EMPTY
   const { config: httpNotifier } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
-  return httpNotifier ? buildResolved(httpNotifier) : EMPTY
+  return httpNotifier ? buildResolved(httpNotifier, dir) : EMPTY
 }
 
-function buildResolved(httpNotifier: HttpNotifierConfig): ResolvedHttpNotifier {
+/** `agentDir`: where a Slack request's thread is recorded, so replies in
+ * it reach the agent (core/messaging/). */
+function buildResolved(httpNotifier: HttpNotifierConfig, agentDir: string): ResolvedHttpNotifier {
   const events = new Set(httpNotifier.events)
   let resolved: ResolvedHttpNotifier
 
@@ -131,7 +134,8 @@ function buildResolved(httpNotifier: HttpNotifierConfig): ResolvedHttpNotifier {
       // lifecycle-specific" reasoning SlackNotifier's own doc
       // comment works out; cheap to construct (holds two strings, does no
       // I/O itself) so there's no reason to build one per event kind.
-      const slack = new SlackNotifier({ botToken, channelId, publicUrl, buttons })
+      const slack = new SlackNotifier({ botToken, channelId, publicUrl, buttons, onThread: ({ channel, ts, pendingId, kind }) => recordThread(agentDir, { app: 'slack', conversation: channel, ts, pendingId, kind }),
+      })
       resolved = {
         approver: events.has('approval') ? slack : undefined,
         questionHandler: events.has('question') ? slack : undefined,

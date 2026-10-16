@@ -2,6 +2,8 @@ node_modules
 dist
 .sessions
 .checkpoints
+# Slack threads matched to their requests (agents/<name>/.messaging).
+.messaging
 .scheduler
 *.log
 .env

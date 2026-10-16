@@ -17,7 +17,7 @@ import { LarkNotifier } from '../core/http-notify-triggers/lark.js'
 import type { HttpNotifierConfig } from '../core/agent-config.js'
 import { listDeliveries } from '../core/notifier-deliveries.js'
 import { NOTIFIER_SECRET_VARS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, notifierConfigFromFile, readNotifierFile, removeNotifierFile, writeNotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
-import { listSlackChannels, slackAppManifest, type SlackChannel } from '../core/slack-interactions.js'
+import { listSlackChannels, slackAppManifest, type SlackChannel } from '../core/messaging/connectors/slack/index.js'
 import { setAgentEnvVar } from './env-admin.js'
 
 /** The deployment-wide default webhook (LOOPENGINE_DEFAULT_WEBHOOK_URL /
