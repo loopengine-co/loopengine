@@ -315,13 +315,19 @@ ${consoleShellScript}
 
   function upgradeBox() { return document.getElementById('upgradeBox'); }
 
+  // When npm was last asked, and a link to ask again now.
+  function upgradeCheckedLine(u) {
+    var when = u.checkedAt ? 'Checked at ' + escapeHtml(new Date(u.checkedAt).toLocaleTimeString()) + '. ' : '';
+    return '<p class="hint" style="margin:6px 0 0">' + when + '<a href="#" id="upgradeRecheck">Check again</a></p>';
+  }
+
   function renderUpgrade(u) {
     var box = upgradeBox();
     if (!box) return;
     if (u.unavailableReason && !u.updateAvailable) {
-      box.innerHTML = '<p class="hint">' + escapeHtml(u.unavailableReason) + '</p>';
+      box.innerHTML = '<p class="hint">' + escapeHtml(u.unavailableReason) + '</p>' + (u.templateVersion ? upgradeCheckedLine(u) : '');
     } else if (!u.updateAvailable) {
-      box.innerHTML = '<p>You' + String.fromCharCode(8217) + 're on the latest version, <code>' + escapeHtml(u.current) + '</code>.</p>';
+      box.innerHTML = '<p>You' + String.fromCharCode(8217) + 're on the latest version, <code>' + escapeHtml(u.current) + '</code>.</p>' + upgradeCheckedLine(u);
     } else if (u.unavailableReason) {
       box.innerHTML = '<p>LoopEngine <code>' + escapeHtml(u.latest) + '</code> is available (this server runs <code>' + escapeHtml(u.current) + '</code>).</p><p class="hint">' + escapeHtml(u.unavailableReason) + '</p>';
     } else if (!u.canUpgrade) {
@@ -334,8 +340,8 @@ ${consoleShellScript}
     }
   }
 
-  function loadUpgrade() {
-    fetch('/config/upgrade')
+  function loadUpgrade(refresh) {
+    fetch('/config/upgrade' + (refresh ? '?refresh=1' : ''), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(renderUpgrade)
       .catch(function (err) {
@@ -367,6 +373,14 @@ ${consoleShellScript}
   }
 
   document.getElementById('settingsContent').addEventListener('click', function (ev) {
+    var recheck = ev.target.closest('#upgradeRecheck');
+    if (recheck) {
+      ev.preventDefault();
+      var box = upgradeBox();
+      if (box) box.innerHTML = '<p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p>';
+      loadUpgrade(true);
+      return;
+    }
     var btn = ev.target.closest('#upgradeBtn');
     if (!btn) return;
     if (btn.getAttribute('data-armed') !== '1') {

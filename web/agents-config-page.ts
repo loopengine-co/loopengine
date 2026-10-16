@@ -616,8 +616,47 @@ ${consoleShellScript}
       card('skills', 'Skills', String(cfg.skills.length), escapeHtml(cfg.skills.map(function (k) { return k.name; }).join(', ')) || 'None yet') +
       card('actauth', 'Permissions', rules.length + (rules.length === 1 ? ' rule' : ' rules'),
         (asks ? asks + ' need approval \u00b7 ' : '') + 'unmatched calls: ' + escapeHtml(cfg.permissions.defaultDecision)) +
+      card('messaging', 'Messaging', '<span id="ovMessagingValue">&hellip;</span>', '<span id="ovMessagingDetail">Loading&hellip;</span>') +
+      card('schedules', 'Schedules', '<span id="ovSchedulesValue">&hellip;</span>', '<span id="ovSchedulesDetail">Loading&hellip;</span>') +
       card('env', 'Environment', 'Settings', '<span data-le-env-count="' + escapeHtml(cfg.name) + '">' + leShell.envCountHtml(cfg.name) + '</span> Values your installed abilities read') +
     '</div>';
+  }
+
+  var APP_NAMES = { slack: 'Slack', lark: 'Lark', webhook: 'Webhook', email: 'Email', database: 'Database', redis: 'Redis' };
+
+  // Messaging and Schedules come from their own endpoints, so their
+  // cards are filled in once those answer. Called after every render of
+  // Overview, which is also re-rendered after edits.
+  function fillOverviewCards(name) {
+    Promise.all([
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier'),
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/pending'),
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules'),
+    ]).then(function (results) {
+      if (currentName !== name) return;
+      var set = function (id, html) { var el = detail.querySelector('#' + id); if (el) el.innerHTML = html; };
+      var n = results[0].ok ? results[0].body : null;
+      var pending = (results[1].ok && results[1].body.pending) || [];
+      var connected = n && (n.source === 'file' || n.source === 'code' || n.source === 'default');
+      set('ovMessagingValue', !n ? '&mdash;' : connected ? escapeHtml(APP_NAMES[n.channel] || n.channel) + (n.source === 'default' ? ' (default)' : '') : 'Not connected');
+      var messagingDetail = [];
+      if (pending.length) messagingDetail.push(pending.length + ' waiting for a decision');
+      if (n && connected && n.channel === 'slack' && n.plan !== 'free' && (!n.file || n.file.conversations !== false)) messagingDetail.push('answers replies in threads');
+      if (n && !connected) messagingDetail.push(n.missingSecret ? 'Saved, but its secret isn' + String.fromCharCode(8217) + 't set' : 'Send approvals and questions to Slack, Lark or a webhook');
+      if (!messagingDetail.length && n) messagingDetail.push('Sends ' + escapeHtml((n.events || []).join(', ')));
+      set('ovMessagingDetail', messagingDetail.join(' \u00b7 '));
+      showPendingCount(pending.length);
+
+      var tasks = (results[2].ok && results[2].body.tasks) || [];
+      var active = tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; });
+      var waiting = active.filter(function (t) { return t.status === 'awaiting_approval'; }).length;
+      var next = active.map(function (t) { return t.next_run_at; }).filter(Boolean).sort()[0];
+      set('ovSchedulesValue', String(active.length));
+      var schedulesDetail = [];
+      if (waiting) schedulesDetail.push(waiting + ' waiting for approval');
+      if (next) schedulesDetail.push('Next run ' + escapeHtml(new Date(next).toLocaleString()));
+      set('ovSchedulesDetail', schedulesDetail.join(' \u00b7 ') || (active.length ? 'None due' : 'Run this agent on a timer'));
+    });
   }
 
   function renderOverviewHtml(cfg) {
@@ -755,6 +794,7 @@ ${consoleShellScript}
             if (!result.ok) throw new Error(result.body.error || 'request failed');
             currentCfg = result.body;
             overviewPanel.innerHTML = renderOverviewHtml(result.body);
+            fillOverviewCards(currentName);
             wireOverviewHandlers(name);
           })
           .catch(function (err) {
@@ -803,6 +843,7 @@ ${consoleShellScript}
             if (!result.ok) throw new Error(result.body.error || 'request failed');
             currentCfg = result.body;
             overviewPanel.innerHTML = renderOverviewHtml(result.body);
+            fillOverviewCards(currentName);
             wireOverviewHandlers(name);
           })
           .catch(function (err) {
@@ -850,6 +891,7 @@ ${consoleShellScript}
             if (!result.ok) throw new Error(result.body.error || 'request failed');
             currentCfg = result.body;
             overviewPanel.innerHTML = renderOverviewHtml(result.body);
+            fillOverviewCards(currentName);
             wireOverviewHandlers(name);
           })
           .catch(function (err) {
@@ -898,14 +940,40 @@ ${consoleShellScript}
   // opened. ----
 
   function renderActauthTabPlaceholder() {
-    return '<div id="pendingContent"></div>' +
+    return '<div id="pendingNote"></div>' +
       '<section id="actauthSection"><div id="actauthContent"><p class="hint">Loading&hellip;</p></div></section>';
   }
 
-  // The Messaging tab: where approval requests and questions go, and
-  // whether the agent answers replies there. Filled by loadApprovalsSection.
+  // The Messaging tab: the decisions still waiting, where approval
+  // requests and questions go, and whether the agent answers replies
+  // there. Filled by loadApprovalsSection.
   function renderMessagingTabPlaceholder() {
-    return '<div id="approvalsContent"><p class="hint">Loading&hellip;</p></div>';
+    return '<div id="pendingContent"></div>' +
+      '<div id="approvalsContent"><p class="hint">Loading&hellip;</p></div>';
+  }
+
+  // How many decisions are waiting: a badge on the Messaging tab, seen
+  // from every tab, and a line at the top of Permissions.
+  function showPendingCount(n) {
+    leShell.setCount('messaging', n);
+    var link = detail.querySelector('.le-tab[data-tab="messaging"]');
+    var badge = link && link.querySelector('.le-count');
+    if (badge) {
+      badge.className = 'le-count warn';
+      if (!n) badge.remove();
+    }
+    var note = detail.querySelector('#pendingNote');
+    if (note) {
+      note.innerHTML = n
+        ? '<div class="approvals-nudge">' + (n === 1 ? '1 request is' : n + ' requests are') + ' waiting for a decision. <a href="?tab=messaging" data-tab="messaging">See Messaging</a></div>'
+        : '';
+    }
+  }
+
+  function refreshPendingCount(name) {
+    fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/pending').then(function (r) {
+      if (currentName === name && r.ok) showPendingCount((r.body.pending || []).length);
+    });
   }
 
   function renderActauthRuleRow(r) {
@@ -969,12 +1037,11 @@ ${consoleShellScript}
         '</form></section>';
   }
 
-  // ---- Messaging tab: where "ask" decisions go when nobody is in Chat,
-  // and whether the agent answers replies there (web/notifier-admin.ts
-  // behind GET/PUT/DELETE .../notifier), plus recent deliveries. The
-  // decisions still waiting (GET .../pending) show at the top of
-  // Permissions. Reloaded every time either tab opens, so the waiting
-  // list is current. ----
+  // ---- Messaging tab: the decisions still waiting (GET .../pending),
+  // where "ask" decisions go when nobody is in Chat, and whether the
+  // agent answers replies there (web/notifier-admin.ts behind
+  // GET/PUT/DELETE .../notifier), plus recent deliveries. Reloaded every
+  // time the tab opens, so the waiting list is current. ----
 
   var lastNotifier = null;
   var NOTIFIER_EVENTS = [
@@ -1112,7 +1179,7 @@ ${consoleShellScript}
     if (tools.length && n && n.source === 'none') {
       html += '<div class="approvals-nudge"><strong>Approval requests aren&#39;t sent anywhere yet.</strong> ' +
         escapeHtml(tools.slice(0, 3).join(', ')) + (tools.length > 3 ? ' and more' : '') + ' can stop for approval, but when an app calls this agent over HTTP nobody is notified. ' +
-        '<a href="?tab=messaging" data-tab="messaging">Choose where they go</a></div>';
+        'Choose where they go below.</div>';
     }
     if (pending.length) html += '<section><h3>Waiting for a decision (' + pending.length + ')</h3>' + renderPendingTable(pending) + '</section>';
     return html;
@@ -1290,10 +1357,12 @@ ${consoleShellScript}
       content.innerHTML = renderApprovalsHtml(results[0].body);
       wireApprovalsHandlers(name);
       var pendingEl = detail.querySelector('#pendingContent');
+      var pending = (results[1].ok && results[1].body.pending) || [];
       if (pendingEl) {
-        pendingEl.innerHTML = renderPendingHtml((results[1].ok && results[1].body.pending) || [], results[0].body);
+        pendingEl.innerHTML = renderPendingHtml(pending, results[0].body);
         wirePendingHandlers(name);
       }
+      showPendingCount(pending.length);
       if (message) { var r = content.querySelector('#notifierResult'); if (r) r.textContent = message; }
     }).catch(function (err) {
       if (currentName !== name) return;
@@ -1348,7 +1417,7 @@ ${consoleShellScript}
         '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div></td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(new Date(t.next_run_at).toLocaleString()) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
-        (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Permissions</a></div>' : '') + '</td>' +
+        (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
       '<td style="min-width:200px">' + last + (history ? '<details><summary class="hint">History (' + (t.history || []).length + ')</summary><ul class="schedule-history">' + history + '</ul></details>' : '') + '</td>' +
       '<td><div style="display:flex;gap:6px;flex-wrap:wrap">' + actions.map(function (a) {
         return '<button type="button" class="schedule-action' + (a[0] === 'run' ? ' primary' : '') + (a[0] === 'cancel' || a[0] === 'delete' ? ' delete-btn' : '') + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + a[0] + '">' + a[1] + '</button>';
@@ -1401,7 +1470,7 @@ ${consoleShellScript}
     }
     var toApprovals = content.querySelectorAll('.schedule-to-approvals');
     for (var j = 0; j < toApprovals.length; j++) {
-      toApprovals[j].addEventListener('click', function (ev) { ev.preventDefault(); switchTab('actauth'); });
+      toApprovals[j].addEventListener('click', function (ev) { ev.preventDefault(); switchTab('messaging'); });
     }
     var form = content.querySelector('#scheduleForm');
     var result = content.querySelector('#scheduleResult');
@@ -2941,7 +3010,8 @@ ${consoleShellScript}
     if (tab === 'actauth' && actauthLoadedFor !== currentName) {
       loadActauthTab(currentName);
     }
-    if (tab === 'actauth' || tab === 'messaging') loadApprovalsSection(currentName);
+    if (tab === 'messaging') loadApprovalsSection(currentName);
+    if (tab === 'actauth') refreshPendingCount(currentName);
     if (tab === 'env' && envLoadedFor !== currentName) {
       loadEnvTab(currentName);
     }
@@ -2970,6 +3040,7 @@ ${consoleShellScript}
         var overviewPanel = detail.querySelector('[data-tab-panel="overview"]');
         if (overviewPanel) {
           overviewPanel.innerHTML = renderOverviewHtml(cfg);
+          fillOverviewCards(currentName);
           wireOverviewHandlers(name);
         }
       })
@@ -3013,6 +3084,7 @@ ${consoleShellScript}
         var skillsPanel = skillsPanelEl();
         if (overviewPanel) {
           overviewPanel.innerHTML = renderOverviewHtml(cfg);
+          fillOverviewCards(currentName);
           wireOverviewHandlers(name);
         }
         if (skillsPanel) {
@@ -3060,6 +3132,7 @@ ${consoleShellScript}
     empty.style.display = 'none';
     detail.style.display = 'flex';
     switchTab(currentTab);
+    fillOverviewCards(cfg.name);
   }
 
   function selectAgent(name) {

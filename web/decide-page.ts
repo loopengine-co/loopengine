@@ -69,7 +69,7 @@ ${script}
 
 /** A link that's malformed, tampered with, or past its expiry. */
 export function renderDecideInvalidPage(): string {
-  return shell('Link not valid', '<h1>This link isn&#39;t valid</h1><p class="muted">It may have expired or been copied incompletely. Ask for a new one, or decide from the agent&#39;s Permissions tab.</p>')
+  return shell('Link not valid', '<h1>This link isn&#39;t valid</h1><p class="muted">It may have expired or been copied incompletely. Ask for a new one, or decide from the agent&#39;s Messaging tab.</p>')
 }
 
 /** A valid link whose decision has already been made. */

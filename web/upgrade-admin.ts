@@ -30,6 +30,8 @@ export interface UpgradeStatus {
   current: string
   /** Latest loopengine on npm; null when npm couldn't be reached. */
   latest: string | null
+  /** When npm was last asked for `latest`. */
+  checkedAt: string | null
   updateAvailable: boolean
   /** The create-loopengine version this project was scaffolded or last
    * upgraded from (.create-loopengine.json); null when the project
@@ -66,7 +68,9 @@ export function setUpgradeRunner(next: Runner | undefined): void {
   latestCache = undefined
 }
 
-let latestCache: { value: string | null; until: number } | undefined
+// A minute, so reloading Settings doesn't ask npm every time while a
+// release that just came out shows up soon (the page's Check again skips it).
+let latestCache: { value: string | null; until: number; at: string } | undefined
 
 async function latestLoopengine(projectDir: string): Promise<string | null> {
   if (latestCache && latestCache.until > Date.now()) return latestCache.value
@@ -76,7 +80,7 @@ async function latestLoopengine(projectDir: string): Promise<string | null> {
   } catch {
     value = null
   }
-  latestCache = { value, until: Date.now() + (value ? 10 * 60_000 : 60_000) }
+  latestCache = { value, until: Date.now() + 60_000, at: new Date().toISOString() }
   return value
 }
 
@@ -92,13 +96,16 @@ function templateVersion(projectDir: string): string | null {
 
 let running = false
 
-export async function describeUpgrade(projectDir = process.cwd()): Promise<UpgradeStatus> {
+/** `refresh`: ask npm again even if it was asked a moment ago. */
+export async function describeUpgrade(projectDir = process.cwd(), options: { refresh?: boolean } = {}): Promise<UpgradeStatus> {
+  if (options.refresh) latestCache = undefined
   const current = loopengineVersion()
   const latest = await latestLoopengine(projectDir)
   const template = templateVersion(projectDir)
   const status: UpgradeStatus = {
     current,
     latest,
+    checkedAt: latestCache?.at ?? null,
     updateAvailable: Boolean(latest && semver.valid(current) && semver.gt(latest, current)),
     templateVersion: template,
     running,

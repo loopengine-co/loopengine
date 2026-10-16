@@ -47,7 +47,7 @@ export const consoleShellScript: string = `<script>
   // after the list loads.
   var toSet = {};
   var TABS = [
-    ['chat', 'Chat'], ['overview', 'Overview'], ['abilities', 'Abilities'], ['tools', 'Tools'],
+    ['overview', 'Overview'], ['chat', 'Chat'], ['abilities', 'Abilities'], ['tools', 'Tools'],
     ['skills', 'Skills'], ['actauth', 'Permissions'], ['messaging', 'Messaging'], ['schedules', 'Schedules'], ['env', 'Environment']
   ];
 

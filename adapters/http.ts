@@ -3025,7 +3025,11 @@ const server = createServer(async (req, res) => {
     // The Settings section's Upgrade button (web/upgrade-admin.ts).
     if (req.method === 'GET' && pathname === '/config/upgrade') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(
-        JSON.stringify({ ...(await describeUpgrade()), canUpgrade: secretsProtected, restartsItself: exitOnCodeChange }),
+        JSON.stringify({
+          ...(await describeUpgrade(undefined, { refresh: new URL(req.url ?? '/', 'http://localhost').searchParams.get('refresh') === '1' })),
+          canUpgrade: secretsProtected,
+          restartsItself: exitOnCodeChange,
+        }),
       )
       return
     }

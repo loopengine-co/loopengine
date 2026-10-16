@@ -178,9 +178,9 @@ webhook, Slack or Lark target for one agent (saved to
 an older `notifier.yml` is still read), sends a test and shows recent
 deliveries. With Slack, people can also reply in a request's thread to
 ask the agent about it, and it answers there (**Answer replies in a
-request's thread**, on by default). The Permissions tab lists every
-decision still waiting with Approve/Deny buttons, and warns you when an
-agent has `ask` rules but nobody would be told.
+request's thread**, on by default). The same tab lists every decision
+still waiting with Approve/Deny buttons (its count shows on the tab), and
+warns you when an agent has `ask` rules but nobody would be told.
 
 Every notification links to a **decision page**: a signed, single-use
 link (`/decide/<token>`, valid 7 days) where whoever got the message can

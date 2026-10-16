@@ -46,6 +46,19 @@ afterEach(() => {
 })
 
 describe('describeUpgrade', () => {
+  it('remembers what npm said for a minute, and Check again asks it anew', async () => {
+    project()
+    let latest = '1.0.0'
+    const run = fakeRunner({ latest: '1.0.0', upgrade: 'ok' })
+    setUpgradeRunner(async (cmd, args, cwd) => (cmd === 'npm' && args[0] === 'view' ? `${latest}\n` : run(cmd, args, cwd)))
+    const first = await describeUpgrade(dir)
+    expect(first.latest).toBe('1.0.0')
+    expect(first.checkedAt).toMatch(/^\d{4}-/)
+    latest = '1.0.1'
+    expect((await describeUpgrade(dir)).latest).toBe('1.0.0')
+    expect((await describeUpgrade(dir, { refresh: true })).latest).toBe('1.0.1')
+  })
+
   it('compares the installed version with npm and needs a create-loopengine project', async () => {
     project()
     setUpgradeRunner(fakeRunner({ latest: '99.0.0', upgrade: 'ok' }))
