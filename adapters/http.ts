@@ -2282,6 +2282,10 @@ async function answerPendingQuestion(res: ServerResponse, pendingId: string, bod
  * resumeAgent(), through the same durable sessions.withSession append
  * path any other turn goes through. */
 async function respondAfterResolution(res: ServerResponse, finalCheckpoint: TurnCheckpoint): Promise<void> {
+  await tracked(() => respondAfterResolutionNow(res, finalCheckpoint))
+}
+
+async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: TurnCheckpoint): Promise<void> {
   if (Object.keys(finalCheckpoint.outstanding).length > 0) {
     res.writeHead(200, { 'content-type': 'application/json' }).end(
       JSON.stringify({ resolved: true, outstanding: Object.keys(finalCheckpoint.outstanding).length }),
@@ -2517,11 +2521,24 @@ function exitIfCodeChanged(res: ServerResponse): void {
 // checks before stopping an idle server, so it never stops one mid-turn.
 let openStreams = 0
 let lastRequestAt = Date.now()
+// Work still running after its request was answered (a Slack thread reply
+// being answered, a run resumed after a decision), so a host never
+// suspends this server in the middle of it.
+let backgroundWork = 0
+
+async function tracked<T>(fn: () => Promise<T>): Promise<T> {
+  backgroundWork++
+  try {
+    return await fn()
+  } finally {
+    backgroundWork--
+  }
+}
 
 async function handleActivityGet(res: ServerResponse): Promise<void> {
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({
-      inFlightTurns: sessionTurns.size + scheduler.running,
+      inFlightTurns: sessionTurns.size + scheduler.running + backgroundWork,
       scheduledRuns: scheduler.running,
       // When the next scheduled task is due — wake this server by then
       // (POST /internal/scheduler/tick) if it's been stopped while idle.
@@ -2701,7 +2718,8 @@ const server = createServer(async (req, res) => {
   const slackEventsMatch = req.method === 'POST' && (req.url ?? '/').split('?')[0].match(/^\/hooks\/slack\/([^/]+)\/events$/)
   if (slackEventsMatch) {
     try {
-      await handleSlackEvents(req, res, decodeURIComponent(slackEventsMatch[1]))
+      lastRequestAt = Date.now()
+      await tracked(() => handleSlackEvents(req, res, decodeURIComponent(slackEventsMatch[1])))
     } catch (err) {
       console.error('[loopengine] Slack event failed:', err)
       if (!res.headersSent) res.writeHead(500).end()
@@ -2712,7 +2730,8 @@ const server = createServer(async (req, res) => {
   const slackHookMatch = req.method === 'POST' && (req.url ?? '/').split('?')[0].match(/^\/hooks\/slack\/([^/]+)$/)
   if (slackHookMatch) {
     try {
-      await handleSlackInteraction(req, res, decodeURIComponent(slackHookMatch[1]))
+      lastRequestAt = Date.now()
+      await tracked(() => handleSlackInteraction(req, res, decodeURIComponent(slackHookMatch[1])))
     } catch (err) {
       console.error('[loopengine] Slack interaction failed:', err)
       if (!res.headersSent) res.writeHead(500).end()
@@ -2723,7 +2742,8 @@ const server = createServer(async (req, res) => {
   const decideMatch = (req.method === 'GET' || req.method === 'POST') && (req.url ?? '/').split('?')[0].match(/^\/decide\/([A-Za-z0-9_.-]+)$/)
   if (decideMatch) {
     try {
-      await handleDecide(req, res, decideMatch[1])
+      lastRequestAt = Date.now()
+      await tracked(() => handleDecide(req, res, decideMatch[1]))
     } catch (err) {
       console.error('[loopengine] decision link failed:', err)
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Something went wrong; try again.' }))
