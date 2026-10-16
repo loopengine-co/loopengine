@@ -1090,7 +1090,7 @@ ${consoleShellScript}
       'Answer replies in a request&#39;s thread' + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
       '<p class="hint" style="margin:2px 0 0">' + (free
         ? 'Talking a request through in Slack needs LoopEngine Pro. Approve and Deny buttons work on every plan.'
-        : 'People can ask the agent about a request in its thread, and it answers there. It can&#39;t approve or change anything from the thread yet: deciding still uses the buttons.') + '</p></div>';
+        : 'People can ask the agent about a request in its thread, and it answers there. Approvers (below) can also decide it there.') + '</p></div>';
   }
 
   function renderNotifierForm(n) {
@@ -1185,15 +1185,86 @@ ${consoleShellScript}
     return html;
   }
 
+  // Slack only: the people who can decide by replying in a request's
+  // thread, and whose button clicks count once any are listed.
+  function renderApproversHtml(n) {
+    if (n.source === 'code' || !n.file || n.file.channel !== 'slack') return '';
+    var approvers = n.file.approvers || [];
+    var rows = approvers.map(function (a) {
+      return '<tr><td>' + escapeHtml(a.name || a.user) + '</td><td><code>' + escapeHtml(a.user) + '</code></td>' +
+        '<td><button type="button" class="delete-btn approver-remove" data-user="' + escapeHtml(a.user) + '"' + (n.canSave === false ? ' disabled' : '') + '>Remove</button></td></tr>';
+    }).join('');
+    return '<section id="approversSection"><h3>Approvers</h3>' +
+      '<p class="muted" style="margin:0 0 10px">People who can approve, deny or answer a request by replying in its thread, like &ldquo;yes, go ahead&rdquo;. Once anyone is listed, only approvers&#39; button clicks count too. Anyone in the channel can still ask about a request.</p>' +
+      (approvers.length
+        ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>Slack ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<p class="hint">No approvers yet. Until you add someone, anyone in the channel can use the buttons, and deciding by reply is off.</p>') +
+      (n.canSave === false
+        ? '<p class="hint">Changing approvers needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server.</p>'
+        : '<p style="margin:10px 0 0"><button type="button" id="approversLoad">Add people from the channel</button></p>' +
+          '<div id="approversPicker"></div>') +
+      '<div id="approversResult" class="hint"></div></section>';
+  }
+
+  function wireApproversHandlers(name, n) {
+    var section = detail.querySelector('#approversSection');
+    if (!section) return;
+    var result = section.querySelector('#approversResult');
+    var current = (n.file && n.file.approvers) || [];
+    function save(list, message) {
+      result.textContent = 'Saving' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/approvers', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvers: list }),
+      }).then(function (r) {
+        if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
+        loadApprovalsSection(name, message);
+      });
+    }
+    var removes = section.querySelectorAll('.approver-remove');
+    for (var i = 0; i < removes.length; i++) {
+      removes[i].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
+        save(current.filter(function (a) { return a.user !== btn.dataset.user; }), 'Approver removed.');
+      });
+    }
+    var load = section.querySelector('#approversLoad');
+    if (!load) return;
+    load.addEventListener('click', function () {
+      load.disabled = true;
+      result.textContent = 'Loading people' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/slack-members').then(function (r) {
+        load.disabled = false;
+        if (!r.ok) { result.textContent = r.body.error || 'Could not load people'; return; }
+        var taken = current.map(function (a) { return a.user; });
+        var people = r.body.members.filter(function (m) { return taken.indexOf(m.id) === -1; });
+        result.textContent = '';
+        var picker = section.querySelector('#approversPicker');
+        if (!people.length) { picker.innerHTML = '<p class="hint">Everyone in the channel is already an approver.</p>'; return; }
+        picker.innerHTML = '<div class="tool-picker" style="max-width:560px;margin-top:8px">' + people.map(function (m) {
+          return '<label class="tool-picker-item" style="justify-content:flex-start"><input type="checkbox" value="' + escapeHtml(m.id) + '" data-name="' + escapeHtml(m.name) + '"> ' + escapeHtml(m.name) + ' <span class="hint">' + escapeHtml(m.id) + '</span></label>';
+        }).join('') + '</div><p style="margin:8px 0 0"><button type="button" class="primary" id="approversAdd">Add selected</button></p>';
+        picker.querySelector('#approversAdd').addEventListener('click', function () {
+          var picked = picker.querySelectorAll('input:checked');
+          if (!picked.length) { result.textContent = 'Pick at least one person.'; return; }
+          var list = current.slice();
+          for (var k = 0; k < picked.length; k++) list.push({ user: picked[k].value, name: picked[k].dataset.name });
+          save(list, picked.length === 1 ? 'Added 1 approver.' : 'Added ' + picked.length + ' approvers.');
+        });
+      });
+    });
+  }
+
   function renderApprovalsHtml(n) {
     return '<p class="muted" style="margin:0 0 20px">Connect a messaging app, so this agent can reach people when nobody is in Chat. When an app calls it over HTTP or a scheduled task runs, and a tool call needs approval or the agent asks a question, the request is sent here. In Chat it shows up in the conversation instead.</p>' +
       '<section id="approvalsSetup"><h3>Connection</h3>' +
       '<p class="muted" style="margin:0 0 12px">Currently: ' + renderNotifierStatus(n) + '</p>' +
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
         (n.source === 'code' ? '' : renderNotifierForm(n)) + '</section>' +
-      '<section><h3>Deciding in Slack <span class="le-pill neutral">coming soon</span></h3>' +
+      renderApproversHtml(n) +
+      '<section><h3>More for deciding in Slack <span class="le-pill neutral">coming soon</span></h3>' +
         '<ul class="muted" style="margin:0;padding-left:18px">' +
-          '<li><strong>Approvers</strong>: link Slack people to LoopEngine users, so they can approve, deny or change a request by replying in its thread.</li>' +
+          '<li><strong>Changing a request</strong> by replying (&ldquo;make it $40&rdquo;), shown as a change to approve before anything runs.</li>' +
           '<li><strong>Confirm-required tools</strong>: tools, such as ones that move money or delete data, that always need a Confirm click, never just a typed yes.</li>' +
         '</ul></section>' +
       '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
@@ -1356,6 +1427,7 @@ ${consoleShellScript}
       lastNotifier = results[0].body;
       content.innerHTML = renderApprovalsHtml(results[0].body);
       wireApprovalsHandlers(name);
+      wireApproversHandlers(name, results[0].body);
       var pendingEl = detail.querySelector('#pendingContent');
       var pending = (results[1].ok && results[1].body.pending) || [];
       if (pendingEl) {
@@ -1363,7 +1435,10 @@ ${consoleShellScript}
         wirePendingHandlers(name);
       }
       showPendingCount(pending.length);
-      if (message) { var r = content.querySelector('#notifierResult'); if (r) r.textContent = message; }
+      if (message) {
+        var r = content.querySelector(message.indexOf('pprover') !== -1 ? '#approversResult' : '#notifierResult');
+        if (r) r.textContent = message;
+      }
     }).catch(function (err) {
       if (currentName !== name) return;
       content.innerHTML = '<p class="error">Could not load approvals: ' + escapeHtml(err.message) + '</p>';

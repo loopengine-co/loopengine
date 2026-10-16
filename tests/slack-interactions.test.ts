@@ -48,7 +48,7 @@ describe('slackOutcomeText', () => {
 describe('slackAppManifest and listSlackChannels', () => {
   it('builds a manifest with the bot scopes, interactivity URL and events URL', () => {
     const manifest = slackAppManifest({ agentName: 'support', interactivityUrl: 'https://a.example/hooks/slack/support' }) as Record<string, any>
-    expect(manifest.oauth_config.scopes.bot).toEqual(['chat:write', 'channels:read', 'groups:read', 'channels:history', 'groups:history'])
+    expect(manifest.oauth_config.scopes.bot).toEqual(['chat:write', 'channels:read', 'groups:read', 'channels:history', 'groups:history', 'users:read'])
     expect(manifest.settings.interactivity).toEqual({ is_enabled: true, request_url: 'https://a.example/hooks/slack/support' })
     expect(manifest.settings.event_subscriptions).toEqual({ request_url: 'https://a.example/hooks/slack/support/events', bot_events: ['message.channels', 'message.groups'] })
   })

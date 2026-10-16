@@ -9,7 +9,7 @@ import { NotifierFileError, readNotifierFile, removeNotifierFile, validateNotifi
 import { WebhookNotifier } from '#core/http-notify-triggers/webhook.js'
 import { notifierConfigFromFile } from '#core/notifier-file.js'
 import { createAgentEnv } from '#core/agent-env.js'
-import { slackConversationsOn } from '#web/notifier-admin.js'
+import { agentApprovers, saveAgentNotifier, setAgentApprovers, slackClickAllowed, slackConversationsOn } from '#web/notifier-admin.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'loopengine-notifier-')) })
@@ -49,6 +49,29 @@ describe('messaging.yml', () => {
     expect(slackConversationsOn(config)).toBe(true)
     writeNotifierFile(dir, { channel: 'slack', events: ['approval'], channelId: 'C1', conversations: false })
     expect(slackConversationsOn(config)).toBe(false)
+  })
+
+  it('keeps approvers on the Slack connection: valid ids only, no duplicates, kept when the form is saved', async () => {
+    expect(() => validateNotifierFile({ channel: 'slack', events: ['approval'], channelId: 'C1', approvers: [{ user: 'not an id' }] })).toThrow(/Slack user id/)
+    expect(validateNotifierFile({ channel: 'slack', events: ['approval'], channelId: 'C1', approvers: [{ user: 'U1', name: 'Ana' }, { user: 'U1' }] }).approvers).toEqual([{ user: 'U1', name: 'Ana' }])
+
+    const config = agent()
+    expect(() => setAgentApprovers(config, [{ user: 'U1' }])).toThrow(/Save a Slack connection first/)
+    writeNotifierFile(dir, { channel: 'slack', events: ['approval'], channelId: 'C1' })
+    expect(setAgentApprovers(config, [{ user: 'U1', name: 'Ana' }, { user: 'U2' }])).toEqual([{ user: 'U1', name: 'Ana' }, { user: 'U2' }])
+    await saveAgentNotifier(config, { channel: 'slack', events: ['approval', 'question'], channelId: 'C2' })
+    expect(agentApprovers(config)).toEqual([{ user: 'U1', name: 'Ana' }, { user: 'U2' }])
+    expect(readNotifierFile(dir)?.channelId).toBe('C2')
+  })
+
+  it("counts anyone's button click until approvers are listed, then only theirs", () => {
+    const config = agent()
+    writeNotifierFile(dir, { channel: 'slack', events: ['approval'], channelId: 'C1' })
+    expect(slackClickAllowed(config, 'U5')).toEqual({ allowed: true })
+    setAgentApprovers(config, [{ user: 'U1' }])
+    expect(slackClickAllowed(config, 'U1')).toEqual({ allowed: true })
+    expect(slackClickAllowed(config, 'U5')).toEqual({ allowed: false, message: 'Only approvers can decide this: <@U1>.' })
+    expect(slackClickAllowed(config, undefined).allowed).toBe(false)
   })
 
   it('adds the reply hint to Slack requests only with buttons on, Conversations on and a plan that allows it', () => {

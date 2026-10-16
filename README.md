@@ -178,7 +178,12 @@ webhook, Slack or Lark target for one agent (saved to
 an older `notifier.yml` is still read), sends a test and shows recent
 deliveries. With Slack, people can also reply in a request's thread to
 ask the agent about it, and it answers there (**Answer replies in a
-request's thread**, on by default). The same tab lists every decision
+request's thread**, on by default). **Approvers**, picked from the
+channel's members, can also decide a request by replying ("yes, go
+ahead", "no", or the answer to a question); a separate model call reads
+only their own message to tell whether it's a decision, and anything
+unclear is treated as a question. Once approvers are listed, only their
+button clicks count too. The same tab lists every decision
 still waiting with Approve/Deny buttons (its count shows on the tab), and
 warns you when an agent has `ask` rules but nobody would be told.
 

@@ -75,10 +75,10 @@ import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, removeAgentNotifier, saveAgentNotifier, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { agentApprovers, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
-import { firstSighting, handleInboundMessage } from '#core/messaging/engine.js'
-import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
+import { firstSighting, handleInboundMessage, type DecisionOutcome, type MessagingDecision } from '#core/messaging/engine.js'
+import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
@@ -1178,6 +1178,44 @@ async function handleSlackChannels(req: IncomingMessage, res: ServerResponse, ag
   try {
     const channels = await listAgentSlackChannels(entry.config, typeof body.botToken === 'string' ? body.botToken : undefined)
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ channels }))
+  } catch (err) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+// Messaging tab → Approvers: who can decide this agent's Slack requests
+// by replying (core/messaging/), and the people in its channel to pick
+// from. Changing the list needs the admin login, like saving a secret:
+// it decides who can approve what the agent does.
+async function handleApproversPut(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  if (!secretsProtected) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Changing approvers needs LOOPENGINE_ADMIN_AUTH set on the server.' }))
+    return
+  }
+  const body = await readJsonBody(req)
+  try {
+    const approvers = setAgentApprovers(entry.config, body.approvers)
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ approvers }))
+  } catch (err) {
+    const status = err instanceof NotifierFileError ? 400 : 500
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+async function handleSlackMembers(res: ServerResponse, agentName: string): Promise<void> {
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  try {
+    const members = await listAgentSlackMembers(entry.config)
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ members }))
   } catch (err) {
     res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
   }
@@ -2637,6 +2675,17 @@ async function handleSlackInteraction(req: IncomingMessage, res: ServerResponse,
     return
   }
   const interaction = parseSlackInteraction(rawBody)
+  // Once the agent has approvers (Messaging tab), only their clicks count.
+  if (interaction.type !== 'ignore') {
+    const gate = slackClickAllowed(entry.config, interaction.user)
+    if (!gate.allowed) {
+      res.writeHead(200).end()
+      if ('responseUrl' in interaction && interaction.responseUrl) {
+        await replyPrivatelyInSlack(interaction.responseUrl, gate.message ?? 'Only approvers can decide this.').catch((err) => console.error('[loopengine] Slack reply failed:', err))
+      }
+      return
+    }
+  }
   if (interaction.type === 'open_answer') {
     if (botToken) await openSlackAnswerModal(botToken, interaction.triggerId, interaction.pendingId).catch((err) => console.error('[loopengine] Slack modal failed:', err))
     res.writeHead(200).end()
@@ -2698,7 +2747,24 @@ async function handleSlackEvents(req: IncomingMessage, res: ServerResponse, agen
     getCheckpoint: (pendingId) => checkpoints.get(pendingId),
     getHistory: (checkpoint) => sessions.getHistory(`${checkpoint.tenant}:${environment}:${checkpoint.agent}:${checkpoint.sessionId}`),
     plan: process.env.LOOPENGINE_PLAN,
+    approvers: () => agentApprovers(entry.config),
+    decide: decideFromMessaging,
   })
+}
+
+// A decision made by replying in a request's thread (core/messaging/),
+// recorded through the same resolve and answer handlers as the console's
+// buttons.
+async function decideFromMessaging(pendingId: string, decision: MessagingDecision): Promise<DecisionOutcome> {
+  const capture = captureResponse()
+  if (decision.kind === 'answer') await answerPendingQuestion(capture.res, pendingId, { answer: decision.answer })
+  else await resolvePendingApproval(capture.res, pendingId, { decision: decision.kind })
+  const { status, body } = await capture.done
+  if (status >= 400) return { error: typeof body.error === 'string' ? body.error : `HTTP ${status}` }
+  if (body.alreadyResolved) return { alreadyResolved: true }
+  if (body.resolved) return { stillWaiting: true }
+  if (Array.isArray(body.pending) && body.pending.length) return { morePending: true }
+  return { text: typeof body.text === 'string' ? body.text : undefined }
 }
 
 // Set once shutdown() starts, so /healthz turns 503 while the server
@@ -3254,6 +3320,16 @@ const server = createServer(async (req, res) => {
       return
     }
 
+    const approversMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)\/notifier\/approvers$/)
+    if (approversMatch) {
+      await handleApproversPut(req, res, decodeURIComponent(approversMatch[1]))
+      return
+    }
+    const slackMembersMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/notifier\/slack-members$/)
+    if (slackMembersMatch) {
+      await handleSlackMembers(res, decodeURIComponent(slackMembersMatch[1]))
+      return
+    }
     const slackChannelsMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/notifier\/slack-channels$/)
     if (slackChannelsMatch) {
       await handleSlackChannels(req, res, decodeURIComponent(slackChannelsMatch[1]))

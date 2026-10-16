@@ -35,7 +35,7 @@ export function verifySlackRequest(
 export type SlackInteraction =
   | { type: 'decide'; pendingId: string; decision: 'approve' | 'deny'; responseUrl?: string; user?: string }
   | { type: 'answer'; pendingId: string; answer: string; responseUrl?: string; user?: string }
-  | { type: 'open_answer'; pendingId: string; triggerId: string }
+  | { type: 'open_answer'; pendingId: string; triggerId: string; responseUrl?: string; user?: string }
   | { type: 'ignore' }
 
 /** Reads Slack's form-encoded `payload=<json>` body into the one thing
@@ -80,7 +80,7 @@ export function parseSlackInteraction(rawBody: string): SlackInteraction {
       }
     }
     case 'open_answer_modal':
-      return payload.trigger_id ? { type: 'open_answer', pendingId: action.value, triggerId: payload.trigger_id } : { type: 'ignore' }
+      return payload.trigger_id ? { type: 'open_answer', pendingId: action.value, triggerId: payload.trigger_id, responseUrl: payload.response_url, user } : { type: 'ignore' }
     default:
       return { type: 'ignore' }
   }
@@ -122,6 +122,15 @@ export async function replyInSlack(responseUrl: string, text: string): Promise<v
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ replace_original: true, text }),
+  })
+}
+
+/** A reply only the person who clicked sees, leaving the message as it is. */
+export async function replyPrivatelyInSlack(responseUrl: string, text: string): Promise<void> {
+  await fetch(responseUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ response_type: 'ephemeral', replace_original: false, text }),
   })
 }
 

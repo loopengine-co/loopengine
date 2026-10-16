@@ -11,12 +11,19 @@
 //   tools. It can't approve, deny or change anything: the paused run and
 //   its checkpoint are only read, and decisions still go through the
 //   buttons or the decision link.
+// - Deciding by reply: every reply first goes through the decision step
+//   (./decide.ts), which reads only that person's message. A clear
+//   approve, deny or answer from one of the agent's approvers decides
+//   the request; from anyone else it's refused, and with no approvers
+//   set, deciding by reply is off. Anything else goes on to the
+//   discussion turn.
 // - The plan gate: LOOPENGINE_PLAN=free (set on LoopEngine Cloud) turns
 //   conversations off; unset, as when self-hosted, everything is on.
 import type { TurnCheckpoint } from '../durable-approvals.js'
 import type { Message, ModelCall, ModelContentBlock } from '../run-agent.js'
 import { KeyedMutex } from '../session-store.js'
 import type { InboundMessage, MessagingConnector, ThreadMessage } from './connector.js'
+import { decideReply, type DecisionRequest } from './decide.js'
 import { findThread } from './threads.js'
 
 // An app may redeliver a message it thinks went unanswered (and Slack
@@ -52,6 +59,26 @@ export interface MessagingDeps {
   getHistory(checkpoint: TurnCheckpoint): Promise<Message[]>
   /** LOOPENGINE_PLAN. */
   plan?: string
+  /** Who can decide this agent's requests by replying. */
+  approvers(): { user: string; name?: string }[]
+  /** Records a decision on a pending request, as the console's own
+   * Approve/Deny/Answer would. */
+  decide(pendingId: string, decision: MessagingDecision): Promise<DecisionOutcome>
+}
+
+export type MessagingDecision = { kind: 'approve' } | { kind: 'deny' } | { kind: 'answer'; answer: string }
+
+export interface DecisionOutcome {
+  /** Couldn't be recorded (an invalid request, a server error). */
+  error?: string
+  /** Someone else got there first. */
+  alreadyResolved?: boolean
+  /** Recorded, but the run waits on another decision from the same step. */
+  stillWaiting?: boolean
+  /** The run went on and stopped again on a new request. */
+  morePending?: boolean
+  /** The agent's reply once the run finished. */
+  text?: string
 }
 
 const threadLocks = new KeyedMutex()
@@ -83,6 +110,38 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
       await say('This request has already been decided, so there is nothing left to change here.')
       return
     }
+    const modelCall = deps.createModelCall()
+    const request: DecisionRequest =
+      link.kind === 'approval'
+        ? { kind: 'approval', tool: item.tool }
+        : {
+            kind: 'question',
+            question: typeof item.args.question === 'string' ? item.args.question : JSON.stringify(item.args),
+            options: Array.isArray(item.args.options) ? item.args.options.filter((o): o is string => typeof o === 'string') : undefined,
+          }
+    const verdict = await decideReply(modelCall, request, message.text)
+    if (verdict.decision === 'approve' || verdict.decision === 'deny' || verdict.decision === 'answer') {
+      const approvers = deps.approvers()
+      if (!approvers.length) {
+        await say(`To decide by replying here, add approvers in this agent's Messaging tab in LoopEngine. For now, use the buttons on the ${link.kind === 'approval' ? 'request' : 'question'}.`)
+        return
+      }
+      if (!approvers.some((a) => a.user === message.user)) {
+        await say(`Only approvers can decide this: ${approvers.map((a) => connector.mention(a.user)).join(', ')}. You can still ask about it here.`)
+        return
+      }
+      const who = connector.mention(message.user)
+      if (verdict.decision === 'approve') await say(`Approved by ${who}. Running \`${item.tool}\` with \`${JSON.stringify(item.args)}\`.`)
+      const outcome = await deps.decide(link.pendingId, verdict.decision === 'answer' ? { kind: 'answer', answer: verdict.answer } : { kind: verdict.decision })
+      await say(outcomeText(verdict.decision, who, outcome, verdict.decision === 'answer' ? verdict.answer : undefined))
+      if (!outcome.error && !outcome.alreadyResolved && connector.replaceMessage) {
+        const what = link.kind === 'approval' ? `\`${item.tool}\`` : 'The question'
+        const done = verdict.decision === 'approve' ? 'approved' : verdict.decision === 'deny' ? 'denied' : `answered ("${verdict.answer}")`
+        await connector.replaceMessage(message.conversation, threadTs, `${what} was ${done} by ${who} in the thread.`).catch((err) => console.error('[loopengine] could not update the request message:', err))
+      }
+      return
+    }
+
     const thread = await connector.fetchThread(message.conversation, threadTs)
     const history = await deps.getHistory(checkpoint).catch(() => [] as Message[])
     const messages = threadToMessages(thread, threadTs, message, connector.mention)
@@ -90,7 +149,7 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
     const system = discussionPrompt(deps.agentName, deps.systemPrompt, connector.name, link.kind, item, history)
     let reply: string
     try {
-      const response = await deps.createModelCall()(messages, system, [])
+      const response = await modelCall(messages, system, [])
       reply = response.content
         .filter((block) => block.type === 'text' && block.text)
         .map((block) => block.text)
@@ -103,6 +162,16 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
     }
     if (reply) await say(reply)
   })
+}
+
+/** What to say in the thread once a decision is recorded. */
+export function outcomeText(decision: 'approve' | 'deny' | 'answer', who: string, outcome: DecisionOutcome, answer?: string): string {
+  if (outcome.error) return `Couldn't record that: ${outcome.error}`
+  if (outcome.alreadyResolved) return 'This was already decided elsewhere.'
+  const what = decision === 'approve' ? 'Done' : decision === 'deny' ? `Denied by ${who}` : `Answered by ${who}: "${answer}"`
+  if (outcome.stillWaiting) return `${what}. The agent is still waiting on another decision from the same step.`
+  if (outcome.morePending) return `${what}. The agent needs another decision; a new request is on its way.`
+  return `${what}.${outcome.text ? `\n>${outcome.text.replace(/\n/g, '\n>')}` : ''}`
 }
 
 /** The thread as chat messages: the agent's own replies as `assistant`,

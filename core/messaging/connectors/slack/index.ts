@@ -11,8 +11,9 @@ export {
   openSlackAnswerModal,
   parseSlackInteraction,
   replyInSlack,
+  replyPrivatelyInSlack,
   slackOutcomeText,
   verifySlackRequest,
   type SlackInteraction,
 } from './interactions.js'
-export { listSlackChannels, slackAppManifest, type SlackChannel } from './setup.js'
+export { listSlackChannelMembers, listSlackChannels, slackAppManifest, type SlackChannel, type SlackMember } from './setup.js'

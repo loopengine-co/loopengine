@@ -65,5 +65,15 @@ export function createSlackConnector(botToken: string): MessagingConnector {
       const body = (await res.json()) as { ok: boolean; error?: string }
       if (!body.ok) console.error('[loopengine] chat.postMessage (thread reply) failed:', body.error)
     },
+    async replaceMessage(conversation, ts, text) {
+      const mrkdwn = toSlackMrkdwn(text)
+      const res = await fetch('https://slack.com/api/chat.update', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${botToken}`, 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ channel: conversation, ts, text: mrkdwn, blocks: [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }] }),
+      })
+      const body = (await res.json()) as { ok: boolean; error?: string }
+      if (!body.ok) console.error('[loopengine] chat.update failed:', body.error)
+    },
   }
 }

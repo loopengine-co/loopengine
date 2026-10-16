@@ -46,6 +46,16 @@ export interface NotifierFile {
   /** slack: answer replies in a request's thread (core/messaging/).
    * Unset counts as on. */
   conversations?: boolean
+  /** slack: the people who can decide a request by replying in its
+   * thread, and whose button clicks count once any are listed. */
+  approvers?: MessagingApprover[]
+}
+
+export interface MessagingApprover {
+  /** The app's id for the person (Slack: U0123ABC). */
+  user: string
+  /** Their name when they were added, for the console. */
+  name?: string
 }
 
 /** The env var each channel's secret is read from, per agent. */
@@ -89,6 +99,17 @@ export function validateNotifierFile(input: unknown): NotifierFile {
   if (raw.conversations !== undefined) {
     if (typeof raw.conversations !== 'boolean') throw new NotifierFileError('conversations must be true or false')
     if (channel === 'slack') file.conversations = raw.conversations
+  }
+  if (raw.approvers !== undefined && channel === 'slack') {
+    if (!Array.isArray(raw.approvers)) throw new NotifierFileError('approvers must be a list')
+    const approvers: MessagingApprover[] = []
+    for (const a of raw.approvers as unknown[]) {
+      const entry = a as { user?: unknown; name?: unknown } | null
+      if (!entry || typeof entry.user !== 'string' || !/^[A-Z0-9]{2,32}$/.test(entry.user)) throw new NotifierFileError('each approver needs a Slack user id, like U0123ABC')
+      if (approvers.some((x) => x.user === entry.user)) continue
+      approvers.push({ user: entry.user, ...(typeof entry.name === 'string' && entry.name.trim() ? { name: entry.name.trim().slice(0, 80) } : {}) })
+    }
+    if (approvers.length) file.approvers = approvers
   }
   const publicUrl = str('publicUrl')
   if (publicUrl) {

@@ -16,8 +16,8 @@ import { SlackNotifier } from '../core/http-notify-triggers/slack.js'
 import { LarkNotifier } from '../core/http-notify-triggers/lark.js'
 import type { HttpNotifierConfig } from '../core/agent-config.js'
 import { listDeliveries } from '../core/notifier-deliveries.js'
-import { NOTIFIER_SECRET_VARS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, notifierConfigFromFile, readNotifierFile, removeNotifierFile, writeNotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
-import { listSlackChannels, slackAppManifest, type SlackChannel } from '../core/messaging/connectors/slack/index.js'
+import { NOTIFIER_SECRET_VARS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, NotifierFileError, notifierConfigFromFile, readNotifierFile, removeNotifierFile, writeNotifierFile, type MessagingApprover, type NotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
+import { listSlackChannelMembers, listSlackChannels, slackAppManifest, type SlackChannel, type SlackMember } from '../core/messaging/connectors/slack/index.js'
 import { setAgentEnvVar } from './env-admin.js'
 
 /** The deployment-wide default webhook (LOOPENGINE_DEFAULT_WEBHOOK_URL /
@@ -64,6 +64,15 @@ export function describeAgentNotifier(config: AgentConfig, defaultWebhook?: Defa
  * form includes one, the channel's secret into the agent's own env.
  * Throws NotifierFileError for an invalid form. */
 export async function saveAgentNotifier(config: AgentConfig, body: Record<string, unknown>): Promise<void> {
+  // The form doesn't carry the approvers (they have their own section),
+  // so saving it keeps whoever is already listed.
+  if (body.approvers === undefined) {
+    let existing: NotifierFile | undefined
+    try {
+      existing = readNotifierFile(agentDirFor(config))
+    } catch {}
+    if (existing?.approvers && body.channel === existing.channel) body = { ...body, approvers: existing.approvers }
+  }
   const file = writeNotifierFile(agentDirFor(config), body)
   if (typeof body.secret === 'string' && body.secret.trim()) {
     await setAgentEnvVar(config.name, NOTIFIER_SECRET_VARS[file.channel], body.secret.trim())
@@ -93,6 +102,43 @@ export function slackConversationsOn(config: AgentConfig): boolean {
   } catch {
     return false
   }
+}
+
+/** The people who can decide this agent's requests from Slack: from
+ * messaging.yml; none when the Slack notifier is set in code. */
+export function agentApprovers(config: AgentConfig): MessagingApprover[] {
+  if (config.httpNotifier) return []
+  try {
+    return readNotifierFile(agentDirFor(config))?.approvers ?? []
+  } catch {
+    return []
+  }
+}
+
+/** Whether a Slack user's button click counts: anyone's does while the
+ * agent has no approvers (as before approvers existed), only theirs once
+ * it has some. `message` says who can, for a refused click. */
+export function slackClickAllowed(config: AgentConfig, user: string | undefined): { allowed: boolean; message?: string } {
+  const approvers = agentApprovers(config)
+  if (!approvers.length || (user && approvers.some((a) => a.user === user))) return { allowed: true }
+  return { allowed: false, message: `Only approvers can decide this: ${approvers.map((a) => `<@${a.user}>`).join(', ')}.` }
+}
+
+/** Replaces the approver list on the agent's saved Slack connection.
+ * Throws NotifierFileError when there's no Slack connection to add them to. */
+export function setAgentApprovers(config: AgentConfig, approvers: unknown): MessagingApprover[] {
+  const dir = agentDirFor(config)
+  const file = readNotifierFile(dir)
+  if (!file || file.channel !== 'slack') throw new NotifierFileError('Save a Slack connection first')
+  return writeNotifierFile(dir, { ...file, approvers: Array.isArray(approvers) ? approvers : [] }).approvers ?? []
+}
+
+/** The people in the agent's Slack channel, for picking approvers. */
+export async function listAgentSlackMembers(config: AgentConfig): Promise<SlackMember[]> {
+  const { botToken } = slackCredentialsFor(config)
+  const channelId = config.httpNotifier?.channel === 'slack' ? config.httpNotifier.config.channelId : readNotifierFile(agentDirFor(config))?.channelId
+  if (!botToken || !channelId) throw new Error('Save the Slack bot token and channel first')
+  return listSlackChannelMembers(botToken, channelId)
 }
 
 /** Channels for the console's picker, with the token being typed in or,
