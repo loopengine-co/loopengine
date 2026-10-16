@@ -75,10 +75,10 @@ import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { agentApprovers, agentConfirmTools, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentConfirmTools, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { agentApprovers, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
-import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
+import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import {
   installAbility,
@@ -1201,28 +1201,6 @@ async function handleApproversPut(req: IncomingMessage, res: ServerResponse, age
   try {
     const approvers = setAgentApprovers(entry.config, body.approvers)
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ approvers }))
-  } catch (err) {
-    const status = err instanceof NotifierFileError ? 400 : 500
-    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
-  }
-}
-
-// Messaging tab → Confirm-required tools: tools whose approval by reply
-// needs a Confirm click. Admin login needed, like the approvers.
-async function handleConfirmToolsPut(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
-  const entry = getEntry(agentName)
-  if (!entry) {
-    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
-    return
-  }
-  if (!secretsProtected) {
-    res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Changing Confirm-required tools needs LOOPENGINE_ADMIN_AUTH set on the server.' }))
-    return
-  }
-  const body = await readJsonBody(req)
-  try {
-    const tools = setAgentConfirmTools(entry.config, body.tools)
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ tools }))
   } catch (err) {
     const status = err instanceof NotifierFileError ? 400 : 500
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
@@ -2734,7 +2712,7 @@ async function handleSlackInteraction(req: IncomingMessage, res: ServerResponse,
   let ran = ''
   if (interaction.type === 'decide' && interaction.decision === 'approve') {
     const item = (await checkpoints.get(interaction.pendingId))?.outstanding[interaction.pendingId]
-    if (item) ran = `\nRan \`${item.tool}\` with \`${JSON.stringify(item.args)}\`.`
+    if (item) ran = `\nRan \`${item.tool}\` with:\n${slackArgs(item.args, (await resolveAgentTool(entry.config, item.tool))?.input_schema)}`
   }
   const capture = captureResponse()
   if (interaction.type === 'decide') await resolvePendingApproval(capture.res, interaction.pendingId, { decision: interaction.decision })
@@ -2797,7 +2775,6 @@ function slackMessagingDeps(agentName: string, entry: RegistryEntry, botToken: s
     getHistory: (checkpoint) => sessions.getHistory(`${checkpoint.tenant}:${environment}:${checkpoint.agent}:${checkpoint.sessionId}`),
     plan: process.env.LOOPENGINE_PLAN,
     approvers: () => agentApprovers(entry.config),
-    confirmTools: () => agentConfirmTools(entry.config),
     decide: decideFromMessaging,
     toolSchema: async (toolName) => (await resolveAgentTool(entry.config, toolName))?.input_schema,
     // The same checks the console's approve-with-edits applies, plus the
@@ -3388,11 +3365,6 @@ const server = createServer(async (req, res) => {
     const approversMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)\/notifier\/approvers$/)
     if (approversMatch) {
       await handleApproversPut(req, res, decodeURIComponent(approversMatch[1]))
-      return
-    }
-    const confirmToolsMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)\/notifier\/confirm-tools$/)
-    if (confirmToolsMatch) {
-      await handleConfirmToolsPut(req, res, decodeURIComponent(confirmToolsMatch[1]))
       return
     }
     const slackMembersMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/notifier\/slack-members$/)

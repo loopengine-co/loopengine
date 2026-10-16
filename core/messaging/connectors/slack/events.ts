@@ -4,7 +4,7 @@
 // Slack's buttons and the signing check live in ./interactions.ts, and
 // posting requests in core/http-notify-triggers/slack.ts.
 import type { InboundMessage, MessagingChoice, MessagingConnector, ThreadMessage } from '../../connector.js'
-import { toSlackMrkdwn } from './format.js'
+import { slackEscape, toSlackMrkdwn } from './format.js'
 
 export type SlackEvent = { type: 'url_verification'; challenge: string } | ({ type: 'message' } & InboundMessage) | { type: 'ignore' }
 
@@ -51,6 +51,7 @@ export function createSlackConnector(botToken: string): MessagingConnector {
     app: 'slack',
     name: 'Slack',
     mention: (user) => `<@${user}>`,
+    escape: slackEscape,
     // Needs channels:history or groups:history, depending on the channel.
     async fetchThread(conversation, threadTs) {
       const params = new URLSearchParams({ channel: conversation, ts: threadTs, limit: '100' })

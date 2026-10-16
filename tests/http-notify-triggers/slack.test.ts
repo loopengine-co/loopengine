@@ -77,7 +77,7 @@ describe('SlackNotifier decision links', () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
-    expect(body.blocks).toHaveLength(1)
+    expect(body.blocks.map((b: { type: string }) => b.type)).toEqual(['section', 'context'])
     expect(body.blocks[0].text.text).toMatch(/<https:\/\/agents\.example\.com\/decide\/[^|]+\|Open to approve or deny>/)
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()

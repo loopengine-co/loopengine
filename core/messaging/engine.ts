@@ -21,9 +21,10 @@
 //   arguments (./decide.ts's proposeEdit), checked against the tool's
 //   schema and the permission rules, and shown as a change with Approve
 //   as changed / Keep original / Deny. Nothing runs until they approve.
-// - Confirm-required tools (Messaging tab): a typed approval only asks
-//   for a Confirm click showing exactly what will run; only that click
-//   runs it.
+// - Confirm after a typed yes: an approver's typed approval never runs
+//   anything itself. It shows exactly what will run with a Confirm
+//   button, and only that click runs it. (A click on the request's own
+//   Approve button, or on Approve as changed, is already a click.)
 // - What runs is always shown in the thread before it runs.
 // - The plan gate: LOOPENGINE_PLAN=free (set on LoopEngine Cloud) turns
 //   conversations off; unset, as when self-hosted, everything is on.
@@ -31,7 +32,8 @@ import type { TurnCheckpoint } from '../durable-approvals.js'
 import type { Message, ModelCall, ModelContentBlock } from '../run-agent.js'
 import { KeyedMutex } from '../session-store.js'
 import type { InboundMessage, MessagingAction, MessagingConnector, ThreadMessage } from './connector.js'
-import { decideReply, describeChange, proposeEdit, type DecisionRequest } from './decide.js'
+import { decideReply, proposeEdit, type DecisionRequest } from './decide.js'
+import { formatArgs, formatChange } from './format-args.js'
 import { findThread, findThreadByPending, recordThread, type ThreadLink } from './threads.js'
 
 // An app may redeliver a message it thinks went unanswered (and Slack
@@ -72,8 +74,6 @@ export interface MessagingDeps {
   /** Records a decision on a pending request, as the console's own
    * Approve/Deny/Answer would. */
   decide(pendingId: string, decision: MessagingDecision): Promise<DecisionOutcome>
-  /** Tools whose approval needs a Confirm click (Messaging tab). */
-  confirmTools(): string[]
   /** The tool's argument schema, for proposing a change. */
   toolSchema(tool: string): Promise<Record<string, unknown> | undefined>
   /** Why changed arguments can't be used (they don't fit the tool's
@@ -163,7 +163,7 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
         await connector.postChoice(
           message.conversation,
           threadTs,
-          `Here's the change ${who} asked for:\n${describeChange(item.args, proposed).map((l) => `• ${l}`).join('\n')}\nNothing else changes.`,
+          `Here's the change ${who} asked for:\n${formatChange(item.args, proposed, connector.escape, await deps.toolSchema(item.tool))}\nNothing else changes.`,
           [
             { action: 'approve_edited', label: 'Approve as changed', style: 'primary', pendingId: link.pendingId },
             { action: 'keep_original', label: 'Keep original', pendingId: link.pendingId },
@@ -175,22 +175,19 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
 
       if (verdict.decision === 'approve') {
         const args = link.proposedArgs ?? item.args
-        if (deps.confirmTools().includes(item.tool)) {
-          await connector.postChoice(message.conversation, threadTs, `\`${item.tool}\` needs a Confirm click. It will run with \`${JSON.stringify(args)}\`.`, [
-            { action: 'confirm', label: 'Confirm', style: 'primary', pendingId: link.pendingId },
-            { action: 'cancel_confirm', label: 'Cancel', pendingId: link.pendingId },
-          ])
-          return
-        }
-        await runApproved(deps, link, item.tool, args, who)
+        await connector.postChoice(message.conversation, threadTs, `Confirm to run \`${item.tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(item.tool))}`, [
+          { action: 'confirm', label: 'Confirm', style: 'primary', pendingId: link.pendingId },
+          { action: 'cancel_confirm', label: 'Cancel', pendingId: link.pendingId },
+        ])
         return
       }
 
       const outcome = await deps.decide(link.pendingId, verdict.decision === 'answer' ? { kind: 'answer', answer: verdict.answer } : { kind: 'deny' })
-      await say(outcomeText(verdict.decision, who, outcome, verdict.decision === 'answer' ? verdict.answer : undefined))
+      const answer = verdict.decision === 'answer' ? connector.escape(verdict.answer) : undefined
+      await say(outcomeText(verdict.decision, who, outcome, answer))
       if (!outcome.error && !outcome.alreadyResolved) {
         const what = link.kind === 'approval' ? `\`${item.tool}\`` : 'The question'
-        await replaceRequest(connector, link, `${what} was ${verdict.decision === 'deny' ? 'denied' : `answered ("${verdict.answer}")`} by ${who} in the thread.`)
+        await replaceRequest(connector, link, `${what} was ${verdict.decision === 'deny' ? 'denied' : `answered ("${answer}")`} by ${who} in the thread.`)
       }
       return
     }
@@ -223,7 +220,7 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
 async function runApproved(deps: MessagingDeps, link: ThreadLink, tool: string, args: Record<string, unknown>, who: string): Promise<DecisionOutcome> {
   const { connector } = deps
   const edited = Boolean(link.proposedArgs)
-  await connector.postInThread(link.conversation, link.ts, `Approved${edited ? ' as changed' : ''} by ${who}. Running \`${tool}\` with \`${JSON.stringify(args)}\`.`)
+  await connector.postInThread(link.conversation, link.ts, `Approved${edited ? ' as changed' : ''} by ${who}. Running \`${tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(tool))}`)
   const outcome = await deps.decide(link.pendingId, { kind: 'approve', ...(edited ? { editedArgs: args } : {}) })
   await connector.postInThread(link.conversation, link.ts, outcomeText('approve', who, outcome))
   if (!outcome.error && !outcome.alreadyResolved) await replaceRequest(connector, link, `\`${tool}\` was approved${edited ? ' as changed' : ''} by ${who} in the thread.`)
@@ -270,7 +267,7 @@ export function outcomeText(decision: 'approve' | 'deny' | 'answer', who: string
   const what = decision === 'approve' ? 'Done' : decision === 'deny' ? `Denied by ${who}` : `Answered by ${who}: "${answer}"`
   if (outcome.stillWaiting) return `${what}. The agent is still waiting on another decision from the same step.`
   if (outcome.morePending) return `${what}. The agent needs another decision; a new request is on its way.`
-  return `${what}.${outcome.text ? `\n>${outcome.text.replace(/\n/g, '\n>')}` : ''}`
+  return `${what}.${outcome.text ? `\n> ${outcome.text.replace(/\n/g, '\n> ')}` : ''}`
 }
 
 /** The thread as chat messages: the agent's own replies as `assistant`,

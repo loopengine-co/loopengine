@@ -26,14 +26,15 @@ export { describeNotifier } from '#core/http-notifier.js'
 export { Scheduler, ScheduleError, FileSchedulerStore, getSchedulerStore, setSchedulerStore, createScheduledTask, listScheduledTasks, getScheduledTask, cancelScheduledTask, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, deleteScheduledTask, nextScheduledWakeAt, importLegacyScheduledTasks, parseEvery, describeSchedule, type ScheduledTask, type ScheduledTaskRun, type ScheduledTaskStatus, type Schedule, type SchedulerStore, type FireTask, type CreateScheduledTaskInput } from '#core/scheduler.js'
 export { NOTIFIER_SLACK_SIGNING_SECRET_VAR } from '#core/notifier-file.js'
 export { firstSighting, handleInboundMessage, handleMessagingAction, type MessagingDeps, type MessagingDecision, type DecisionOutcome } from '#core/messaging/engine.js'
+export { formatArgs, formatChange, labelFor } from '#core/messaging/format-args.js'
 export { decideReply, proposeEdit, describeChange, type ReplyDecision, type DecisionRequest } from '#core/messaging/decide.js'
 export { recordThread, findThread, findThreadByPending, type ThreadLink } from '#core/messaging/threads.js'
 export type { InboundMessage, MessagingConnector, ThreadMessage, MessagingChoice, MessagingAction } from '#core/messaging/connector.js'
-export { parseSlackEvent, createSlackConnector, verifySlackRequest, parseSlackInteraction, openSlackAnswerModal, replyInSlack, replyPrivatelyInSlack, slackOutcomeText, listSlackChannels, listSlackChannelMembers, slackAppManifest, toSlackMrkdwn, type SlackEvent, type SlackInteraction, type SlackChannel } from '#core/messaging/connectors/slack/index.js'
+export { parseSlackEvent, createSlackConnector, verifySlackRequest, parseSlackInteraction, openSlackAnswerModal, replyInSlack, replyPrivatelyInSlack, slackOutcomeText, listSlackChannels, listSlackChannelMembers, slackAppManifest, toSlackMrkdwn, slackArgs, slackEscape, type SlackEvent, type SlackInteraction, type SlackChannel } from '#core/messaging/connectors/slack/index.js'
 export { createDecisionToken, verifyDecisionToken, decidePath, decideLinkMaker, decisionLinkTtlMs, type DecisionKind } from '#core/approval-links.js'
 export { renderDecidePage, renderDecideGonePage, renderDecideInvalidPage, type DecidePageItem } from './web/decide-page.js'
 export { sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
-export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, slackConversationsOn, slackClickAllowed, agentApprovers, setAgentApprovers, agentConfirmTools, setAgentConfirmTools, listAgentSlackMembers, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
+export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, slackConversationsOn, slackClickAllowed, agentApprovers, setAgentApprovers, listAgentSlackMembers, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via

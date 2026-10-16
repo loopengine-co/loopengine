@@ -110,7 +110,7 @@ describe('SlackNotifier reply hint', () => {
     new SlackNotifier({ botToken: 'xoxb', channelId: 'C9' }).requestDurableApproval('refund', {}, scope, 'money')
     await vi.waitFor(() => expect(bodies).toHaveLength(2))
     expect(JSON.stringify(bodies[0].blocks.at(-1))).toContain('Reply in this thread to ask about it.')
-    expect(bodies[1].blocks.some((b) => b.type === 'context')).toBe(false)
+    expect(JSON.stringify(bodies[1].blocks)).not.toContain('Reply in this thread')
   })
 })
 
@@ -203,6 +203,7 @@ describe('handleInboundMessage', () => {
       app: 'chat',
       name: 'Chat',
       mention: (u) => `@${u}`,
+      escape: (t) => t,
       fetchThread: async () => [{ fromBot: true, text: 'Approval requested', ts: '1.0' }],
       postInThread: async (conversation, threadTs, text) => void posts.push(`${conversation}/${threadTs}: ${text}`),
       replaceMessage: async (_conversation, _ts, text) => void replaced.push(text),
@@ -221,7 +222,6 @@ describe('handleInboundMessage', () => {
         decided.push({ pendingId, decision })
         return { text: 'Refunded $60.00.' }
       },
-      confirmTools: () => [],
       toolSchema: async () => ({ type: 'object', properties: { amount: { type: 'number' } }, required: ['amount'] }),
       checkArgs: async () => undefined,
       ...over,
@@ -291,14 +291,18 @@ describe('handleInboundMessage', () => {
     expect(decisionCalls[0].system).not.toContain('Be kind.')
   })
 
-  it("lets an approver approve by replying: shows what runs, records it, reports the result and updates the request", async () => {
+  it("never runs on a typed yes: it shows what will run with Confirm, and the click runs it", async () => {
     mapRequest()
-    const { deps, posts, decided, replaced, calls } = setup({ approvers: () => [{ user: 'U1', name: 'Ana' }] }, { decision: 'approve' })
+    const { deps, posts, decided, replaced, choices, calls } = setup({ approvers: () => [{ user: 'U1', name: 'Ana' }] }, { decision: 'approve' })
     await handleInboundMessage(reply('yes, go ahead'), deps)
-    expect(decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve' } }])
-    expect(posts).toEqual(['C1/1.0: Approved by @U1. Running `stripe_refund` with `{"amount":60}`.', 'C1/1.0: Done.\n>Refunded $60.00.'])
-    expect(replaced).toEqual(['`stripe_refund` was approved by @U1 in the thread.'])
+    expect(decided).toEqual([])
+    expect(choices).toEqual([{ text: 'Confirm to run `stripe_refund` with:\n**Amount:** 60', actions: ['confirm', 'cancel_confirm'] }])
     expect(calls).toEqual([])
+
+    expect(await handleMessagingAction('confirm', 'p1', 'U1', deps)).toBe('Confirmed by @U1.')
+    expect(decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve' } }])
+    expect(posts).toEqual(['C1/1.0: Approved by @U1. Running `stripe_refund` with:\n**Amount:** 60', 'C1/1.0: Done.\n> Refunded $60.00.'])
+    expect(replaced).toEqual(['`stripe_refund` was approved by @U1 in the thread.'])
   })
 
   it('lets an approver deny, and answer a question', async () => {
@@ -339,14 +343,17 @@ describe('handleInboundMessage', () => {
     const edit = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'edit' }, { amount: 40 })
     await handleInboundMessage(reply('make it $40'), edit.deps)
     expect(edit.decided).toEqual([])
-    expect(edit.choices).toEqual([{ text: "Here's the change @U1 asked for:\n• `amount`: 60 → 40\nNothing else changes.", actions: ['approve_edited', 'keep_original', 'deny'] }])
+    expect(edit.choices).toEqual([{ text: "Here's the change @U1 asked for:\n**Amount:** ~~60~~ → 40\nNothing else changes.", actions: ['approve_edited', 'keep_original', 'deny'] }])
     expect(findThread(dir, 'chat', 'C1', '1.0')?.proposedArgs).toEqual({ amount: 40 })
 
-    // A typed yes now approves the changed version.
+    // A typed yes now asks to confirm the changed version, and Confirm runs it.
     const yes = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
     await handleInboundMessage(reply('yes, do that'), yes.deps)
+    expect(yes.decided).toEqual([])
+    expect(yes.choices).toEqual([{ text: 'Confirm to run `stripe_refund` with:\n**Amount:** 40', actions: ['confirm', 'cancel_confirm'] }])
+    await handleMessagingAction('confirm', 'p1', 'U1', yes.deps)
     expect(yes.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 } } }])
-    expect(yes.posts[0]).toBe('C1/1.0: Approved as changed by @U1. Running `stripe_refund` with `{"amount":40}`.')
+    expect(yes.posts[0]).toBe('C1/1.0: Approved as changed by @U1. Running `stripe_refund` with:\n**Amount:** 40')
     expect(yes.replaced).toEqual(['`stripe_refund` was approved as changed by @U1 in the thread.'])
   })
 
@@ -361,14 +368,6 @@ describe('handleInboundMessage', () => {
     const unclear = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'edit' }, { amount: 60 })
     await handleInboundMessage(reply('change it somehow'), unclear.deps)
     expect(unclear.posts[0]).toMatch(/couldn't tell what to change/)
-  })
-
-  it('asks for a Confirm click on a Confirm-required tool instead of running it', async () => {
-    mapRequest()
-    const { deps, decided, choices } = setup({ approvers: () => [{ user: 'U1' }], confirmTools: () => ['stripe_refund'] }, { decision: 'approve' })
-    await handleInboundMessage(reply('yes'), deps)
-    expect(decided).toEqual([])
-    expect(choices).toEqual([{ text: '`stripe_refund` needs a Confirm click. It will run with `{"amount":60}`.', actions: ['confirm', 'cancel_confirm'] }])
   })
 
   it('handles the buttons: Confirm and Approve as changed run it, Keep original drops the change, Cancel runs nothing', async () => {
@@ -398,10 +397,11 @@ describe('handleInboundMessage', () => {
 
   it('says when someone else decided first', async () => {
     mapRequest()
-    const late = setup({ approvers: () => [{ user: 'U1' }], decide: async () => ({ alreadyResolved: true }) }, { decision: 'approve' })
-    await handleInboundMessage(reply('go'), late.deps)
+    const late = setup({ approvers: () => [{ user: 'U1' }], decide: async () => ({ alreadyResolved: true }) }, { decision: 'deny' })
+    await handleInboundMessage(reply('no'), late.deps)
     expect(late.posts.at(-1)).toBe('C1/1.0: This was already decided elsewhere.')
     expect(late.replaced).toEqual([])
+    expect(await handleMessagingAction('confirm', 'p1', 'U1', late.deps)).toBe('This request has already been decided.')
   })
 
   it('points back to the buttons when the model call fails', async () => {

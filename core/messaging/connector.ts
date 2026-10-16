@@ -56,6 +56,9 @@ export interface MessagingConnector {
   name: string
   /** How to refer to a person in a message (Slack: <@U123>). */
   mention(user: string): string
+  /** Makes text from anyone else (a tool's arguments, an agent's reason)
+   * safe to put in a message, so it can't become a mention or a link. */
+  escape(text: string): string
   /** The thread's messages, oldest first, its first message included. */
   fetchThread(conversation: string, threadTs: string): Promise<ThreadMessage[]>
   postInThread(conversation: string, threadTs: string, text: string): Promise<void>

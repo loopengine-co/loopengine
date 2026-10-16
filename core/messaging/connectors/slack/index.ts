@@ -4,7 +4,7 @@
 // Posting requests is still SlackNotifier's job
 // (core/http-notify-triggers/slack.ts).
 export { createSlackConnector, parseSlackEvent, type SlackEvent } from './events.js'
-export { toSlackMrkdwn } from './format.js'
+export { slackArgs, slackEscape, toSlackMrkdwn } from './format.js'
 export {
   SLACK_ANSWER_ACTION_ID,
   SLACK_ANSWER_BLOCK_ID,

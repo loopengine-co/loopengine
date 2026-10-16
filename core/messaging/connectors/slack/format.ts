@@ -1,15 +1,25 @@
 // Models write Markdown even when asked for Slack's own format, and Slack
 // shows Markdown's **bold**, [links](url) and # headings as literal
 // characters. This turns the common cases into Slack mrkdwn before a
-// reply is posted; code (```blocks``` and `spans`) is left as written.
+// reply is posted; code (```blocks``` and `spans`) is left as written,
+// and so is text slackEscape marked as someone else's.
 
-const CODE = /(```[\s\S]*?```|`[^`\n]*`)/
+import { formatArgs } from '../../format-args.js'
+
+// slackEscape wraps text that isn't ours in these, so the conversion
+// below never turns it into formatting or a link; they're removed after.
+const OPEN = '\u0001'
+const CLOSE = '\u0002'
+const KEEP = /(```[\s\S]*?```|`[^`\n]*`|\u0001[\s\S]*?\u0002)/
 
 export function toSlackMrkdwn(markdown: string): string {
   return markdown
-    .split(CODE)
+    // ~~old value~~ around protected text: the markers sit outside it.
+    .replace(/~~(\u0001[^\u0002]*\u0002)~~/g, '~$1~')
+    .split(KEEP)
     .map((part, i) => (i % 2 === 1 ? part : convertProse(part)))
     .join('')
+    .replace(/[\u0001\u0002]/g, '')
 }
 
 function convertProse(text: string): string {
@@ -34,4 +44,16 @@ function convertProse(text: string): string {
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<$2|$1>')
   out = out.replace(/\u0000(\d+)\u0000/g, (_m, n: string) => `*${bold[Number(n)]}*`)
   return out
+}
+
+/** Slack's own escaping, for text that isn't ours (an argument, a
+ * reason): with &, < and > escaped, a value can't become a mention, a
+ * channel-wide ping (<!channel>) or a disguised link. */
+export function slackEscape(text: string): string {
+  return OPEN + text.replace(/[\u0001\u0002]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + CLOSE
+}
+
+/** A call's arguments as Slack mrkdwn (core/messaging/format-args.ts). */
+export function slackArgs(args: Record<string, unknown>, schema?: Record<string, unknown>): string {
+  return toSlackMrkdwn(formatArgs(args, slackEscape, schema))
 }

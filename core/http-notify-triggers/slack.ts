@@ -27,6 +27,7 @@ import { randomUUID } from 'node:crypto'
 import type { DurableApprover, Scope } from 'actauth'
 import type { DurableQuestionHandler } from '../agent-config.js'
 import { decidePath } from '../approval-links.js'
+import { slackArgs, slackEscape, toSlackMrkdwn } from '../messaging/connectors/slack/format.js'
 import { publicBaseUrl } from './webhook.js'
 
 /** Where a request landed: its channel and its message ts (the id of
@@ -88,9 +89,16 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Approval requested*\n*tool:* ${tool}\n*args:* \`${JSON.stringify(args)}\`\n*scope:* ${scope.tenant}/${scope.environment}/${scope.agent}\n*reason:* ${reason}${this.decideLine(pendingId, 'approval')}`,
+          // Arguments as labelled lines, long text quoted (not JSON);
+          // a Slack section holds 3,000 characters, so they're kept under.
+          text: fitSection(
+            `*Approval requested:* \`${tool}\``,
+            slackArgs(args),
+            `*Why:* ${toSlackMrkdwn(slackEscape(reason))}${this.decideLine(pendingId, 'approval')}`,
+          ),
         },
       },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `${scope.agent} · ${scope.tenant}/${scope.environment}` }] },
       ...(this.buttons
         ? [{
             type: 'actions',
@@ -116,7 +124,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       action_id: `answer_option_${i}`,
     }))
     this.postMessage(`Question from ${agent}: ${question}`, [
-      { type: 'section', text: { type: 'mrkdwn', text: `*Question from ${agent}${sessionId ? ` (session ${sessionId})` : ''}:*\n${question}${this.decideLine(pendingId, 'question')}` } },
+      { type: 'section', text: { type: 'mrkdwn', text: fitSection(`*Question from ${agent}${sessionId ? ` (session ${sessionId})` : ''}:*`, toSlackMrkdwn(slackEscape(question)), this.decideLine(pendingId, 'question').trim()) } },
       ...(this.buttons
         ? [{ type: 'actions', elements: [...optionButtons, { type: 'button', text: { type: 'plain_text', text: 'Other…' }, action_id: 'open_answer_modal', value: pendingId }] }]
         : []),
@@ -149,6 +157,15 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
         console.error('[loopengine] SlackNotifier: chat.postMessage failed:', err)
       })
   }
+}
+
+const SECTION_MAX = 3000
+
+/** A head line, a body cut to fit, and a tail line, in one Slack section. */
+function fitSection(head: string, body: string, tail: string): string {
+  const room = SECTION_MAX - head.length - tail.length - 60
+  const fitted = body.length > room ? body.slice(0, Math.max(0, room)).trimEnd() + '\n… (cut short here; the decision link has it all)' : body
+  return [head, fitted, tail].filter(Boolean).join('\n')
 }
 
 /** One plain chat.postMessage, awaited, reporting whether Slack accepted

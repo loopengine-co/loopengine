@@ -185,10 +185,11 @@ only their own message to tell whether it's a decision, and anything
 unclear is treated as a question. An approver can also change a request
 first ("make it $40"): the change is checked against the tool's schema
 and the permission rules and shown with **Approve as changed / Keep
-original / Deny**, and nothing runs until they approve it. For
-**Confirm-required tools**, a typed yes only brings up a Confirm button
-showing exactly what will run. Once approvers are listed, only their
-button clicks count too. The same tab lists every decision
+original / Deny**, and nothing runs until they approve it. A typed reply
+never runs anything by itself: a "yes" shows exactly what will run with
+a **Confirm** button, and only that click runs it. Arguments are shown
+as labelled fields, with long text such as an email body quoted, not as
+JSON. Once approvers are listed, only their button clicks count too. The same tab lists every decision
 still waiting with Approve/Deny buttons (its count shows on the tab), and
 warns you when an agent has `ask` rules but nobody would be told.
 
