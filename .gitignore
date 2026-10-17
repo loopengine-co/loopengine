@@ -4,6 +4,8 @@ dist
 .checkpoints
 # Slack threads matched to their requests (agents/<name>/.messaging).
 .messaging
+# "Find your first agent" interviews (the console page /interview).
+.interviews
 .scheduler
 *.log
 .env

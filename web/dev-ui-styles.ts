@@ -119,6 +119,8 @@ export const devUiCss: string = `
   .le-nav-label { padding: 10px 16px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; }
   .le-nav-label a { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; text-decoration: none; }
   .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 1; min-height: 0; }
+  .le-find { margin: 6px 16px 10px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
+  .le-find[aria-current="page"] { font-weight: 600; }
   .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; }
   .le-agent-item:hover { background: var(--surface-2); }
   .le-agent-item[aria-current="page"] { background: var(--accent-soft); }

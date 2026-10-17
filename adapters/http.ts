@@ -50,6 +50,22 @@ import { SkillGarden } from '../core/skillgarden/index.js'
 import { playgroundHtml } from '../web/playground.js'
 import { agentsConfigPageHtml } from '../web/agents-config-page.js'
 import { agentsListPageHtml } from '../web/agents-list-page.js'
+import { interviewPageHtml } from '../web/interview-page.js'
+import {
+  InterviewError,
+  answerInterview,
+  createFromCandidate,
+  deleteInterview,
+  finishInterview,
+  getInterview,
+  interviewTools,
+  listInterviews,
+  pickInterviewModel,
+  previewCandidate,
+  startInterview,
+  setInterviewProject,
+  type InterviewAgentSource,
+} from '../web/interview-admin.js'
 import { globalConfigPageHtml } from '../web/global-config-page.js'
 import {
   addGatewayTool,
@@ -794,6 +810,71 @@ function parseAgentLimitsFields(
     if (parsed.value !== undefined) value[field] = parsed.value
   }
   return { ok: true, value }
+}
+
+// "Find your first agent" (web/interview-admin.ts): the interview's
+// routes, behind the console login like the rest. The interviewer runs on
+// the model of an agent that already works here; creating an agent goes
+// through the same scaffold and registration as Agents → + New.
+function interviewAgents(): InterviewAgentSource[] {
+  return listAgents().flatMap((name) => {
+    const entry = getEntry(name)
+    return entry ? [{ name, config: entry.config, createModelCall: () => entry.createModelCall() }] : []
+  })
+}
+
+async function handleInterviews(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+  setInterviewProject(projectDir())
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  const parts = pathname.split('/').slice(2).map(decodeURIComponent) // after /interviews
+  const [id, action, index, sub] = parts
+  try {
+    if (!id) {
+      if (req.method === 'GET') return json(200, { interviews: listInterviews(), ready: Boolean(pickInterviewModel(interviewAgents())) })
+      if (req.method === 'POST') return json(200, startInterview())
+      return json(405, { error: 'method not allowed' })
+    }
+    if (!action) {
+      if (req.method === 'GET') return json(200, getInterview(id))
+      if (req.method === 'DELETE') {
+        deleteInterview(id)
+        return json(200, { deleted: true })
+      }
+      return json(405, { error: 'method not allowed' })
+    }
+    const agents = interviewAgents()
+    const exists = (name: string) => Boolean(getEntry(name)) || existsSync(join(projectDir(), 'agents', name))
+    if (action === 'candidates' && index !== undefined && sub === 'preview' && req.method === 'GET') {
+      return json(200, previewCandidate(id, Number(index), { agentExists: exists }))
+    }
+    const picked = pickInterviewModel(agents)
+    if (!picked) return json(409, { error: 'No agent here names a model yet. Set one on an agent (Overview → Model) and add its key under Models.' })
+    if (action === 'messages' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      return json(200, await answerInterview(id, body.text, picked.modelCall, interviewTools(agents)))
+    }
+    if (action === 'finish' && req.method === 'POST') return json(200, await finishInterview(id, picked.modelCall, interviewTools(agents)))
+    if (action === 'candidates' && index !== undefined && sub === 'create' && req.method === 'POST') {
+      const created = await createFromCandidate(id, Number(index), {
+        agentExists: exists,
+        createAgent: async (name, systemPrompt) => {
+          const parsed = parseAgentTemplateOptions({ systemPrompt, model: picked.model })
+          if (!parsed.ok) throw new InterviewError(parsed.error)
+          const indexPath = await scaffoldAgent(projectDir(), name, parsed.value)
+          registerAgent(await loadAgentModule(indexPath, indexPath))
+        },
+      })
+      return json(200, created)
+    }
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (err instanceof InterviewError) return json(message === 'No such interview' || message === 'No such candidate' ? 404 : 400, { error: message })
+    console.error('[loopengine] interview failed:', err)
+    return json(502, { error: `The interviewer couldn't answer: ${message}` })
+  }
 }
 
 async function handleCreateAgent(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -3098,6 +3179,15 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'POST' && pathname === '/agents') {
       await handleCreateAgent(req, res)
+      return
+    }
+    // "Find your first agent": the page, and its routes.
+    if (req.method === 'GET' && pathname === '/interview') {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(interviewPageHtml)
+      return
+    }
+    if (pathname === '/interviews' || pathname.startsWith('/interviews/')) {
+      await handleInterviews(req, res, pathname)
       return
     }
     const editAgentMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)$/)

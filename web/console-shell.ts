@@ -25,6 +25,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
   <div class="le-nav-label"><span>Agents</span><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
+  <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
   <nav class="le-foot" aria-label="Settings">
     <a href="/config?section=models" data-le-nav="models">Models</a>
     <a href="/config?section=gateways" data-le-nav="integrations">Integrations</a>
@@ -163,7 +164,7 @@ export const consoleShellScript: string = `<script>
   }
 
   var section = params.get('section');
-  var foot = page === 'config' ? (section === 'gateways' ? 'integrations' : section === 'settings' ? 'settings' : 'models') : '';
+  var foot = page === 'config' ? (section === 'gateways' ? 'integrations' : section === 'settings' ? 'settings' : 'models') : page === 'interview' ? 'interview' : '';
   var footLinks = document.querySelectorAll('[data-le-nav]');
   for (var i = 0; i < footLinks.length; i++) {
     if (footLinks[i].getAttribute('data-le-nav') === foot) footLinks[i].setAttribute('aria-current', 'page');

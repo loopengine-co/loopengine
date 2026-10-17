@@ -186,6 +186,28 @@ export type { HttpToolSpec, HttpToolField } from './web/http-tool-admin.js'
 
 export { agentsConfigPageHtml } from './web/agents-config-page.js'
 export { agentsListPageHtml } from './web/agents-list-page.js'
+export { interviewPageHtml } from './web/interview-page.js'
+export {
+  InterviewError,
+  answerInterview,
+  createFromCandidate,
+  deleteInterview,
+  finishInterview,
+  getInterview,
+  interviewTools,
+  listInterviews,
+  pickInterviewModel,
+  previewCandidate,
+  startInterview,
+  setInterviewProject,
+  setupChecklist,
+  type Interview,
+  type InterviewAgentSource,
+  type CandidatePreview,
+  type CreatedAgent,
+  type ChecklistItem,
+} from './web/interview-admin.js'
+export { runInterviewTurn, rankCandidates, validateCandidate, INTERVIEWER_PROMPT, type AgentCandidate, type InterviewStage } from './core/system-agents/interviewer.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
 export { playgroundHtml } from './web/playground.js'
 

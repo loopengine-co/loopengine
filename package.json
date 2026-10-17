@@ -1,6 +1,6 @@
 {
   "name": "loopengine",
-  "version": "0.1.90",
+  "version": "0.1.91",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
   "license": "MIT",
@@ -95,6 +95,7 @@
     "dist/core/http-notifier.d.ts",
     "dist/core/http-notify-triggers",
     "dist/core/system-tools",
+    "dist/core/system-agents",
     "dist/core/system-skills",
     "dist/core/skillgarden",
     "dist/core/durable-approvals.js",

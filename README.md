@@ -196,6 +196,15 @@ JSON. Once approvers are listed, only their button clicks count too. The same ta
 still waiting with Approve/Deny buttons (its count shows on the tab), and
 warns you when an agent has `ask` rules but nobody would be told.
 
+Not sure what to automate? The console's **Find your first agent**
+(`/interview`, linked from the sidebar and the Agents page) is a short
+interview about your work, in any language. It suggests up to three
+agents worth building, ranked by the time they'd save, and creates the
+one you pick: its instructions, permissions where every tool asks you
+first, and a paused schedule if it runs on a timer, plus a checklist of
+what's left to connect. The interviewer runs on the model of one of your
+agents, can't see your systems, and creates nothing until you click.
+
 Every notification links to a **decision page**: a signed, single-use
 link (`/decide/<token>`, valid 7 days) where whoever got the message can
 approve, deny, edit the arguments or answer a question, with no login and
