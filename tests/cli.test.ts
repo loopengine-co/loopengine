@@ -68,6 +68,19 @@ describe('scaffoldAgent', () => {
     expect(contents).toContain(String.raw`systemPrompt: 'It\'s a \\test with "quotes" too'`)
   })
 
+  it('keeps a multi-line systemPrompt on one line of generated TS, with its line breaks intact', async () => {
+    const dir = tmpDir()
+    const prompt = 'You write a digest.\r\n\nRules:\n- Be brief.'
+
+    const indexPath = await scaffoldAgent(dir, 'digest-agent', { systemPrompt: prompt })
+
+    const contents = readFileSync(indexPath, 'utf8')
+    const line = contents.split('\n').find((l) => l.trimStart().startsWith('systemPrompt:'))!
+    expect(line).toContain(String.raw`'You write a digest.\r\n\nRules:\n- Be brief.'`)
+    // The literal evaluates back to exactly the prompt it was given.
+    expect(new Function(`return ${line.trim().replace(/^systemPrompt: /, '').replace(/,$/, '')}`)()).toBe(prompt)
+  })
+
   it('rejects openai/deepseek with no model name — only anthropic has a default', async () => {
     const dir = tmpDir()
 

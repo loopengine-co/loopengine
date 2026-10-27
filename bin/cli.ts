@@ -44,9 +44,10 @@ export interface AgentTemplateOptions {
 // literal in generated code — an operator-supplied systemPrompt (from
 // the admin UI's Create new agent form, say) containing a literal quote
 // or backslash would otherwise produce invalid, or silently different,
-// generated TypeScript.
+// generated TypeScript. Line breaks too: a multi-line prompt (from a
+// template or the interview) would otherwise end the literal mid-line.
 function tsStringLiteral(value: string): string {
-  return "'" + value.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"
+  return "'" + value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n') + "'"
 }
 
 /** 'loopengine' for a real consumer project — the only thing that ever

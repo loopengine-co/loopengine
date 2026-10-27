@@ -205,6 +205,14 @@ first, and a paused schedule if it runs on a timer, plus a checklist of
 what's left to connect. The interviewer runs on the model of one of your
 agents, can't see your systems, and creates nothing until you click.
 
+Or skip the interview: **Templates** (`/templates`, linked from the
+sidebar and the Agents page) are ready-made agents: answer customer
+emails, triage incidents, check expense claims, and a weekly research
+digest. Preview one's instructions and setup checklist, then create it
+the same way, as many times as you like. Templates live in
+`core/system-agents/templates.ts`, in the same shape the interview
+suggests.
+
 Every notification links to a **decision page**: a signed, single-use
 link (`/decide/<token>`, valid 7 days) where whoever got the message can
 approve, deny, edit the arguments or answer a question, with no login and

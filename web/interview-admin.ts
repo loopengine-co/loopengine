@@ -188,7 +188,12 @@ export function setupChecklist(candidate: AgentCandidate, agentName: string): Ch
 }
 
 export function previewCandidate(id: string, index: number, deps: Pick<CreateDeps, 'agentExists'>): CandidatePreview {
-  const candidate = candidateAt(getInterview(id), index)
+  return describeCandidate(candidateAt(getInterview(id), index), deps)
+}
+
+/** What creating `candidate` would make, under the first free name.
+ * Shared with templates (web/templates-admin.ts). */
+export function describeCandidate(candidate: AgentCandidate, deps: Pick<CreateDeps, 'agentExists'>): CandidatePreview {
   const name = freeAgentName(candidate.agent.name, deps.agentExists)
   return {
     name,
@@ -216,27 +221,36 @@ export async function createFromCandidate(id: string, index: number, deps: Creat
     if (interview.created[String(index)] && deps.agentExists(interview.created[String(index)])) {
       throw new InterviewError(`Already created as ${interview.created[String(index)]}`)
     }
-    const name = freeAgentName(candidate.agent.name, deps.agentExists)
-    await deps.createAgent(name, candidate.agent.systemPrompt)
-    setDefaultDecision(name, 'ask')
-    let scheduleError: string | undefined
-    if (candidate.trigger.kind === 'schedule') {
-      try {
-        const task = await createScheduledTask({
-          agent: name,
-          message: candidate.agent.scheduleMessage ?? candidate.summary,
-          schedule: { every: candidate.trigger.every ?? '1d' },
-          task_name: candidate.title,
-        })
-        await pauseScheduledTask(task.task_id)
-      } catch (err) {
-        scheduleError = err instanceof Error ? err.message : String(err)
-      }
-    }
-    interview.created[String(index)] = name
+    const created = await createAgentFromCandidate(candidate, deps)
+    interview.created[String(index)] = created.name
     save(interview)
-    return { name, checklist: setupChecklist(candidate, name), ...(candidate.agent.exampleMessage ? { exampleMessage: candidate.agent.exampleMessage } : {}), ...(scheduleError ? { scheduleError } : {}) }
+    return created
   })
+}
+
+/** Creates `candidate` as an agent under the first free name: the agent
+ * itself, its permission default switched to "ask", and a paused
+ * schedule when it runs on a timer. Shared with templates
+ * (web/templates-admin.ts). */
+export async function createAgentFromCandidate(candidate: AgentCandidate, deps: CreateDeps): Promise<CreatedAgent> {
+  const name = freeAgentName(candidate.agent.name, deps.agentExists)
+  await deps.createAgent(name, candidate.agent.systemPrompt)
+  setDefaultDecision(name, 'ask')
+  let scheduleError: string | undefined
+  if (candidate.trigger.kind === 'schedule') {
+    try {
+      const task = await createScheduledTask({
+        agent: name,
+        message: candidate.agent.scheduleMessage ?? candidate.summary,
+        schedule: { every: candidate.trigger.every ?? '1d' },
+        task_name: candidate.title,
+      })
+      await pauseScheduledTask(task.task_id)
+    } catch (err) {
+      scheduleError = err instanceof Error ? err.message : String(err)
+    }
+  }
+  return { name, checklist: setupChecklist(candidate, name), ...(candidate.agent.exampleMessage ? { exampleMessage: candidate.agent.exampleMessage } : {}), ...(scheduleError ? { scheduleError } : {}) }
 }
 
 /** A registered agent, as the adapter's registry has it. */
@@ -256,6 +270,19 @@ export interface InterviewModel {
  * agent that has one set, preferring one whose provider key is set.
  * undefined when no agent names a model. */
 export function pickInterviewModel(agents: InterviewAgentSource[]): InterviewModel | undefined {
+  const chosen = pickModelAgent(agents)
+  if (!chosen) return undefined
+  return { modelCall: chosen.agent.createModelCall(), model: chosen.model }
+}
+
+/** The model a new agent should start on: the same one the interviewer
+ * would pick, without building a model call (which throws when its key
+ * isn't set). Templates use it. */
+export function pickAgentModel(agents: InterviewAgentSource[]): InterviewModel['model'] | undefined {
+  return pickModelAgent(agents)?.model
+}
+
+function pickModelAgent(agents: InterviewAgentSource[]): { agent: InterviewAgentSource; model: InterviewModel['model'] } | undefined {
   const withModel = agents.filter((a) => a.config.model && typeof a.config.model === 'object' && 'provider' in a.config.model)
   const keyed = withModel.find((a) => {
     const envVar = modelKeyEnvVar((a.config.model as { provider: string }).provider)
@@ -264,7 +291,7 @@ export function pickInterviewModel(agents: InterviewAgentSource[]): InterviewMod
   const chosen = keyed ?? withModel[0]
   if (!chosen) return undefined
   const m = chosen.config.model as { provider: string; model?: string }
-  return { modelCall: chosen.createModelCall(), model: { provider: m.provider, ...(m.model ? { model: m.model } : {}) } }
+  return { agent: chosen, model: { provider: m.provider, ...(m.model ? { model: m.model } : {}) } }
 }
 
 /** The interviewer's read-only tools over this workspace. */

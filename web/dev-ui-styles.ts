@@ -121,6 +121,7 @@ export const devUiCss: string = `
   .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 1; min-height: 0; }
   .le-find { margin: 6px 16px 10px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
   .le-find[aria-current="page"] { font-weight: 600; }
+  .le-find + .le-find { margin-top: -4px; }
   .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; }
   .le-agent-item:hover { background: var(--surface-2); }
   .le-agent-item[aria-current="page"] { background: var(--accent-soft); }
