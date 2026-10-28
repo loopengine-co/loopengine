@@ -137,7 +137,7 @@ ${consoleShellScript}
           slot.innerHTML = '<div class="tp-preview">' +
             '<div><strong>Created <code>' + esc(c.name) + '</code>.</strong> Anything its permissions don' + String.fromCharCode(8217) + 't cover asks you first.</div>' +
             (installed ? '<div>' + CHECK + ' Installed ' + installed + '</div>' : '') +
-            (c.schedule ? '<div>' + CHECK + ' Schedule created, paused: ' + esc(c.schedule.description) + (c.schedule.next_run_at ? ' (first run ' + esc(new Date(c.schedule.next_run_at).toLocaleString()) + ' once turned on)' : '') + '</div>' : '') +
+            (c.schedule ? '<div>' + CHECK + ' Schedule created, paused: ' + esc(c.schedule.description) + (c.schedule.next_run_at ? ' (first run ' + esc(new Date(c.schedule.next_run_at).toLocaleString(undefined, c.schedule.timeZone ? { timeZone: c.schedule.timeZone, timeZoneName: 'short' } : undefined)) + ' once turned on)' : '') + '</div>' : '') +
             (c.loadError ? '<div class="error">It was written but couldn' + String.fromCharCode(8217) + 't be loaded: ' + esc(c.loadError) + '</div>' : '') +
             (c.scheduleError ? '<div class="error">Its schedule wasn' + String.fromCharCode(8217) + 't created: ' + esc(c.scheduleError) + '. Add one in its Schedules tab.</div>' : '') +
             '<div><strong>Finish setup:</strong>' + checklistHtml(c.checklist) + '</div>' +

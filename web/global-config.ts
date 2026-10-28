@@ -9,6 +9,8 @@
 // AgentConfig.
 import type { AgentConfig } from '../core/agent-config.js'
 import { getComposioAuthStatus } from '../core/gateway-tools.js'
+import { moveScheduledTasksToTimeZone } from '../core/scheduler.js'
+import { TIME_ZONE_ENV, isValidTimeZone, listTimeZones, serverTimeZone, workspaceTimeZone } from '../core/time-zone.js'
 import { setEnvVar, unsetEnvVar } from './env-admin.js'
 
 export interface ModelProviderInfo {
@@ -146,4 +148,40 @@ export async function clearModelProviderKey(provider: string): Promise<void> {
   const envVar = modelKeyEnvVar(provider)
   if (!envVar) throw new ModelKeyError(`unknown provider '${provider}'`)
   await unsetEnvVar(envVar)
+}
+
+export class TimeZoneError extends Error {}
+
+export interface TimeZoneView {
+  /** The one in use. */
+  timeZone: string
+  /** Whether it was chosen (LOOPENGINE_TIME_ZONE), not the server's. */
+  chosen: boolean
+  server: string
+  zones: string[]
+}
+
+export function describeTimeZone(): TimeZoneView {
+  const timeZone = workspaceTimeZone()
+  const configured = process.env[TIME_ZONE_ENV]?.trim()
+  return { timeZone, chosen: Boolean(configured && isValidTimeZone(configured)), server: serverTimeZone(), zones: listTimeZones() }
+}
+
+/**
+ * The console's Settings → Time zone: saved like a model key (the
+ * project's .env by default) and applied to this process at once. New
+ * schedules and template start times use it from then on; with
+ * `moveSchedules`, existing daily and weekly schedules move to it too,
+ * keeping their time of day. An empty value goes back to the server's.
+ */
+export async function setWorkspaceTimeZone(value: unknown, options: { moveSchedules?: boolean } = {}): Promise<{ timeZone: string; moved: number }> {
+  const requested = typeof value === 'string' ? value.trim() : ''
+  if (requested && !isValidTimeZone(requested)) throw new TimeZoneError(`"${requested}" isn't a time zone this server knows, such as America/New_York or Europe/London`)
+  const before = workspaceTimeZone()
+  // Saved by its canonical name ("america/new_york" → "America/New_York").
+  if (requested) await setEnvVar(TIME_ZONE_ENV, new Intl.DateTimeFormat('en-US', { timeZone: requested }).resolvedOptions().timeZone)
+  else await unsetEnvVar(TIME_ZONE_ENV)
+  const timeZone = workspaceTimeZone()
+  const moved = options.moveSchedules && timeZone !== before ? await moveScheduledTasksToTimeZone(before, timeZone) : 0
+  return { timeZone, moved }
 }

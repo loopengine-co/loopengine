@@ -17,6 +17,7 @@
 //
 // The first three match the use cases on loopengine.co/use-cases.
 import type { AgentCandidate } from './interviewer.js'
+import { nextTimeOfDay, parseTimeOfDay, workspaceTimeZone } from '../time-zone.js'
 
 export interface TemplateRule {
   name: string
@@ -34,7 +35,7 @@ export interface TemplateSkill {
 export interface TemplateSchedule {
   /** How often, in the scheduler's terms: "10m", "1h", "7d". */
   every: string
-  /** Optional first run, as a time of day in the server's time zone
+  /** Optional first run, as a time of day in the workspace's time zone
    * ("09:00"), and for weekly schedules a weekday (1 = Monday). Without
    * it, the first run is one interval after the schedule is turned on. */
   at?: string
@@ -453,17 +454,9 @@ export function starterTemplate(id: string): StarterTemplate | undefined {
 }
 
 /** The first run of a template's schedule: its time of day (and weekday)
- * next, in the server's time zone; undefined when it has none. */
-export function templateScheduleStart(schedule: TemplateSchedule, nowMs = Date.now()): string | undefined {
-  if (!schedule.at) return undefined
-  const [hours, minutes] = schedule.at.split(':').map(Number)
-  const start = new Date(nowMs)
-  start.setHours(hours, minutes, 0, 0)
-  if (schedule.weekday !== undefined) {
-    const ahead = (schedule.weekday - start.getDay() + 7) % 7
-    start.setDate(start.getDate() + ahead)
-  }
-  const step = schedule.weekday !== undefined ? 7 : 1
-  while (start.getTime() <= nowMs) start.setDate(start.getDate() + step)
-  return start.toISOString()
+ * next, in the workspace's time zone; undefined when it has none. */
+export function templateScheduleStart(schedule: TemplateSchedule, nowMs = Date.now(), timeZone = workspaceTimeZone()): string | undefined {
+  const at = schedule.at ? parseTimeOfDay(schedule.at) : undefined
+  if (!at) return undefined
+  return new Date(nextTimeOfDay(at, nowMs, timeZone, schedule.weekday)).toISOString()
 }

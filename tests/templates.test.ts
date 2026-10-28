@@ -110,7 +110,7 @@ describe('templates', () => {
     expect(tasks.map((t) => [t.status, t.task_name, t.message, (t.schedule as { every: string }).every])).toEqual([
       ['paused', 'Check the support inbox', 'Handle new customer emails in the support inbox.', '10m'],
     ])
-    expect(created.schedule).toEqual({ description: 'every 10 minutes' })
+    expect(created.schedule).toEqual({ description: 'every 10 minutes', timeZone: expect.any(String) })
     const tab = (t: string) => `/agents/config?agent=customer-email-replies&tab=${t}`
     expect(created.checklist).toEqual([
       { label: 'Add its keys: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, SHOPIFY_STORE_DOMAIN, SHOPIFY_ADMIN_TOKEN', href: tab('env') },

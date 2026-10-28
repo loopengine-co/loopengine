@@ -33,16 +33,16 @@ describe('creating tasks', () => {
     // Daily at 9:00 (UTC+8), starting tomorrow.
     const daily = await createScheduledTask({ agent: 'a', message: 'digest', schedule: { every: '1d', start_at: '2026-10-29T09:00:00+08:00' } }, now)
     expect(daily.next_run_at).toBe('2026-10-29T01:00:00.000Z')
-    expect(daily.schedule).toEqual({ every: '1d', anchor: '2026-10-29T01:00:00.000Z' })
+    expect(daily.schedule).toEqual({ every: '1d', anchor: '2026-10-29T01:00:00.000Z', time_zone: expect.any(String) })
     // Weekly on Mondays at 9:00.
     const weekly = await createScheduledTask({ agent: 'a', message: 'weekly', schedule: { every: '7d', start_at: '2026-11-02T09:00:00+08:00' } }, now)
     expect(weekly.next_run_at).toBe('2026-11-02T01:00:00.000Z')
     // A start in the past: the next slot after now, still at 9:00.
     const past = await createScheduledTask({ agent: 'a', message: 'p', schedule: { every: '1d', start_at: '2026-10-01T09:00:00+08:00' } }, now)
     expect(past.next_run_at).toBe('2026-10-29T01:00:00.000Z')
-    expect(past.schedule).toEqual({ every: '1d', anchor: '2026-10-01T01:00:00.000Z' })
+    expect(past.schedule).toEqual({ every: '1d', anchor: '2026-10-01T01:00:00.000Z', time_zone: expect.any(String) })
     await expect(createScheduledTask({ agent: 'a', message: 'x', schedule: { every: '1d', start_at: 'next monday' } })).rejects.toThrow(/start_at "next monday" is not a valid/)
-    await expect(createScheduledTask({ agent: 'a', message: 'x', schedule: { start_at: '2026-11-02T09:00:00Z' } })).rejects.toThrow(/start_at goes with "every"/)
+    await expect(createScheduledTask({ agent: 'a', message: 'x', schedule: { start_at: '2026-11-02T09:00:00Z' } })).rejects.toThrow(/start_at and at go with "every"/)
   })
 
   it('keeps the start_at slot after a pause and a late resume', async () => {

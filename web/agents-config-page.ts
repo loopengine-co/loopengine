@@ -1485,10 +1485,22 @@ ${consoleShellScript}
     scheduled: 'scheduled', running: 'running', awaiting_approval: 'waiting for approval', paused: 'paused', done: 'done', cancelled: 'cancelled'
   };
 
+  // The workspace's time zone, from GET /agents/:name/schedules (an
+  // older project adapter doesn't send it: then the browser's own).
+  var schedulesTimeZone = null;
+
+  function fmtScheduleTime(iso) {
+    var d = new Date(iso);
+    if (schedulesTimeZone) {
+      try { return d.toLocaleString(undefined, { timeZone: schedulesTimeZone, timeZoneName: 'short' }); } catch (e) {}
+    }
+    return d.toLocaleString();
+  }
+
   function scheduleText(s) {
     // A repeating task's anchor is its first run, so it says when the
     // later ones fall (e.g. every 1d from 9:00).
-    return s.run_at ? 'Once, ' + new Date(s.run_at).toLocaleString() : 'Every ' + escapeHtml(s.every) + (s.anchor ? '<div class="hint">from ' + escapeHtml(new Date(s.anchor).toLocaleString()) + '</div>' : '');
+    return s.run_at ? 'Once, ' + escapeHtml(fmtScheduleTime(s.run_at)) : 'Every ' + escapeHtml(s.every) + (s.anchor ? '<div class="hint">from ' + escapeHtml(fmtScheduleTime(s.anchor)) + '</div>' : '');
   }
 
   function renderScheduleRow(t) {
@@ -1500,17 +1512,17 @@ ${consoleShellScript}
     if (t.status === 'cancelled' || t.status === 'done') actions.push(['delete', 'Delete']);
     var last = t.last_run_at
       ? '<span class="le-pill ' + (t.last_status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(t.last_status) + '</span> ' +
-        '<span class="hint">' + escapeHtml(new Date(t.last_run_at).toLocaleString()) + '</span>' +
+        '<span class="hint">' + escapeHtml(fmtScheduleTime(t.last_run_at)) + '</span>' +
         '<div class="schedule-result">' + escapeHtml(t.last_status === 'ok' ? (t.last_result || '') : (t.last_error || '')) + '</div>'
       : '<span class="hint">not run yet</span>';
     var history = (t.history || []).slice().reverse().map(function (h) {
-      return '<li><span class="le-pill ' + (h.status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(h.status) + '</span> <span class="hint">' + escapeHtml(new Date(h.ran_at).toLocaleString()) + '</span>' +
+      return '<li><span class="le-pill ' + (h.status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(h.status) + '</span> <span class="hint">' + escapeHtml(fmtScheduleTime(h.ran_at)) + '</span>' +
         '<div class="schedule-result">' + escapeHtml(h.status === 'ok' ? (h.result || '') : (h.error || '')) + '</div></li>';
     }).join('');
     return '<tr>' +
       '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' + (t.notify ? ' <span class="le-pill accent" title="Each result goes through this agent&#39;s notifier">notifies</span>' : '') +
         '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div></td>' +
-      '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(new Date(t.next_run_at).toLocaleString()) + '</div>' : '') + '</td>' +
+      '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
         (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
       '<td style="min-width:200px">' + last + (history ? '<details><summary class="hint">History (' + (t.history || []).length + ')</summary><ul class="schedule-history">' + history + '</ul></details>' : '') + '</td>' +
@@ -1534,7 +1546,8 @@ ${consoleShellScript}
               '<input type="number" name="everyN" value="1" min="1" aria-label="How many">' +
               '<select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option><option value="w">weeks</option></select>' +
               '<label for="everyStart">starting</label><input type="datetime-local" name="everyStart" id="everyStart" aria-label="First run"></div>' +
-            '<p class="hint" style="margin:0 0 4px 22px">Optional. The first run, which sets the time of day (and the weekday, for weeks) every later run keeps, e.g. every 1 day starting tomorrow 09:00. Without it, the first run is one interval from now.</p>' +
+            '<p class="hint" style="margin:0 0 4px 22px">Optional. The first run, which sets the time of day (and the weekday, for weeks) every later run keeps, e.g. every 1 day starting tomorrow 09:00. Without it, the first run is one interval from now.' +
+              (schedulesTimeZone ? ' Times are in ' + escapeHtml(schedulesTimeZone.replace(/_/g, ' ')) + ' (<a href="/config?section=settings">change</a>).' : '') + '</p>' +
             '<div class="schedule-when"><input type="radio" name="when" value="once" id="whenOnce"><label for="whenOnce">Once at</label>' +
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
@@ -1543,6 +1556,13 @@ ${consoleShellScript}
           '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
           '<div id="scheduleResult" class="hint"></div>' +
         '</form></section>';
+  }
+
+  // A date field's value ("2026-11-02T09:00") goes as it is, for the
+  // server to read in the workspace's time zone; with no workspace time
+  // zone known, it's the browser's.
+  function scheduleFormTime(value) {
+    return schedulesTimeZone ? value : new Date(value).toISOString();
   }
 
   function wireSchedulesHandlers(name) {
@@ -1577,14 +1597,13 @@ ${consoleShellScript}
       var schedule;
       if (data.get('when') === 'once') {
         if (!data.get('runAt')) { result.textContent = 'Pick a date and time.'; return; }
-        schedule = { run_at: new Date(data.get('runAt')).toISOString() };
+        schedule = { run_at: scheduleFormTime(data.get('runAt')) };
       } else {
-        // Weeks go to the scheduler as days; the start comes from the
-        // browser's own time zone.
+        // Weeks go to the scheduler as days.
         var unit = data.get('everyUnit');
         var n = Number(data.get('everyN')) || 1;
         schedule = { every: unit === 'w' ? String(n * 7) + 'd' : String(n) + unit };
-        if (data.get('everyStart')) schedule.start_at = new Date(data.get('everyStart')).toISOString();
+        if (data.get('everyStart')) schedule.start_at = scheduleFormTime(data.get('everyStart'));
       }
       result.textContent = 'Scheduling' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules', {
@@ -1605,6 +1624,7 @@ ${consoleShellScript}
       if (currentName !== name) return;
       if (!r.ok) throw new Error(r.body.error || 'request failed');
       var tasks = r.body.tasks || [];
+      schedulesTimeZone = r.body.time_zone || null;
       content.innerHTML = renderSchedulesHtml(tasks);
       wireSchedulesHandlers(name);
       leShell.setCount('schedules', tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; }).length);

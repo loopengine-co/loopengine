@@ -253,7 +253,12 @@ The server runs one scheduler (`core/scheduler.ts`) that sends a message
 to an agent later — once (`run_at`) or on an interval (`every: "1h"`),
 optionally from a set first run (`start_at`), which every later run keeps:
 `every: "1d"` from a 9:00 start runs daily at 9:00, `every: "7d"` from a
-Monday runs on Mondays — from the console's **Schedules** tab, the `GET/POST
+Monday runs on Mondays. `at: "09:00"` (plus `weekday: "monday"`) picks
+that start for you. Times of day are in the workspace's time zone, chosen
+in the console's **Settings** (`LOOPENGINE_TIME_ZONE`; the server's own
+when unset): a timestamp without an offset is read there, and daily and
+weekly tasks keep their time of day when the clocks change. Schedule
+from the console's **Schedules** tab, the `GET/POST
 /agents/<name>/schedules` API, or the agent itself: every agent has
 built-in `system_schedule_task`, `system_list_scheduled_tasks`,
 `system_check_scheduled_task` and `system_cancel_scheduled_task` tools,

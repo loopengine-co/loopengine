@@ -12,17 +12,24 @@
 // `every` is anchored: an hourly task created at 10:07 keeps firing at
 // :07, however long each run takes. `start_at` sets the anchor instead,
 // for "daily at 9:00" ("1d" from a 9:00 start) or "Mondays at 9:00" ("7d"
-// from a Monday). Intervals are exact durations, so in a time zone with
-// daylight saving a daily 9:00 task runs at 8:00 or 10:00 local time
-// after the clocks change. A run missed while the server was down fires
+// from a Monday), or `at` ("09:00", plus a `weekday` for "7d") works the
+// start out in the workspace's time zone (core/time-zone.ts). Intervals
+// in days are calendar days in the time zone the task was made in, so a
+// daily 9:00 task stays at 9:00 when the clocks change; shorter ones are
+// exact durations. Timestamps without an offset are read in the
+// workspace's time zone too. A run missed while the server was down fires
 // once when it's back, then the schedule moves to the next future slot
 // (no burst of catch-up runs).
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { KeyedMutex } from './session-store.js'
+import { addCalendarDays, instantOf, nextTimeOfDay, parseTimeOfDay, parseTimestamp, wallTimeAt, workspaceTimeZone } from './time-zone.js'
 
-export type Schedule = { run_at: string } | { every: string; anchor?: string }
+/** `time_zone` (repeating in whole days only): the zone whose calendar
+ * days it steps through, so its time of day survives daylight saving.
+ * Tasks made before it existed step in exact 24-hour days. */
+export type Schedule = { run_at: string } | { every: string; anchor?: string; time_zone?: string }
 
 export type ScheduledTaskStatus = 'scheduled' | 'running' | 'awaiting_approval' | 'paused' | 'done' | 'cancelled'
 
@@ -77,10 +84,35 @@ export function parseEvery(every: string): number {
   return ms
 }
 
-/** The first anchored slot strictly after `nowMs`. */
-function nextAnchoredSlot(anchorMs: number, intervalMs: number, nowMs: number): number {
+/** Whole days in an interval ("2d" → 2), or undefined for one in s/m/h. */
+function everyDays(every: string): number | undefined {
+  const match = EVERY_PATTERN.exec(every.trim())
+  return match && match[2] === 'd' ? Number(match[1]) : undefined
+}
+
+/** The first anchored slot strictly after `nowMs`: exact steps of
+ * `intervalMs`, or with `days` and `timeZone`, steps of that many
+ * calendar days there. */
+function nextAnchoredSlot(anchorMs: number, intervalMs: number, nowMs: number, calendar?: { days: number; timeZone: string }): number {
   if (nowMs < anchorMs) return anchorMs
-  return anchorMs + (Math.floor((nowMs - anchorMs) / intervalMs) + 1) * intervalMs
+  let k = Math.floor((nowMs - anchorMs) / intervalMs) + 1
+  if (!calendar) return anchorMs + k * intervalMs
+  // A day is 23 to 25 hours, so the estimate can be one step off.
+  const slot = (n: number) => addCalendarDays(anchorMs, n * calendar.days, calendar.timeZone)
+  while (k > 1 && slot(k - 1) > nowMs) k--
+  while (slot(k) <= nowMs) k++
+  return slot(k)
+}
+
+const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
+function parseWeekday(value: unknown): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 6) return value
+  if (typeof value === 'string') {
+    const i = WEEKDAY_NAMES.findIndex((d) => d.startsWith(value.trim().toLowerCase()) && value.trim().length >= 3)
+    if (i >= 0) return i
+  }
+  throw new ScheduleError(`weekday "${String(value)}" isn't a day: use monday to sunday, or 0 (Sunday) to 6`)
 }
 
 /** Human-readable schedule, for lists and messages. */
@@ -175,8 +207,11 @@ export interface CreateScheduledTaskInput {
    * time of day / day of week every later run keeps, e.g. every "1d"
    * from "2026-11-02T09:00:00+08:00" runs daily at 9:00. A start in the
    * past is fine: the first run is its next slot after now. Without it,
-   * the first run is one interval from now. */
-  schedule: { run_at?: unknown; every?: unknown; start_at?: unknown }
+   * the first run is one interval from now. `at` ("09:00", with `every`
+   * only) instead starts it at the next 9:00 in the workspace's time
+   * zone, and `weekday` ("monday", or 0 for Sunday to 6) at the next one
+   * on that day. */
+  schedule: { run_at?: unknown; every?: unknown; start_at?: unknown; at?: unknown; weekday?: unknown }
   task_name?: string
   notify?: boolean
 }
@@ -186,28 +221,43 @@ export async function createScheduledTask(input: CreateScheduledTaskInput, nowMs
   if (!input.message?.trim()) throw new ScheduleError('message is required')
   let schedule: Schedule
   let nextRunMs: number
+  const timeZone = workspaceTimeZone()
   if (typeof input.schedule?.run_at === 'string' && input.schedule.run_at) {
-    const runAtMs = Date.parse(input.schedule.run_at)
+    const runAtMs = parseTimestamp(input.schedule.run_at, timeZone)
     if (Number.isNaN(runAtMs)) throw new ScheduleError(`"${input.schedule.run_at}" is not a valid ISO 8601 timestamp`)
     schedule = { run_at: new Date(runAtMs).toISOString() }
     nextRunMs = runAtMs
   } else if (typeof input.schedule?.every === 'string' && input.schedule.every) {
-    const intervalMs = parseEvery(input.schedule.every)
-    const startAt = input.schedule.start_at
-    if (startAt !== undefined && startAt !== null && startAt !== '') {
-      const startMs = typeof startAt === 'string' ? Date.parse(startAt) : Number.NaN
+    const every = input.schedule.every.trim()
+    const intervalMs = parseEvery(every)
+    const days = everyDays(every)
+    const calendar = days ? { days, timeZone } : undefined
+    const { start_at: startAt, at, weekday } = input.schedule
+    const given = (v: unknown) => v !== undefined && v !== null && v !== ''
+    let startMs: number | undefined
+    if (given(at)) {
+      if (given(startAt)) throw new ScheduleError('give either start_at or at, not both')
+      const time = typeof at === 'string' ? parseTimeOfDay(at) : undefined
+      if (!time) throw new ScheduleError(`at "${String(at)}" isn't a time of day: use 24-hour "HH:MM", e.g. "09:00"`)
+      startMs = nextTimeOfDay(time, nowMs, timeZone, given(weekday) ? parseWeekday(weekday) : undefined)
+    } else if (given(weekday)) {
+      throw new ScheduleError('weekday goes with at, e.g. { "every": "7d", "at": "09:00", "weekday": "monday" }')
+    } else if (given(startAt)) {
+      startMs = typeof startAt === 'string' ? parseTimestamp(startAt, timeZone) : Number.NaN
       if (Number.isNaN(startMs)) throw new ScheduleError(`start_at "${String(startAt)}" is not a valid ISO 8601 timestamp`)
+    }
+    if (startMs !== undefined) {
       // The anchor is the start itself, so every run lands on its time of
       // day (or weekday, for "7d").
-      nextRunMs = nextAnchoredSlot(startMs, intervalMs, nowMs)
-      schedule = { every: input.schedule.every.trim(), anchor: new Date(startMs).toISOString() }
+      nextRunMs = nextAnchoredSlot(startMs, intervalMs, nowMs, calendar)
+      schedule = { every, anchor: new Date(startMs).toISOString(), ...(calendar ? { time_zone: timeZone } : {}) }
     } else {
-      nextRunMs = nowMs + intervalMs
-      schedule = { every: input.schedule.every.trim(), anchor: new Date(nextRunMs).toISOString() }
+      nextRunMs = calendar ? addCalendarDays(nowMs, calendar.days, timeZone) : nowMs + intervalMs
+      schedule = { every, anchor: new Date(nextRunMs).toISOString(), ...(calendar ? { time_zone: timeZone } : {}) }
     }
   } else {
-    if (input.schedule?.start_at) throw new ScheduleError('start_at goes with "every" (a repeating task); a one-off task uses run_at')
-    throw new ScheduleError('schedule must be { "run_at": "<ISO timestamp>" } or { "every": "<interval, e.g. 1h>", "start_at"?: "<ISO timestamp>" }')
+    if (input.schedule?.start_at || input.schedule?.at) throw new ScheduleError('start_at and at go with "every" (a repeating task); a one-off task uses run_at')
+    throw new ScheduleError('schedule must be { "run_at": "<ISO timestamp>" } or { "every": "<interval, e.g. 1h>", "start_at"?: "<ISO timestamp>" } or { "every": "1d", "at": "09:00" }')
   }
   const task: ScheduledTask = {
     task_id: randomUUID(),
@@ -283,6 +333,33 @@ export async function deleteScheduledTask(taskId: string): Promise<void> {
   await getSchedulerStore().remove(taskId)
 }
 
+/** Moves every daily and weekly (whole-day) task to `toTimeZone`,
+ * keeping its time of day: a 9:00 task made while the workspace was on
+ * UTC runs at 9:00 in the new zone. A task from before tasks kept their
+ * zone is taken to be in `fromTimeZone`. One-off and shorter repeating
+ * tasks are left alone: they're a moment, not a time of day. Returns
+ * how many moved. */
+export async function moveScheduledTasksToTimeZone(fromTimeZone: string, toTimeZone: string, nowMs = Date.now()): Promise<number> {
+  let moved = 0
+  for (const listed of await getSchedulerStore().list()) {
+    if (listed.status === 'done' || listed.status === 'cancelled' || !('every' in listed.schedule) || !everyDays(listed.schedule.every)) continue
+    await getSchedulerStore().update(listed.task_id, (t) => {
+      if (!t || !('every' in t.schedule) || !t.schedule.anchor) return t
+      const days = everyDays(t.schedule.every)
+      const from = t.schedule.time_zone ?? fromTimeZone
+      if (!days || from === toTimeZone) return t
+      const anchorMs = instantOf(wallTimeAt(Date.parse(t.schedule.anchor), from), toTimeZone)
+      const schedule = { ...t.schedule, anchor: new Date(anchorMs).toISOString(), time_zone: toTimeZone }
+      moved++
+      // A run that's due or under way keeps its slot; the next one moves.
+      if (t.status !== 'scheduled' || !t.next_run_at || Date.parse(t.next_run_at) <= nowMs) return { ...t, schedule }
+      const next = nextAnchoredSlot(anchorMs, parseEvery(t.schedule.every), nowMs, { days, timeZone: toTimeZone })
+      return { ...t, schedule, next_run_at: new Date(next).toISOString() }
+    })
+  }
+  return moved
+}
+
 /** When the next task is due — for a host that stops idle servers and
  * needs to wake this one in time (GET /internal/activity). */
 export async function nextScheduledWakeAt(): Promise<string | undefined> {
@@ -294,7 +371,8 @@ function nextRunAfter(task: ScheduledTask, nowMs: number): number | undefined {
   if ('run_at' in task.schedule) return undefined
   const intervalMs = parseEvery(task.schedule.every)
   const anchorMs = task.schedule.anchor ? Date.parse(task.schedule.anchor) : Date.parse(task.created_at) + intervalMs
-  return nextAnchoredSlot(anchorMs, intervalMs, nowMs)
+  const days = everyDays(task.schedule.every)
+  return nextAnchoredSlot(anchorMs, intervalMs, nowMs, days && task.schedule.time_zone ? { days, timeZone: task.schedule.time_zone } : undefined)
 }
 
 /** Moves the old lp-task-scheduler's task files (`<dir>/.tasks/*.json`)

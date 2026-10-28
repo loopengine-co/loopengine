@@ -23,7 +23,7 @@ export { setUsageSink, recordUsage, type UsageEvent, type UsageSink } from '#cor
 export { readNotifierFile, writeNotifierFile, removeNotifierFile, validateNotifierFile, notifierConfigFromFile, NotifierFileError, NOTIFIER_SECRET_VARS, type NotifierFile, type MessagingApprover } from '#core/notifier-file.js'
 export { listDeliveries, recordDelivery, type NotifierDelivery } from '#core/notifier-deliveries.js'
 export { describeNotifier } from '#core/http-notifier.js'
-export { Scheduler, ScheduleError, FileSchedulerStore, getSchedulerStore, setSchedulerStore, createScheduledTask, listScheduledTasks, getScheduledTask, cancelScheduledTask, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, deleteScheduledTask, nextScheduledWakeAt, importLegacyScheduledTasks, parseEvery, describeSchedule, type ScheduledTask, type ScheduledTaskRun, type ScheduledTaskStatus, type Schedule, type SchedulerStore, type FireTask, type CreateScheduledTaskInput } from '#core/scheduler.js'
+export { Scheduler, ScheduleError, FileSchedulerStore, getSchedulerStore, setSchedulerStore, createScheduledTask, listScheduledTasks, getScheduledTask, cancelScheduledTask, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, deleteScheduledTask, nextScheduledWakeAt, moveScheduledTasksToTimeZone, importLegacyScheduledTasks, parseEvery, describeSchedule, type ScheduledTask, type ScheduledTaskRun, type ScheduledTaskStatus, type Schedule, type SchedulerStore, type FireTask, type CreateScheduledTaskInput } from '#core/scheduler.js'
 export { NOTIFIER_SLACK_SIGNING_SECRET_VAR } from '#core/notifier-file.js'
 export { firstSighting, handleInboundMessage, handleMessagingAction, settleThreadChoice, isPlainApproval, type MessagingDeps, type MessagingDecision, type DecisionOutcome } from '#core/messaging/engine.js'
 export { formatArgs, formatChange, labelFor } from '#core/messaging/format-args.js'
@@ -274,10 +274,11 @@ export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult } from '
 export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
 
-export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError } from './web/global-config.js'
+export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from './web/global-config.js'
 export { loopengineVersion } from './core/version.js'
 export { describeUpgrade, runUpgrade, UpgradeError } from './web/upgrade-admin.js'
-export type { ModelProviderInfo, AgentModelUsage, ModelsView, GatewayProviderInfo, GatewaysView } from './web/global-config.js'
+export type { ModelProviderInfo, AgentModelUsage, ModelsView, GatewayProviderInfo, GatewaysView, TimeZoneView } from './web/global-config.js'
+export { workspaceTimeZone, serverTimeZone, isValidTimeZone, TIME_ZONE_ENV } from '#core/time-zone.js'
 
 export { createTrackedApprover, listApprovals, decideApproval, findApproval } from './web/web-approver.js'
 

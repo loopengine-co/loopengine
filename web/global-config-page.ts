@@ -299,12 +299,76 @@ ${consoleShellScript}
       ['Environment name', '<code>' + escapeHtml(d.environment) + '</code> <span class="hint">(LOOPENGINE_ENV)</span>'],
       ['Public address', d.publicUrl ? '<code>' + escapeHtml(d.publicUrl) + '</code>' : '<span class="hint">Not set (LOOPENGINE_PUBLIC_URL); links in notifications use the address saved with each notifier</span>'],
       ['Scheduled tasks', d.scheduler === 'off' ? 'Off on this server (LOOPENGINE_SCHEDULER=off)' : 'Run by this server'],
+      ['Time zone', d.timeZone ? '<code>' + escapeHtml(d.timeZone) + '</code>' : '<span class="hint">The server' + String.fromCharCode(8217) + 's own. Update the template below to choose one here.</span>'],
       ['Theme', 'Follows your system'],
     ];
     return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
       rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
+      (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
+  }
+
+  // ---- Time zone ----
+
+  function renderTimeZone(t) {
+    var box = document.getElementById('timeZoneBox');
+    if (!box) return;
+    var intro = '<p>Schedules and templates use this for times of day: &ldquo;daily at 09:00&rdquo; runs at 9:00 here, and daily and weekly schedules keep that time when the clocks change. ' +
+      (t.chosen ? '' : 'Not chosen yet, so it' + String.fromCharCode(8217) + 's the server' + String.fromCharCode(8217) + 's (<code>' + escapeHtml(t.server) + '</code>).') + '</p>';
+    if (!t.canSave) {
+      box.innerHTML = intro + '<p>In use: <code>' + escapeHtml(t.timeZone) + '</code></p><p class="hint">Set LOOPENGINE_ADMIN_AUTH to change it here, or put <code>LOOPENGINE_TIME_ZONE</code> in .env.</p>';
+      return;
+    }
+    var browserZone = '';
+    try { browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+    var options = t.zones.map(function (z) {
+      return '<option value="' + escapeHtml(z) + '"' + (z === t.timeZone ? ' selected' : '') + '>' + escapeHtml(z.replace(/_/g, ' ')) + '</option>';
+    }).join('');
+    box.innerHTML = intro +
+      '<form id="timeZoneForm" style="display:flex;flex-direction:column;gap:10px;max-width:480px">' +
+        '<label for="timeZoneSelect">Time zone</label>' +
+        '<select id="timeZoneSelect" name="timeZone">' + options + '</select>' +
+        (browserZone && browserZone !== t.timeZone && t.zones.indexOf(browserZone) >= 0
+          ? '<p class="hint" style="margin:0"><a href="#" id="timeZoneUseBrowser">Use this browser' + String.fromCharCode(8217) + 's, ' + escapeHtml(browserZone) + '</a></p>' : '') +
+        '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="moveSchedules" checked> Move existing daily and weekly schedules too, keeping their time of day</label>' +
+        '<div><button type="submit" class="primary">Save</button></div>' +
+        '<div id="timeZoneMsg" class="hint"></div>' +
+      '</form>';
+    var form = document.getElementById('timeZoneForm');
+    var useBrowser = document.getElementById('timeZoneUseBrowser');
+    if (useBrowser) useBrowser.addEventListener('click', function (ev) { ev.preventDefault(); form.timeZone.value = browserZone; });
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var msg = document.getElementById('timeZoneMsg');
+      var btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      msg.textContent = 'Saving' + String.fromCharCode(8230);
+      fetch('/config/time-zone', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ timeZone: form.timeZone.value, moveSchedules: form.moveSchedules.checked }),
+      })
+        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+        .then(function (r) {
+          btn.disabled = false;
+          if (!r.ok) { msg.innerHTML = '<span class="error">' + escapeHtml(r.body.error || 'Could not save') + '</span>'; return; }
+          msg.textContent = 'Saved: ' + r.body.timeZone.replace(/_/g, ' ') + '.' +
+            (r.body.moved ? ' Moved ' + r.body.moved + ' schedule' + (r.body.moved === 1 ? '' : 's') + '.' : '');
+        })
+        .catch(function (err) { btn.disabled = false; msg.innerHTML = '<span class="error">' + escapeHtml(err.message) + '</span>'; });
+    });
+  }
+
+  function loadTimeZone() {
+    if (!document.getElementById('timeZoneBox')) return;
+    fetch('/config/time-zone', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(renderTimeZone)
+      .catch(function (err) {
+        var box = document.getElementById('timeZoneBox');
+        if (box) box.innerHTML = '<p class="error">Could not load the time zone: ' + escapeHtml(err.message) + '</p>';
+      });
   }
 
   // ---- Upgrade ----
@@ -437,6 +501,7 @@ ${consoleShellScript}
       .then(function (d) {
         content.innerHTML = renderSettings(d);
         loadedSections.settings = true;
+        loadTimeZone();
         loadUpgrade();
       })
       .catch(function (err) {

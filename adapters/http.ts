@@ -133,7 +133,8 @@ import {
   ActauthRuleExistsError,
   ActauthRuleNotFoundError,
 } from '#web/actauth-admin.js'
-import { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError } from '#web/global-config.js'
+import { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from '#web/global-config.js'
+import { workspaceTimeZone } from '#core/time-zone.js'
 import { scaffoldAgent, AgentNameError, AgentExistsError, AgentModelError, type AgentTemplateOptions } from '#bin/cli.js'
 import { createTrackedApprover, listApprovals, decideApproval, findApproval } from '#web/web-approver.js'
 import { listQuestions, answerQuestion, findQuestion, createAskUserTool, createScheduleTools, type PendingQuestion } from '#core/system-tools/index.js'
@@ -1209,7 +1210,7 @@ function scheduleJson(res: ServerResponse, status: number, body: unknown): void 
 
 async function handleSchedulesGet(res: ServerResponse, agentName: string): Promise<void> {
   if (!getEntry(agentName)) return scheduleJson(res, 404, { error: `unknown agent '${agentName}'` })
-  scheduleJson(res, 200, { tasks: await listScheduledTasks({ agent: agentName }) })
+  scheduleJson(res, 200, { tasks: await listScheduledTasks({ agent: agentName }), time_zone: workspaceTimeZone() })
 }
 
 async function handleSchedulesPost(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
@@ -1219,7 +1220,7 @@ async function handleSchedulesPost(req: IncomingMessage, res: ServerResponse, ag
     const task = await createScheduledTask({
       agent: agentName,
       message: String(body.message ?? ''),
-      schedule: (body.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown },
+      schedule: (body.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown; at?: unknown; weekday?: unknown },
       task_name: typeof body.task_name === 'string' ? body.task_name : undefined,
       notify: body.notify === true,
     })
@@ -3289,6 +3290,7 @@ const server = createServer(async (req, res) => {
           environment: process.env.LOOPENGINE_ENV ?? 'production',
           publicUrl: process.env.LOOPENGINE_PUBLIC_URL ?? null,
           scheduler: process.env.LOOPENGINE_SCHEDULER === 'off' ? 'off' : 'on',
+          timeZone: workspaceTimeZone(),
         }),
       )
       return
@@ -3346,6 +3348,29 @@ const server = createServer(async (req, res) => {
         return
       }
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }))
+      return
+    }
+    // Settings → Time zone (web/global-config.ts): what "9:00" means in
+    // schedules. Saved like a model key, so refused without auth too.
+    if (req.method === 'GET' && pathname === '/config/time-zone') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ ...describeTimeZone(), canSave: secretsProtected }))
+      return
+    }
+    if (req.method === 'PUT' && pathname === '/config/time-zone') {
+      if (!secretsProtected) {
+        res.writeHead(403, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'Refusing to change settings without LOOPENGINE_ADMIN_AUTH configured: set it first, or put LOOPENGINE_TIME_ZONE in .env.' }),
+        )
+        return
+      }
+      try {
+        const body = await readJsonBody(req)
+        const outcome = await setWorkspaceTimeZone(body.timeZone, { moveSchedules: body.moveSchedules === true })
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, ...outcome }))
+      } catch (err) {
+        const status = err instanceof TimeZoneError ? 400 : 500
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+      }
       return
     }
     if (req.method === 'GET' && pathname === '/config/gateways') {

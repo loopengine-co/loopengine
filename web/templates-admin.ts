@@ -9,6 +9,7 @@
 // rule. Its template's rules are written before its abilities' own, so
 // they take precedence where both name the same tool.
 import { createScheduledTask, pauseScheduledTask } from '../core/scheduler.js'
+import { workspaceTimeZone } from '../core/time-zone.js'
 import { STARTER_TEMPLATES, starterTemplate, templateScheduleStart, type StarterTemplate, type TemplateSchedule } from '../core/system-agents/templates.js'
 import { ActauthRuleExistsError, addActauthRule, setDefaultDecision } from './actauth-admin.js'
 import { setAgentEnvVar } from './env-admin.js'
@@ -77,7 +78,7 @@ export interface CreatedTemplateAgent {
   abilities: { installed: string[]; failed: { name: string; error: string }[] }
   checklist: TemplateChecklistItem[]
   exampleMessage?: string
-  schedule?: { description: string; next_run_at?: string }
+  schedule?: { description: string; timeZone?: string; next_run_at?: string }
   /** Set when the schedule couldn't be created; the agent still was. */
   scheduleError?: string
   /** Set when the agent was written but couldn't be loaded. */
@@ -235,7 +236,7 @@ export async function createFromTemplate(id: string, deps: TemplateCreateDeps | 
         task_name: setup.schedule.name,
       })
       await pauseScheduledTask(task.task_id)
-      schedule = { description: describeTemplateSchedule(setup.schedule), ...(startAt ? { next_run_at: startAt } : {}) }
+      schedule = { description: describeTemplateSchedule(setup.schedule), timeZone: workspaceTimeZone(), ...(startAt ? { next_run_at: startAt } : {}) }
     } catch (err) {
       scheduleError = err instanceof Error ? err.message : String(err)
     }
@@ -276,7 +277,7 @@ async function createFromTemplateLegacy(id: string, deps: LegacyTemplateCreateDe
       const startAt = templateScheduleStart(setup.schedule)
       const task = await createScheduledTask({ agent: name, message: setup.schedule.message, schedule: { every: setup.schedule.every, ...(startAt ? { start_at: startAt } : {}) }, task_name: setup.schedule.name })
       await pauseScheduledTask(task.task_id)
-      schedule = { description: describeTemplateSchedule(setup.schedule), ...(startAt ? { next_run_at: startAt } : {}) }
+      schedule = { description: describeTemplateSchedule(setup.schedule), timeZone: workspaceTimeZone(), ...(startAt ? { next_run_at: startAt } : {}) }
     } catch (err) {
       scheduleError = err instanceof Error ? err.message : String(err)
     }

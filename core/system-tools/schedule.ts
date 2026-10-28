@@ -14,6 +14,7 @@ import {
   type ScheduledTask,
   type ScheduledTaskStatus,
 } from '../scheduler.js'
+import { formatWallTime, workspaceTimeZone } from '../time-zone.js'
 
 /** How many active (not done or cancelled) tasks one agent may create
  * through these tools — each run is a model call, so a runaway loop of
@@ -23,7 +24,13 @@ function maxActivePerAgent(): number {
   return Number.isInteger(n) && n > 0 ? n : 25
 }
 
-function summary(t: ScheduledTask) {
+/** next_run_at as the workspace's wall-clock time, so the model can
+ * confirm "tomorrow at 9:00" without converting from UTC. */
+function nextRunLocal(t: ScheduledTask, timeZone: string): string | undefined {
+  return t.next_run_at ? `${formatWallTime(Date.parse(t.next_run_at), timeZone)} (${timeZone})` : undefined
+}
+
+function summary(t: ScheduledTask, timeZone: string) {
   return {
     task_id: t.task_id,
     task_name: t.task_name,
@@ -31,12 +38,16 @@ function summary(t: ScheduledTask) {
     schedule: t.schedule,
     status: t.status,
     next_run_at: t.next_run_at,
+    next_run_local: nextRunLocal(t, timeZone),
     run_count: t.run_count,
     last_status: t.last_status,
   }
 }
 
 export function createScheduleTools(agentName: string): ToolDefinition[] {
+  // Read once per run: the time zone is in the tool description, which
+  // should stay the same from call to call.
+  const timeZone = workspaceTimeZone()
   async function ownTask(taskId: string, tool: string): Promise<ScheduledTask> {
     const task = await getScheduledTask(taskId)
     // Another agent's task reads exactly like a missing one.
@@ -47,7 +58,7 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
   const scheduleTask: ToolDefinition = {
     name: 'system_schedule_task',
     description:
-      'Schedule a message to yourself for later — once at a set time, or repeatedly on an interval — like setting a reminder or a cron job. When it fires you receive the message as a new conversation (none of the current one carries over, so make the message self-contained) and handle it with your tools as usual, with no person live. A tool call that needs approval goes wherever your approval requests are sent and waits; if nowhere is set, it is denied. Use only when the user asks for something to happen later or regularly, never on your own initiative. Use the user\'s time zone (ask if unclear), prefer the longest interval that serves them since each run is a model call, and confirm the schedule back in plain words. Returns task_id and next_run_at.',
+      'Schedule a message to yourself for later — once at a set time, or repeatedly on an interval — like setting a reminder or a cron job. When it fires you receive the message as a new conversation (none of the current one carries over, so make the message self-contained) and handle it with your tools as usual, with no person live. A tool call that needs approval goes wherever your approval requests are sent and waits; if nowhere is set, it is denied. Use only when the user asks for something to happen later or regularly, never on your own initiative. Times are in this workspace\'s time zone, ' + timeZone + ', unless you give an offset, so when the user means another time zone, give its offset. Prefer the longest interval that serves them since each run is a model call, and confirm the schedule back in plain words. Returns task_id, next_run_at and next_run_local (the workspace\'s time).',
     input_schema: {
       type: 'object',
       properties: {
@@ -58,8 +69,8 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
         schedule: {
           type: 'object',
           description:
-            'Either { "run_at": "<ISO 8601 timestamp with time zone>" } for once, or { "every": "<interval>", "start_at"?: "<ISO 8601 timestamp with time zone>" } to repeat until cancelled — a number plus s/m/h/d, e.g. "30m", "1h", "1d"; 30s at the shortest. A repeating task keeps its first slot: started at 10:07 with "1h", it fires at 11:07, 12:07, ... Use start_at to pick that first slot, for a time of day or day of week: "every day at 9am" is every "1d" with start_at the next 9:00 in the user\'s time zone; "every Monday at 9am" is every "7d" with start_at the next Monday 9:00.',
-          properties: { run_at: { type: 'string' }, every: { type: 'string' }, start_at: { type: 'string' } },
+            'Either { "run_at": "<ISO 8601 timestamp>" } for once, or { "every": "<interval>", ... } to repeat until cancelled — a number plus s/m/h/d, e.g. "30m", "1h", "1d"; 30s at the shortest. A timestamp without an offset, like "2026-11-02T09:00", is in the workspace\'s time zone (' + timeZone + '). A repeating task keeps its first slot: started at 10:07 with "1h", it fires at 11:07, 12:07, ... For a time of day or day of week, add "at" (24-hour "HH:MM") and for weekly "weekday": "every day at 9am" is { "every": "1d", "at": "09:00" }; "every Monday at 9am" is { "every": "7d", "at": "09:00", "weekday": "monday" }. Daily and weekly tasks keep their time of day when the clocks change. Or give "start_at", a timestamp, for the first run.',
+          properties: { run_at: { type: 'string' }, every: { type: 'string' }, at: { type: 'string' }, weekday: { type: 'string' }, start_at: { type: 'string' } },
         },
         task_name: { type: 'string', description: 'Optional short label, shown when listing tasks and in the console.' },
         notify: { type: 'boolean', description: 'Optional — also send each run\'s result through your notifier (where your approval requests go), so a person sees it.' },
@@ -74,11 +85,11 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
       const task = await createScheduledTask({
         agent: agentName,
         message: String(input.message ?? ''),
-        schedule: (input.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown },
+        schedule: (input.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown; at?: unknown; weekday?: unknown },
         task_name: typeof input.task_name === 'string' ? input.task_name : undefined,
         notify: input.notify === true,
       })
-      return JSON.stringify({ task_id: task.task_id, next_run_at: task.next_run_at, schedule: task.schedule })
+      return JSON.stringify({ task_id: task.task_id, next_run_at: task.next_run_at, next_run_local: nextRunLocal(task, timeZone), schedule: task.schedule })
     },
   }
 
@@ -98,7 +109,7 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
     },
     execute: async (input) => {
       const status = typeof input.status === 'string' ? (input.status as ScheduledTaskStatus) : undefined
-      return JSON.stringify((await listScheduledTasks({ agent: agentName, status })).map(summary))
+      return JSON.stringify((await listScheduledTasks({ agent: agentName, status })).map((t) => summary(t, timeZone)))
     },
     safe: true,
   }
