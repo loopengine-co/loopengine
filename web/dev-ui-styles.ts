@@ -1,6 +1,6 @@
 // Shared look for every browser page adapters/http.ts serves — the agent
 // console (agents-config-page.ts), its Chat tab (playground.ts), the
-// agents home (agents-list-page.ts) and the Models/Integrations pages
+// agents home (agents-list-page.ts) and the Models/Abilities pages
 // (global-config-page.ts). All four render inside the same app shell
 // (web/console-shell.ts), so the shell's own classes (.le-*) live here
 // too, alongside the shared base: color tokens, type, form controls,

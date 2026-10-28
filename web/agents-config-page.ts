@@ -534,7 +534,7 @@ ${consoleShellScript}
   // has no spec to repopulate an edit form from, so it just gets a blank
   // cell — not a button that would 404 the moment it's clicked.
   function renderLocalTools(tools) {
-    if (!tools.length) return '<p class="muted">No tools yet. Add one below, install an ability, or connect an integration.</p>';
+    if (!tools.length) return '<p class="muted">No tools yet. Install an ability, or add one below.</p>';
     var rows = tools.map(function (t) {
       var actions = t.httpToolEditable
         ? '<button type="button" class="edit-http-tool-btn" data-name="' + escapeHtml(t.name) + '">Edit</button>'
@@ -2055,7 +2055,7 @@ ${consoleShellScript}
         '<input type="text" name="q" placeholder="Search by name or keyword (optional)">' +
         '<button type="submit">Search</button>' +
       '</form>' +
-      '<div id="abilitySearchResults"></div>' +
+      '<div id="abilitySearchResults" style="margin-bottom:32px"></div>' +
       '<h3 style="margin-top:24px">Install from a spec</h3>' +
       '<p class="hint">A git URL, a local <code>file:../path</code>, or a private npm package name/version — for anything not published publicly.</p>' +
       '<form id="abilityInstallForm" class="add-source">' +
@@ -2538,8 +2538,10 @@ ${consoleShellScript}
       '<section><h3>Your tools (' + cfg.localTools.length + ')</h3>' + renderLocalTools(cfg.localTools) +
       '<div class="admin-subsection"><h4 id="httpToolFormHeading">Create an HTTP tool</h4>' + renderHttpToolFormHtml() + '</div>' +
       '</section>' +
-      '<section id="gatewayToolsSection">' +
-        '<h3>From integrations <button type="button" id="gatewayToolsRefreshBtn" class="hint-btn">Refresh</button></h3>' +
+      // Shown only for an agent that already has Composio tools
+      // (gateway-tools.yml): see applyGatewaySources.
+      '<section id="gatewayToolsSection" style="display:none">' +
+        '<h3>From Composio <button type="button" id="gatewayToolsRefreshBtn" class="hint-btn">Refresh</button></h3>' +
         '<div id="gatewayToolsContent"><p class="hint">Loading&hellip;</p></div>' +
       '</section>' +
       '<section><h3>Subagents (' + cfg.agentAsTools.length + ')</h3>' + renderTools(cfg.agentAsTools) + '</section>';
@@ -3083,6 +3085,8 @@ ${consoleShellScript}
   function applyGatewaySources(name, sources) {
     var content = gatewayContentEl();
     if (!content) return;
+    var section = detail.querySelector('#gatewayToolsSection');
+    if (section) section.style.display = sources.length ? '' : 'none';
     content.innerHTML = renderGatewayHtml(sources);
     wireGatewayHandlers(name);
     gatewayLoadedFor = name;

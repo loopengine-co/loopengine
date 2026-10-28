@@ -1,5 +1,5 @@
 // The app shell every console page renders inside: a sidebar listing the
-// agents (plus Models and Integrations), and, for a page about one agent,
+// agents (plus Models, Abilities and Settings), and, for a page about one agent,
 // a header with its name, prompt and tabs. The tabs span two pages —
 // Chat is playground.ts, every other tab is agents-config-page.ts — so
 // both render the header through this one script and read as one app.
@@ -25,11 +25,11 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
   <div class="le-nav-label"><span>Agents</span><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
-  <a class="le-find" href="/templates" data-le-nav="templates">Start from a template</a>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
+  <a class="le-find" href="/templates" data-le-nav="templates">Start from a template</a>
   <nav class="le-foot" aria-label="Settings">
     <a href="/config?section=models" data-le-nav="models">Models</a>
-    <a href="/config?section=gateways" data-le-nav="integrations">Integrations</a>
+    <a href="/config?section=abilities" data-le-nav="abilities">Abilities</a>
     <a href="/config?section=settings" data-le-nav="settings">Settings</a>
     <div class="le-who" id="leWho" hidden></div>
   </nav>
@@ -165,7 +165,7 @@ export const consoleShellScript: string = `<script>
   }
 
   var section = params.get('section');
-  var foot = page === 'config' ? (section === 'gateways' ? 'integrations' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'templates' ? page : '';
+  var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' ? 'abilities' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'templates' ? page : '';
   var footLinks = document.querySelectorAll('[data-le-nav]');
   for (var i = 0; i < footLinks.length; i++) {
     if (footLinks[i].getAttribute('data-le-nav') === foot) footLinks[i].setAttribute('aria-current', 'page');

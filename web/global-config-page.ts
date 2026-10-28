@@ -4,9 +4,9 @@
 // Overview/Skills/Tools/ActAuth tabs (served separately at
 // /agents/config, deliberately left untouched by this page). A left
 // sidebar picks between Models (which providers this deployment can
-// call, and which agents use which) and Gateways (whether the composio
-// CLI is authenticated on this machine) — see global-config.ts for where
-// that data actually comes from. "Agents" is a plain link out to
+// call, and which agents use which), Abilities (what each agent has
+// installed, and adding more) and Settings — see global-config.ts for
+// where most of that data comes from. "Agents" is a plain link out to
 // /agents/config, not a third client-rendered section here: that page
 // already owns the full per-agent picture, duplicating or embedding it
 // would just be two places for the same UI to drift apart.
@@ -79,10 +79,10 @@ ${consoleSidebarHtml}
       <div><h1>Models</h1><p>API keys for each model provider, and which agents use each one. A saved key is stored on this server and never shown again.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="modelsContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
-  <div class="section-panel" data-section-panel="gateways" style="display:none">
+  <div class="section-panel" data-section-panel="abilities" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Integrations</h1><p>Outside tool sources (such as Composio) that agents can add tools from.</p></div></div></div>
-    <div class="le-scroll"><div class="le-page" style="display:block"><div id="gatewaysContent"><p class="hint">Loading&hellip;</p></div></div></div>
+      <div><h1>Abilities</h1><p>How agents reach your apps, such as Gmail, Shopify or GitHub. An ability installed into an agent adds its tools, skills and permission rules.</p></div></div></div>
+    <div class="le-scroll"><div class="le-page" style="display:block"><div id="abilitiesContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
   <div class="section-panel" data-section-panel="settings" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
@@ -203,83 +203,150 @@ ${consoleShellScript}
       });
   }
 
-  // ---- Gateways section ----
+  // ---- Abilities section ----
+  // How agents reach outside apps: an ability (lp-gmail, lp-shopify...)
+  // installed into an agent brings its tools, skills and permission
+  // rules. Abilities live in each agent, so this page gathers them from
+  // every agent's own Abilities routes and installs through the same
+  // route, which also keeps it working with any project template.
 
-  function renderGatewayCard(g) {
-    var statusHtml;
-    var bodyHtml = '';
-    if (!g.supported) {
-      statusHtml = '<span class="hint">not yet supported</span>';
-    } else if (g.connected) {
-      statusHtml = badge(true, 'connected', 'not connected');
-      bodyHtml = '<p class="hint">' + escapeHtml(g.email || '') + (g.org ? ' &middot; ' + escapeHtml(g.org) : '') + '</p>' +
-        '<button type="button" class="delete-btn disconnect-btn" data-provider="' + escapeHtml(g.provider) + '">Disconnect</button>';
-    } else {
-      // No Connect button/form here — composio login's only
-      // non-interactive path (--user-api-key) doesn't accept the kind of
-      // key an operator actually has on hand (Composio hands out a
-      // separate x-consumer-api-key credential for MCP clients, which
-      // 401s against this flag); composio login itself opens a real
-      // browser, which a web request can't drive. These are the same
-      // two commands Composio's own docs give for getting started.
-      statusHtml = badge(false, 'connected', 'not connected');
-      bodyHtml = '<pre><code>curl -fsSL https://composio.dev/install | sh</code></pre>' +
-        '<pre><code>composio login</code></pre>' +
-        '<p class="hint">Run both on the machine running this server, then reload this page.</p>';
-    }
-    return '<div class="source' + (g.supported ? '' : ' unsupported') + '">' +
-      '<div class="source-head">' +
-        '<h4>' + escapeHtml(g.provider) + '</h4>' +
-        statusHtml +
-      '</div>' +
-      bodyHtml +
-      '</div>';
+  var abilityAgents = [];
+  var abilitiesByAgent = {};
+
+  function agentAbilitiesHref(agent) {
+    return '/agents/config?agent=' + encodeURIComponent(agent) + '&tab=abilities';
   }
 
-  function applyGateways(gateways) {
-    var content = document.getElementById('gatewaysContent');
-    content.innerHTML = (gateways || []).map(renderGatewayCard).join('');
-    wireGatewayCards(content);
-    loadedSections.gateways = true;
-  }
-
-  // Disconnect is a machine-wide CLI-session action (see
-  // disconnectComposioAccount's own doc comment in gateway-tools.ts) —
-  // it gets a confirm() for that reason, same as this admin UI's other
-  // consequential-but-not-undoable actions (removing a skill, a rule, a
-  // gateway tool). No Connect counterpart to wire — see renderGatewayCard's
-  // own comment for why that's instructions, not a form.
-  function wireGatewayCards(content) {
-    var disconnectButtons = content.querySelectorAll('.disconnect-btn');
-    for (var j = 0; j < disconnectButtons.length; j++) {
-      disconnectButtons[j].addEventListener('click', function (ev) {
-        var btn = ev.currentTarget;
-        var provider = btn.getAttribute('data-provider');
-        if (!confirm('Disconnect ' + provider + '? This logs out the CLI on this machine for every agent’s gateway tools, not just this browser tab.')) return;
-        btn.disabled = true;
-        fetch('/config/gateways/' + encodeURIComponent(provider) + '/disconnect', { method: 'POST' })
-          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
-          .then(function (result) {
-            if (!result.ok) throw new Error(result.body.error || 'request failed');
-            applyGateways(result.body.gateways || []);
-          })
-          .catch(function (err) {
-            alert('Could not disconnect: ' + err.message);
-            btn.disabled = false;
-          });
+  function renderInstalledAbilities() {
+    var byName = {};
+    abilityAgents.forEach(function (agent) {
+      (abilitiesByAgent[agent] || []).forEach(function (a) {
+        if (!byName[a.name]) byName[a.name] = { name: a.name, versions: [], agents: [] };
+        if (byName[a.name].versions.indexOf(a.version) === -1) byName[a.name].versions.push(a.version);
+        byName[a.name].agents.push(agent);
       });
+    });
+    var names = Object.keys(byName).sort();
+    if (!names.length) return '<p class="hint">No agent has an ability yet. Add one below, or start from a template, which installs the ones it needs.</p>';
+    return '<table><thead><tr><th>Ability</th><th>Version</th><th>Agents</th></tr></thead><tbody>' +
+      names.map(function (n) {
+        var a = byName[n];
+        return '<tr><td><code>' + escapeHtml(a.name) + '</code></td>' +
+          '<td>' + escapeHtml(a.versions.join(', ')) + '</td>' +
+          '<td>' + a.agents.map(function (agent) { return '<a href="' + agentAbilitiesHref(agent) + '">' + escapeHtml(agent) + '</a>'; }).join(', ') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function renderAbilities() {
+    var content = document.getElementById('abilitiesContent');
+    var add = abilityAgents.length
+      ? '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+          '<label for="abilityAgent">Install into</label>' +
+          '<select id="abilityAgent">' + abilityAgents.map(function (a) { return '<option value="' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>'; }).join('') + '</select>' +
+          '<form id="abilitySearchForm" style="display:flex;gap:6px;flex:1;min-width:220px;margin:0">' +
+            '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search abilities" style="flex:1">' +
+            '<button type="submit">Search</button>' +
+          '</form>' +
+        '</div>' +
+        '<p id="abilityInstallStatus" class="hint"></p>' +
+        '<div id="abilitySearchResults"><p class="hint">Loading&hellip;</p></div>'
+      : '<p>Create an agent first: abilities are installed into one. <a href="/templates">Start from a template</a> or <a href="/agents?new=1">create an agent</a>.</p>';
+    content.innerHTML =
+      '<section><h3>Installed</h3><div id="abilitiesInstalled">' + renderInstalledAbilities() + '</div></section>' +
+      '<section><h3>Add an ability</h3>' + add + '</section>';
+    if (!abilityAgents.length) return;
+    var form = document.getElementById('abilitySearchForm');
+    form.addEventListener('submit', function (ev) { ev.preventDefault(); searchAbilities(form.q.value.trim()); });
+    document.getElementById('abilityAgent').addEventListener('change', function () { searchAbilities(form.q.value.trim()); });
+    searchAbilities('');
+  }
+
+  var lastSearch = { q: null, results: [] };
+
+  function renderSearchResults() {
+    var resultsEl = document.getElementById('abilitySearchResults');
+    var agent = document.getElementById('abilityAgent').value;
+    var installed = (abilitiesByAgent[agent] || []).map(function (a) { return a.name; });
+    var results = lastSearch.results;
+    resultsEl.innerHTML = results.length
+      ? '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' + results.map(function (pkg) {
+          var action = installed.indexOf(pkg.name) !== -1
+            ? '<span class="hint">In ' + escapeHtml(agent) + '</span>'
+            : '<button type="button" class="ability-install-btn" data-spec="' + escapeHtml(pkg.name) + '">Install</button>';
+          return '<tr><td><code>' + escapeHtml(pkg.name) + '</code> <span class="hint">' + escapeHtml(pkg.version) + '</span></td>' +
+            '<td>' + escapeHtml(pkg.description || '') + '</td><td>' + action + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<p class="hint">No published abilities match.</p>';
+    var buttons = resultsEl.querySelectorAll('.ability-install-btn');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener('click', function (ev) { installAbility(agent, ev.currentTarget.dataset.spec, ev.currentTarget); });
     }
   }
 
-  function loadGateways() {
-    var content = document.getElementById('gatewaysContent');
-    fetch('/config/gateways')
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        applyGateways(data.gateways || []);
+  function searchAbilities(q) {
+    var resultsEl = document.getElementById('abilitySearchResults');
+    if (lastSearch.q === q) { renderSearchResults(); return; }
+    resultsEl.innerHTML = '<p class="hint">Loading&hellip;</p>';
+    // Search doesn't depend on the agent; the route just lives under one.
+    fetch('/agents/' + encodeURIComponent(abilityAgents[0]) + '/abilities/search' + (q ? '?q=' + encodeURIComponent(q) : ''))
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'search failed');
+        lastSearch = { q: q, results: r.body.results || [] };
+        renderSearchResults();
+      })
+      .catch(function (err) { resultsEl.innerHTML = '<p class="error">Could not search abilities: ' + escapeHtml(err.message) + '</p>'; });
+  }
+
+  function installAbility(agent, spec, btn) {
+    var status = document.getElementById('abilityInstallStatus');
+    btn.disabled = true;
+    status.className = 'hint';
+    status.textContent = 'Installing ' + spec + ' into ' + agent + String.fromCharCode(8230);
+    fetch('/agents/' + encodeURIComponent(agent) + '/abilities', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: spec }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'request failed');
+        var deps = r.body.dependencies || [];
+        status.innerHTML = 'Installed ' + escapeHtml(spec) + ' into ' + escapeHtml(agent) + '. ' +
+          '<a href="' + agentAbilitiesHref(agent) + '">Add its keys in ' + escapeHtml(agent) + String.fromCharCode(8217) + 's Abilities tab</a>.' +
+          (deps.length ? ' <strong>It also needs <code>' + escapeHtml(deps.join(', ')) + '</code>:</strong> use Install deps there.' : '');
+        return loadAgentAbilities(agent).then(function () {
+          document.getElementById('abilitiesInstalled').innerHTML = renderInstalledAbilities();
+          renderSearchResults();
+        });
       })
       .catch(function (err) {
-        content.innerHTML = '<p class="error">Could not load gateways: ' + escapeHtml(err.message) + '</p>';
+        btn.disabled = false;
+        status.className = 'error';
+        status.textContent = 'Could not install: ' + err.message;
+      });
+  }
+
+  function loadAgentAbilities(agent) {
+    return fetch('/agents/' + encodeURIComponent(agent) + '/abilities')
+      .then(function (r) { return r.ok ? r.json() : { abilities: [] }; })
+      .then(function (d) { abilitiesByAgent[agent] = d.abilities || []; })
+      .catch(function () { abilitiesByAgent[agent] = []; });
+  }
+
+  function loadAbilities() {
+    var content = document.getElementById('abilitiesContent');
+    leShell.ready
+      .then(function (agents) {
+        abilityAgents = agents.map(function (a) { return a.name; });
+        return Promise.all(abilityAgents.map(loadAgentAbilities));
+      })
+      .then(function () {
+        renderAbilities();
+        loadedSections.abilities = true;
+      })
+      .catch(function (err) {
+        content.innerHTML = '<p class="error">Could not load abilities: ' + escapeHtml(err.message) + '</p>';
       });
   }
 
@@ -521,7 +588,7 @@ ${consoleShellScript}
       panels[j].style.display = panels[j].dataset.sectionPanel === section ? 'contents' : 'none';
     }
     if (section === 'models' && !loadedSections.models) loadModels();
-    if (section === 'gateways' && !loadedSections.gateways) loadGateways();
+    if (section === 'abilities' && !loadedSections.abilities) loadAbilities();
     if (section === 'settings' && !loadedSections.settings) loadSettings();
   }
 
@@ -529,12 +596,14 @@ ${consoleShellScript}
     sectionButtons[i].addEventListener('click', function (ev) { switchSection(ev.currentTarget.dataset.section); });
   }
 
-  // Deep-linked from agents-config-page.ts's own Models/Gateways sidebar
-  // links (/config?section=gateways, say) — preselect it if it names a
+  // Deep-linked from the console sidebar's Models/Abilities/Settings
+  // links (/config?section=abilities, say) — preselect it if it names a
   // real section, same "trust the query param only if it's valid"
   // caution playground.ts's own ?agent= handling already uses.
   var requestedSection = new URLSearchParams(location.search).get('section');
-  var initialSection = requestedSection === 'gateways' || requestedSection === 'models' || requestedSection === 'settings' ? requestedSection : currentSection;
+  // ?section=gateways is the old Integrations page's link.
+  if (requestedSection === 'gateways') requestedSection = 'abilities';
+  var initialSection = requestedSection === 'abilities' || requestedSection === 'models' || requestedSection === 'settings' ? requestedSection : currentSection;
   switchSection(initialSection);
 })();
 </script>
