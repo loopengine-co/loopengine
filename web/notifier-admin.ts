@@ -163,7 +163,7 @@ function activeNotifierTarget(config: AgentConfig, defaultWebhook?: DefaultWebho
   const dir = agentDirFor(config)
   const file = readNotifierFile(dir)
   if (file) {
-    const { config: fromFile } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
+    const { config: fromFile } = notifierConfigFromFile(file, createAgentEnv(config.name, dir), config.name)
     if (fromFile) return fromFile
   }
   return defaultWebhook ? { channel: 'webhook', config: { webhookUrl: defaultWebhook.webhookUrl, webhookSecret: defaultWebhook.webhookSecret }, events: ['run_finish'] } : undefined
@@ -204,7 +204,7 @@ export async function testAgentNotifier(config: AgentConfig, defaultWebhook?: De
     const dir = agentDirFor(config)
     const file = readNotifierFile(dir)
     if (file) {
-      const { config: fromFile, missingSecret } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
+      const { config: fromFile, missingSecret } = notifierConfigFromFile(file, createAgentEnv(config.name, dir), config.name)
       if (!fromFile) return { ok: false, channel: file.channel, error: `${missingSecret} is not set for this agent` }
       target = fromFile
     }
@@ -218,6 +218,19 @@ export async function testAgentNotifier(config: AgentConfig, defaultWebhook?: De
   }
   if (target.channel === 'slack') {
     return { channel: 'slack', ...(await sendTestSlackMessage(target.config.botToken, target.config.channelId, `Test from LoopEngine: approvals for ${config.name} will be posted here.`)) }
+  }
+  if (target.channel === 'email') {
+    try {
+      await target.config.sendEmail(
+        target.config.to,
+        `Test from LoopEngine: ${config.name}`,
+        `<p>This is a test. Approval requests and questions from <b>${config.name}</b> will be emailed here, each with a link to approve, deny or answer.</p>`,
+        { kind: 'test' },
+      )
+      return { channel: 'email', ok: true }
+    } catch (err) {
+      return { channel: 'email', ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   }
   return { ok: false, channel: target.channel, error: `Send test isn't supported for ${target.channel} yet` }
 }

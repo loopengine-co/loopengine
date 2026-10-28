@@ -18,7 +18,7 @@
 // messaging.yml.
 //
 // The file holds only non-secret settings. The one secret each channel
-// needs (a webhook signing secret, a Slack bot token, a Lark app secret)
+// needs (a webhook signing secret, a Slack bot token, a Lark app secret, an email provider's API key)
 // lives in the agent's own env (agents/<name>/.env by default, through
 // core/secret-store.ts) under a fixed name, so it's never written into a
 // file that might get committed.
@@ -26,8 +26,9 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { AgentEnv, HttpNotifierConfig, HttpNotifierEvent } from '#core/agent-config.js'
+import { EMAIL_PROVIDERS, createProviderSendEmail, parseAddress, parseRecipients, type EmailProvider } from '#core/email-senders.js'
 
-export type NotifierFileChannel = 'webhook' | 'slack' | 'lark'
+export type NotifierFileChannel = 'webhook' | 'slack' | 'lark' | 'email'
 
 export interface NotifierFile {
   channel: NotifierFileChannel
@@ -39,6 +40,12 @@ export interface NotifierFile {
   /** lark: app id and chat to post into. */
   appId?: string
   chatId?: string
+  /** email: who receives requests (comma-separated), who they come from
+   * ("LoopEngine <approvals@example.com>"), and the provider that sends
+   * them. */
+  to?: string
+  from?: string
+  provider?: EmailProvider
   /** Where this server is reachable, for the links in each message —
    * remembered from the console's own address when saving.
    * LOOPENGINE_PUBLIC_URL, when set, wins over it. */
@@ -63,6 +70,7 @@ export const NOTIFIER_SECRET_VARS: Record<NotifierFileChannel, string> = {
   webhook: 'LOOPENGINE_NOTIFIER_WEBHOOK_SECRET',
   slack: 'LOOPENGINE_NOTIFIER_SLACK_BOT_TOKEN',
   lark: 'LOOPENGINE_NOTIFIER_LARK_APP_SECRET',
+  email: 'LOOPENGINE_NOTIFIER_EMAIL_API_KEY',
 }
 
 /** Optional: a Slack app's signing secret, per agent. Set, it turns on
@@ -70,7 +78,7 @@ export const NOTIFIER_SECRET_VARS: Record<NotifierFileChannel, string> = {
  * POST /hooks/slack/<agent>; unset, messages carry only the decision link. */
 export const NOTIFIER_SLACK_SIGNING_SECRET_VAR = 'LOOPENGINE_NOTIFIER_SLACK_SIGNING_SECRET'
 
-const CHANNELS: NotifierFileChannel[] = ['webhook', 'slack', 'lark']
+const CHANNELS: NotifierFileChannel[] = ['webhook', 'slack', 'lark', 'email']
 const EVENTS: HttpNotifierEvent[] = ['approval', 'question', 'run_start', 'run_finish']
 
 export class NotifierFileError extends Error {}
@@ -124,12 +132,23 @@ export function validateNotifierFile(input: unknown): NotifierFile {
     const channelId = str('channelId')
     if (!channelId) throw new NotifierFileError('channelId is required for slack')
     file.channelId = channelId
-  } else {
+  } else if (channel === 'lark') {
     const appId = str('appId')
     const chatId = str('chatId')
     if (!appId || !chatId) throw new NotifierFileError('appId and chatId are required for lark')
     file.appId = appId
     file.chatId = chatId
+  } else {
+    const to = str('to')
+    const recipients = to ? parseRecipients(to) : undefined
+    if (!recipients) throw new NotifierFileError('to must be one or more email addresses, separated by commas')
+    const from = str('from')
+    if (!from || !parseAddress(from)) throw new NotifierFileError('from must be an email address, like "LoopEngine <approvals@example.com>"')
+    const provider = str('provider') as EmailProvider | undefined
+    if (!provider || !EMAIL_PROVIDERS.includes(provider)) throw new NotifierFileError(`provider must be one of: ${EMAIL_PROVIDERS.join(', ')}`)
+    file.to = recipients.join(', ')
+    file.from = from
+    file.provider = provider
   }
   return file
 }
@@ -172,8 +191,9 @@ export function removeNotifierFile(dir: string): void {
 
 /** The HttpNotifierConfig a connection describes, with its secret read
  * from `env` — or which secret is missing, so nothing is sent unsigned
- * or unauthenticated. */
-export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv): { config?: HttpNotifierConfig; missingSecret?: string } {
+ * or unauthenticated. `agentName` labels email deliveries in the
+ * console's list. */
+export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv, agentName = ''): { config?: HttpNotifierConfig; missingSecret?: string } {
   const secretVar = NOTIFIER_SECRET_VARS[file.channel]
   const secret = env.get(secretVar)
   if (!secret) return { missingSecret: secretVar }
@@ -202,5 +222,19 @@ export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv): { con
       // No card buttons: nothing built in handles Lark's card callbacks yet,
       // so a console-configured Lark notifier relies on the decision link.
       return { config: { channel: 'lark', config: { appId: file.appId!, appSecret: secret, chatId: file.chatId!, publicUrl: file.publicUrl, buttons: false }, events: file.events } }
+    case 'email':
+      // Links to the decision page, like Lark without buttons; the secret
+      // is the provider's API key.
+      return {
+        config: {
+          channel: 'email',
+          config: {
+            to: file.to!,
+            sendEmail: createProviderSendEmail({ provider: file.provider!, apiKey: secret, from: file.from!, agent: agentName }),
+            publicUrl: file.publicUrl,
+          },
+          events: file.events,
+        },
+      }
   }
 }

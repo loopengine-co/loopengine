@@ -64,23 +64,32 @@ ${consoleShellScript}
     }).join('') + '</ul>';
   }
 
+  var canInstall = true;
+  var DECISIONS = { allow: 'runs on its own', ask: 'asks you first', deny: 'never' };
+  var CHECK = String.fromCharCode(10003);
+
   function cardHtml(t) {
     return '<div class="tp-card" data-id="' + esc(t.id) + '">' +
       '<span class="tp-cat">' + esc(t.category) + '</span>' +
       '<h3>' + esc(t.title) + '</h3>' +
       '<div>' + esc(t.summary) + '</div>' +
       '<div class="meta">' +
-        '<div><strong>Starts:</strong> ' + esc(t.trigger) + '</div>' +
+        '<div><strong>Runs:</strong> ' + esc(t.trigger) + '</div>' +
         (t.asksFirst.length ? '<div><strong>Asks you first:</strong> ' + esc(t.asksFirst.join(', ')) + '</div>' : '') +
-        (t.needs.length ? '<div><strong>Needs:</strong> ' + esc(t.needs.join(', ')) + '</div>' : '') +
+        '<div><strong>Installs:</strong> ' + t.abilities.map(function (a) { return '<code>' + esc(a) + '</code>'; }).join(' ') + '</div>' +
       '</div>' +
       '<div class="row"><button type="button" class="primary tp-use">Use this template</button></div>' +
       '<div class="tp-slot"></div></div>';
   }
 
+  function listHtml(items) {
+    return '<ul style="margin:4px 0 0;padding-left:18px">' + items.join('') + '</ul>';
+  }
+
   function show() {
     api('GET', '/starter-templates').then(function (r) {
       if (!r.ok) { page.innerHTML = '<p class="error">' + esc(r.body.error || 'Could not load the templates') + '</p>'; return; }
+      canInstall = r.body.canInstallAbilities !== false;
       page.innerHTML = '<div class="tp-grid">' + r.body.templates.map(cardHtml).join('') + '</div>' +
         '<p class="hint" style="margin-top:16px">Not what you need? <a href="/interview">Find your first agent</a> suggests one from your own work, or <a href="/agents?new=1">start from a blank agent</a>.</p>';
       Array.prototype.forEach.call(page.querySelectorAll('.tp-use'), function (btn) {
@@ -96,24 +105,40 @@ ${consoleShellScript}
     api('GET', '/starter-templates/' + encodeURIComponent(id) + '/preview').then(function (r) {
       if (!r.ok) { slot.innerHTML = '<p class="error">' + esc(r.body.error || 'Could not prepare it') + '</p>'; return; }
       var p = r.body;
+      var settings = Object.keys(p.settings || {});
       slot.innerHTML = '<div class="tp-preview">' +
         '<div><strong>Agent:</strong> <code>' + esc(p.name) + '</code></div>' +
         '<div><strong>Instructions</strong> <span class="hint">(edit them later in its Overview tab)</span><pre>' + esc(p.systemPrompt) + '</pre></div>' +
-        '<div><strong>Permissions:</strong> ' + esc(p.permissions) + '</div>' +
+        '<div><strong>Installs</strong> <span class="hint">(abilities: their tools, skills and permission rules)</span>' +
+          listHtml(p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; })) +
+          (canInstall ? '' : '<p class="error" style="margin:4px 0 0">Installing abilities needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server. Without it, the agent is created and its abilities head the checklist.</p>') + '</div>' +
+        '<div><strong>Permissions</strong> <span class="hint">(anything not listed asks you first)</span>' +
+          listHtml(p.rules.map(function (rule) { return '<li><code>' + esc(rule.tool) + '</code>: ' + esc(DECISIONS[rule.decision] || rule.decision) + '</li>'; })) + '</div>' +
+        '<div><strong>Keys it needs</strong>' +
+          listHtml(p.keys.map(function (k) {
+            var names = k.names.length > 1 ? 'one of ' + k.names.join(', ') : k.names[0];
+            return '<li>' + esc(names) + (k.set ? ' <span class="hint">' + CHECK + ' already set</span>' : '') + '</li>';
+          })) + '</div>' +
+        (settings.length ? '<div><strong>Settings filled in:</strong> ' + settings.map(function (s) { return '<code>' + esc(s) + '=' + esc(p.settings[s]) + '</code>'; }).join(', ') + '</div>' : '') +
         (p.schedule ? '<div><strong>Schedule:</strong> ' + esc(p.schedule) + '</div>' : '') +
-        '<div><strong>Then, to finish setup:</strong>' + checklistHtml(p.checklist) + '</div>' +
+        (p.needsApprovals ? '<div><strong>Approvals:</strong> requests reach you wherever its Messaging tab sends them (Slack, email, Lark or a webhook).</div>' : '') +
+        (p.notes.length ? '<div><strong>You also</strong>' + listHtml(p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; })) + '</div>' : '') +
         '<div class="row"><button type="button" class="primary tp-create">Create it</button><button type="button" class="tp-cancel">Cancel</button></div>' +
         '<div class="hint tp-status"></div></div>';
       slot.querySelector('.tp-cancel').addEventListener('click', function () { slot.innerHTML = ''; });
       slot.querySelector('.tp-create').addEventListener('click', function (ev) {
         var btn = ev.currentTarget;
         btn.disabled = true;
-        slot.querySelector('.tp-status').textContent = 'Creating' + ELLIPSIS;
+        slot.querySelector('.tp-status').textContent = 'Creating it and installing its abilities' + ELLIPSIS + ' (this can take a minute)';
         api('POST', '/starter-templates/' + encodeURIComponent(id) + '/create').then(function (r2) {
           if (!r2.ok) { btn.disabled = false; slot.querySelector('.tp-status').textContent = r2.body.error || 'Could not create it'; return; }
           var c = r2.body;
+          var installed = c.abilities.installed.map(function (a) { return '<code>' + esc(a) + '</code>'; }).join(' ');
           slot.innerHTML = '<div class="tp-preview">' +
-            '<div><strong>Created <code>' + esc(c.name) + '</code>.</strong> It asks you before every tool until you change that in its Permissions tab.</div>' +
+            '<div><strong>Created <code>' + esc(c.name) + '</code>.</strong> Anything its permissions don' + String.fromCharCode(8217) + 't cover asks you first.</div>' +
+            (installed ? '<div>' + CHECK + ' Installed ' + installed + '</div>' : '') +
+            (c.schedule ? '<div>' + CHECK + ' Schedule created, paused: ' + esc(c.schedule.description) + (c.schedule.next_run_at ? ' (first run ' + esc(new Date(c.schedule.next_run_at).toLocaleString()) + ' once turned on)' : '') + '</div>' : '') +
+            (c.loadError ? '<div class="error">It was written but couldn' + String.fromCharCode(8217) + 't be loaded: ' + esc(c.loadError) + '</div>' : '') +
             (c.scheduleError ? '<div class="error">Its schedule wasn' + String.fromCharCode(8217) + 't created: ' + esc(c.scheduleError) + '. Add one in its Schedules tab.</div>' : '') +
             '<div><strong>Finish setup:</strong>' + checklistHtml(c.checklist) + '</div>' +
             (c.exampleMessage ? '<div><strong>Try it</strong> in Chat with: <em>' + esc(c.exampleMessage) + '</em></div>' : '') +

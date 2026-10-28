@@ -27,6 +27,32 @@ describe('creating tasks', () => {
     await expect(createScheduledTask({ agent: 'a', message: 'hi', schedule: { run_at: 'tomorrow' } })).rejects.toThrow(ScheduleError)
     await expect(createScheduledTask({ agent: 'a', message: ' ', schedule: { every: '1h' } })).rejects.toThrow(/message/)
   })
+
+  it('starts a repeating task at start_at, so it keeps that time of day or weekday', async () => {
+    const now = Date.parse('2026-10-28T15:30:00+08:00') // a Wednesday afternoon
+    // Daily at 9:00 (UTC+8), starting tomorrow.
+    const daily = await createScheduledTask({ agent: 'a', message: 'digest', schedule: { every: '1d', start_at: '2026-10-29T09:00:00+08:00' } }, now)
+    expect(daily.next_run_at).toBe('2026-10-29T01:00:00.000Z')
+    expect(daily.schedule).toEqual({ every: '1d', anchor: '2026-10-29T01:00:00.000Z' })
+    // Weekly on Mondays at 9:00.
+    const weekly = await createScheduledTask({ agent: 'a', message: 'weekly', schedule: { every: '7d', start_at: '2026-11-02T09:00:00+08:00' } }, now)
+    expect(weekly.next_run_at).toBe('2026-11-02T01:00:00.000Z')
+    // A start in the past: the next slot after now, still at 9:00.
+    const past = await createScheduledTask({ agent: 'a', message: 'p', schedule: { every: '1d', start_at: '2026-10-01T09:00:00+08:00' } }, now)
+    expect(past.next_run_at).toBe('2026-10-29T01:00:00.000Z')
+    expect(past.schedule).toEqual({ every: '1d', anchor: '2026-10-01T01:00:00.000Z' })
+    await expect(createScheduledTask({ agent: 'a', message: 'x', schedule: { every: '1d', start_at: 'next monday' } })).rejects.toThrow(/start_at "next monday" is not a valid/)
+    await expect(createScheduledTask({ agent: 'a', message: 'x', schedule: { start_at: '2026-11-02T09:00:00Z' } })).rejects.toThrow(/start_at goes with "every"/)
+  })
+
+  it('keeps the start_at slot after a pause and a late resume', async () => {
+    const now = Date.parse('2026-10-28T15:30:00+08:00')
+    const task = await createScheduledTask({ agent: 'a', message: 'digest', schedule: { every: '1d', start_at: '2026-10-29T09:00:00+08:00' } }, now)
+    await pauseScheduledTask(task.task_id)
+    // Resumed on Nov 3 at 20:00 (UTC+8): next run is Nov 4 at 9:00.
+    const resumed = await resumeScheduledTask(task.task_id, Date.parse('2026-11-03T20:00:00+08:00'))
+    expect(resumed.next_run_at).toBe('2026-11-04T01:00:00.000Z')
+  })
 })
 
 describe('Scheduler', () => {

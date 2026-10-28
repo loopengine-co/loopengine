@@ -45,9 +45,9 @@ describe('EmailNotifier', () => {
     const sendEmail = vi.fn(async () => {})
     const notifier = new EmailNotifier({ ...baseOptions(), sendEmail })
 
-    notifier.sendAnnouncement('agent started', 'test-agent started')
+    notifier.sendAnnouncement('agent started', 'test-agent started', 'run_start')
 
-    await vi.waitFor(() => expect(sendEmail).toHaveBeenCalledWith('oncall@example.com', 'agent started', '<p>test-agent started</p>'))
+    await vi.waitFor(() => expect(sendEmail).toHaveBeenCalledWith('oncall@example.com', 'agent started', '<p>test-agent started</p>', { kind: 'run_start' }))
   })
 
   it('verifyMagicLink rejects a tampered token', async () => {

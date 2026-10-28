@@ -642,7 +642,7 @@ ${consoleShellScript}
       var messagingDetail = [];
       if (pending.length) messagingDetail.push(pending.length + ' waiting for a decision');
       if (n && connected && n.channel === 'slack' && n.plan !== 'free' && (!n.file || n.file.conversations !== false)) messagingDetail.push('answers replies in threads');
-      if (n && !connected) messagingDetail.push(n.missingSecret ? 'Saved, but its secret isn' + String.fromCharCode(8217) + 't set' : 'Send approvals and questions to Slack, Lark or a webhook');
+      if (n && !connected) messagingDetail.push(n.missingSecret ? 'Saved, but its secret isn' + String.fromCharCode(8217) + 't set' : 'Send approvals and questions to Slack, Lark, email or a webhook');
       if (!messagingDetail.length && n) messagingDetail.push('Sends ' + escapeHtml((n.events || []).join(', ')));
       set('ovMessagingDetail', messagingDetail.join(' \u00b7 '));
       showPendingCount(pending.length);
@@ -1077,7 +1077,7 @@ ${consoleShellScript}
     if (n.source === 'file') return 'Sending to <strong>' + escapeHtml(n.channel) + '</strong> for: ' + escapeHtml((n.events || []).join(', ')) + '.';
     if (n.missingSecret) return 'Saved, but not sending yet: set the secret below (<code>' + escapeHtml(n.missingSecret) + '</code>).';
     if (n.source === 'default') return 'Using the project-wide default webhook (<code>LOOPENGINE_DEFAULT_WEBHOOK_URL</code>, ' + escapeHtml(n.defaultWebhookUrl) + '). Set one below to use a different target for this agent.';
-    return '<strong>Nowhere yet</strong>, so nobody is notified. Choose a webhook, Slack channel or Lark chat below.';
+    return '<strong>Nowhere yet</strong>, so nobody is notified. Choose a Slack channel, Lark chat, email address or webhook below.';
   }
 
   // Slack only: whether replies in a request's thread are answered. On
@@ -1115,7 +1115,7 @@ ${consoleShellScript}
     function secretPlaceholder(isSet, missing) {
       return isSet ? 'Saved ' + String.fromCharCode(8212) + ' type a new one only to replace it' : missing;
     }
-    var SECRET_HINTS = { slack: 'xoxb-' + String.fromCharCode(8230) + ' from OAuth & Permissions', webhook: 'A long random string, or Generate', lark: 'App Secret from the Lark developer console' };
+    var SECRET_HINTS = { slack: 'xoxb-' + String.fromCharCode(8230) + ' from OAuth & Permissions', webhook: 'A long random string, or Generate', lark: 'App Secret from the Lark developer console', email: 'An API key from your email provider' };
     function secretField(channel, label) {
       var isSet = n.secretsSet && n.secretsSet[channel];
       return '<label>' + secretHead(label, isSet) + '<span class="hint">(stored in this agent&#39;s env as ' + escapeHtml(n.secretVars[channel]) + ')</span>' +
@@ -1124,7 +1124,7 @@ ${consoleShellScript}
     }
     return '<form class="add-source" id="notifierForm" style="max-width:560px">' +
       '<label>Send to<select name="channel" id="notifierChannel">' +
-        ['webhook', 'slack', 'lark'].map(function (c) { return '<option value="' + c + '"' + (f.channel === c ? ' selected' : '') + '>' + { webhook: 'Webhook (your app)', slack: 'Slack channel', lark: 'Lark / Feishu chat' }[c] + '</option>'; }).join('') +
+        ['webhook', 'slack', 'lark', 'email'].map(function (c) { return '<option value="' + c + '"' + (f.channel === c ? ' selected' : '') + '>' + { webhook: 'Webhook (your app)', slack: 'Slack channel', lark: 'Lark / Feishu chat', email: 'Email' }[c] + '</option>'; }).join('') +
       '</select></label>' +
       field('webhook', '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField('webhook', 'Signing secret') +
         '<p class="hint" style="margin:0">Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can simply forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>') +
@@ -1150,6 +1150,14 @@ ${consoleShellScript}
         renderConversationsField(n, f) +
         '<p class="hint" style="margin:0" id="slackEventsNote"></p>') +
       field('lark', '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField('lark', 'App secret')) +
+      field('email',
+        '<label>Email addresses <span class="hint">(who gets the requests; separate several with commas)</span><input name="emailTo" placeholder="ops@example.com, lead@example.com" value="' + escapeHtml(f.to || '') + '"></label>' +
+        '<label>Sent by <span class="hint">(your email provider must allow sending from this address)</span><input name="emailFrom" placeholder="LoopEngine &lt;approvals@example.com&gt;" value="' + escapeHtml(f.from || '') + '"></label>' +
+        '<label>Email provider<select name="emailProvider">' +
+          [['resend', 'Resend'], ['sendgrid', 'SendGrid'], ['postmark', 'Postmark']].map(function (p) { return '<option value="' + p[0] + '"' + (f.provider === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
+        '</select></label>' +
+        secretField('email', 'API key') +
+        '<p class="hint" style="margin:0">Each email links to a page where the person approves, denies, edits or answers, with no login. The link address below must be one they can open.</p>') +
       '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
         '<input type="url" name="publicUrl" id="notifierPublicUrl" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
       '<div class="body-field">Send' +
@@ -1393,6 +1401,7 @@ ${consoleShellScript}
       var data = new FormData(form);
       var channel = data.get('channel');
       var body = { channel: channel, events: data.getAll('events'), url: data.get('url'), channelId: data.get('channelId'), appId: data.get('appId'), chatId: data.get('chatId'), publicUrl: data.get('publicUrl') };
+      if (channel === 'email') { body.to = data.get('emailTo'); body.from = data.get('emailFrom'); body.provider = data.get('emailProvider'); }
       var secret = data.get('secret_' + channel);
       if (secret) body.secret = secret;
       if (channel === 'slack' && data.get('signingSecret')) body.signingSecret = data.get('signingSecret');
@@ -1477,7 +1486,9 @@ ${consoleShellScript}
   };
 
   function scheduleText(s) {
-    return s.run_at ? 'Once, ' + new Date(s.run_at).toLocaleString() : 'Every ' + escapeHtml(s.every);
+    // A repeating task's anchor is its first run, so it says when the
+    // later ones fall (e.g. every 1d from 9:00).
+    return s.run_at ? 'Once, ' + new Date(s.run_at).toLocaleString() : 'Every ' + escapeHtml(s.every) + (s.anchor ? '<div class="hint">from ' + escapeHtml(new Date(s.anchor).toLocaleString()) + '</div>' : '');
   }
 
   function renderScheduleRow(t) {
@@ -1521,7 +1532,9 @@ ${consoleShellScript}
           '<div class="body-field">When' +
             '<div class="schedule-when"><input type="radio" name="when" value="every" id="whenEvery" checked><label for="whenEvery">Every</label>' +
               '<input type="number" name="everyN" value="1" min="1" aria-label="How many">' +
-              '<select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option></select></div>' +
+              '<select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option><option value="w">weeks</option></select>' +
+              '<label for="everyStart">starting</label><input type="datetime-local" name="everyStart" id="everyStart" aria-label="First run"></div>' +
+            '<p class="hint" style="margin:0 0 4px 22px">Optional. The first run, which sets the time of day (and the weekday, for weeks) every later run keeps, e.g. every 1 day starting tomorrow 09:00. Without it, the first run is one interval from now.</p>' +
             '<div class="schedule-when"><input type="radio" name="when" value="once" id="whenOnce"><label for="whenOnce">Once at</label>' +
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
@@ -1566,7 +1579,12 @@ ${consoleShellScript}
         if (!data.get('runAt')) { result.textContent = 'Pick a date and time.'; return; }
         schedule = { run_at: new Date(data.get('runAt')).toISOString() };
       } else {
-        schedule = { every: String(data.get('everyN')) + data.get('everyUnit') };
+        // Weeks go to the scheduler as days; the start comes from the
+        // browser's own time zone.
+        var unit = data.get('everyUnit');
+        var n = Number(data.get('everyN')) || 1;
+        schedule = { every: unit === 'w' ? String(n * 7) + 'd' : String(n) + unit };
+        if (data.get('everyStart')) schedule.start_at = new Date(data.get('everyStart')).toISOString();
       }
       result.textContent = 'Scheduling' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules', {

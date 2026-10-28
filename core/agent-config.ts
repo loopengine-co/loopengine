@@ -99,7 +99,15 @@ export type ApprovalOnlyHttpNotifierEvent = 'approval'
  * see `core/http-notify-triggers/email.ts`'s own doc comment for why
  * (an SMTP client/provider SDK is a dependency this package deliberately
  * doesn't carry). */
-export type SendEmail = (to: string, subject: string, html: string) => Promise<void>
+export type SendEmail = (to: string, subject: string, html: string, meta?: SendEmailMeta) => Promise<void>
+
+/** What an email is about, passed as `SendEmail`'s optional 4th argument
+ * so a sender can log it (core/email-senders.ts records deliveries with
+ * it). A sender that doesn't care can ignore it. */
+export interface SendEmailMeta {
+  kind: 'approval' | 'question' | 'run_start' | 'run_finish' | 'test'
+  pendingId?: string
+}
 
 /** One row `channel: 'database'` (`core/http-notify-triggers/database.ts`)
  * inserts per pending approval — implement `insert()` against whatever
@@ -170,9 +178,13 @@ export interface PendingApprovalsRepository {
  *     `http-notify-triggers/lark.ts`'s `LarkNotifier` (lower
  *     confidence on exact card-schema field names — see that file's own
  *     header comment).
- *   - `'email'` — a `sendEmail` callback plus a signed, expiring
- *     magic-link token per approval/question, via
- *     `http-notify-triggers/email.ts`'s `EmailNotifier`.
+ *   - `'email'` — a `sendEmail` callback, via
+ *     `http-notify-triggers/email.ts`'s `EmailNotifier`. With
+ *     `resolveBaseUrl`/`answerBaseUrl`/`signingSecret`, each email carries
+ *     its own signed magic links to *your* endpoints; without them, it
+ *     links to this server's own decision page (`/decide/<token>`, at
+ *     `publicUrl`), the same page Slack and Lark messages link to — what
+ *     the console's Messaging tab sets up.
  *   - `'database'`/`'redis'` — not a notification channel at all (see
  *     `ApprovalOnlyHttpNotifierEvent`'s own doc comment): a row insert or
  *     a queue push for a separate worker/dashboard to poll, via
@@ -197,7 +209,7 @@ export type HttpNotifierConfig =
   | { channel: 'lark'; config: { appId: string; appSecret: string; chatId: string; publicUrl?: string; buttons?: boolean }; events: HttpNotifierEvent[] }
   | {
       channel: 'email'
-      config: { to: string; sendEmail: SendEmail; resolveBaseUrl: string; answerBaseUrl: string; signingSecret: string; linkTtlMs?: number }
+      config: { to: string; sendEmail: SendEmail; resolveBaseUrl?: string; answerBaseUrl?: string; signingSecret?: string; linkTtlMs?: number; publicUrl?: string }
       events: HttpNotifierEvent[]
     }
   | { channel: 'database'; config: { repository: PendingApprovalsRepository }; events: ApprovalOnlyHttpNotifierEvent[] }

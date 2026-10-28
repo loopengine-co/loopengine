@@ -157,7 +157,7 @@ Six channels ship as real, working notifiers — configure one and the
 | `webhook` | Signed HMAC-SHA256 POST to any URL you own |
 | `slack` | An interactive message via `chat.postMessage`, with Approve/Deny buttons |
 | `lark` | A Lark/Feishu interactive card |
-| `email` | A signed, expiring magic-link per decision |
+| `email` | An email per decision, through your own `sendEmail`: with signed, expiring magic links to your endpoints, or a link to this server's decision page |
 | `database` | Writes a row for your own worker/dashboard to poll |
 | `redis` | Pushes a queue entry for your own worker to consume |
 
@@ -173,7 +173,9 @@ export const config: AgentConfig = {
 ```
 
 Or skip the code: in the console, the agent's **Messaging** tab sets a
-webhook, Slack or Lark target for one agent (saved to
+webhook, Slack, Lark or email target for one agent (email sends through
+Resend, SendGrid or Postmark with your API key, each email linking to the
+decision page) (saved to
 `agents/<name>/messaging.yml`, with its secret in the agent's own `.env`;
 an older `notifier.yml` is still read), sends a test and shows recent
 deliveries. With Slack, people can also reply in a request's thread to
@@ -207,8 +209,8 @@ agents, can't see your systems, and creates nothing until you click.
 
 Or skip the interview: **Templates** (`/templates`, linked from the
 sidebar and the Agents page) are ready-made agents: answer customer
-emails, triage incidents, check expense claims, and a weekly research
-digest. Preview one's instructions and setup checklist, then create it
+emails, refund approvals, triage incidents, check expense claims, lead
+follow-up, inbox to tasks, and a weekly research digest. Preview one's instructions and setup checklist, then create it
 the same way, as many times as you like. Templates live in
 `core/system-agents/templates.ts`, in the same shape the interview
 suggests.
@@ -248,8 +250,10 @@ under the hood.
 ## Scheduled tasks
 
 The server runs one scheduler (`core/scheduler.ts`) that sends a message
-to an agent later — once (`run_at`) or on an interval (`every: "1h"`) —
-from the console's **Schedules** tab, the `GET/POST
+to an agent later — once (`run_at`) or on an interval (`every: "1h"`),
+optionally from a set first run (`start_at`), which every later run keeps:
+`every: "1d"` from a 9:00 start runs daily at 9:00, `every: "7d"` from a
+Monday runs on Mondays — from the console's **Schedules** tab, the `GET/POST
 /agents/<name>/schedules` API, or the agent itself: every agent has
 built-in `system_schedule_task`, `system_list_scheduled_tasks`,
 `system_check_scheduled_task` and `system_cancel_scheduled_task` tools,

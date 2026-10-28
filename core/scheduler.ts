@@ -10,9 +10,13 @@
 // next tick.
 //
 // `every` is anchored: an hourly task created at 10:07 keeps firing at
-// :07, however long each run takes. A run missed while the server was
-// down fires once when it's back, then the schedule moves to the next
-// future slot (no burst of catch-up runs).
+// :07, however long each run takes. `start_at` sets the anchor instead,
+// for "daily at 9:00" ("1d" from a 9:00 start) or "Mondays at 9:00" ("7d"
+// from a Monday). Intervals are exact durations, so in a time zone with
+// daylight saving a daily 9:00 task runs at 8:00 or 10:00 local time
+// after the clocks change. A run missed while the server was down fires
+// once when it's back, then the schedule moves to the next future slot
+// (no burst of catch-up runs).
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -167,7 +171,12 @@ export function setSchedulerStore(next: SchedulerStore): void {
 export interface CreateScheduledTaskInput {
   agent: string
   message: string
-  schedule: { run_at?: unknown; every?: unknown }
+  /** `start_at` (with `every` only): when the first run is, and so the
+   * time of day / day of week every later run keeps, e.g. every "1d"
+   * from "2026-11-02T09:00:00+08:00" runs daily at 9:00. A start in the
+   * past is fine: the first run is its next slot after now. Without it,
+   * the first run is one interval from now. */
+  schedule: { run_at?: unknown; every?: unknown; start_at?: unknown }
   task_name?: string
   notify?: boolean
 }
@@ -184,10 +193,21 @@ export async function createScheduledTask(input: CreateScheduledTaskInput, nowMs
     nextRunMs = runAtMs
   } else if (typeof input.schedule?.every === 'string' && input.schedule.every) {
     const intervalMs = parseEvery(input.schedule.every)
-    nextRunMs = nowMs + intervalMs
-    schedule = { every: input.schedule.every.trim(), anchor: new Date(nextRunMs).toISOString() }
+    const startAt = input.schedule.start_at
+    if (startAt !== undefined && startAt !== null && startAt !== '') {
+      const startMs = typeof startAt === 'string' ? Date.parse(startAt) : Number.NaN
+      if (Number.isNaN(startMs)) throw new ScheduleError(`start_at "${String(startAt)}" is not a valid ISO 8601 timestamp`)
+      // The anchor is the start itself, so every run lands on its time of
+      // day (or weekday, for "7d").
+      nextRunMs = nextAnchoredSlot(startMs, intervalMs, nowMs)
+      schedule = { every: input.schedule.every.trim(), anchor: new Date(startMs).toISOString() }
+    } else {
+      nextRunMs = nowMs + intervalMs
+      schedule = { every: input.schedule.every.trim(), anchor: new Date(nextRunMs).toISOString() }
+    }
   } else {
-    throw new ScheduleError('schedule must be { "run_at": "<ISO timestamp>" } or { "every": "<interval, e.g. 1h>" }')
+    if (input.schedule?.start_at) throw new ScheduleError('start_at goes with "every" (a repeating task); a one-off task uses run_at')
+    throw new ScheduleError('schedule must be { "run_at": "<ISO timestamp>" } or { "every": "<interval, e.g. 1h>", "start_at"?: "<ISO timestamp>" }')
   }
   const task: ScheduledTask = {
     task_id: randomUUID(),

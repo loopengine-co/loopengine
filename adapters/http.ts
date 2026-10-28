@@ -889,22 +889,36 @@ async function handleStarterTemplates(req: IncomingMessage, res: ServerResponse,
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
   }
   const [id, action] = pathname.split('/').slice(2).map(decodeURIComponent) // after /starter-templates
-  const exists = (name: string) => Boolean(getEntry(name)) || existsSync(join(projectDir(), 'agents', name))
+  const dirOf = (name: string) => join(projectDir(), 'agents', name)
+  const exists = (name: string) => Boolean(getEntry(name)) || existsSync(dirOf(name))
+  const envValue = (name: string, variable: string) => createAgentEnv(name, dirOf(name)).get(variable)
   try {
     if (!id) {
-      if (req.method === 'GET') return json(200, { templates: listTemplates() })
+      if (req.method === 'GET') return json(200, { templates: listTemplates(), canInstallAbilities: secretsProtected })
       return json(405, { error: 'method not allowed' })
     }
-    if (action === 'preview' && req.method === 'GET') return json(200, previewTemplate(id, { agentExists: exists }))
+    if (action === 'preview' && req.method === 'GET') return json(200, previewTemplate(id, { agentExists: exists, envValue }))
     if (action === 'create' && req.method === 'POST') {
       const model = pickAgentModel(interviewAgents())
       const created = await createFromTemplate(id, {
         agentExists: exists,
-        createAgent: async (name, systemPrompt) => {
+        scaffoldAgent: async (name, systemPrompt) => {
           const parsed = parseAgentTemplateOptions({ systemPrompt, ...(model ? { model } : {}) })
           if (!parsed.ok) throw new TemplateError(parsed.error)
-          const indexPath = await scaffoldAgent(projectDir(), name, parsed.value)
+          await scaffoldAgent(projectDir(), name, parsed.value)
+        },
+        registerAgent: async (name) => {
+          const indexPath = join(dirOf(name), 'index.ts')
           registerAgent(await loadAgentModule(indexPath, indexPath))
+        },
+        // Same rule as the Abilities tab: installing runs third-party code,
+        // so only behind the admin login. The agent isn't loaded yet, so
+        // nothing needs a restart.
+        ...(secretsProtected ? { installAbility: async (name: string, spec: string) => void (await installAbility(name, spec)) } : {}),
+        envValue,
+        messagingConfigured: (name) => {
+          const entry = getEntry(name)
+          return entry ? describeAgentNotifier(entry.config, defaultWebhook).source !== 'none' : false
         },
       })
       return json(200, created)
@@ -1205,7 +1219,7 @@ async function handleSchedulesPost(req: IncomingMessage, res: ServerResponse, ag
     const task = await createScheduledTask({
       agent: agentName,
       message: String(body.message ?? ''),
-      schedule: (body.schedule ?? {}) as { run_at?: unknown; every?: unknown },
+      schedule: (body.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown },
       task_name: typeof body.task_name === 'string' ? body.task_name : undefined,
       notify: body.notify === true,
     })

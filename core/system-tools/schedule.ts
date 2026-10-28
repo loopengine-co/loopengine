@@ -58,8 +58,8 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
         schedule: {
           type: 'object',
           description:
-            'Either { "run_at": "<ISO 8601 timestamp with time zone>" } for once, or { "every": "<interval>" } to repeat until cancelled — a number plus s/m/h/d, e.g. "30m", "1h", "1d"; 30s at the shortest. A repeating task keeps its first slot: started at 10:07 with "1h", it fires at 11:07, 12:07, ...',
-          properties: { run_at: { type: 'string' }, every: { type: 'string' } },
+            'Either { "run_at": "<ISO 8601 timestamp with time zone>" } for once, or { "every": "<interval>", "start_at"?: "<ISO 8601 timestamp with time zone>" } to repeat until cancelled — a number plus s/m/h/d, e.g. "30m", "1h", "1d"; 30s at the shortest. A repeating task keeps its first slot: started at 10:07 with "1h", it fires at 11:07, 12:07, ... Use start_at to pick that first slot, for a time of day or day of week: "every day at 9am" is every "1d" with start_at the next 9:00 in the user\'s time zone; "every Monday at 9am" is every "7d" with start_at the next Monday 9:00.',
+          properties: { run_at: { type: 'string' }, every: { type: 'string' }, start_at: { type: 'string' } },
         },
         task_name: { type: 'string', description: 'Optional short label, shown when listing tasks and in the console.' },
         notify: { type: 'boolean', description: 'Optional — also send each run\'s result through your notifier (where your approval requests go), so a person sees it.' },
@@ -74,7 +74,7 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
       const task = await createScheduledTask({
         agent: agentName,
         message: String(input.message ?? ''),
-        schedule: (input.schedule ?? {}) as { run_at?: unknown; every?: unknown },
+        schedule: (input.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown },
         task_name: typeof input.task_name === 'string' ? input.task_name : undefined,
         notify: input.notify === true,
       })

@@ -213,8 +213,30 @@ export {
 } from './web/interview-admin.js'
 export { runInterviewTurn, rankCandidates, validateCandidate, INTERVIEWER_PROMPT, type AgentCandidate, type InterviewStage } from './core/system-agents/interviewer.js'
 export { templatesPageHtml } from './web/templates-page.js'
-export { TemplateError, createFromTemplate, listTemplates, previewTemplate, type TemplateSummary } from './web/templates-admin.js'
-export { STARTER_TEMPLATES, starterTemplate, type StarterTemplate } from './core/system-agents/templates.js'
+export {
+  TemplateError,
+  createFromTemplate,
+  describeTemplateSchedule,
+  listTemplates,
+  previewTemplate,
+  templateChecklist,
+  type CreatedTemplateAgent,
+  type LegacyTemplateCreateDeps,
+  type TemplateChecklistItem,
+  type TemplateCreateDeps,
+  type TemplatePreview,
+  type TemplateSummary,
+} from './web/templates-admin.js'
+export {
+  STARTER_TEMPLATES,
+  starterTemplate,
+  templateScheduleStart,
+  type StarterTemplate,
+  type TemplateRule,
+  type TemplateSchedule,
+  type TemplateSetup,
+  type TemplateSkill,
+} from './core/system-agents/templates.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
 export { playgroundHtml } from './web/playground.js'
 

@@ -73,7 +73,7 @@ export function describeNotifier(config: AgentConfig): {
     return { source: 'none', error: `The messaging settings are invalid: ${err instanceof Error ? err.message : String(err)}` }
   }
   if (!file) return { source: 'none' }
-  const { missingSecret } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
+  const { missingSecret } = notifierConfigFromFile(file, createAgentEnv(config.name, dir), config.name)
   return { source: missingSecret ? 'none' : 'file', channel: file.channel, events: file.events, file, missingSecret }
 }
 
@@ -102,7 +102,7 @@ function resolveFromFile(config: AgentConfig): ResolvedHttpNotifier {
     return EMPTY
   }
   if (!file) return EMPTY
-  const { config: httpNotifier } = notifierConfigFromFile(file, createAgentEnv(config.name, dir))
+  const { config: httpNotifier } = notifierConfigFromFile(file, createAgentEnv(config.name, dir), config.name)
   return httpNotifier ? buildResolved(httpNotifier, dir) : EMPTY
 }
 
@@ -156,16 +156,16 @@ function buildResolved(httpNotifier: HttpNotifierConfig, agentDir: string): Reso
       break
     }
     case 'email': {
-      const { to, sendEmail, resolveBaseUrl, answerBaseUrl, signingSecret, linkTtlMs } = httpNotifier.config
-      const email = new EmailNotifier({ to, sendEmail, resolveBaseUrl, answerBaseUrl, signingSecret, linkTtlMs })
+      const { to, sendEmail, resolveBaseUrl, answerBaseUrl, signingSecret, linkTtlMs, publicUrl } = httpNotifier.config
+      const email = new EmailNotifier({ to, sendEmail, resolveBaseUrl, answerBaseUrl, signingSecret, linkTtlMs, publicUrl })
       resolved = {
         approver: events.has('approval') ? email : undefined,
         questionHandler: events.has('question') ? email : undefined,
         onRunStart: events.has('run_start')
-          ? (context) => email.sendAnnouncement(formatEmailLifecycleSubject('run_start', context), formatChatLifecycleMessage('run_start', context))
+          ? (context) => email.sendAnnouncement(formatEmailLifecycleSubject('run_start', context), formatChatLifecycleMessage('run_start', context), 'run_start')
           : undefined,
         onRunFinish: events.has('run_finish')
-          ? (context) => email.sendAnnouncement(formatEmailLifecycleSubject('run_finish', context), formatChatLifecycleMessage('run_finish', context))
+          ? (context) => email.sendAnnouncement(formatEmailLifecycleSubject('run_finish', context), formatChatLifecycleMessage('run_finish', context), 'run_finish')
           : undefined,
       }
       break
