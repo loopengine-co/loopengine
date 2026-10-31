@@ -17,13 +17,15 @@
 // direction worth introducing to share ~30 lines (see ABILITIES.md's
 // "Upgrading" section).
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
+import { promisify } from 'node:util'
 import { basename, dirname, join } from 'node:path'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { parse as parseYaml } from 'yaml'
 import semver from 'semver'
 import { agentDir } from '../core/gateway-tools.js'
+import { abilityFetchAuth } from '../core/ability-sources.js'
 import type { EnvScope } from '../core/agent-env.js'
 import { addToolToIndex, removeToolFromIndex, toCamelCase } from '../web/http-tool-admin.js'
 import { addActauthRule, updateActauthRule, removeActauthRule, readActauthConfig, type ActauthRuleInput } from '../web/actauth-admin.js'
@@ -319,7 +321,14 @@ function sha256(content: string): string {
  * ability" section). */
 export function fetchAbilityDir(spec: string): string {
   const workDir = mkdtempSync(join(tmpdir(), 'loopengine-ability-'))
-  execFileSync('npm', ['pack', spec, '--pack-destination', workDir], { stdio: 'pipe' })
+  // The private sources' tokens (core/ability-sources.ts), only for this
+  // npm pack: never in the spec, so they aren't written anywhere.
+  const auth = abilityFetchAuth()
+  try {
+    execFileSync('npm', ['pack', spec, '--pack-destination', workDir, ...auth.args], { stdio: 'pipe', env: auth.env })
+  } finally {
+    auth.cleanup()
+  }
   const tarball = readdirSync(workDir).find((f) => f.endsWith('.tgz'))
   if (!tarball) {
     throw new Error(`Could not fetch '${spec}' — check the package exists and is reachable (registry auth / git credentials / local path).`)
@@ -329,6 +338,26 @@ export function fetchAbilityDir(spec: string): string {
   // process's own cwd, not workDir" gotcha fetchPublishedTemplateDir's
   // own comment already documents.
   execFileSync('tar', ['-xzf', join(workDir, tarball), '-C', workDir], { stdio: 'pipe' })
+  return join(workDir, 'package')
+}
+
+/** fetchAbilityDir without blocking the server while npm and git run:
+ * for browsing (the console's ability details), where an install's
+ * stop-the-world fetch would freeze every other request. */
+export async function fetchAbilityDirAsync(spec: string): Promise<string> {
+  const workDir = mkdtempSync(join(tmpdir(), 'loopengine-ability-'))
+  const auth = abilityFetchAuth()
+  try {
+    await promisify(execFile)('npm', ['pack', spec, '--pack-destination', workDir, ...auth.args], { env: auth.env, timeout: 120_000 })
+  } catch {
+    rmSync(workDir, { recursive: true, force: true })
+    throw new Error(`Could not fetch '${spec}' — check the package exists and is reachable (registry auth / git credentials / local path).`)
+  } finally {
+    auth.cleanup()
+  }
+  const tarball = readdirSync(workDir).find((f) => f.endsWith('.tgz'))
+  if (!tarball) throw new Error(`Could not fetch '${spec}'.`)
+  await promisify(execFile)('tar', ['-xzf', join(workDir, tarball), '-C', workDir])
   return join(workDir, 'package')
 }
 

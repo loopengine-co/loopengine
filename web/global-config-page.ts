@@ -35,6 +35,8 @@ export const globalConfigPageHtml: string = `<!doctype html>
   .le-provider-icon { width: 18px; height: 18px; flex: none; }
   section h3 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
   section > table { border: 1px solid var(--line); border-radius: var(--radius); border-collapse: separate; border-spacing: 0; overflow: hidden; }
+  section h4 { font-size: 13px; font-weight: 600; margin: 18px 0 8px; }
+  section h4 .hint { font-weight: 400; margin-left: 4px; }
   .source {
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -42,6 +44,12 @@ export const globalConfigPageHtml: string = `<!doctype html>
     margin-bottom: 10px;
   }
   .source.unsupported { opacity: 0.6; }
+  /* Settings → Private ability sources: one field per row, label above. */
+  .source-form { display: grid; gap: 12px; max-width: 520px; margin-top: 12px; }
+  .source-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
+  .source-form label .hint { font-weight: 400; }
+  .source-form input, .source-form select { width: 100%; box-sizing: border-box; }
+  .source-form button[type="submit"] { justify-self: start; }
   .source-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .source-head h4 { margin: 0; font-size: 14px; font-family: ui-monospace, monospace; }
   .hint { font-size: 11px; color: var(--ink-muted); }
@@ -213,121 +221,263 @@ ${consoleShellScript}
   }
 
   // ---- Abilities section ----
-  // How agents reach outside apps: an ability (lp-gmail, lp-shopify...)
-  // installed into an agent brings its tools, skills and permission
-  // rules. Abilities live in each agent, so this page gathers them from
-  // every agent's own Abilities routes and installs through the same
-  // route, which also keeps it working with any project template.
+  // How agents reach outside apps. Public abilities (npm) are browsed
+  // here and installed from an agent's own Abilities tab. A private one
+  // (from the sources in Settings) is installed here into the workspace
+  // (core/workspace-abilities.ts), then added to any agent from its tab.
 
-  var abilityAgents = [];
-  var abilitiesByAgent = {};
+  // An ability's details (tools with their permissions, skills, settings)
+  // come from the console shell, shared with each agent's Abilities tab.
+  var toggleAbilityDetails = leShell.toggleAbilityDetails;
 
-  function agentAbilitiesHref(agent) {
-    return '/agents/config?agent=' + encodeURIComponent(agent) + '&tab=abilities';
-  }
-
-  function renderInstalledAbilities() {
-    var byName = {};
-    abilityAgents.forEach(function (agent) {
-      (abilitiesByAgent[agent] || []).forEach(function (a) {
-        if (!byName[a.name]) byName[a.name] = { name: a.name, versions: [], agents: [] };
-        if (byName[a.name].versions.indexOf(a.version) === -1) byName[a.name].versions.push(a.version);
-        byName[a.name].agents.push(agent);
-      });
-    });
-    var names = Object.keys(byName).sort();
-    if (!names.length) return '<p class="hint">No agent has an ability yet. Add one below, or start from a template, which installs the ones it needs.</p>';
-    return '<table><thead><tr><th>Ability</th><th>Version</th><th>Agents</th></tr></thead><tbody>' +
-      names.map(function (n) {
-        var a = byName[n];
-        return '<tr><td><code>' + escapeHtml(a.name) + '</code></td>' +
-          '<td>' + escapeHtml(a.versions.join(', ')) + '</td>' +
-          '<td>' + a.agents.map(function (agent) { return '<a href="' + agentAbilitiesHref(agent) + '">' + escapeHtml(agent) + '</a>'; }).join(', ') + '</td></tr>';
-      }).join('') + '</tbody></table>';
-  }
-
-  function renderAbilities() {
-    var content = document.getElementById('abilitiesContent');
-    var add = abilityAgents.length
-      ? '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
-          '<label for="abilityAgent">Install into</label>' +
-          '<select id="abilityAgent">' + abilityAgents.map(function (a) { return '<option value="' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>'; }).join('') + '</select>' +
-          '<form id="abilitySearchForm" style="display:flex;gap:6px;flex:1;min-width:220px;margin:0">' +
-            '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search abilities" style="flex:1">' +
-            '<button type="submit">Search</button>' +
-          '</form>' +
-        '</div>' +
-        '<p id="abilityInstallStatus" class="hint"></p>' +
-        '<div id="abilitySearchResults"><p class="hint">Loading&hellip;</p></div>'
-      : '<p>Create an agent first: abilities are installed into one. <a href="/templates">Start from a template</a> or <a href="/agents?new=1">create an agent</a>.</p>';
-    content.innerHTML =
-      '<section><h3>Installed</h3><div id="abilitiesInstalled">' + renderInstalledAbilities() + '</div></section>' +
-      '<section><h3>Add an ability</h3>' + add + '</section>';
-    if (!abilityAgents.length) return;
-    var form = document.getElementById('abilitySearchForm');
-    form.addEventListener('submit', function (ev) { ev.preventDefault(); searchAbilities(form.q.value.trim()); });
-    document.getElementById('abilityAgent').addEventListener('change', function () { searchAbilities(form.q.value.trim()); });
-    searchAbilities('');
+  function detailsButton(spec) {
+    return '<button type="button" class="ability-details-btn" data-spec="' + escapeHtml(spec) + '">Details</button>';
   }
 
   var lastSearch = { q: null, results: [] };
+  var lastPrivate = null;
+  var workspaceAbilities = null;
+
+  function renderAbilities() {
+    var content = document.getElementById('abilitiesContent');
+    content.innerHTML = '<section>' +
+      '<h4>Public <span class="hint">npm packages tagged loopengine-ability; add one to an agent from its Abilities tab</span></h4>' +
+      '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
+        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search public abilities" style="flex:1">' +
+        '<button type="submit">Search</button>' +
+      '</form>' +
+      '<div id="abilitySearchResults"><p class="hint">Loading&hellip;</p></div>' +
+      '<h4 id="private-abilities">Private <span class="hint">your own, from the sources in <a href="/config?section=settings">Settings</a>; install one into the workspace, then add it to agents from their Abilities tab</span></h4>' +
+      '<p id="abilityInstallStatus" class="hint"></p>' +
+      '<div id="workspaceAbilities"></div>' +
+      '<div id="privateAbilities"><p class="hint">Loading&hellip;</p></div>' +
+      '<form id="abilitySpecForm" style="display:flex;gap:6px;margin:10px 0 0;max-width:560px">' +
+        '<input name="spec" placeholder="Or install by name or spec: @company/lp-x, github:org/repo" aria-label="Ability name or spec" style="flex:1">' +
+        '<button type="submit">Install</button>' +
+      '</form>' +
+      '<div class="source" style="margin-top:12px;max-width:560px;box-sizing:border-box">' +
+        '<p style="margin:0 0 8px"><strong>Upload an ability</strong> <span class="hint">from your computer: a .zip or .tgz, or its folder (up to 25 MB)</span></p>' +
+        '<input type="file" id="abilityUploadFile" accept=".zip,.tgz,.gz" hidden>' +
+        '<input type="file" id="abilityUploadFolder" webkitdirectory hidden>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" id="abilityUploadFileBtn">Choose a file' + String.fromCharCode(8230) + '</button>' +
+        '<button type="button" id="abilityUploadFolderBtn">Choose a folder' + String.fromCharCode(8230) + '</button></div>' +
+      '</div></section>';
+    var form = document.getElementById('abilitySearchForm');
+    form.addEventListener('submit', function (ev) { ev.preventDefault(); searchAbilities(form.q.value.trim()); });
+    var specForm = document.getElementById('abilitySpecForm');
+    specForm.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var spec = specForm.spec.value.trim();
+      if (spec) installIntoWorkspace(spec, specForm.querySelector('button'));
+    });
+    wireAbilityUpload();
+    searchAbilities('');
+    loadWorkspaceAbilities();
+    loadPrivateAbilities();
+  }
+
+  // ---- Uploading an ability from your computer ----
+
+  // A file's contents as base64 (the part after a data: URL's comma).
+  function readBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result).split(',')[1] || ''); };
+      reader.onerror = function () { reject(reader.error || new Error('Could not read ' + file.name)); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function uploadAbility(body, label, buttons) {
+    var status = document.getElementById('abilityInstallStatus');
+    buttons.forEach(function (b) { b.disabled = true; });
+    status.className = 'hint';
+    status.textContent = 'Uploading ' + label + String.fromCharCode(8230);
+    return fetch('/abilities/workspace/upload', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'upload failed');
+        status.textContent = 'Uploaded ' + label + ' into the workspace. Add it to an agent from the agent' + String.fromCharCode(8217) + 's Abilities tab.';
+        workspaceAbilities = r.body.abilities || [];
+        renderWorkspaceAbilities();
+        renderPrivateAbilities();
+      })
+      .catch(function (err) {
+        status.className = 'error';
+        status.textContent = 'Could not upload ' + label + ': ' + err.message;
+      })
+      .then(function () { buttons.forEach(function (b) { b.disabled = false; }); });
+  }
+
+  function wireAbilityUpload() {
+    var fileInput = document.getElementById('abilityUploadFile');
+    var folderInput = document.getElementById('abilityUploadFolder');
+    var fileBtn = document.getElementById('abilityUploadFileBtn');
+    var folderBtn = document.getElementById('abilityUploadFolderBtn');
+    var buttons = [fileBtn, folderBtn];
+    var MAX = 25 * 1024 * 1024;
+    fileBtn.addEventListener('click', function () { fileInput.value = ''; fileInput.click(); });
+    folderBtn.addEventListener('click', function () { folderInput.value = ''; folderInput.click(); });
+    fileInput.addEventListener('change', function () {
+      var file = fileInput.files[0];
+      if (!file) return;
+      if (file.size > MAX) { document.getElementById('abilityInstallStatus').textContent = file.name + ' is larger than 25 MB.'; return; }
+      readBase64(file).then(function (data) { return uploadAbility({ kind: 'archive', fileName: file.name, data: data }, file.name, buttons); });
+    });
+    folderInput.addEventListener('change', function () {
+      // Leaves out what an ability never needs: installed packages, git
+      // data and hidden files.
+      var files = Array.prototype.filter.call(folderInput.files, function (f) {
+        return !f.webkitRelativePath.split('/').some(function (part) { return part === 'node_modules' || part.charAt(0) === '.'; });
+      });
+      if (!files.length) return;
+      var folderName = files[0].webkitRelativePath.split('/')[0];
+      var total = files.reduce(function (sum, f) { return sum + f.size; }, 0);
+      if (total > MAX) { document.getElementById('abilityInstallStatus').textContent = folderName + ' is larger than 25 MB.'; return; }
+      Promise.all(files.map(function (f) { return readBase64(f).then(function (data) { return { path: f.webkitRelativePath, data: data }; }); }))
+        .then(function (list) { return uploadAbility({ kind: 'files', folderName: folderName, files: list }, folderName, buttons); });
+    });
+  }
+
+  // Details, Install and Remove buttons anywhere in the section.
+  document.getElementById('abilitiesContent').addEventListener('click', function (ev) {
+    var btn = ev.target.closest && ev.target.closest('button');
+    if (!btn) return;
+    if (btn.classList.contains('ability-details-btn')) toggleAbilityDetails(btn);
+    else if (btn.classList.contains('workspace-install-btn')) installIntoWorkspace(btn.dataset.spec, btn);
+    else if (btn.classList.contains('workspace-remove-btn')) removeFromWorkspace(btn);
+  });
 
   function renderSearchResults() {
     var resultsEl = document.getElementById('abilitySearchResults');
-    var agent = document.getElementById('abilityAgent').value;
-    var installed = (abilitiesByAgent[agent] || []).map(function (a) { return a.name; });
     var results = lastSearch.results;
     resultsEl.innerHTML = results.length
       ? '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' + results.map(function (pkg) {
-          var action = installed.indexOf(pkg.name) !== -1
-            ? '<span class="hint">In ' + escapeHtml(agent) + '</span>'
-            : '<button type="button" class="ability-install-btn" data-spec="' + escapeHtml(pkg.name) + '">Install</button>';
           return '<tr><td><code>' + escapeHtml(pkg.name) + '</code> <span class="hint">' + escapeHtml(pkg.version) + '</span></td>' +
-            '<td>' + escapeHtml(pkg.description || '') + '</td><td>' + action + '</td></tr>';
+            '<td>' + escapeHtml(pkg.description || '') + '</td>' +
+            '<td style="white-space:nowrap">' + detailsButton(pkg.name + '@' + pkg.version) + '</td></tr>';
         }).join('') + '</tbody></table>'
       : '<p class="hint">No published abilities match.</p>';
-    var buttons = resultsEl.querySelectorAll('.ability-install-btn');
-    for (var i = 0; i < buttons.length; i++) {
-      buttons[i].addEventListener('click', function (ev) { installAbility(agent, ev.currentTarget.dataset.spec, ev.currentTarget); });
+  }
+
+  function workspaceCopy(name) {
+    return (workspaceAbilities || []).filter(function (a) { return a.name === name; })[0];
+  }
+
+  // What's already in the workspace, ready to add to agents.
+  function renderWorkspaceAbilities() {
+    var el = document.getElementById('workspaceAbilities');
+    if (!el || !workspaceAbilities) return;
+    el.innerHTML = workspaceAbilities.length
+      ? '<div class="source"><p style="margin:0 0 8px"><strong>In this workspace</strong> <span class="hint">add these to an agent from its Abilities tab</span></p>' +
+          '<table><thead><tr><th>Ability</th><th>From</th><th></th></tr></thead><tbody>' + workspaceAbilities.map(function (a) {
+            return '<tr><td><code>' + escapeHtml(a.name) + '</code>' + (a.version ? ' <span class="hint">' + escapeHtml(a.version) + '</span>' : '') + '</td>' +
+              '<td><span class="hint">' + escapeHtml(a.source.indexOf('upload:') === 0 ? 'Uploaded ' + a.source.slice(7) : a.source) + '</span></td>' +
+              '<td style="white-space:nowrap">' + detailsButton(a.spec) + ' <button type="button" class="delete-btn workspace-remove-btn" data-name="' + escapeHtml(a.name) + '">Remove</button></td></tr>';
+          }).join('') + '</tbody></table></div>'
+      : '';
+  }
+
+  // Each source's abilities: Install puts one into the workspace; one
+  // already there shows so, with Update when the source has another version.
+  function renderPrivateAbilities() {
+    var el = document.getElementById('privateAbilities');
+    if (!el || !lastPrivate) return;
+    var sources = lastPrivate.sources || [];
+    if (lastPrivate.error) { el.innerHTML = '<p class="error">' + escapeHtml(lastPrivate.error) + '</p>'; return; }
+    if (!sources.length) {
+      el.innerHTML = '<p class="hint">No private sources yet. <a href="/config?section=settings">Add one in Settings</a> (a GitHub org or user, or a private npm registry), or upload an ability below.</p>';
+      return;
     }
+    el.innerHTML = sources.map(function (s) {
+      var body = s.error
+        ? '<p class="error" style="margin:0">' + escapeHtml(s.error) + '</p>'
+        : s.abilities.length
+          ? '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' + s.abilities.map(function (a) {
+              var copy = workspaceCopy(a.name);
+              var action = !copy
+                ? '<button type="button" class="workspace-install-btn" data-spec="' + escapeHtml(a.spec) + '">Install</button>'
+                : copy.version && a.version && copy.version !== a.version
+                  ? '<span class="hint">In workspace (' + escapeHtml(copy.version) + ')</span> <button type="button" class="workspace-install-btn" data-spec="' + escapeHtml(a.spec) + '">Update to ' + escapeHtml(a.version) + '</button>'
+                  : '<span class="hint">In workspace</span>';
+              return '<tr><td><code>' + escapeHtml(a.name) + '</code>' + (a.version ? ' <span class="hint">' + escapeHtml(a.version) + '</span>' : '') + '</td>' +
+                '<td>' + escapeHtml(a.description || '') + '</td>' +
+                '<td style="white-space:nowrap">' + detailsButton(a.spec) + ' ' + action + '</td></tr>';
+            }).join('') + '</tbody></table>'
+          : '<p class="hint" style="margin:0">No abilities found here.</p>';
+      return '<div class="source"><p style="margin:0 0 8px"><strong>' + escapeHtml(s.label) + '</strong></p>' + body + '</div>';
+    }).join('');
+  }
+
+  // Linked from an agent's Abilities tab (/config?section=abilities#private-abilities):
+  // once every list has loaded, so the public results don't push it down.
+  var scrolledToPrivate = false;
+  function scrollToPrivateIfLinked() {
+    if (scrolledToPrivate || location.hash !== '#private-abilities' || !lastPrivate || !workspaceAbilities || lastSearch.q === null) return;
+    var heading = document.getElementById('private-abilities');
+    if (!heading) return;
+    scrolledToPrivate = true;
+    heading.scrollIntoView({ block: 'start' });
+  }
+
+  function loadWorkspaceAbilities() {
+    return fetch('/abilities/workspace')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        workspaceAbilities = d.abilities || [];
+        renderWorkspaceAbilities();
+        renderPrivateAbilities();
+        scrollToPrivateIfLinked();
+      })
+      .catch(function (err) {
+        var el = document.getElementById('workspaceAbilities');
+        if (el) el.innerHTML = '<p class="error">Could not list the workspace' + String.fromCharCode(8217) + 's abilities: ' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function loadPrivateAbilities() {
+    fetch('/abilities/private')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        lastPrivate = d;
+        renderPrivateAbilities();
+        scrollToPrivateIfLinked();
+      })
+      .catch(function (err) {
+        var el = document.getElementById('privateAbilities');
+        if (el) el.innerHTML = '<p class="error">Could not list private abilities: ' + escapeHtml(err.message) + '</p>';
+      });
   }
 
   function searchAbilities(q) {
     var resultsEl = document.getElementById('abilitySearchResults');
     if (lastSearch.q === q) { renderSearchResults(); return; }
     resultsEl.innerHTML = '<p class="hint">Loading&hellip;</p>';
-    // Search doesn't depend on the agent; the route just lives under one.
-    fetch('/agents/' + encodeURIComponent(abilityAgents[0]) + '/abilities/search' + (q ? '?q=' + encodeURIComponent(q) : ''))
+    fetch('/abilities/search' + (q ? '?q=' + encodeURIComponent(q) : ''))
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (r) {
         if (!r.ok) throw new Error(r.body.error || 'search failed');
         lastSearch = { q: q, results: r.body.results || [] };
         renderSearchResults();
+        scrollToPrivateIfLinked();
       })
       .catch(function (err) { resultsEl.innerHTML = '<p class="error">Could not search abilities: ' + escapeHtml(err.message) + '</p>'; });
   }
 
-  function installAbility(agent, spec, btn) {
+  function installIntoWorkspace(spec, btn) {
     var status = document.getElementById('abilityInstallStatus');
     btn.disabled = true;
     status.className = 'hint';
-    status.textContent = 'Installing ' + spec + ' into ' + agent + String.fromCharCode(8230);
-    fetch('/agents/' + encodeURIComponent(agent) + '/abilities', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ spec: spec }),
-    })
+    status.textContent = 'Installing ' + spec + ' into the workspace' + String.fromCharCode(8230);
+    fetch('/abilities/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ spec: spec }) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (r) {
         if (!r.ok) throw new Error(r.body.error || 'request failed');
-        var deps = r.body.dependencies || [];
-        status.innerHTML = 'Installed ' + escapeHtml(spec) + ' into ' + escapeHtml(agent) + '. ' +
-          '<a href="' + agentAbilitiesHref(agent) + '">Add its keys in ' + escapeHtml(agent) + String.fromCharCode(8217) + 's Abilities tab</a>.' +
-          (deps.length ? ' <strong>It also needs <code>' + escapeHtml(deps.join(', ')) + '</code>:</strong> use Install deps there.' : '');
-        return loadAgentAbilities(agent).then(function () {
-          document.getElementById('abilitiesInstalled').innerHTML = renderInstalledAbilities();
-          renderSearchResults();
-        });
+        status.textContent = 'Installed ' + spec + ' into the workspace. Add it to an agent from the agent' + String.fromCharCode(8217) + 's Abilities tab.';
+        workspaceAbilities = r.body.abilities || [];
+        renderWorkspaceAbilities();
+        renderPrivateAbilities();
+        btn.disabled = false;
       })
       .catch(function (err) {
         btn.disabled = false;
@@ -336,27 +486,22 @@ ${consoleShellScript}
       });
   }
 
-  function loadAgentAbilities(agent) {
-    return fetch('/agents/' + encodeURIComponent(agent) + '/abilities')
-      .then(function (r) { return r.ok ? r.json() : { abilities: [] }; })
-      .then(function (d) { abilitiesByAgent[agent] = d.abilities || []; })
-      .catch(function () { abilitiesByAgent[agent] = []; });
+  // A second click confirms. Agents that added it keep their own copies.
+  function removeFromWorkspace(btn) {
+    if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
+    btn.disabled = true;
+    fetch('/abilities/workspace?name=' + encodeURIComponent(btn.dataset.name), { method: 'DELETE' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        workspaceAbilities = d.abilities || [];
+        renderWorkspaceAbilities();
+        renderPrivateAbilities();
+      });
   }
 
   function loadAbilities() {
-    var content = document.getElementById('abilitiesContent');
-    leShell.ready
-      .then(function (agents) {
-        abilityAgents = agents.map(function (a) { return a.name; });
-        return Promise.all(abilityAgents.map(loadAgentAbilities));
-      })
-      .then(function () {
-        renderAbilities();
-        loadedSections.abilities = true;
-      })
-      .catch(function (err) {
-        content.innerHTML = '<p class="error">Could not load abilities: ' + escapeHtml(err.message) + '</p>';
-      });
+    renderAbilities();
+    loadedSections.abilities = true;
   }
 
   // ---- Settings section ----
@@ -382,8 +527,106 @@ ${consoleShellScript}
       rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
+      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to the public ones on npm.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
   }
+
+  // ---- Private ability sources (Settings) ----
+  // Where this project's own abilities come from, next to the public ones
+  // on npm: a GitHub org or user, or a private npm registry
+  // (core/ability-sources.ts). There's no folder kind here: this server
+  // may run in the cloud, so local files are uploaded on the Abilities
+  // page instead. A token is write-only, like a model key.
+
+  var SOURCE_TYPES = [
+    ['github', 'GitHub org or user', 'Each ability is a repo with loopengine.ability.json at its root.'],
+    ['npm', 'Private npm registry', 'Packages in one scope, tagged loopengine-ability.']
+  ];
+
+  function renderAbilitySources(d) {
+    var box = document.getElementById('abilitySourcesBox');
+    if (!box) return;
+    var rows = (d.sources || []).map(function (s) {
+      var token = s.tokenVar
+        ? (s.tokenSet ? '<span class="le-pill good">Token saved</span>' : '<span class="le-pill warn">No token</span>') + ' <span class="hint">' + escapeHtml(s.tokenVar) + '</span>'
+        : '<span class="hint">No token needed</span>';
+      return '<tr><td>' + escapeHtml(s.label) + '</td><td>' + token + '</td>' +
+        '<td><button type="button" class="delete-btn source-remove" data-id="' + escapeHtml(s.source.id) + '"' + (d.canSave ? '' : ' disabled') + '>Remove</button></td></tr>';
+    }).join('');
+    box.innerHTML =
+      (d.error ? '<p class="error">' + escapeHtml(d.error) + '</p>' : '') +
+      (rows
+        ? '<table><thead><tr><th>Source</th><th>Token</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+        : '<p class="hint" style="margin-top:0">No private sources yet. Abilities from npm are always listed; add a source to also list your own.</p>') +
+      (d.canSave
+        ? '<form id="sourceForm" class="source-form">' +
+            '<label>Kind<select name="type" id="sourceType">' + SOURCE_TYPES.map(function (t) { return '<option value="' + t[0] + '">' + t[1] + '</option>'; }).join('') + '</select></label>' +
+            '<p class="hint" id="sourceTypeHint" style="margin:0"></p>' +
+            '<label data-source-field="github">Org or user<input name="owner" placeholder="loopengine-co"></label>' +
+            '<label data-source-field="npm">Registry URL<input name="registry" placeholder="https://npm.pkg.github.com"></label>' +
+            '<label data-source-field="npm">Scope<input name="scope" placeholder="@your-company"></label>' +
+            '<label data-source-field="github npm">Token <span class="hint" id="sourceTokenHint"></span><input type="password" name="token" autocomplete="off" spellcheck="false"></label>' +
+            '<button type="submit">Add source</button>' +
+            '<div class="error" id="sourceError"></div>' +
+          '</form>'
+        : '<p class="hint">Adding a source needs <code>LOOPENGINE_ADMIN_AUTH</code> set, because it stores a token. Or edit <code>ability-sources.yml</code> and <code>.env</code>.</p>');
+    var form = document.getElementById('sourceForm');
+    if (!form) return;
+    var TOKEN_HINTS = {
+      github: '(needed for private repos: a token that can read their contents)',
+      npm: '(the registry' + String.fromCharCode(8217) + 's auth token, if it needs one)'
+    };
+    function showFields() {
+      var type = form.type.value;
+      var fields = form.querySelectorAll('[data-source-field]');
+      for (var i = 0; i < fields.length; i++) fields[i].style.display = fields[i].dataset.sourceField.split(' ').indexOf(type) !== -1 ? '' : 'none';
+      SOURCE_TYPES.forEach(function (t) { if (t[0] === type) document.getElementById('sourceTypeHint').textContent = t[2]; });
+      document.getElementById('sourceTokenHint').textContent = TOKEN_HINTS[type] || '';
+    }
+    form.type.addEventListener('change', showFields);
+    showFields();
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var type = form.type.value;
+      var body = { type: type };
+      if (type === 'github') body.owner = form.owner.value;
+      if (type === 'npm') { body.registry = form.registry.value; body.scope = form.scope.value; }
+      if (form.token.value) body.token = form.token.value;
+      sendAbilitySources('PUT', '/config/ability-sources', body, document.getElementById('sourceError'));
+    });
+  }
+
+  function sendAbilitySources(method, url, body, errorEl) {
+    if (errorEl) errorEl.textContent = '';
+    return fetch(url, { method: method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'request failed');
+        renderAbilitySources(r.body);
+        // The Abilities page lists what the sources offer; reload it next time.
+        loadedSections.abilities = false;
+      })
+      .catch(function (err) { if (errorEl) errorEl.textContent = err.message; });
+  }
+
+  function loadAbilitySources() {
+    fetch('/config/ability-sources')
+      .then(function (r) { return r.json(); })
+      .then(renderAbilitySources)
+      .catch(function (err) {
+        var box = document.getElementById('abilitySourcesBox');
+        if (box) box.innerHTML = '<p class="error">Could not load the sources: ' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  // Remove a source: a second click confirms. Installed abilities stay.
+  document.getElementById('settingsContent').addEventListener('click', function (ev) {
+    var btn = ev.target.closest && ev.target.closest('.source-remove');
+    if (!btn) return;
+    if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
+    btn.disabled = true;
+    sendAbilitySources('DELETE', '/config/ability-sources/' + encodeURIComponent(btn.dataset.id), null, null);
+  });
 
   // ---- Time zone ----
 
@@ -578,6 +821,7 @@ ${consoleShellScript}
         content.innerHTML = renderSettings(d);
         loadedSections.settings = true;
         loadTimeZone();
+        loadAbilitySources();
         loadUpgrade();
       })
       .catch(function (err) {

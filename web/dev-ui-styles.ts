@@ -107,6 +107,18 @@ export const devUiCss: string = `
   .le-pill.allow, .le-pill.good { background: var(--good-soft); color: var(--good); }
   .le-pill.ask, .le-pill.warn { background: var(--warn-soft); color: var(--warn); }
   .le-pill.deny, .le-pill.bad { background: var(--bad-soft); color: var(--bad); }
+  /* An ability's details (leShell.toggleAbilityDetails), on the Abilities
+     page and each agent's Abilities tab. */
+  .ability-details-row > td { padding: 0 10px 14px; border-top: 0; background: transparent; }
+  .ability-details { border: 1px solid var(--accent); border-left-width: 4px; border-radius: var(--radius); background: var(--accent-soft); padding: 12px 16px 14px; }
+  .ability-details-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .ability-details-title { font-size: 14px; font-weight: 600; }
+  .ability-details-summary { font-size: 12.5px; color: var(--ink-muted); }
+  .ability-details h4 { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+  .ability-details table { width: 100%; background: var(--surface); border-radius: var(--radius); }
+  .ability-details-btn.is-open { border-color: var(--accent); color: var(--accent-ink, var(--accent)); }
+  .ability-skills { margin: 0; padding-left: 18px; }
+  .ability-skills li { margin: 3px 0; }
   .le-pill.neutral { background: var(--surface-2); color: var(--ink-muted); }
   .le-pill.accent { background: var(--accent-soft); color: var(--accent-ink); }
 

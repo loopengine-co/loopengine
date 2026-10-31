@@ -100,6 +100,11 @@ import { firstSighting, handleInboundMessage, handleMessagingAction, settleThrea
 import { describeChange } from '#core/messaging/decide.js'
 import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
+import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
+import { abilityDetails } from '#web/ability-details-admin.js'
+import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
+import { WorkspaceAbilityError, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
+import { AbilitySourceError, abilityOrigin, readAbilitySources, type AbilitySource } from '#core/ability-sources.js'
 import {
   installAbility,
   upgradeAbility,
@@ -228,6 +233,32 @@ function readRawBody(req: IncomingMessage): Promise<string> {
     let data = ''
     req.on('data', (chunk) => (data += chunk))
     req.on('end', () => resolve(data))
+    req.on('error', reject)
+  })
+}
+
+/** readJsonBody with a size cap, for uploads: a body past `maxBytes` is
+ * refused before it's all read. */
+function readLimitedJsonBody(req: IncomingMessage, maxBytes: number): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > maxBytes) {
+        reject(new WorkspaceAbilityError('The upload is larger than 25 MB'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      try {
+        resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {})
+      } catch (err) {
+        reject(err)
+      }
+    })
     req.on('error', reject)
   })
 }
@@ -1525,6 +1556,10 @@ async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promi
     return
   }
   const installed = listInstalledAbilities(agentName)
+  let sources: AbilitySource[] = []
+  try {
+    sources = readAbilitySources()
+  } catch {}
   const abilities = await Promise.all(
     installed.map(async (a) => {
       // a.dependencies is only ever undefined for a record from before
@@ -1534,9 +1569,13 @@ async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promi
       // otherwise permanently hide "Install deps" for an ability that
       // genuinely still needs something.
       const dependencies = a.dependencies !== undefined ? a.dependencies : ((await backfillDependencies(agentName, a.name)) ?? [])
-      const latestVersion = await fetchLatestAbilityVersion(a.name)
+      // Public or private, for the console's badge. Only a public one is
+      // checked against npm for a newer version: a private ability could
+      // share its name with an unrelated public package.
+      const origin = abilityOrigin(a.spec, a.name, sources)
+      const latestVersion = origin.kind === 'public' ? await fetchLatestAbilityVersion(a.name) : null
       const missingDependencies = dependencies.filter((dep) => !hasNodeModule(dep))
-      return { ...a, dependencies, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version, missingDependencies }
+      return { ...a, origin, dependencies, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version, missingDependencies }
     }),
   )
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities }))
@@ -3641,6 +3680,105 @@ const server = createServer(async (req, res) => {
     // itself need to be excluded from matching as an agent name (it
     // never would be one in practice, but this ordering means never
     // having to think about it).
+    // Private ability sources (Settings) and what they offer (the
+    // Abilities page's Private section): web/ability-sources-admin.ts.
+    // Saving or removing one stores a token, so it's refused without auth,
+    // like a model key.
+    if (pathname === '/config/ability-sources' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ ...describeAbilitySources(), canSave: secretsProtected }))
+      return
+    }
+    const abilitySourceMatch = pathname.match(/^\/config\/ability-sources(?:\/([a-z0-9-]+))?$/)
+    if (abilitySourceMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
+      if (!secretsProtected) {
+        res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Refusing to change ability sources without LOOPENGINE_ADMIN_AUTH configured: set it first, or edit ability-sources.yml and .env.' }))
+        return
+      }
+      try {
+        if (req.method === 'PUT') await saveAbilitySourceFromConsole(await readJsonBody(req))
+        else if (abilitySourceMatch[1]) await removeAbilitySourceFromConsole(abilitySourceMatch[1])
+        else throw new AbilitySourceError('Name the source to remove')
+      } catch (err) {
+        const status = err instanceof AbilitySourceError ? 400 : 500
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...describeAbilitySources(), canSave: secretsProtected }))
+      return
+    }
+    // What an ability can do: its tools (what each does, its permission)
+    // and skills. `agent` adds that agent's current decisions.
+    if (pathname === '/abilities/details' && req.method === 'GET') {
+      const params = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const spec = params.get('spec')?.trim()
+      const agent = params.get('agent') ?? undefined
+      if (!spec || (agent && !getEntry(agent))) {
+        res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: spec ? `unknown agent '${agent}'` : 'spec is required' }))
+        return
+      }
+      try {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await abilityDetails(spec, { agent })))
+      } catch (err) {
+        res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+      }
+      return
+    }
+    // The workspace's private abilities (core/workspace-abilities.ts):
+    // installed from the Abilities page, added to agents from their tab.
+    if (pathname === '/abilities/workspace' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ abilities: listWorkspaceAbilities() }))
+      return
+    }
+    if (pathname === '/abilities/workspace' && (req.method === 'POST' || req.method === 'DELETE')) {
+      try {
+        if (req.method === 'POST') {
+          const spec = (await readJsonBody(req)).spec
+          if (typeof spec !== 'string' || !spec.trim()) throw new WorkspaceAbilityError('spec is required')
+          await installWorkspaceAbility(spec.trim())
+        } else {
+          removeWorkspaceAbility(new URL(req.url ?? '/', 'http://localhost').searchParams.get('name') ?? '')
+        }
+      } catch (err) {
+        const status = err instanceof WorkspaceAbilityError ? 400 : 502
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities: listWorkspaceAbilities() }))
+      return
+    }
+    // An ability uploaded from the browser (a .zip/.tgz, or a folder's
+    // files, base64), stored in the workspace like one from a source.
+    if (pathname === '/abilities/workspace/upload' && req.method === 'POST') {
+      try {
+        // Base64 adds a third, plus the JSON around it.
+        const body = await readLimitedJsonBody(req, Math.ceil(MAX_UPLOAD_BYTES * 1.4) + 64 * 1024)
+        const upload: AbilityUpload =
+          body.kind === 'files' && Array.isArray(body.files)
+            ? { kind: 'files', folderName: typeof body.folderName === 'string' ? body.folderName : undefined, files: (body.files as Array<{ path?: unknown; data?: unknown }>).map((f) => ({ path: String(f?.path ?? ''), data: String(f?.data ?? '') })) }
+            : { kind: 'archive', fileName: String(body.fileName ?? ''), data: String(body.data ?? '') }
+        await installUploadedAbility(upload)
+      } catch (err) {
+        const status = err instanceof WorkspaceAbilityError ? 400 : 500
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities: listWorkspaceAbilities() }))
+      return
+    }
+    // Public abilities on npm, for the Abilities page (no agent involved).
+    if (pathname === '/abilities/search' && req.method === 'GET') {
+      try {
+        const results = await searchPublicAbilities(new URL(req.url ?? '/', 'http://localhost').searchParams.get('q') ?? undefined)
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results }))
+      } catch (err) {
+        res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+      }
+      return
+    }
+    if (pathname === '/abilities/private' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(await listPrivateAbilities()))
+      return
+    }
     const abilitiesSearchMatch = pathname.match(/^\/agents\/([^/]+)\/abilities\/search$/)
     if (abilitiesSearchMatch && req.method === 'GET') {
       const query = new URL(req.url ?? '/', 'http://localhost').searchParams.get('q')

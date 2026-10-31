@@ -15,6 +15,8 @@
 //   leShell.wireModelPicker(form)  model dropdown for a provider select
 //   leShell.loadProviderKeys()     Promise of {provider: key saved?}, or null
 //   leShell.applyProviderKeys(form, keys, keep)  only providers with a key
+//   leShell.abilityOriginBadge(origin)    Public/Private badge for an ability
+//   leShell.toggleAbilityDetails(btn)     an ability's tools, skills and settings
 // Same embedded-string conventions as the pages themselves: plain
 // string concatenation and no backslashes inside the script, so nothing
 // here needs double-escaping in the template literal.
@@ -345,6 +347,93 @@ export const consoleShellScript: string = `<script>
     return firstWithKey;
   }
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys };
+  // ---- Abilities: where one came from, and what it can do ----
+  // Used by the Abilities page and each agent's Abilities tab.
+
+  var DECISION_LABELS = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
+
+  function decisionPill(decision) {
+    return decision ? '<span class="le-pill ' + decision + '">' + DECISION_LABELS[decision] + '</span>' : '<span class="hint">No rule</span>';
+  }
+
+  // Public (npm) or Private, with where it came from on hover.
+  function abilityOriginBadge(origin) {
+    if (!origin) return '';
+    return '<span class="le-pill ' + (origin.kind === 'private' ? 'accent' : '') + '" title="' + esc(origin.label) + '">' +
+      (origin.kind === 'private' ? 'Private' : 'Public') + '</span> <span class="hint">' + esc(origin.label) + '</span>';
+  }
+
+
+
+
+
+  // What an ability can do: its tools (what each one does and its
+  // permission: this agent's own when it's installed, else the one it
+  // ships with), skills and settings.
+  function renderAbilityDetails(d) {
+    var tools = d.tools || [];
+    var skills = d.skills || [];
+    var settings = d.settings || [];
+    var toolRows = tools.map(function (t) {
+      var permission = d.agent
+        ? decisionPill(t.agentDecision) + (t.decision && t.decision !== t.agentDecision ? ' <span class="hint">ships as ' + DECISION_LABELS[t.decision] + '</span>' : '')
+        : decisionPill(t.decision);
+      return '<tr><td><code>' + esc(t.name) + '</code></td><td>' + (t.description ? esc(t.description) : '<span class="hint">No description</span>') + '</td><td>' + permission + '</td></tr>';
+    }).join('');
+    // A one-line summary at the top: how many tools, by permission, and skills.
+    var counts = {};
+    tools.forEach(function (t) {
+      var decision = d.agent ? t.agentDecision : t.decision;
+      if (decision) counts[decision] = (counts[decision] || 0) + 1;
+    });
+    var byDecision = ['allow', 'ask', 'deny'].filter(function (k) { return counts[k]; }).map(function (k) { return counts[k] + ' ' + DECISION_LABELS[k]; });
+    var summary = tools.length + (tools.length === 1 ? ' tool' : ' tools') + (byDecision.length ? ' (' + byDecision.join(', ') + ')' : '') +
+      ' ' + String.fromCharCode(183) + ' ' + skills.length + (skills.length === 1 ? ' skill' : ' skills') +
+      (settings.length ? ' ' + String.fromCharCode(183) + ' ' + settings.length + (settings.length === 1 ? ' setting' : ' settings') : '');
+    return '<div class="ability-details">' +
+      '<div class="ability-details-head"><span class="ability-details-title">What <code>' + esc(d.name) + '</code>' + (d.version ? ' <span class="hint">' + esc(d.version) + '</span>' : '') + ' can do</span>' +
+        '<span class="ability-details-summary">' + summary + '</span></div>' +
+      (d.description ? '<p style="margin:0 0 6px">' + esc(d.description) + '</p>' : '') +
+      '<h4>Tools (' + tools.length + ')</h4>' +
+      (tools.length
+        ? '<table><thead><tr><th>Tool</th><th>What it does</th><th>' + (d.agent ? 'Permission in ' + esc(d.agent) : 'Permission it ships with') + '</th></tr></thead><tbody>' + toolRows + '</tbody></table>'
+        : '<p class="hint">No tools.</p>') +
+      '<h4>Skills (' + skills.length + ')</h4>' +
+      (skills.length
+        ? '<ul class="ability-skills">' + skills.map(function (s) { return '<li><code>' + esc(s.name) + '</code>' + (s.description ? ' ' + String.fromCharCode(8212) + ' ' + esc(s.description) : '') + '</li>'; }).join('') + '</ul>'
+        : '<p class="hint">No skills.</p>') +
+      (settings.length
+        ? '<h4>Settings it needs (' + settings.length + ')</h4><ul class="ability-skills">' + settings.map(function (s) { return '<li><code>' + esc(s.name) + '</code>' + (s.description ? ' ' + String.fromCharCode(8212) + ' ' + esc(s.description) : '') + '</li>'; }).join('') + '</ul>'
+        : '') +
+      '</div>';
+  }
+
+  // Opens (or closes) an ability's details in a row right under its own.
+  function toggleAbilityDetails(btn) {
+    var tr = btn.closest('tr');
+    var next = tr.nextElementSibling;
+    if (next && next.classList.contains('ability-details-row')) {
+      next.remove();
+      btn.textContent = 'Details';
+      btn.classList.remove('is-open');
+      return;
+    }
+    var row = document.createElement('tr');
+    row.className = 'ability-details-row';
+    row.innerHTML = '<td colspan="' + tr.children.length + '"><div class="ability-details"><p class="hint" style="margin:0">Reading what it can do' + String.fromCharCode(8230) + '</p></div></td>';
+    tr.parentNode.insertBefore(row, tr.nextSibling);
+    btn.textContent = 'Hide details';
+    btn.classList.add('is-open');
+    var agent = btn.dataset.agent;
+    fetch('/abilities/details?spec=' + encodeURIComponent(btn.dataset.spec) + (agent ? '&agent=' + encodeURIComponent(agent) : ''))
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        row.firstChild.innerHTML = r.ok ? renderAbilityDetails(r.body) : '<div class="ability-details"><p class="error" style="margin:0">Could not read it: ' + esc(r.body.error || 'unknown error') + '</p></div>';
+      })
+      .catch(function (err) { row.firstChild.innerHTML = '<div class="ability-details"><p class="error" style="margin:0">Could not read it: ' + esc(err.message) + '</p></div>'; });
+  }
+
+
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`

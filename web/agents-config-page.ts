@@ -2210,46 +2210,53 @@ ${consoleShellScript}
       actionHtml += ' <button type="button" class="ability-install-deps-btn" data-name="' + escapeHtml(a.name) + '" title="npm install ' + escapeHtml(deps.join(' ')) + '">Install deps</button>';
     }
     actionHtml += ' <button type="button" class="ability-uninstall-btn" data-name="' + escapeHtml(a.name) + '">Uninstall</button>';
+    // Details: what it can do, with this agent's own permissions. Fetched
+    // by its install spec, pinned to the installed version for an npm name.
+    var spec = a.spec || a.name;
+    if (!/^(git[+:]|github:|https?:|file:|[.]|[/])/.test(spec) && spec.lastIndexOf('@') <= 0 && a.version) spec += '@' + a.version;
+    var detailsHtml = '<button type="button" class="ability-details-btn" data-spec="' + escapeHtml(spec) + '" data-agent="' + escapeHtml(currentName) + '">Details</button>';
     return '<tr>' +
       '<td><code>' + escapeHtml(a.name) + '</code></td>' +
       '<td>' + escapeHtml(a.version) + '</td>' +
+      '<td>' + leShell.abilityOriginBadge(a.origin) + '</td>' +
       '<td class="hint">' + escapeHtml((a.tools || []).join(', ')) + '</td>' +
-      '<td>' + actionHtml + '</td>' +
+      '<td style="white-space:nowrap">' + detailsHtml + ' ' + actionHtml + '</td>' +
       '</tr>';
   }
 
-  function renderAbilitySearchResultRow(pkg, installedNames) {
+  // A public (npm) or private ability not installed here yet: its
+  // details show the permissions it ships with.
+  function renderAbilitySearchResultRow(pkg, installedNames, spec) {
+    var installSpec = spec || pkg.name;
     var actionHtml = installedNames.indexOf(pkg.name) !== -1
       ? '<span class="hint">Installed</span>'
-      : '<button type="button" class="ability-install-btn" data-spec="' + escapeHtml(pkg.name) + '">Install</button>';
+      : '<button type="button" class="ability-install-btn" data-spec="' + escapeHtml(installSpec) + '">Install</button>';
+    var detailsSpec = spec || (pkg.version ? pkg.name + '@' + pkg.version : pkg.name);
     return '<tr>' +
-      '<td><code>' + escapeHtml(pkg.name) + '</code> <span class="hint">' + escapeHtml(pkg.version) + '</span></td>' +
+      '<td><code>' + escapeHtml(pkg.name) + '</code>' + (pkg.version ? ' <span class="hint">' + escapeHtml(pkg.version) + '</span>' : '') + '</td>' +
       '<td>' + escapeHtml(pkg.description || '') + '</td>' +
-      '<td>' + actionHtml + '</td>' +
+      '<td style="white-space:nowrap"><button type="button" class="ability-details-btn" data-spec="' + escapeHtml(detailsSpec) + '">Details</button> ' + actionHtml + '</td>' +
       '</tr>';
   }
 
   function renderAbilitiesConfigHtml(data) {
     var installed = data.abilities || [];
     var installedHtml = installed.length
-      ? '<table><thead><tr><th>Name</th><th>Version</th><th>Tools</th><th></th></tr></thead><tbody>' + installed.map(renderInstalledAbilityRow).join('') + '</tbody></table>' +
+      ? '<table><thead><tr><th>Name</th><th>Version</th><th>Source</th><th>Tools</th><th></th></tr></thead><tbody>' + installed.map(renderInstalledAbilityRow).join('') + '</tbody></table>' +
         '<p id="abilityUpgradeStatus" class="hint"></p>'
       : '<p class="hint">No abilities installed for this agent yet.</p>';
 
     return '<h3>Installed</h3>' + installedHtml +
-      '<h3 style="margin-top:24px">Search public abilities</h3>' +
-      '<form id="abilitySearchForm" class="add-source">' +
-        '<input type="text" name="q" placeholder="Search by name or keyword (optional)">' +
+      // Installing by name or spec is on the console's Abilities page.
+      '<p id="abilityInstallStatus" class="hint"></p>' +
+      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Public abilities <span class="hint" style="font-weight:400">npm packages tagged loopengine-ability</span></h3>' +
+      '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
+        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search public abilities" style="flex:1">' +
         '<button type="submit">Search</button>' +
       '</form>' +
       '<div id="abilitySearchResults" style="margin-bottom:32px"></div>' +
-      '<h3 style="margin-top:24px">Install from a spec</h3>' +
-      '<p class="hint">A git URL, a local <code>file:../path</code>, or a private npm package name/version — for anything not published publicly.</p>' +
-      '<form id="abilityInstallForm" class="add-source">' +
-        '<input type="text" name="spec" placeholder="e.g. git+https://github.com/org/repo.git or file:../my-ability" required>' +
-        '<button type="submit">Install</button>' +
-      '</form>' +
-      '<p id="abilityInstallStatus" class="hint"></p>';
+      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Private abilities <span class="hint" style="font-weight:400">your own, installed in this workspace</span></h3>' +
+      '<div id="abilityPrivateResults" style="margin-bottom:32px"><p class="hint">Loading&hellip;</p></div>';
   }
 
   function abilitiesContentEl() {
@@ -2418,6 +2425,34 @@ ${consoleShellScript}
       });
   }
 
+  // The workspace's private abilities (installed from the console's
+  // Abilities page, core/workspace-abilities.ts), each with Details and
+  // Install into this agent. With none, a link to install some there.
+  function loadPrivateAbilitiesFor(name, content, installedNames) {
+    var el = content.querySelector('#abilityPrivateResults');
+    if (!el) return;
+    fetch('/abilities/workspace')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (currentName !== name) return;
+        var abilities = d.abilities || [];
+        if (!abilities.length) {
+          el.innerHTML = '<p><a href="/config?section=abilities#private-abilities">Install private abilities</a></p>';
+          return;
+        }
+        el.innerHTML = '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' +
+          abilities.map(function (a) { return renderAbilitySearchResultRow(a, installedNames, a.spec); }).join('') + '</tbody></table>' +
+          '<p class="hint" style="margin:6px 0 0"><a href="/config?section=abilities#private-abilities">Install more private abilities</a></p>';
+        var installBtns = el.querySelectorAll('.ability-install-btn');
+        for (var i = 0; i < installBtns.length; i++) {
+          installBtns[i].addEventListener('click', function (ev) {
+            installAbilitySpec(name, ev.currentTarget.dataset.spec, content.querySelector('#abilityInstallStatus'), ev.currentTarget);
+          });
+        }
+      })
+      .catch(function (err) { el.innerHTML = '<p class="error">Could not list private abilities: ' + escapeHtml(err.message) + '</p>'; });
+  }
+
   // Shared by the initial (empty-query) load right after the tab opens
   // and the search form's own submit — the empty-query case is just
   // "list every published ability" (the keyword filter alone, no extra
@@ -2449,6 +2484,16 @@ ${consoleShellScript}
   function wireAbilitiesHandlers(name, installedNames) {
     var content = abilitiesContentEl();
     if (!content) return;
+
+    // Details buttons anywhere in the tab, including search results that
+    // arrive later. The tab's container outlives each redraw, so wired once.
+    if (!content.dataset.detailsWired) {
+      content.dataset.detailsWired = '1';
+      content.addEventListener('click', function (ev) {
+        var btn = ev.target.closest && ev.target.closest('.ability-details-btn');
+        if (btn) leShell.toggleAbilityDetails(btn);
+      });
+    }
 
     var upgradeStatusEl = content.querySelector('#abilityUpgradeStatus');
     var upgradeBtns = content.querySelectorAll('.ability-upgrade-btn');
@@ -2489,17 +2534,7 @@ ${consoleShellScript}
       // operator explicitly searches for something.
       runAbilitySearch(name, '', content, resultsEl, installedNames);
     }
-
-    var installForm = content.querySelector('#abilityInstallForm');
-    if (installForm) {
-      installForm.addEventListener('submit', function (ev) {
-        ev.preventDefault();
-        var spec = new FormData(installForm).get('spec');
-        var statusEl = content.querySelector('#abilityInstallStatus');
-        var btn = installForm.querySelector('button[type="submit"]');
-        installAbilitySpec(name, spec, statusEl, btn);
-      });
-    }
+    loadPrivateAbilitiesFor(name, content, installedNames);
   }
 
   function applyAbilitiesConfig(name, data) {
