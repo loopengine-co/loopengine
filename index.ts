@@ -34,7 +34,7 @@ export { parseSlackEvent, createSlackConnector, verifySlackRequest, parseSlackIn
 export { createDecisionToken, verifyDecisionToken, decidePath, decideLinkMaker, decisionLinkTtlMs, type DecisionKind } from '#core/approval-links.js'
 export { renderDecidePage, renderDecideGonePage, renderDecideInvalidPage, type DecidePageItem } from './web/decide-page.js'
 export { sendTestWebhook } from '#core/http-notify-triggers/webhook.js'
-export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, slackConversationsOn, slackClickAllowed, agentApprovers, setAgentApprovers, listAgentSlackMembers, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
+export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, setAgentPrimaryNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, slackConversationsOn, slackClickAllowed, agentApprovers, setAgentApprovers, listAgentSlackMembers, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
 
 // The full typed lifecycle a running turn can emit (see loop-events.ts's
 // own header comment) — exported directly, not just transitively via
@@ -278,6 +278,14 @@ export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult } from '
 export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
 
+// Private ability sources, the workspace's own abilities and each
+// ability's details: the console's Abilities page and agent Abilities tab.
+export { AbilitySourceError, abilityOrigin, readAbilitySources, saveAbilitySource, removeAbilitySource, listSourceAbilities, sourceTokenVar, type AbilitySource, type SourceAbility, type AbilityOrigin } from './core/ability-sources.js'
+export { describeAbilitySources, listPrivateAbilities, saveAbilitySourceFromConsole, removeAbilitySourceFromConsole } from './web/ability-sources-admin.js'
+export { readAbilityDetails, readToolDefinitions, type AbilityDetails } from './core/ability-details.js'
+export { abilityDetails } from './web/ability-details-admin.js'
+export { WorkspaceAbilityError, listWorkspaceAbilities, addWorkspaceAbility, removeWorkspaceAbility, workspaceAbilitiesDir, type WorkspaceAbility } from './core/workspace-abilities.js'
+export { installWorkspaceAbility, installUploadedAbility, MAX_UPLOAD_BYTES, type AbilityUpload } from './web/workspace-abilities-admin.js'
 export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from './web/global-config.js'
 export { loopengineVersion } from './core/version.js'
 export { describeUpgrade, runUpgrade, UpgradeError } from './web/upgrade-admin.js'
