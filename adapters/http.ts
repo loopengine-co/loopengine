@@ -133,7 +133,7 @@ import {
   ActauthRuleExistsError,
   ActauthRuleNotFoundError,
 } from '#web/actauth-admin.js'
-import { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from '#web/global-config.js'
+import { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from '#web/global-config.js'
 import { workspaceTimeZone } from '#core/time-zone.js'
 import { scaffoldAgent, AgentNameError, AgentExistsError, AgentModelError, type AgentTemplateOptions } from '#bin/cli.js'
 import { createTrackedApprover, listApprovals, decideApproval, findApproval } from '#web/web-approver.js'
@@ -779,7 +779,9 @@ function parseAgentTemplateOptions(body: Record<string, unknown>): { ok: true; v
       provider !== 'deepseek' &&
       provider !== 'kimi' &&
       provider !== 'glm' &&
-      provider !== 'gemini'
+      provider !== 'gemini' &&
+      provider !== 'xai' &&
+      provider !== 'meta'
     ) {
       return { ok: false, error: `unsupported model provider '${String(provider)}'` }
     }
@@ -3326,6 +3328,19 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' }).end(
         JSON.stringify({ ...describeModelProviders(listAgents(), (name) => getEntry(name)?.config), canSave: secretsProtected }),
       )
+      return
+    }
+    // The model dropdown in the New agent and Model forms: what the
+    // provider lists for the saved key. Never includes the key itself.
+    const providerModelsMatch = req.method === 'GET' && pathname.match(/^\/config\/models\/([a-z]+)\/models$/)
+    if (providerModelsMatch) {
+      try {
+        const view = await listProviderModels(providerModelsMatch[1])
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(view))
+      } catch (err) {
+        const status = err instanceof ModelKeyError ? 400 : 500
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+      }
       return
     }
     // A provider's API key, from the Models page: write-only, never read

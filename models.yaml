@@ -1,0 +1,88 @@
+# The models offered in the console's model dropdown (New agent, and an
+# agent's Model > Edit), per provider. Edit freely: changes show the next
+# time the dropdown loads, no restart needed.
+#
+# - A provider listed here offers exactly these models, in this order.
+#   The first is preselected (for anthropic, "(provider default)" is).
+#   No API key is needed to see them.
+# - A provider left out (or commented out) lists its models live from
+#   its API once its key is saved on the Models page.
+# - Any model can still be typed under "Other…".
+#
+# Providers: openai, anthropic, gemini, meta, xai, deepseek, kimi, glm.
+# Set LOOPENGINE_MODELS_FILE to read a different file.
+
+# These lists were taken from each provider's own model pages on
+# 2026-10-31; prune or extend them as models come and go.
+
+# gpt-6-luna first: it's the default when openai is chosen.
+openai:
+  - gpt-6-luna
+  - gpt-6.1-sol
+  - gpt-6.1-terra
+  - gpt-6-astra
+  - gpt-6-sol
+  - gpt-5.6-sol
+  - gpt-5.6-terra
+  - gpt-5.6-luna
+  - gpt-5.5
+  - gpt-5.4-mini
+
+# Current models first, then legacy ones Anthropic still serves
+# (claude-sonnet-5 is the default for an agent that names no model).
+anthropic:
+  - claude-fable-5-1
+  - claude-opus-5-5
+  - claude-sonnet-5-5
+  - claude-haiku-5-5
+  - claude-fable-5
+  - claude-opus-5
+  - claude-sonnet-5
+
+gemini:
+  - gemini-4-argon
+  - gemini-3.8-flash
+  - gemini-3.6-flash
+  - gemini-3.1-pro-preview
+  - gemini-3.5-flash-lite
+
+# The "-contributor" variants are left out: they're cheaper, but let Meta
+# train on the requests. Add one here if that's fine for you.
+meta:
+  - muse-spark-1.3
+  - muse-wonder-1.0
+  - muse-spark-1.2
+  - muse-spark-1.1
+
+xai:
+  - grok-4.7
+  - grok-4.6
+  - grok-4.5
+  - grok-4.3
+  - grok-4.20-0309-reasoning
+  - grok-4.20-0309-non-reasoning
+
+# deepseek-v4-flash still works, but only as a retired alias of
+# deepseek-flash.
+deepseek:
+  - deepseek-v4-pro
+  - deepseek-flash
+
+# K2 models aren't open to new Kimi accounts from 2026-10-31 and retire at
+# the end of 2026, so only kimi-k2.7-code (the K2 coding line) is kept.
+kimi:
+  - kimi-k3.1-pro
+  - kimi-k3.1-pro-highspeed
+  - kimi-k3
+  - kimi-k2.7-code
+  - kimi-k2.7-code-highspeed
+
+# Zhipu's overview page shows display names; these are its lowercase API
+# form.
+glm:
+  - glm-5.3
+  - glm-5.2
+  - glm-5.1
+  - glm-5
+  - glm-5-turbo
+  - glm-4.7

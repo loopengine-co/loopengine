@@ -61,6 +61,8 @@ const PROVIDER_KEY_ENV: Record<AgentModelConfig['provider'], string> = {
   kimi: 'MOONSHOT_API_KEY',
   glm: 'GLM_API_KEY',
   gemini: 'GEMINI_API_KEY',
+  xai: 'XAI_API_KEY',
+  meta: 'META_API_KEY',
 }
 
 export async function synthesizeCreateModelCall(model: AgentModelConfig): Promise<() => ModelCall> {
@@ -80,9 +82,15 @@ export async function synthesizeCreateModelCall(model: AgentModelConfig): Promis
   } else if (model.provider === 'glm') {
     const { createGlmModelCall } = await import('./model-calls/glm-model-call.js')
     build = () => createGlmModelCall(model)
-  } else {
+  } else if (model.provider === 'gemini') {
     const { createGeminiModelCall } = await import('./model-calls/gemini-model-call.js')
     build = () => createGeminiModelCall(model)
+  } else if (model.provider === 'xai') {
+    const { createXaiModelCall } = await import('./model-calls/xai-model-call.js')
+    build = () => createXaiModelCall(model)
+  } else {
+    const { createMetaModelCall } = await import('./model-calls/meta-model-call.js')
+    build = () => createMetaModelCall(model)
   }
   // Rebuilt when the key it was built with changes, so a key saved or
   // replaced on the console's Models page applies to the next call

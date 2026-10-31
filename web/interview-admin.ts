@@ -311,7 +311,7 @@ export function interviewTools(agents: InterviewAgentSource[]): InterviewTools {
       return results.slice(0, 10).map((r) => ({ name: r.name, ...(r.description ? { description: r.description } : {}) }))
     },
     async listConnections() {
-      const providers = ['anthropic', 'openai', 'deepseek', 'kimi', 'glm', 'gemini'].filter((p) => {
+      const providers = ['openai', 'anthropic', 'gemini', 'meta', 'xai', 'deepseek', 'kimi', 'glm'].filter((p) => {
         const envVar = modelKeyEnvVar(p)
         return envVar ? Boolean(process.env[envVar]) : false
       })

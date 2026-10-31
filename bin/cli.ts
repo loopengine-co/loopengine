@@ -22,7 +22,7 @@ export class AgentExistsError extends Error {}
 export class AgentNotFoundError extends Error {}
 export class AgentModelError extends Error {}
 
-type Provider = 'anthropic' | 'openai' | 'deepseek' | 'kimi' | 'glm' | 'gemini'
+type Provider = 'anthropic' | 'openai' | 'deepseek' | 'kimi' | 'glm' | 'gemini' | 'xai' | 'meta'
 
 const MODEL_ENV_VAR: Record<Provider, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
@@ -33,6 +33,9 @@ const MODEL_ENV_VAR: Record<Provider, string> = {
   kimi: 'MOONSHOT_API_KEY',
   glm: 'GLM_API_KEY',
   gemini: 'GEMINI_API_KEY',
+  xai: 'XAI_API_KEY',
+  // LiteLLM's name; see core/model-calls/meta-model-call.ts.
+  meta: 'META_API_KEY',
 }
 
 export interface AgentTemplateOptions {

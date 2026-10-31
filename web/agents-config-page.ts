@@ -690,12 +690,12 @@ ${consoleShellScript}
         '<form class="add-source" id="modelForm" style="display:none">' +
           '<label>Provider' +
             '<select name="provider">' +
-              ['anthropic', 'openai', 'deepseek', 'kimi', 'glm', 'gemini'].map(function (p) {
+              ['openai', 'anthropic', 'gemini', 'meta', 'xai', 'deepseek', 'kimi', 'glm'].map(function (p) {
                 return '<option value="' + p + '"' + (p === cfg.model.provider ? ' selected' : '') + '>' + p + '</option>';
               }).join('') +
             '</select>' +
           '</label>' +
-          '<label>Model name <span class="hint">(required for openai/deepseek; defaults to claude-sonnet-5 for anthropic)</span>' +
+          '<label>Model name <span class="hint">(choose Other&hellip; to type a model not in the list)</span>' +
             '<input type="text" name="modelName" value="' + escapeHtml(cfg.model.model || '') + '">' +
           '</label>' +
           '<label>Max tokens <span class="hint">(blank for provider default)</span>' +
@@ -814,6 +814,13 @@ ${consoleShellScript}
         modelDisplay.style.display = 'none';
         editModelBtn.style.display = 'none';
         modelForm.style.display = '';
+        // Only providers with a key saved can be chosen; the agent's
+        // current one stays selectable either way. Then the model dropdown.
+        var currentProvider = modelForm.querySelector('select[name="provider"] option[selected]');
+        leShell.loadProviderKeys().then(function (keys) {
+          leShell.applyProviderKeys(modelForm, keys, currentProvider && currentProvider.value);
+          leShell.wireModelPicker(modelForm);
+        });
       });
       overviewPanel.querySelector('#cancelModelBtn').addEventListener('click', function () {
         modelForm.style.display = 'none';

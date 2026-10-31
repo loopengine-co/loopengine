@@ -114,6 +114,10 @@ export type { GlmModelCallOptions } from './core/model-calls/glm-model-call.js'
 
 export { createGeminiModelCall } from './core/model-calls/gemini-model-call.js'
 export type { GeminiModelCallOptions } from './core/model-calls/gemini-model-call.js'
+export { createXaiModelCall } from './core/model-calls/xai-model-call.js'
+export type { XaiModelCallOptions } from './core/model-calls/xai-model-call.js'
+export { createMetaModelCall } from './core/model-calls/meta-model-call.js'
+export type { MetaModelCallOptions } from './core/model-calls/meta-model-call.js'
 
 export { discoverAgents, loadAgentModule, synthesizeCreateModelCall } from './core/discover-agents.js'
 export type { AgentModule } from './core/discover-agents.js'
@@ -274,10 +278,10 @@ export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult } from '
 export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
 
-export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from './web/global-config.js'
+export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from './web/global-config.js'
 export { loopengineVersion } from './core/version.js'
 export { describeUpgrade, runUpgrade, UpgradeError } from './web/upgrade-admin.js'
-export type { ModelProviderInfo, AgentModelUsage, ModelsView, GatewayProviderInfo, GatewaysView, TimeZoneView } from './web/global-config.js'
+export type { ModelProviderInfo, AgentModelUsage, ModelsView, ProviderModelsView, GatewayProviderInfo, GatewaysView, TimeZoneView } from './web/global-config.js'
 export { workspaceTimeZone, serverTimeZone, isValidTimeZone, TIME_ZONE_ENV } from '#core/time-zone.js'
 
 export { createTrackedApprover, listApprovals, decideApproval, findApproval } from './web/web-approver.js'

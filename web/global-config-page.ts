@@ -21,6 +21,7 @@
 // is built, once when a browser parses the served <script> as JS).
 import { devUiCss } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { PROVIDER_ICONS } from './provider-icons.js'
 
 export const globalConfigPageHtml: string = `<!doctype html>
 <html lang="en">
@@ -30,6 +31,8 @@ export const globalConfigPageHtml: string = `<!doctype html>
 <title>LoopEngine Settings</title>
 <style>${devUiCss}
   section { margin-bottom: 28px; }
+  .provider-name { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .le-provider-icon { width: 18px; height: 18px; flex: none; }
   section h3 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
   section > table { border: 1px solid var(--line); border-radius: var(--radius); border-collapse: separate; border-spacing: 0; overflow: hidden; }
   .source {
@@ -111,6 +114,12 @@ ${consoleShellScript}
 
   // ---- Models section ----
 
+  // Each provider's logo (web/provider-icons.ts), shown beside its name.
+  var PROVIDER_ICONS = ${JSON.stringify(PROVIDER_ICONS)};
+  function providerName(provider) {
+    return '<span class="provider-name">' + (PROVIDER_ICONS[provider] || '') + '<code>' + escapeHtml(provider) + '</code></span>';
+  }
+
   function renderModels(data) {
     var providerRows = data.providers.map(function (p) {
       // Write-only: the field is always empty; the server never sends a
@@ -122,7 +131,7 @@ ${consoleShellScript}
             (p.configured ? '<button type="button" class="delete-btn" data-remove-key="' + escapeHtml(p.provider) + '">Remove</button>' : '') +
           '</form><div class="key-msg" data-key-msg="' + escapeHtml(p.provider) + '"></div>'
         : '<span class="hint">Set LOOPENGINE_ADMIN_AUTH to manage keys here, or put ' + escapeHtml(p.envVar) + ' in .env.</span>';
-      return '<tr><td><code>' + escapeHtml(p.provider) + '</code></td>' +
+      return '<tr><td>' + providerName(p.provider) + '</td>' +
         '<td><code>' + escapeHtml(p.envVar) + '</code></td>' +
         '<td>' + badge(p.configured, 'configured', 'not set') + '</td>' +
         '<td>' + keyCell + '</td></tr>';
@@ -131,7 +140,7 @@ ${consoleShellScript}
     var agentRows = data.agents.length
       ? data.agents.map(function (a) {
           return '<tr><td><code>' + escapeHtml(a.agent) + '</code></td>' +
-            '<td><code>' + escapeHtml(a.provider) + '</code></td>' +
+            '<td>' + providerName(a.provider) + '</td>' +
             '<td><code>' + escapeHtml(a.model) + '</code></td></tr>';
         }).join('')
       : '<tr><td colspan="3"><p class="hint">No agents with a resolved model config (a custom createModelCall has nothing to report here).</p></td></tr>';

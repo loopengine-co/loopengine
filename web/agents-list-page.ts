@@ -62,22 +62,24 @@ ${consoleSidebarHtml}
       <label>Name <span class="hint">(lowercase, hyphens allowed: becomes agents/&lt;name&gt;/)</span>
         <input type="text" name="name" placeholder="weather-agent" pattern="[a-z0-9]+(-[a-z0-9]+)*" required>
       </label>
-      <details>
-        <summary>Prompt and model (optional)</summary>
-        <label>System prompt
-          <textarea name="systemPrompt" placeholder="You are ..."></textarea>
-        </label>
-        <label>Model provider
-          <select name="provider">
-            <option value="anthropic">anthropic</option>
-            <option value="openai">openai</option>
-            <option value="deepseek">deepseek</option>
-          </select>
-        </label>
-        <label>Model name <span class="hint">(required for openai/deepseek; defaults to claude-sonnet-5 for anthropic)</span>
-          <input type="text" name="modelName" placeholder="claude-sonnet-5">
-        </label>
-      </details>
+      <label>System prompt
+        <textarea name="systemPrompt" placeholder="You are ..."></textarea>
+      </label>
+      <label>Model provider
+        <select name="provider">
+          <option value="openai" selected>openai</option>
+          <option value="anthropic">anthropic</option>
+          <option value="gemini">gemini</option>
+          <option value="meta">meta</option>
+          <option value="xai">xai</option>
+          <option value="deepseek">deepseek</option>
+          <option value="kimi">kimi</option>
+          <option value="glm">glm</option>
+        </select>
+      </label>
+      <label id="modelNameLabel">Model name <span class="hint">(choose Other&hellip; to type a model that isn't listed)</span>
+        <input type="text" name="modelName" value="gpt-6-luna" placeholder="model name">
+      </label>
       <div class="row">
         <button type="submit">Create agent</button>
         <button type="button" id="cancelNewAgentBtn">Cancel</button>
@@ -153,11 +155,40 @@ ${consoleShellScript}
   // same as before this existed; loopengine dev picks it up
   // automatically via its own --include 'agents/*/index.ts' (see
   // bin/cli.ts's own comment there).
+  // Only providers with a key saved can be chosen (leShell.applyProviderKeys).
+  // With no key at all, the agent is created without a model (the
+  // scaffold's default), so the provider and model fields are switched off
+  // and the note says so. If the keys can't be read, nothing is disabled.
+  var providerSelect = newAgentForm.querySelector('select[name="provider"]');
+  var modelNameLabel = document.getElementById('modelNameLabel');
+  var providerKeys = null;
+
+  function applyProviderKeys() {
+    if (!providerKeys) return;
+    var any = leShell.applyProviderKeys(newAgentForm, providerKeys);
+    providerSelect.disabled = !any;
+    modelNameLabel.style.display = any ? '' : 'none';
+  }
+
+  // form.reset() after an agent is created goes back to the markup's
+  // openai default even without a key; apply the keys again first. The
+  // model dropdown's own reset listener is added later, so runs after.
+  newAgentForm.addEventListener('reset', function () { setTimeout(applyProviderKeys, 0); });
+
   newAgentBtn.addEventListener('click', function () {
     newAgentBtn.style.display = 'none';
     newAgentForm.style.display = 'grid';
     newAgentResult.style.display = 'none';
     newAgentForm.querySelector('input[name="name"]').focus();
+    // Checks which providers have keys, then loads the chosen provider's
+    // models; both when the form opens, not on every visit to this page.
+    // Starts on openai / gpt-6-luna (the markup's defaults) when openai
+    // has a key.
+    leShell.loadProviderKeys().then(function (keys) {
+      providerKeys = keys;
+      applyProviderKeys();
+      if (!providerSelect.disabled) leShell.wireModelPicker(newAgentForm);
+    });
   });
 
   cancelNewAgentBtn.addEventListener('click', function () {
@@ -173,11 +204,9 @@ ${consoleShellScript}
     var submitBtn = newAgentForm.querySelector('button[type="submit"]');
     submitBtn.disabled = true;
 
-    // systemPrompt/model are both optional — see
+    // A blank system prompt or model name is left out of the body — see
     // adapters/http.ts's parseAgentTemplateOptions for the defaults
-    // scaffoldAgent falls back to when either is left out of the body
-    // entirely (blank/untouched Advanced fields are treated the same
-    // as not sending them at all).
+    // scaffoldAgent falls back to then.
     var body = { name: data.get('name') };
     var systemPrompt = data.get('systemPrompt');
     if (systemPrompt && systemPrompt.trim()) body.systemPrompt = systemPrompt;

@@ -12,6 +12,9 @@
 //   leShell.renderHead(opts) agent header + tabs HTML (see below)
 //   leShell.setTab(tab)      move the tab highlight without a reload
 //   leShell.esc(s)           HTML-escape
+//   leShell.wireModelPicker(form)  model dropdown for a provider select
+//   leShell.loadProviderKeys()     Promise of {provider: key saved?}, or null
+//   leShell.applyProviderKeys(form, keys, keep)  only providers with a key
 // Same embedded-string conventions as the pages themselves: plain
 // string concatenation and no backslashes inside the script, so nothing
 // here needs double-escaping in the template literal.
@@ -197,6 +200,151 @@ export const consoleShellScript: string = `<script>
     if (app.classList.contains('nav-open') && !ev.target.closest('.le-sidebar')) app.classList.remove('nav-open');
   });
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount };
+  // A model dropdown for a form with select[name=provider] and
+  // input[name=modelName] (New agent, and an agent's Model form): the
+  // provider's models from GET /config/models/:provider/models, reloaded
+  // when the provider changes. The text input is still what the form
+  // submits; it shows for "Other", which is all the dropdown offers when
+  // a provider has no models to list. A short or empty list says why
+  // (no key saved, provider down) under it. Safe to call more than once
+  // for the same form.
+  var OTHER_MODEL = '__other__';
+  function wireModelPicker(form) {
+    var providerSelect = form.querySelector('select[name="provider"]');
+    var input = form.querySelector('input[name="modelName"]');
+    if (!providerSelect || !input || input.getAttribute('data-le-model-picker')) return;
+    input.setAttribute('data-le-model-picker', '1');
+    var select = document.createElement('select');
+    select.setAttribute('aria-label', 'Model name');
+    var note = document.createElement('span');
+    note.className = 'hint';
+    note.style.display = 'none';
+    input.parentNode.insertBefore(select, input);
+    input.parentNode.insertBefore(note, input.nextSibling);
+    var request = 0;
+
+    function showInput(show) { input.style.display = show ? '' : 'none'; }
+    function showNote(message) {
+      note.textContent = message || '';
+      note.style.display = message ? '' : 'none';
+    }
+
+    select.addEventListener('change', function () {
+      if (select.value === OTHER_MODEL) {
+        input.value = '';
+        showInput(true);
+        input.focus();
+      } else {
+        input.value = select.value;
+        showInput(false);
+      }
+    });
+
+    function load() {
+      var provider = providerSelect.value;
+      var current = input.value.trim();
+      var mine = ++request;
+      select.innerHTML = '<option>Loading models&hellip;</option>';
+      select.disabled = true;
+      showNote('');
+      showInput(false);
+      fetch('/config/models/' + encodeURIComponent(provider) + '/models')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (mine !== request) return;
+          var models = data.models || [];
+          showNote(data.error);
+          // Only Anthropic has a default model (see agents' model config).
+          var options = provider === 'anthropic' ? '<option value="">(provider default)</option>' : '';
+          if (current && models.indexOf(current) === -1) options += '<option value="' + esc(current) + '">' + esc(current) + '</option>';
+          options += models.map(function (m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join('');
+          options += '<option value="' + OTHER_MODEL + '">Other&hellip;</option>';
+          select.innerHTML = options;
+          select.disabled = false;
+          if (current || provider === 'anthropic' || models.length) {
+            select.value = current || (provider === 'anthropic' ? '' : models[0]);
+            input.value = select.value;
+          } else {
+            // Nothing listed: "Other" with the name box open.
+            select.value = OTHER_MODEL;
+            showInput(true);
+          }
+        })
+        .catch(function (err) {
+          if (mine !== request) return;
+          select.innerHTML = '<option value="' + OTHER_MODEL + '">Other&hellip;</option>';
+          select.disabled = false;
+          showInput(true);
+          showNote('Could not list models: ' + err.message);
+        });
+    }
+
+    providerSelect.addEventListener('change', function () { input.value = ''; load(); });
+    // form.reset() (after New agent creates one) puts the provider and
+    // the hidden model name back to their defaults, but not this
+    // dropdown's options; reload once the reset has happened.
+    form.addEventListener('reset', function () { setTimeout(load, 0); });
+    load();
+  }
+
+  // Which model providers have a key saved, from GET /config/models:
+  // {provider: true/false}, or null when that can't be read.
+  function loadProviderKeys() {
+    return fetch('/config/models')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return null;
+        var keys = {};
+        data.providers.forEach(function (p) { keys[p.provider] = p.configured; });
+        return keys;
+      })
+      .catch(function () { return null; });
+  }
+
+  // Lets a form's select[name=provider] choose only providers with a key
+  // saved, since an agent on one without a key can't answer. The rest stay
+  // listed, disabled and marked "(no key)", with a note under the select
+  // linking to the Models page. keepProvider (an agent's current provider)
+  // stays selectable without a key, so its other settings can still be
+  // saved. Moves a disabled choice to the first provider with a key and
+  // fires change, so the model dropdown follows. Returns that first
+  // provider with a key, or null when there's none.
+  function applyProviderKeys(form, keys, keepProvider) {
+    var select = form.querySelector('select[name="provider"]');
+    if (!select || !keys) return null;
+    var note = form.querySelector('[data-le-provider-note]');
+    if (!note) {
+      note = document.createElement('p');
+      note.className = 'hint';
+      note.style.margin = '0';
+      note.setAttribute('data-le-provider-note', '');
+      var label = select.closest('label') || select;
+      label.parentNode.insertBefore(note, label.nextSibling);
+    }
+    var firstWithKey = null;
+    var withoutKey = 0;
+    Array.prototype.forEach.call(select.options, function (option) {
+      var hasKey = Boolean(keys[option.value]);
+      option.disabled = !hasKey && option.value !== keepProvider;
+      option.textContent = hasKey ? option.value : option.value + ' (no key)';
+      if (hasKey && !firstWithKey) firstWithKey = option.value;
+      if (!hasKey) withoutKey++;
+    });
+    var modelsLink = '<a href="/config?section=models">Models page</a>';
+    note.innerHTML = firstWithKey
+      ? 'Add a key on the ' + modelsLink + ' to use more providers.'
+      : 'No model provider has a key yet. Add one on the ' + modelsLink + ' to choose a model.';
+    note.style.display = withoutKey ? '' : 'none';
+    var chosen = select.options[select.selectedIndex];
+    if (firstWithKey && chosen && chosen.disabled) {
+      select.value = firstWithKey;
+      var input = form.querySelector('input[name="modelName"]');
+      if (input) input.value = '';
+      select.dispatchEvent(new Event('change'));
+    }
+    return firstWithKey;
+  }
+
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys };
 })();
 </script>`

@@ -7,6 +7,11 @@
 // which gateway providers (Composio today) this machine's CLI session
 // is authenticated against — neither is a property of any one
 // AgentConfig.
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
+import { parse as parseYaml } from 'yaml'
 import type { AgentConfig } from '../core/agent-config.js'
 import { getComposioAuthStatus } from '../core/gateway-tools.js'
 import { moveScheduledTasksToTimeZone } from '../core/scheduler.js'
@@ -14,7 +19,7 @@ import { TIME_ZONE_ENV, isValidTimeZone, listTimeZones, serverTimeZone, workspac
 import { setEnvVar, unsetEnvVar } from './env-admin.js'
 
 export interface ModelProviderInfo {
-  provider: 'anthropic' | 'openai' | 'deepseek' | 'kimi' | 'glm' | 'gemini'
+  provider: 'anthropic' | 'openai' | 'deepseek' | 'kimi' | 'glm' | 'gemini' | 'xai' | 'meta'
   envVar: string
   configured: boolean
 }
@@ -38,14 +43,17 @@ export class ModelKeyError extends Error {}
 // union from; adding a fourth provider means one more line here and one
 // more arm in that union, not a rewrite.
 const KNOWN_PROVIDERS: Array<{ provider: ModelProviderInfo['provider']; envVar: string }> = [
-  { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY' },
   { provider: 'openai', envVar: 'OPENAI_API_KEY' },
+  { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY' },
+  { provider: 'gemini', envVar: 'GEMINI_API_KEY' },
+  // LiteLLM's name; see core/model-calls/meta-model-call.ts.
+  { provider: 'meta', envVar: 'META_API_KEY' },
+  { provider: 'xai', envVar: 'XAI_API_KEY' },
   { provider: 'deepseek', envVar: 'DEEPSEEK_API_KEY' },
   // Moonshot AI's own env var name, not KIMI_API_KEY — see
   // core/model-calls/kimi-model-call.ts's own header comment for why.
   { provider: 'kimi', envVar: 'MOONSHOT_API_KEY' },
   { provider: 'glm', envVar: 'GLM_API_KEY' },
-  { provider: 'gemini', envVar: 'GEMINI_API_KEY' },
 ]
 
 /** Every registered agent's resolved model, alongside whether each
@@ -148,6 +156,162 @@ export async function clearModelProviderKey(provider: string): Promise<void> {
   const envVar = modelKeyEnvVar(provider)
   if (!envVar) throw new ModelKeyError(`unknown provider '${provider}'`)
   await unsetEnvVar(envVar)
+}
+
+export interface ProviderModelsView {
+  provider: string
+  /** Model ids to offer, newest first where the provider says when each
+   * was released. Empty when they couldn't be listed (see `error`). */
+  models: string[]
+  /** Why the list is short or empty: no key saved (only common models,
+   * if any, are listed), or the provider refused or timed out. Shown
+   * under the dropdown. */
+  error?: string
+}
+
+// The OpenAI-compatible providers' base URLs, the same ones their
+// model-calls/*.ts use (OpenAI's own comes from the SDK, so
+// OPENAI_BASE_URL applies to both). Anthropic has its own models API.
+const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<ModelProviderInfo['provider'], string>> = {
+  deepseek: 'https://api.deepseek.com',
+  kimi: 'https://api.moonshot.ai/v1',
+  glm: 'https://open.bigmodel.cn/api/paas/v4/',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  xai: 'https://api.x.ai/v1',
+  meta: 'https://api.meta.ai/v1',
+}
+
+// OpenAI and Gemini also list models a chat agent can't use.
+const NON_CHAT_MODEL = /embed|tts|whisper|dall-e|davinci|babbage|moderation|transcribe|image|audio|realtime|search|aqa|imagen|veo|sora/i
+
+// Offered when the provider's own list isn't available (no key saved
+// yet, or the provider refused) and models.yaml doesn't list it. Only
+// names checked against the provider's docs (2026-10-31); other
+// providers need a key to list theirs. Meta's "-contributor" variants are
+// left out, since choosing one lets Meta train on the requests; type one
+// under "Other" to use it.
+const KNOWN_MODELS: Partial<Record<ModelProviderInfo['provider'], string[]>> = {
+  anthropic: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-sonnet-5'],
+  deepseek: ['deepseek-v4-pro', 'deepseek-flash'],
+  meta: ['muse-spark-1.3', 'muse-wonder-1.0', 'muse-spark-1.2', 'muse-spark-1.1'],
+}
+
+const MODEL_LIST_TTL_MS = 10 * 60 * 1000
+const modelListCache = new Map<string, { key: string; at: number; models: string[] }>()
+
+export const MODELS_FILE_ENV = 'LOOPENGINE_MODELS_FILE'
+
+/** models.yaml in the project root (where .env is), or the file
+ * LOOPENGINE_MODELS_FILE names (absolute, or relative to the root). */
+export function modelsFilePath(): string {
+  return resolve(process.cwd(), process.env[MODELS_FILE_ENV]?.trim() || 'models.yaml')
+}
+
+/**
+ * The hand-edited model lists in models.yaml: provider name to the models
+ * its dropdown offers, in order.
+ *
+ *   anthropic:
+ *     - claude-opus-5-5
+ *     - claude-sonnet-5-5
+ *
+ * Read fresh on every call (it's a few lines), so an edit shows the next
+ * time a dropdown loads. A missing file is no lists; a malformed one is
+ * reported in `error` and ignored as a whole, so a typo can't hide one
+ * provider's models while the rest still load.
+ */
+export function readModelsFile(): { models: Partial<Record<ModelProviderInfo['provider'], string[]>>; error?: string } {
+  const path = modelsFilePath()
+  if (!existsSync(path)) return { models: {} }
+  const name = process.env[MODELS_FILE_ENV]?.trim() || 'models.yaml'
+  let data: unknown
+  try {
+    data = parseYaml(readFileSync(path, 'utf8'))
+  } catch (err) {
+    return { models: {}, error: `${name} isn't valid YAML: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  if (data == null) return { models: {} }
+  if (typeof data !== 'object' || Array.isArray(data)) return { models: {}, error: `${name} should map each provider to a list of models.` }
+
+  const models: Partial<Record<ModelProviderInfo['provider'], string[]>> = {}
+  for (const [provider, list] of Object.entries(data as Record<string, unknown>)) {
+    if (!modelKeyEnvVar(provider)) {
+      return { models: {}, error: `${name}: unknown provider '${provider}'. Use one of ${KNOWN_PROVIDERS.map((p) => p.provider).join(', ')}.` }
+    }
+    // An empty key ("openai:") means no list, same as leaving it out.
+    if (list == null) continue
+    if (!Array.isArray(list) || list.some((m) => typeof m !== 'string' || !m.trim())) {
+      return { models: {}, error: `${name}: '${provider}' should be a list of model names.` }
+    }
+    models[provider as ModelProviderInfo['provider']] = [...new Set(list.map((m: string) => m.trim()))]
+  }
+  return { models }
+}
+
+/**
+ * The models a provider offers, for the model dropdown in the New agent
+ * and Model forms. A provider listed in models.yaml (readModelsFile)
+ * offers exactly that list, with no key needed. Otherwise this asks the
+ * provider itself with the saved key (cached for ten minutes per key),
+ * so new models show up without a release. Never throws for a provider
+ * problem: the view carries an `error` instead, and the form lets the
+ * model name be typed. Throws ModelKeyError for an unknown provider.
+ */
+export async function listProviderModels(provider: string, options: { fetch?: typeof fetch } = {}): Promise<ProviderModelsView> {
+  const envVar = modelKeyEnvVar(provider)
+  if (!envVar) throw new ModelKeyError(`unknown provider '${provider}'`)
+
+  const file = readModelsFile()
+  const fromFile = file.models[provider as ModelProviderInfo['provider']]
+  if (fromFile) return { provider, models: fromFile }
+  const view = await listProviderModelsLive(provider, envVar, options)
+  return file.error ? { ...view, error: view.error ? `${file.error} ${view.error}` : file.error } : view
+}
+
+async function listProviderModelsLive(provider: string, envVar: string, options: { fetch?: typeof fetch }): Promise<ProviderModelsView> {
+  const key = process.env[envVar]
+  if (!key) {
+    const known = KNOWN_MODELS[provider as ModelProviderInfo['provider']] ?? []
+    return {
+      provider,
+      models: known,
+      error: known.length
+        ? `Showing common ${provider} models. Save ${envVar} on the Models page to list all of them.`
+        : `No ${envVar} saved. Save it on the Models page to list ${provider}'s models, or choose Other.`,
+    }
+  }
+
+  const cached = modelListCache.get(provider)
+  if (cached && cached.key === key && Date.now() - cached.at < MODEL_LIST_TTL_MS) return { provider, models: cached.models }
+
+  const clientOptions = { apiKey: key, timeout: 10_000, maxRetries: 0, ...(options.fetch ? { fetch: options.fetch } : {}) }
+  try {
+    const listed: Array<{ id: string; created: number }> = []
+    if (provider === 'anthropic') {
+      // Already newest first.
+      for await (const model of new Anthropic(clientOptions).models.list({ limit: 1000 })) {
+        listed.push({ id: model.id, created: 0 })
+      }
+    } else {
+      const client = new OpenAI({ ...clientOptions, baseURL: OPENAI_COMPATIBLE_BASE_URLS[provider as ModelProviderInfo['provider']] })
+      for await (const model of client.models.list()) {
+        // Gemini's ids come back as "models/gemini-...", but its chat
+        // endpoint takes the bare name.
+        listed.push({ id: model.id.replace(/^models\//, ''), created: model.created ?? 0 })
+      }
+    }
+    const models = listed
+      .filter((model) => (provider === 'openai' || provider === 'gemini' ? !NON_CHAT_MODEL.test(model.id) : true))
+      .sort((a, b) => b.created - a.created)
+      .map((model) => model.id)
+      .filter((id, index, ids) => ids.indexOf(id) === index)
+    modelListCache.set(provider, { key, at: Date.now(), models })
+    return { provider, models }
+  } catch (err) {
+    const known = KNOWN_MODELS[provider as ModelProviderInfo['provider']]
+    if (known) return { provider, models: known }
+    return { provider, models: [], error: `Couldn't list ${provider}'s models: ${err instanceof Error ? err.message : String(err)}` }
+  }
 }
 
 export class TimeZoneError extends Error {}

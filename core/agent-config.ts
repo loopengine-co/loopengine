@@ -226,7 +226,7 @@ export type HttpNotifierConfig =
  * export your own `createModelCall` for anything this can't express (a
  * canned/simulated `ModelCall` for a demo, a custom SDK client, a
  * provider this doesn't list). `model` is required for `openai`/
- * `deepseek`/`kimi`/`glm`/`gemini` (no safe hardcoded default — a
+ * `deepseek`/`kimi`/`glm`/`gemini`/`xai`/`meta` (no safe hardcoded default — a
  * flagship model name changes too often to bake one in) but optional for
  * `anthropic` (defaults to `'claude-sonnet-5'`), mirroring each factory's
  * own options exactly. */
@@ -248,6 +248,8 @@ export type AgentModelConfig =
   | { provider: 'kimi'; model: string; apiKey?: string; maxTokens?: number; baseURL?: string }
   | { provider: 'glm'; model: string; apiKey?: string; maxTokens?: number; baseURL?: string }
   | { provider: 'gemini'; model: string; apiKey?: string; maxTokens?: number; baseURL?: string }
+  | { provider: 'xai'; model: string; apiKey?: string; maxTokens?: number; baseURL?: string }
+  | { provider: 'meta'; model: string; apiKey?: string; maxTokens?: number; baseURL?: string }
 
 export interface ToolSchema {
   name: string

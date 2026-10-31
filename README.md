@@ -402,15 +402,34 @@ you, using the matching API key from the environment:
 | `'kimi'` | `MOONSHOT_API_KEY` | yes |
 | `'glm'` | `GLM_API_KEY` | yes |
 | `'gemini'` | `GEMINI_API_KEY` | yes |
+| `'xai'` | `XAI_API_KEY` | yes |
+| `'meta'` | `META_API_KEY` | yes |
 
 `'kimi'`'s env var is `MOONSHOT_API_KEY`, not `KIMI_API_KEY` — deliberate,
 matching Moonshot AI's own docs (the API/company behind Kimi) rather than
-this package's own provider name. `openai`/`deepseek`/`kimi`/`glm`/
-`gemini` all reuse the same OpenAI-Chat-Completions-compatible request
+this package's own provider name. `'meta'` (Meta's Muse models, e.g.
+`muse-spark-1.3`, through the Meta Model API) reads `META_API_KEY`,
+LiteLLM's name, rather than the generic `MODEL_API_KEY` in Meta's own
+examples. `openai`/`deepseek`/`kimi`/`glm`/`gemini`/`xai`/`meta` all reuse the same OpenAI-Chat-Completions-compatible request
 translation, just pointed at each provider's own base URL — see
 `core/model-calls/*.ts` for the provider-specific details (base URLs,
 `max_completion_tokens` vs `max_tokens`, and Gemini's own "still in beta"
 caveat on Google's compatibility layer).
+
+The console's model dropdown (New agent, and an agent's Model > Edit)
+lists each provider's models live from its API once its key is saved. To
+choose the list yourself, add a `models.yaml` next to `.env` mapping each
+provider to its models; a provider listed there offers exactly those, in
+that order, with no key needed, and edits show the next time the
+dropdown loads (`LOOPENGINE_MODELS_FILE` points at a different file):
+
+```yaml
+anthropic:
+  - claude-opus-5-5
+  - claude-sonnet-5-5
+deepseek:
+  - deepseek-v4-pro
+```
 
 For anything else (a custom SDK client, a canned/simulated model for
 testing), export your own `createModelCall(): ModelCall` instead.
