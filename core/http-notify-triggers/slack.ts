@@ -82,8 +82,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
     return base ? `\n<${base}${decidePath(pendingId, kind)}|${kind === 'approval' ? 'Open to approve or deny' : 'Open to answer'}>` : ''
   }
 
-  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
-    const pendingId = randomUUID()
+  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string, pendingId: string = randomUUID()): { pendingId: string } {
     this.postMessage(`Approval requested: ${tool} on ${scope.tenant}/${scope.environment}/${scope.agent}`, [
       {
         type: 'section',
@@ -113,8 +112,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
     return { pendingId }
   }
 
-  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined): { pendingId: string } {
-    const pendingId = randomUUID()
+  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined, pendingId: string = randomUUID()): { pendingId: string } {
     // Slack rejects a block whose buttons share an action_id
     // (invalid_blocks), so each option gets its own: answer_option_<n>.
     const optionButtons = (options ?? []).map((option, i) => ({

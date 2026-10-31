@@ -4,21 +4,31 @@
 // in code. Only consulted when the agent's own AgentConfig.httpNotifier
 // is unset; code always wins.
 //
-// The file holds a list of connections, though only the first is used
-// for now:
+// The file holds at most one connection per app, set up independently
+// from the tab's own section for each. A webhook always sends once it's
+// set up. Of the messaging apps (Telegram, Slack, Lark, email), only the
+// primary one does: requests, announcements and Slack's replies go
+// through it, and the others stay saved but idle until made primary. So
+// a request can go to the webhook and the primary app both, under one
+// request id.
 //
+//   primary: slack
 //   connections:
 //     - app: slack
 //       channelId: C0123456
 //       events: [approval, question]
 //       conversations: true
+//     - app: telegram
+//       chatId: "-1001234567890"
+//       events: [approval, question]
 //
-// An older agents/<name>/notifier.yml (one connection, `channel:` for
-// `app:`) is still read; saving from the console replaces it with
-// messaging.yml.
+// A file without `primary:` (written before there was one) uses its
+// first messaging app; `primary:` left empty means none is. An older
+// agents/<name>/notifier.yml (one connection, `channel:` for `app:`) is
+// still read; saving from the console replaces it with messaging.yml.
 //
 // The file holds only non-secret settings. The one secret each channel
-// needs (a webhook signing secret, a Slack bot token, a Lark app secret, an email provider's API key)
+// needs (a webhook signing secret, a Slack or Telegram bot token, a Lark app secret, an email provider's API key)
 // lives in the agent's own env (agents/<name>/.env by default, through
 // core/secret-store.ts) under a fixed name, so it's never written into a
 // file that might get committed.
@@ -28,7 +38,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { AgentEnv, HttpNotifierConfig, HttpNotifierEvent } from '#core/agent-config.js'
 import { EMAIL_PROVIDERS, createProviderSendEmail, parseAddress, parseRecipients, type EmailProvider } from '#core/email-senders.js'
 
-export type NotifierFileChannel = 'webhook' | 'slack' | 'lark' | 'email'
+export type NotifierFileChannel = 'webhook' | 'telegram' | 'slack' | 'lark' | 'email'
 
 export interface NotifierFile {
   channel: NotifierFileChannel
@@ -37,7 +47,8 @@ export interface NotifierFile {
   url?: string
   /** slack: channel to post into. */
   channelId?: string
-  /** lark: app id and chat to post into. */
+  /** lark: app id and chat to post into. telegram: the chat to post
+   * into (a numeric id like -1001234567890, or @channelname). */
   appId?: string
   chatId?: string
   /** email: who receives requests (comma-separated), who they come from
@@ -68,6 +79,7 @@ export interface MessagingApprover {
 /** The env var each channel's secret is read from, per agent. */
 export const NOTIFIER_SECRET_VARS: Record<NotifierFileChannel, string> = {
   webhook: 'LOOPENGINE_NOTIFIER_WEBHOOK_SECRET',
+  telegram: 'LOOPENGINE_NOTIFIER_TELEGRAM_BOT_TOKEN',
   slack: 'LOOPENGINE_NOTIFIER_SLACK_BOT_TOKEN',
   lark: 'LOOPENGINE_NOTIFIER_LARK_APP_SECRET',
   email: 'LOOPENGINE_NOTIFIER_EMAIL_API_KEY',
@@ -78,7 +90,15 @@ export const NOTIFIER_SECRET_VARS: Record<NotifierFileChannel, string> = {
  * POST /hooks/slack/<agent>; unset, messages carry only the decision link. */
 export const NOTIFIER_SLACK_SIGNING_SECRET_VAR = 'LOOPENGINE_NOTIFIER_SLACK_SIGNING_SECRET'
 
-const CHANNELS: NotifierFileChannel[] = ['webhook', 'slack', 'lark', 'email']
+/** In the order the Messaging tab lists them: the messaging apps, then
+ * the webhook. */
+export const NOTIFIER_CHANNELS: NotifierFileChannel[] = ['slack', 'telegram', 'lark', 'email', 'webhook']
+
+/** The apps that take turns as primary. The webhook isn't one: it always
+ * sends once set up. */
+export const PRIMARY_CHANNELS: NotifierFileChannel[] = ['telegram', 'slack', 'lark', 'email']
+const canBePrimary = (channel: unknown): boolean => PRIMARY_CHANNELS.includes(channel as NotifierFileChannel)
+const CHANNELS = NOTIFIER_CHANNELS
 const EVENTS: HttpNotifierEvent[] = ['approval', 'question', 'run_start', 'run_finish']
 
 export class NotifierFileError extends Error {}
@@ -132,6 +152,12 @@ export function validateNotifierFile(input: unknown): NotifierFile {
     const channelId = str('channelId')
     if (!channelId) throw new NotifierFileError('channelId is required for slack')
     file.channelId = channelId
+  } else if (channel === 'telegram') {
+    // Strings even when numeric: YAML would read -1001234567890 as a
+    // number, so it's quoted when written and accepted either way.
+    const chatId = typeof raw.chatId === 'number' ? String(raw.chatId) : str('chatId')
+    if (!chatId || !/^(-?[0-9]{1,20}|@[A-Za-z0-9_]{4,64})$/.test(chatId)) throw new NotifierFileError('chatId must be a Telegram chat id, like -1001234567890, or @channelname')
+    file.chatId = chatId
   } else if (channel === 'lark') {
     const appId = str('appId')
     const chatId = str('chatId')
@@ -153,37 +179,110 @@ export function validateNotifierFile(input: unknown): NotifierFile {
   return file
 }
 
-/** The agent's connection: messaging.yml's first, else the older
- * notifier.yml's; undefined when it has neither. */
-export function readNotifierFile(dir: string): NotifierFile | undefined {
-  const messagingPath = messagingFilePath(dir)
-  if (existsSync(messagingPath)) {
-    const parsed = parseYaml(readFileSync(messagingPath, 'utf8')) as { connections?: unknown } | null
-    if (parsed?.connections !== undefined && !Array.isArray(parsed.connections)) throw new NotifierFileError('connections must be a list')
-    const first = (parsed?.connections as unknown[] | undefined)?.[0]
-    if (first === undefined) return undefined
-    if (!first || typeof first !== 'object') throw new NotifierFileError('each connection must be an object')
-    const { app, ...rest } = first as Record<string, unknown>
-    return validateNotifierFile({ channel: app, ...rest })
-  }
-  const path = notifierFilePath(dir)
-  if (!existsSync(path)) return undefined
-  return validateNotifierFile(parseYaml(readFileSync(path, 'utf8')))
+export interface MessagingConnections {
+  /** At most one per app, in the order saved. */
+  connections: NotifierFile[]
+  /** The messaging app in use, if any (never the webhook). */
+  primary?: NotifierFileChannel
 }
 
-/** Writes messaging.yml (and drops an older notifier.yml it replaces). */
-export function writeNotifierFile(dir: string, input: unknown): NotifierFile {
-  const file = validateNotifierFile(input)
-  const { channel, ...rest } = file
+/** Every saved connection and which messaging app is primary:
+ * messaging.yml's, else the older notifier.yml's one connection. */
+export function readMessagingConnections(dir: string): MessagingConnections {
+  const messagingPath = messagingFilePath(dir)
+  if (existsSync(messagingPath)) {
+    const parsed = parseYaml(readFileSync(messagingPath, 'utf8')) as { connections?: unknown; primary?: unknown } | null
+    if (parsed?.connections !== undefined && !Array.isArray(parsed.connections)) throw new NotifierFileError('connections must be a list')
+    const connections: NotifierFile[] = []
+    for (const entry of (parsed?.connections as unknown[] | undefined) ?? []) {
+      if (!entry || typeof entry !== 'object') throw new NotifierFileError('each connection must be an object')
+      const { app, ...rest } = entry as Record<string, unknown>
+      const file = validateNotifierFile({ channel: app, ...rest })
+      if (!connections.some((c) => c.channel === file.channel)) connections.push(file)
+    }
+    // No `primary:` at all is a file from before there was one: its first
+    // messaging app was the one used, so it still is.
+    const hasPrimaryKey = parsed !== null && typeof parsed === 'object' && 'primary' in parsed
+    const named = hasPrimaryKey ? parsed!.primary : connections.find((c) => canBePrimary(c.channel))?.channel
+    const primary = canBePrimary(named) ? connections.find((c) => c.channel === named)?.channel : undefined
+    return primary ? { connections, primary } : { connections }
+  }
+  const path = notifierFilePath(dir)
+  if (!existsSync(path)) return { connections: [] }
+  const file = validateNotifierFile(parseYaml(readFileSync(path, 'utf8')))
+  return canBePrimary(file.channel) ? { connections: [file], primary: file.channel } : { connections: [file] }
+}
+
+/** The connections that send: the webhook when one is set up, then the
+ * primary messaging app. */
+export function readActiveConnections(dir: string): NotifierFile[] {
+  const { connections, primary } = readMessagingConnections(dir)
+  const webhook = connections.find((c) => c.channel === 'webhook')
+  const app = connections.find((c) => c.channel === primary)
+  return [...(webhook ? [webhook] : []), ...(app ? [app] : [])]
+}
+
+/** The agent's main connection: the primary messaging app, else the
+ * webhook; undefined when neither is set up. It's the one the console
+ * reports, and the one Slack's replies and approvers go by. Use
+ * readActiveConnections for everything that sends. */
+export function readNotifierFile(dir: string): NotifierFile | undefined {
+  const { connections, primary } = readMessagingConnections(dir)
+  return connections.find((c) => c.channel === primary) ?? connections.find((c) => c.channel === 'webhook')
+}
+
+function writeMessagingConnections(dir: string, { connections, primary }: MessagingConnections): void {
+  if (!connections.length) {
+    removeNotifierFile(dir)
+    return
+  }
   const header =
     '# Where this agent sends approval requests and questions when it is called over HTTP,\n' +
     '# and whether it answers replies there. Edited from the console (Messaging tab).\n' +
-    `# The secret lives in this agent's env as ${NOTIFIER_SECRET_VARS[channel]}.\n`
-  writeFileSync(messagingFilePath(dir), header + stringifyYaml({ connections: [{ app: channel, ...rest }] }))
+    '# A webhook always sends; of the messaging apps, only the primary one does.\n' +
+    '# Each secret lives in this agent\'s env: ' + connections.map((c) => NOTIFIER_SECRET_VARS[c.channel]).join(', ') + '.\n'
+  const body = { primary: primary ?? null, connections: connections.map(({ channel, ...rest }) => ({ app: channel, ...rest })) }
+  writeFileSync(messagingFilePath(dir), header + stringifyYaml(body))
   rmSync(notifierFilePath(dir), { force: true })
+}
+
+/** Saves one app's connection, replacing that app's earlier one and
+ * keeping the others. The first messaging app saved becomes primary;
+ * `makePrimary` makes this one primary too (a webhook never is: it
+ * always sends). Writes messaging.yml (and drops an older notifier.yml
+ * it replaces). */
+export function writeNotifierFile(dir: string, input: unknown, options: { makePrimary?: boolean } = {}): NotifierFile {
+  const file = validateNotifierFile(input)
+  const current = readMessagingConnections(dir)
+  const index = current.connections.findIndex((c) => c.channel === file.channel)
+  const connections = [...current.connections]
+  if (index === -1) connections.push(file)
+  else connections[index] = file
+  const primary = canBePrimary(file.channel) && (options.makePrimary || !current.primary) ? file.channel : current.primary
+  writeMessagingConnections(dir, { connections, primary })
   return file
 }
 
+/** Makes a saved connection the one in use. */
+export function setPrimaryConnection(dir: string, channel: string): void {
+  if (!canBePrimary(channel)) throw new NotifierFileError(`Only a messaging app (${PRIMARY_CHANNELS.join(', ')}) can be primary; a webhook always sends once set up`)
+  const current = readMessagingConnections(dir)
+  if (!current.connections.some((c) => c.channel === channel)) throw new NotifierFileError(`Set up ${channel} before making it primary`)
+  writeMessagingConnections(dir, { ...current, primary: channel as NotifierFileChannel })
+}
+
+/** Removes one app's connection. Removing the primary leaves no
+ * messaging app primary, rather than quietly moving requests to another
+ * one. */
+export function removeMessagingConnection(dir: string, channel: string): void {
+  const current = readMessagingConnections(dir)
+  writeMessagingConnections(dir, {
+    connections: current.connections.filter((c) => c.channel !== channel),
+    primary: current.primary === channel ? undefined : current.primary,
+  })
+}
+
+/** Removes every connection. */
 export function removeNotifierFile(dir: string): void {
   rmSync(messagingFilePath(dir), { force: true })
   rmSync(notifierFilePath(dir), { force: true })
@@ -222,6 +321,9 @@ export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv, agentN
       // No card buttons: nothing built in handles Lark's card callbacks yet,
       // so a console-configured Lark notifier relies on the decision link.
       return { config: { channel: 'lark', config: { appId: file.appId!, appSecret: secret, chatId: file.chatId!, publicUrl: file.publicUrl, buttons: false }, events: file.events } }
+    case 'telegram':
+      // Links to the decision page, like Lark without buttons.
+      return { config: { channel: 'telegram', config: { botToken: secret, chatId: file.chatId!, publicUrl: file.publicUrl }, events: file.events } }
     case 'email':
       // Links to the decision page, like Lark without buttons; the secret
       // is the provider's API key.

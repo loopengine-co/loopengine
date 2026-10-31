@@ -132,8 +132,7 @@ export class EmailNotifier implements DurableApprover, DurableQuestionHandler {
     return `<p><a href="${base}${decidePath(pendingId, kind)}">${kind === 'approval' ? 'Review and approve or deny' : 'Answer'}</a></p>` + this.expiryNote()
   }
 
-  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
-    const pendingId = randomUUID()
+  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string, pendingId: string = randomUUID()): { pendingId: string } {
     let links: string
     if (this.magic) {
       const { resolveBaseUrl, signingSecret } = this.magic
@@ -161,8 +160,7 @@ export class EmailNotifier implements DurableApprover, DurableQuestionHandler {
     return { pendingId }
   }
 
-  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined): { pendingId: string } {
-    const pendingId = randomUUID()
+  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined, pendingId: string = randomUUID()): { pendingId: string } {
     let links: string
     if (this.magic) {
       const { answerBaseUrl, signingSecret } = this.magic

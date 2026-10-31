@@ -94,7 +94,7 @@ import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js
 import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { agentApprovers, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { agentApprovers, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
 import { describeChange } from '#core/messaging/decide.js'
@@ -1281,7 +1281,8 @@ async function handleNotifierPut(req: IncomingMessage, res: ServerResponse, agen
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...describeAgentNotifier(entry.config, defaultWebhook), canSave: secretsProtected }))
 }
 
-function handleNotifierDelete(res: ServerResponse, agentName: string): void {
+// `channel` removes just that app's connection; without it, all of them.
+function handleNotifierDelete(res: ServerResponse, agentName: string, channel?: string): void {
   if (!secretsProtected) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({ error: 'Refusing to remove a notifier without LOOPENGINE_ADMIN_AUTH configured.' }),
@@ -1293,17 +1294,42 @@ function handleNotifierDelete(res: ServerResponse, agentName: string): void {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
     return
   }
-  removeAgentNotifier(entry.config)
+  removeAgentNotifier(entry.config, channel)
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...describeAgentNotifier(entry.config, defaultWebhook), canSave: secretsProtected }))
 }
 
-async function handleNotifierTest(res: ServerResponse, agentName: string): Promise<void> {
+// A body naming a `channel` tests that app's saved connection, primary
+// or not; without one, whichever notifier applies.
+async function handleNotifierTest(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
   const entry = getEntry(agentName)
   if (!entry) {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await testAgentNotifier(entry.config, defaultWebhook)))
+  const body = await readJsonBody(req).catch(() => ({}) as Record<string, unknown>)
+  const channel = typeof body.channel === 'string' ? body.channel : undefined
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await testAgentNotifier(entry.config, defaultWebhook, channel)))
+}
+
+// The Messaging tab's "Make primary": which saved connection is used.
+async function handleNotifierPrimaryPut(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  if (!secretsProtected) {
+    res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Refusing to change the notifier without LOOPENGINE_ADMIN_AUTH configured.' }))
+    return
+  }
+  const entry = getEntry(agentName)
+  if (!entry) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  try {
+    setAgentPrimaryNotifier(entry.config, (await readJsonBody(req)).channel)
+  } catch (err) {
+    const status = err instanceof NotifierFileError ? 400 : 500
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...describeAgentNotifier(entry.config, defaultWebhook), canSave: secretsProtected }))
 }
 
 // Backs the console's Slack channel picker. A bot token typed into the form
@@ -3535,12 +3561,17 @@ const server = createServer(async (req, res) => {
       return
     }
     if (notifierMatch && req.method === 'DELETE') {
-      handleNotifierDelete(res, decodeURIComponent(notifierMatch[1]))
+      handleNotifierDelete(res, decodeURIComponent(notifierMatch[1]), new URL(req.url ?? '/', 'http://localhost').searchParams.get('channel') ?? undefined)
       return
     }
     const notifierTestMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/notifier\/test$/)
     if (notifierTestMatch) {
-      await handleNotifierTest(res, decodeURIComponent(notifierTestMatch[1]))
+      await handleNotifierTest(req, res, decodeURIComponent(notifierTestMatch[1]))
+      return
+    }
+    const notifierPrimaryMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)\/notifier\/primary$/)
+    if (notifierPrimaryMatch) {
+      await handleNotifierPrimaryPut(req, res, decodeURIComponent(notifierPrimaryMatch[1]))
       return
     }
     // Backs the console's Schedules tab — see handleSchedulesGet above.

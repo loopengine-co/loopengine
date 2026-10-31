@@ -124,8 +124,7 @@ export class WebhookNotifier implements DurableApprover, DurableQuestionHandler 
     this.publicUrl = options.publicUrl
   }
 
-  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
-    const pendingId = randomUUID()
+  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string, pendingId: string = randomUUID()): { pendingId: string } {
     const requestedAt = new Date().toISOString()
     const resolvePath = `/pending-approvals/${pendingId}/resolve`
     const decide = decidePath(pendingId, 'approval')
@@ -140,8 +139,7 @@ export class WebhookNotifier implements DurableApprover, DurableQuestionHandler 
     return { pendingId }
   }
 
-  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined): { pendingId: string } {
-    const pendingId = randomUUID()
+  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined, pendingId: string = randomUUID()): { pendingId: string } {
     const requestedAt = new Date().toISOString()
     const answerPath = `/pending-questions/${pendingId}/answer`
     const decide = decidePath(pendingId, 'question')

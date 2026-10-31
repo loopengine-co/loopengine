@@ -88,8 +88,7 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
     return base ? `\n[${kind === 'approval' ? 'Open to approve or deny' : 'Open to answer'}](${base}${decidePath(pendingId, kind)})` : ''
   }
 
-  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string): { pendingId: string } {
-    const pendingId = randomUUID()
+  requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string, pendingId: string = randomUUID()): { pendingId: string } {
     void (async () => {
       try {
         const token = await getTenantAccessToken(this.appId, this.appSecret)
@@ -123,8 +122,7 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
     return { pendingId }
   }
 
-  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined): { pendingId: string } {
-    const pendingId = randomUUID()
+  notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined, pendingId: string = randomUUID()): { pendingId: string } {
     const optionButtons = (options ?? []).map((option) => ({
       tag: 'button',
       text: { tag: 'plain_text', content: option },

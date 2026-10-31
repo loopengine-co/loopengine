@@ -26,6 +26,7 @@
 // concatenation, not a nested template literal, for the same
 // backtick/${}-escaping reason playground.ts's own header comment explains.
 import { devUiCss } from './dev-ui-styles.js'
+import { MESSAGING_ICONS } from './messaging-icons.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
 export const agentsConfigPageHtml: string = `<!doctype html>
@@ -48,6 +49,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
   .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
+  /* Messaging: one section per app; the primary one is outlined. */
+  .msg-conns { display: grid; gap: 10px; max-width: 720px; }
+  .msg-conn { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 0 14px; }
+  .msg-conn.is-primary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .msg-conn > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; cursor: pointer; }
+  .msg-conn-title { font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
+  .le-channel-icon { width: 18px; height: 18px; flex: none; }
+  .msg-conn-blurb { flex-basis: 100%; margin: 0; }
+  .msg-conn > form.add-source { border: 0; background: none; box-shadow: none; padding: 0 0 14px; margin: 0; }
   .env-desc { max-width: 340px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   form.add-source.env-inline { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-width: 320px; }
   form.add-source.env-inline input, form.add-source.env-inline select { flex: 1 1 140px; width: auto; min-width: 0; }
@@ -642,7 +652,7 @@ ${consoleShellScript}
       var messagingDetail = [];
       if (pending.length) messagingDetail.push(pending.length + ' waiting for a decision');
       if (n && connected && n.channel === 'slack' && n.plan !== 'free' && (!n.file || n.file.conversations !== false)) messagingDetail.push('answers replies in threads');
-      if (n && !connected) messagingDetail.push(n.missingSecret ? 'Saved, but its secret isn' + String.fromCharCode(8217) + 't set' : 'Send approvals and questions to Slack, Lark, email or a webhook');
+      if (n && !connected) messagingDetail.push(n.missingSecret ? 'Saved, but its secret isn' + String.fromCharCode(8217) + 't set' : 'Send approvals and questions to Telegram, Slack, Lark, email or a webhook');
       if (!messagingDetail.length && n) messagingDetail.push('Sends ' + escapeHtml((n.events || []).join(', ')));
       set('ovMessagingDetail', messagingDetail.join(' \u00b7 '));
       showPendingCount(pending.length);
@@ -1079,12 +1089,44 @@ ${consoleShellScript}
       }).join('') + '</tbody></table></div>';
   }
 
+  // The Messaging tab lists one section per app; each is set up and
+  // saved on its own. A webhook always sends once set up; of the
+  // messaging apps, only the primary one does.
+  var CHANNEL_TITLES = { webhook: 'Webhook', telegram: 'Telegram', slack: 'Slack', lark: 'Lark / Feishu', email: 'Email' };
+  // Each app's icon (web/messaging-icons.ts).
+  var CHANNEL_ICONS = ${JSON.stringify(MESSAGING_ICONS)};
+  var CHANNEL_BLURBS = {
+    webhook: 'Your own app receives each request as a signed POST.',
+    telegram: 'A Telegram bot posts requests to a group, channel or person.',
+    slack: 'A Slack app posts requests to a channel, with buttons and replies in threads.',
+    lark: 'A Lark or Feishu app posts requests to a chat.',
+    email: 'Requests are emailed through Resend, SendGrid or Postmark.'
+  };
+
+  function connectionFor(n, channel) {
+    var list = n.connections || [];
+    for (var i = 0; i < list.length; i++) if (list[i].channel === channel) return list[i];
+    return null;
+  }
+
   function renderNotifierStatus(n) {
-    if (n.source === 'code') return 'Set in this agent&#39;s <code>index.ts</code> (<code>httpNotifier</code>, ' + escapeHtml(n.channel) + '). Edit it there; code always wins over the form below.';
-    if (n.source === 'file') return 'Sending to <strong>' + escapeHtml(n.channel) + '</strong> for: ' + escapeHtml((n.events || []).join(', ')) + '.';
-    if (n.missingSecret) return 'Saved, but not sending yet: set the secret below (<code>' + escapeHtml(n.missingSecret) + '</code>).';
-    if (n.source === 'default') return 'Using the project-wide default webhook (<code>LOOPENGINE_DEFAULT_WEBHOOK_URL</code>, ' + escapeHtml(n.defaultWebhookUrl) + '). Set one below to use a different target for this agent.';
-    return '<strong>Nowhere yet</strong>, so nobody is notified. Choose a Slack channel, Lark chat, email address or webhook below.';
+    if (n.source === 'code') return 'Set in this agent&#39;s <code>index.ts</code> (<code>httpNotifier</code>, ' + escapeHtml(n.channel) + '). Edit it there; code always wins over the connections below.';
+    var rule = ' A webhook always sends once set up; of Telegram, Slack, Lark and email, only the primary one does.';
+    var active = n.active || [];
+    var sending = active.filter(function (a) { return !a.missingSecret; }).map(function (a) {
+      return a.channel === 'webhook' ? 'your <strong>webhook</strong>' : '<strong>' + escapeHtml(CHANNEL_TITLES[a.channel] || a.channel) + '</strong> (primary)';
+    });
+    var waiting = active.filter(function (a) { return a.missingSecret; }).map(function (a) {
+      return escapeHtml(CHANNEL_TITLES[a.channel] || a.channel) + ' is waiting for its secret (<code>' + escapeHtml(a.missingSecret) + '</code>)';
+    });
+    var appsSaved = (n.connections || []).some(function (c) { return c.channel !== 'webhook'; });
+    var noPrimary = appsSaved && !n.primary ? ' No messaging app is primary: make one primary below.' : '';
+    var html = sending.length ? 'Sending to ' + sending.join(' and ') + '.' : '';
+    if (waiting.length) html += (html ? ' ' : '') + waiting.join('; ') + '.';
+    if (html) return html + noPrimary + rule;
+    var fallback = n.source === 'default' ? ' Until then the project-wide default webhook (<code>LOOPENGINE_DEFAULT_WEBHOOK_URL</code>, ' + escapeHtml(n.defaultWebhookUrl) + ') is used.' : ' Until then nobody is notified.';
+    if (appsSaved) return '<strong>Nothing is sending.</strong>' + noPrimary + fallback + rule;
+    return '<strong>Nowhere yet.</strong> Set up an app below; the first messaging app you save becomes primary.' + fallback + rule;
   }
 
   // Slack only: whether replies in a request's thread are answered. On
@@ -1100,43 +1142,52 @@ ${consoleShellScript}
         : 'People can ask the agent about a request in its thread, and it answers there. Approvers (below) can also decide it there.') + '</p></div>';
   }
 
-  function renderNotifierForm(n) {
-    var f = n.file || { channel: 'webhook', events: ['approval', 'question'] };
-    var events = f.events || [];
-    function eventBox(e) {
-      return '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
+  // A secret's state at a glance: a pill by the label, and a placeholder
+  // saying whether typing replaces a saved one. Its value is never shown.
+  function secretPill(isSet) {
+    return isSet ? '<span class="le-pill good">Saved</span>' : '<span class="le-pill warn">Not set</span>';
+  }
+  // The field's name and its pill on one line (form labels stack their
+  // children, which would stretch the pill across the row).
+  function secretHead(name, isSet) {
+    return '<span style="display:flex;align-items:center;gap:8px">' + name + secretPill(isSet) + '</span>';
+  }
+  function secretPlaceholder(isSet, missing) {
+    return isSet ? 'Saved ' + String.fromCharCode(8212) + ' type a new one only to replace it' : missing;
+  }
+  var SECRET_HINTS = {
+    slack: 'xoxb-' + String.fromCharCode(8230) + ' from OAuth & Permissions',
+    webhook: 'A long random string, or Generate',
+    telegram: 'The token @BotFather gave you, like 123456:ABC' + String.fromCharCode(8230),
+    lark: 'App Secret from the Lark developer console',
+    email: 'An API key from your email provider'
+  };
+  function secretField(n, channel, label) {
+    var isSet = n.secretsSet && n.secretsSet[channel];
+    return '<label>' + secretHead(label, isSet) + '<span class="hint">(stored in this agent&#39;s env as ' + escapeHtml(n.secretVars[channel]) + ')</span>' +
+      '<span style="display:flex;gap:6px"><input type="password" name="secret" autocomplete="off" style="flex:1;min-width:0" placeholder="' + escapeHtml(secretPlaceholder(isSet, SECRET_HINTS[channel] || '')) + '">' +
+      (channel === 'webhook' ? '<button type="button" class="notifier-generate">Generate</button>' : '') + '</span></label>';
+  }
+
+  // The settings only this app has.
+  function renderChannelFields(n, channel, f) {
+    if (channel === 'webhook') {
+      return '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField(n, 'webhook', 'Signing secret') +
+        '<p class="hint" style="margin:0">Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can simply forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>';
     }
-    function field(channel, html) {
-      return '<div class="notifier-fields" data-channel="' + channel + '"' + (f.channel === channel ? '' : ' hidden') + '>' + html + '</div>';
+    if (channel === 'telegram') {
+      return '<details class="slack-step"' + (n.secretsSet && n.secretsSet.telegram ? '' : ' open') + '><summary>Create the Telegram bot (once)</summary>' +
+          '<ol class="hint" style="margin:6px 0;padding-left:18px">' +
+            '<li>Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, send /newbot and follow the steps. Paste the token it gives you below.</li>' +
+            '<li>Add the bot to the group or channel that should get requests (as an admin, for a channel), or start a chat with it yourself.</li>' +
+            '<li>Find the chat id: send a message there, then open https://api.telegram.org/bot&lt;token&gt;/getUpdates and copy <code>chat.id</code>. A public channel can use @its-name instead.</li>' +
+          '</ol></details>' +
+        secretField(n, 'telegram', 'Bot token') +
+        '<label>Chat ID <span class="hint">(a group or channel id like -1001234567890, or @channelname)</span><input name="chatId" placeholder="-1001234567890" value="' + escapeHtml(f.chatId || '') + '"></label>' +
+        '<p class="hint" style="margin:0">Each message links to a page where the person approves, denies or answers; there are no buttons in Telegram yet.</p>';
     }
-    // A secret's state at a glance: a pill by the label, and a placeholder
-    // saying whether typing replaces a saved one. Its value is never shown.
-    function secretPill(isSet) {
-      return isSet ? '<span class="le-pill good">Saved</span>' : '<span class="le-pill warn">Not set</span>';
-    }
-    // The field's name and its pill on one line (form labels stack their
-    // children, which would stretch the pill across the row).
-    function secretHead(name, isSet) {
-      return '<span style="display:flex;align-items:center;gap:8px">' + name + secretPill(isSet) + '</span>';
-    }
-    function secretPlaceholder(isSet, missing) {
-      return isSet ? 'Saved ' + String.fromCharCode(8212) + ' type a new one only to replace it' : missing;
-    }
-    var SECRET_HINTS = { slack: 'xoxb-' + String.fromCharCode(8230) + ' from OAuth & Permissions', webhook: 'A long random string, or Generate', lark: 'App Secret from the Lark developer console', email: 'An API key from your email provider' };
-    function secretField(channel, label) {
-      var isSet = n.secretsSet && n.secretsSet[channel];
-      return '<label>' + secretHead(label, isSet) + '<span class="hint">(stored in this agent&#39;s env as ' + escapeHtml(n.secretVars[channel]) + ')</span>' +
-        '<span style="display:flex;gap:6px"><input type="password" name="secret_' + channel + '" autocomplete="off" style="flex:1;min-width:0" placeholder="' + escapeHtml(secretPlaceholder(isSet, SECRET_HINTS[channel] || '')) + '">' +
-        (channel === 'webhook' ? '<button type="button" class="notifier-generate">Generate</button>' : '') + '</span></label>';
-    }
-    return '<form class="add-source" id="notifierForm" style="max-width:560px">' +
-      '<label>Send to<select name="channel" id="notifierChannel">' +
-        ['webhook', 'slack', 'lark', 'email'].map(function (c) { return '<option value="' + c + '"' + (f.channel === c ? ' selected' : '') + '>' + { webhook: 'Webhook (your app)', slack: 'Slack channel', lark: 'Lark / Feishu chat', email: 'Email' }[c] + '</option>'; }).join('') +
-      '</select></label>' +
-      field('webhook', '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField('webhook', 'Signing secret') +
-        '<p class="hint" style="margin:0">Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can simply forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>') +
-      field('slack',
-        '<details class="slack-step"' + (n.secretsSet && n.secretsSet.slack ? '' : ' open') + '><summary>Create the Slack app (once)</summary>' +
+    if (channel === 'slack') {
+      return '<details class="slack-step"' + (n.secretsSet && n.secretsSet.slack ? '' : ' open') + '><summary>Create the Slack app (once)</summary>' +
           '<ol class="hint" style="margin:6px 0;padding-left:18px">' +
             '<li>Open <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noopener">Slack apps</a> &rarr; Create New App &rarr; From a manifest, and pick your workspace.</li>' +
             '<li>Paste the manifest below, create the app, then Install to Workspace.</li>' +
@@ -1145,7 +1196,7 @@ ${consoleShellScript}
           '<textarea id="slackManifest" readonly rows="8" style="font-family:var(--font-mono);font-size:11.5px"></textarea>' +
           '<button type="button" id="slackManifestCopy" style="margin-top:6px">Copy manifest</button>' +
         '</details>' +
-        secretField('slack', 'Bot token') +
+        secretField(n, 'slack', 'Bot token') +
         '<label>Channel <span class="hint">(invite the bot to a private channel first: /invite @its-name)</span>' +
           '<span style="display:flex;gap:6px"><select id="slackChannelSelect" style="flex:1;min-width:0"><option value="">' + (f.channelId ? 'Saved: ' + escapeHtml(f.channelId) : 'Load channels to pick one') + '</option></select>' +
           '<button type="button" id="slackLoadChannels">Load channels</button></span></label>' +
@@ -1155,29 +1206,74 @@ ${consoleShellScript}
           '<input type="password" name="signingSecret" autocomplete="off" placeholder="' + escapeHtml(secretPlaceholder(n.slack && n.slack.signingSecretSet, 'Paste the Signing Secret')) + '"></label>' +
         '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>' +
         renderConversationsField(n, f) +
-        '<p class="hint" style="margin:0" id="slackEventsNote"></p>') +
-      field('lark', '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField('lark', 'App secret')) +
-      field('email',
-        '<label>Email addresses <span class="hint">(who gets the requests; separate several with commas)</span><input name="emailTo" placeholder="ops@example.com, lead@example.com" value="' + escapeHtml(f.to || '') + '"></label>' +
-        '<label>Sent by <span class="hint">(your email provider must allow sending from this address)</span><input name="emailFrom" placeholder="LoopEngine &lt;approvals@example.com&gt;" value="' + escapeHtml(f.from || '') + '"></label>' +
-        '<label>Email provider<select name="emailProvider">' +
-          [['resend', 'Resend'], ['sendgrid', 'SendGrid'], ['postmark', 'Postmark']].map(function (p) { return '<option value="' + p[0] + '"' + (f.provider === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
-        '</select></label>' +
-        secretField('email', 'API key') +
-        '<p class="hint" style="margin:0">Each email links to a page where the person approves, denies, edits or answers, with no login. The link address below must be one they can open.</p>') +
-      '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
-        '<input type="url" name="publicUrl" id="notifierPublicUrl" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
-      '<div class="body-field">Send' +
-        '<div style="display:flex;gap:14px;flex-wrap:wrap">' + NOTIFIER_EVENTS.slice(0, 2).map(eventBox).join('') + '</div>' +
-        '<details' + (events.indexOf('run_finish') !== -1 || events.indexOf('run_start') !== -1 ? ' open' : '') + '><summary>More events</summary>' +
-        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">' + NOTIFIER_EVENTS.slice(2).map(eventBox).join('') + '</div>' +
-        '<p class="hint" style="margin:4px 0 0">Run finished tells your app the agent&#39;s final reply once a decision lets it finish.</p></details></div>' +
-      (n.canSave === false ? '<p class="error" style="margin:0">Saving needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server, because this stores a secret. Add <code>LOOPENGINE_ADMIN_AUTH=user:pass</code> to <code>.env</code> and restart.</p>' : '') +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="submit"' + (n.canSave === false ? ' disabled' : '') + '>Save</button><button type="button" id="notifierTestBtn">Send test</button>' +
-        (n.file ? '<button type="button" class="delete-btn" id="notifierRemoveBtn">Remove</button>' : '') + '</div>' +
-      '<div id="notifierResult" class="hint"></div>' +
+        '<p class="hint" style="margin:0" id="slackEventsNote"></p>';
+    }
+    if (channel === 'lark') {
+      return '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField(n, 'lark', 'App secret');
+    }
+    return '<label>Email addresses <span class="hint">(who gets the requests; separate several with commas)</span><input name="emailTo" placeholder="ops@example.com, lead@example.com" value="' + escapeHtml(f.to || '') + '"></label>' +
+      '<label>Sent by <span class="hint">(your email provider must allow sending from this address)</span><input name="emailFrom" placeholder="LoopEngine &lt;approvals@example.com&gt;" value="' + escapeHtml(f.from || '') + '"></label>' +
+      '<label>Email provider<select name="emailProvider">' +
+        [['resend', 'Resend'], ['sendgrid', 'SendGrid'], ['postmark', 'Postmark']].map(function (p) { return '<option value="' + p[0] + '"' + (f.provider === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
+      '</select></label>' +
+      secretField(n, 'email', 'API key') +
+      '<p class="hint" style="margin:0">Each email links to a page where the person approves, denies, edits or answers, with no login. The link address below must be one they can open.</p>';
+  }
 
-      '</form>';
+  // A messaging app's form says whether it's the primary one, or offers
+  // to make it primary on Save (ticked already when none is). The webhook
+  // has neither: it always sends.
+  function renderPrimaryField(n, channel, saved, isPrimary) {
+    if (channel === 'webhook') return '';
+    if (isPrimary) return '<p class="hint" style="margin:0"><span class="le-pill accent">Primary</span> This is the primary messaging app. To switch, tick &ldquo;Make this the primary messaging app&rdquo; in another app&#39;s section and save it.</p>';
+    return '<div class="body-field" style="margin:0">' +
+      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="makePrimary"' + (n.primary ? '' : ' checked') + '> Make this the primary messaging app</label>' +
+      '<p class="hint" style="margin:2px 0 0">' + (n.primary
+        ? 'Only the primary messaging app sends; now that&#39;s ' + escapeHtml(CHANNEL_TITLES[n.primary] || n.primary) + '. ' + (saved ? 'Send test works either way.' : 'Leave this off to save ' + escapeHtml(CHANNEL_TITLES[channel] || channel) + ' for later.')
+        : 'No messaging app is primary yet, so saving this one makes it primary.') + '</p></div>';
+  }
+
+  // One app's section: its status in the summary, then its own form.
+  function renderConnectionSection(n, channel) {
+    var saved = connectionFor(n, channel);
+    var f = saved || { channel: channel, events: ['approval', 'question'] };
+    var isPrimary = n.primary === channel;
+    var isWebhook = channel === 'webhook';
+    var secretSet = n.secretsSet && n.secretsSet[channel];
+    var pills = isPrimary ? '<span class="le-pill accent">Primary</span>' : isWebhook && saved ? '<span class="le-pill accent">Always on</span>' : '';
+    pills += saved ? (secretSet ? ' <span class="le-pill good">Saved</span>' : ' <span class="le-pill warn">Secret not set</span>') : ' <span class="le-pill">Not set up</span>';
+    var events = f.events || [];
+    function eventBox(e) {
+      return '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
+    }
+    var locked = n.canSave === false;
+    // Every section starts closed; loadApprovalsSection reopens the ones
+    // that were open before a save redrew the tab.
+    var inUse = isPrimary || (isWebhook && saved);
+    return '<details class="msg-conn' + (inUse ? ' is-primary' : '') + '" data-channel="' + channel + '">' +
+      '<summary><span class="msg-conn-title">' + (CHANNEL_ICONS[channel] || '') + escapeHtml(CHANNEL_TITLES[channel] || channel) + '</span>' + pills +
+        '<span class="hint msg-conn-blurb">' + escapeHtml(CHANNEL_BLURBS[channel] || '') + '</span></summary>' +
+      '<form class="add-source notifier-form" data-channel="' + channel + '" style="max-width:560px">' +
+        renderChannelFields(n, channel, f) +
+        '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
+          '<input type="url" name="publicUrl" class="notifier-public-url" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
+        '<div class="body-field">Send' +
+          '<div style="display:flex;gap:14px;flex-wrap:wrap">' + NOTIFIER_EVENTS.slice(0, 2).map(eventBox).join('') + '</div>' +
+          '<details' + (events.indexOf('run_finish') !== -1 || events.indexOf('run_start') !== -1 ? ' open' : '') + '><summary>More events</summary>' +
+          '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">' + NOTIFIER_EVENTS.slice(2).map(eventBox).join('') + '</div>' +
+          '<p class="hint" style="margin:4px 0 0">Run finished tells your app the agent&#39;s final reply once a decision lets it finish.</p></details></div>' +
+        renderPrimaryField(n, channel, saved, isPrimary) +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="submit"' + (locked ? ' disabled' : '') + '>' + (saved ? 'Save' : 'Save ' + escapeHtml(CHANNEL_TITLES[channel] || channel)) + '</button>' +
+          (saved ? '<button type="button" class="notifier-test">Send test</button>' : '') +
+          (saved ? '<button type="button" class="delete-btn notifier-remove"' + (locked ? ' disabled' : '') + '>Remove</button>' : '') + '</div>' +
+        (isWebhook ? '<p class="hint" style="margin:0">A webhook always sends once saved, alongside the primary messaging app.</p>' : '') +
+        '<div class="hint notifier-result"></div>' +
+      '</form></details>';
+  }
+
+  function renderConnectionsHtml(n) {
+    return (n.canSave === false ? '<p class="error" style="margin:0 0 12px">Saving needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server, because this stores a secret. Add <code>LOOPENGINE_ADMIN_AUTH=user:pass</code> to <code>.env</code> and restart.</p>' : '') +
+      '<div class="msg-conns">' + (n.channels || ['slack', 'telegram', 'lark', 'email', 'webhook']).map(function (c) { return renderConnectionSection(n, c); }).join('') + '</div>';
   }
 
   function renderDeliveries(list) {
@@ -1215,15 +1311,18 @@ ${consoleShellScript}
   }
 
   // Slack only: the people who can decide by replying in a request's
-  // thread, and whose button clicks count once any are listed.
+  // thread, and whose button clicks count once any are listed. Shown once
+  // a Slack connection is saved; they only act while Slack is primary.
   function renderApproversHtml(n) {
-    if (n.source === 'code' || !n.file || n.file.channel !== 'slack') return '';
-    var approvers = n.file.approvers || [];
+    var slack = connectionFor(n, 'slack');
+    if (n.source === 'code' || !slack) return '';
+    var approvers = slack.approvers || [];
     var rows = approvers.map(function (a) {
       return '<tr><td>' + escapeHtml(a.name || a.user) + '</td><td><code>' + escapeHtml(a.user) + '</code></td>' +
         '<td><button type="button" class="delete-btn approver-remove" data-user="' + escapeHtml(a.user) + '"' + (n.canSave === false ? ' disabled' : '') + '>Remove</button></td></tr>';
     }).join('');
-    return '<section id="approversSection"><h3>Approvers</h3>' +
+    return '<section id="approversSection"><h3>Slack approvers</h3>' +
+      (n.primary !== 'slack' ? '<p class="hint" style="margin:0 0 8px">Slack isn&#39;t primary, so these take effect once it is.</p>' : '') +
       '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request by replying in its thread, like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A plain &ldquo;yes&rdquo; runs it; a reply that&#39;s less clear (&ldquo;sure, send it&rdquo;, &ldquo;yes but check the amount&rdquo;) shows exactly what will run with a Confirm button first, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count too. Anyone in the channel can still ask about a request.</p>' +
       (approvers.length
         ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>Slack ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
@@ -1239,7 +1338,8 @@ ${consoleShellScript}
     var section = detail.querySelector('#approversSection');
     if (!section) return;
     var result = section.querySelector('#approversResult');
-    var current = (n.file && n.file.approvers) || [];
+    var slack = connectionFor(n, 'slack');
+    var current = (slack && slack.approvers) || [];
     function save(list, message) {
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/approvers', {
@@ -1286,10 +1386,10 @@ ${consoleShellScript}
 
   function renderApprovalsHtml(n) {
     return '<p class="muted" style="margin:0 0 20px">Connect a messaging app, so this agent can reach people when nobody is in Chat. When an app calls it over HTTP or a scheduled task runs, and a tool call needs approval or the agent asks a question, the request is sent here. In Chat it shows up in the conversation instead.</p>' +
-      '<section id="approvalsSetup"><h3>Connection</h3>' +
-      '<p class="muted" style="margin:0 0 12px">Currently: ' + renderNotifierStatus(n) + '</p>' +
+      '<section id="approvalsSetup"><h3>Connections</h3>' +
+      '<p class="muted" style="margin:0 0 12px">' + renderNotifierStatus(n) + '</p>' +
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
-        (n.source === 'code' ? '' : renderNotifierForm(n)) + '</section>' +
+        (n.source === 'code' ? '' : renderConnectionsHtml(n)) + '</section>' +
       renderApproversHtml(n) +
       '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
   }
@@ -1332,28 +1432,91 @@ ${consoleShellScript}
   function wireApprovalsHandlers(name) {
     var content = approvalsContentEl();
     if (!content) return;
-    var form = content.querySelector('#notifierForm');
-    if (!form) return;
-    var result = content.querySelector('#notifierResult');
-    content.querySelector('#notifierChannel').addEventListener('change', function (ev) {
-      var groups = form.querySelectorAll('.notifier-fields');
-      for (var k = 0; k < groups.length; k++) groups[k].hidden = groups[k].dataset.channel !== ev.currentTarget.value;
-    });
+    var forms = content.querySelectorAll('.notifier-form');
+    for (var i = 0; i < forms.length; i++) wireConnectionForm(name, forms[i]);
+  }
+
+  // One app's section: Save (with its "make primary" box), Send test and Remove act on
+  // that app's connection only.
+  function wireConnectionForm(name, form) {
+    var channel = form.dataset.channel;
+    var result = form.querySelector('.notifier-result');
+    var base = '/agents/' + encodeURIComponent(name) + '/notifier';
     var generate = form.querySelector('.notifier-generate');
     if (generate) {
       generate.addEventListener('click', function () {
         var bytes = new Uint8Array(24);
         crypto.getRandomValues(bytes);
-        var input = form.querySelector('input[name="secret_webhook"]');
+        var input = form.querySelector('input[name="secret"]');
         input.type = 'text';
         input.value = Array.prototype.map.call(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
         result.textContent = 'Copy this secret into your app before saving; it is not shown again.';
       });
     }
-    // Slack: manifest follows the link address; Load channels fills the picker.
+    if (channel === 'slack') wireSlackFields(name, form, result);
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var data = new FormData(form);
+      var body = { channel: channel, events: data.getAll('events'), publicUrl: data.get('publicUrl') };
+      if (channel === 'webhook') body.url = data.get('url');
+      if (channel === 'telegram') body.chatId = data.get('chatId');
+      if (channel === 'slack') body.channelId = data.get('channelId');
+      if (channel === 'lark') { body.appId = data.get('appId'); body.chatId = data.get('chatId'); }
+      if (channel === 'email') { body.to = data.get('emailTo'); body.from = data.get('emailFrom'); body.provider = data.get('emailProvider'); }
+      if (data.get('secret')) body.secret = data.get('secret');
+      if (channel === 'slack' && data.get('signingSecret')) body.signingSecret = data.get('signingSecret');
+      if (channel === 'slack') {
+        var conversationsBox = form.querySelector('#slackConversations');
+        var savedSlack = lastNotifier && connectionFor(lastNotifier, 'slack');
+        // A locked switch (free plan) keeps whatever was saved before.
+        if (conversationsBox && !conversationsBox.disabled) body.conversations = conversationsBox.checked;
+        else if (savedSlack && savedSlack.conversations !== undefined) body.conversations = savedSlack.conversations;
+      }
+      // Ticked "Make this the primary messaging app" (or none is primary yet,
+      // which the server treats the same) makes this one primary.
+      var makePrimaryBox = form.querySelector('input[name="makePrimary"]');
+      if (makePrimaryBox && makePrimaryBox.checked) body.primary = true;
+      var first = Boolean(makePrimaryBox && makePrimaryBox.checked) || (channel !== 'webhook' && lastNotifier && !lastNotifier.primary);
+      result.textContent = 'Saving' + String.fromCharCode(8230);
+      fetchJsonRetryOnce(base, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+        if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
+        loadApprovalsSection(name, first ? CHANNEL_TITLES[channel] + ' saved and made primary.' : CHANNEL_TITLES[channel] + ' saved.');
+      });
+    });
+
+    var testBtn = form.querySelector('.notifier-test');
+    if (testBtn) {
+      testBtn.addEventListener('click', function () {
+        result.textContent = 'Sending' + String.fromCharCode(8230);
+        fetchJsonRetryOnce(base + '/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: channel }) }).then(function (r) {
+          var t = r.body;
+          result.textContent = t.ok ? 'Test delivered (' + (t.status || 'ok') + ').' : 'Test failed: ' + (t.error || 'unknown error');
+        });
+      });
+    }
+
+    var removeBtn = form.querySelector('.notifier-remove');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function () {
+        if (removeBtn.dataset.confirming !== '1') {
+          removeBtn.dataset.confirming = '1';
+          removeBtn.textContent = lastNotifier && lastNotifier.primary === channel ? 'Click again: no messaging app will be primary' : 'Click again to remove';
+          return;
+        }
+        fetchJsonRetryOnce(base + '?channel=' + encodeURIComponent(channel), { method: 'DELETE' }).then(function () {
+          loadApprovalsSection(name, CHANNEL_TITLES[channel] + ' removed.');
+        });
+      });
+    }
+  }
+
+  // Slack's section: the manifest follows the link address; Load channels
+  // fills the picker.
+  function wireSlackFields(name, form, result) {
     var n0 = lastNotifier;
     var manifestEl = form.querySelector('#slackManifest');
-    var linkInput = form.querySelector('#notifierPublicUrl');
+    var linkInput = form.querySelector('.notifier-public-url');
     function refreshSlackManifest() {
       if (!manifestEl || !n0 || !n0.slack) return;
       var url = (linkInput.value || location.origin).replace(/[/]+$/, '') + n0.slack.interactivityPath;
@@ -1381,63 +1544,26 @@ ${consoleShellScript}
     }
     var loadChannels = form.querySelector('#slackLoadChannels');
     var channelSelect = form.querySelector('#slackChannelSelect');
-    if (loadChannels) {
-      loadChannels.addEventListener('click', function () {
-        loadChannels.disabled = true;
-        result.textContent = 'Loading channels' + String.fromCharCode(8230);
-        var token = form.querySelector('input[name="secret_slack"]').value;
-        fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/slack-channels', {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ botToken: token }),
-        }).then(function (r) {
-          loadChannels.disabled = false;
-          if (!r.ok) { result.textContent = r.body.error || 'Could not load channels'; return; }
-          var current = form.querySelector('input[name="channelId"]').value;
-          channelSelect.innerHTML = '<option value="">Pick a channel</option>' + r.body.channels.map(function (c) {
-            return '<option value="' + escapeHtml(c.id) + '"' + (c.id === current ? ' selected' : '') + '>' + (c.isPrivate ? '&#128274; ' : '#') + escapeHtml(c.name) + (c.isMember ? '' : ' (bot not in channel yet)') + '</option>';
-          }).join('');
-          result.textContent = r.body.channels.length + ' channels found.';
-        });
-      });
-      channelSelect.addEventListener('change', function () {
-        if (channelSelect.value) form.querySelector('input[name="channelId"]').value = channelSelect.value;
-      });
-    }
-
-    form.addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      var data = new FormData(form);
-      var channel = data.get('channel');
-      var body = { channel: channel, events: data.getAll('events'), url: data.get('url'), channelId: data.get('channelId'), appId: data.get('appId'), chatId: data.get('chatId'), publicUrl: data.get('publicUrl') };
-      if (channel === 'email') { body.to = data.get('emailTo'); body.from = data.get('emailFrom'); body.provider = data.get('emailProvider'); }
-      var secret = data.get('secret_' + channel);
-      if (secret) body.secret = secret;
-      if (channel === 'slack' && data.get('signingSecret')) body.signingSecret = data.get('signingSecret');
-      var conversationsBox = form.querySelector('#slackConversations');
-      // A locked switch (free plan) keeps whatever was saved before.
-      if (channel === 'slack' && conversationsBox && !conversationsBox.disabled) body.conversations = conversationsBox.checked;
-      else if (channel === 'slack' && lastNotifier && lastNotifier.file && lastNotifier.file.conversations !== undefined) body.conversations = lastNotifier.file.conversations;
-      result.textContent = 'Saving…';
-      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier', {
-        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    if (!loadChannels) return;
+    loadChannels.addEventListener('click', function () {
+      loadChannels.disabled = true;
+      result.textContent = 'Loading channels' + String.fromCharCode(8230);
+      var token = form.querySelector('input[name="secret"]').value;
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/slack-channels', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ botToken: token }),
       }).then(function (r) {
-        if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
-        loadApprovalsSection(name, 'Saved.');
+        loadChannels.disabled = false;
+        if (!r.ok) { result.textContent = r.body.error || 'Could not load channels'; return; }
+        var current = form.querySelector('input[name="channelId"]').value;
+        channelSelect.innerHTML = '<option value="">Pick a channel</option>' + r.body.channels.map(function (c) {
+          return '<option value="' + escapeHtml(c.id) + '"' + (c.id === current ? ' selected' : '') + '>' + (c.isPrivate ? '&#128274; ' : '#') + escapeHtml(c.name) + (c.isMember ? '' : ' (bot not in channel yet)') + '</option>';
+        }).join('');
+        result.textContent = r.body.channels.length + ' channels found.';
       });
     });
-    content.querySelector('#notifierTestBtn').addEventListener('click', function () {
-      result.textContent = 'Sending…';
-      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/test', { method: 'POST' }).then(function (r) {
-        var t = r.body;
-        loadApprovalsSection(name, t.ok ? 'Test delivered (' + (t.status || 'ok') + ').' : 'Test failed: ' + (t.error || 'unknown error'));
-      });
+    channelSelect.addEventListener('change', function () {
+      if (channelSelect.value) form.querySelector('input[name="channelId"]').value = channelSelect.value;
     });
-    var removeBtn = content.querySelector('#notifierRemoveBtn');
-    if (removeBtn) {
-      removeBtn.addEventListener('click', function () {
-        if (removeBtn.dataset.confirming !== '1') { removeBtn.dataset.confirming = '1'; removeBtn.textContent = 'Click again to remove'; return; }
-        fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier', { method: 'DELETE' }).then(function () { loadApprovalsSection(name, 'Removed.'); });
-      });
-    }
   }
 
   function loadApprovalsSection(name, message) {
@@ -1450,7 +1576,13 @@ ${consoleShellScript}
       if (currentName !== name) return;
       if (!results[0].ok) throw new Error(results[0].body.error || 'request failed');
       lastNotifier = results[0].body;
+      // Keep open the app sections that were open (a save redraws the tab).
+      var wasOpen = Array.prototype.map.call(content.querySelectorAll('details.msg-conn[open]'), function (d) { return d.dataset.channel; });
       content.innerHTML = renderApprovalsHtml(results[0].body);
+      wasOpen.forEach(function (channel) {
+        var section = content.querySelector('details.msg-conn[data-channel="' + channel + '"]');
+        if (section) section.open = true;
+      });
       wireApprovalsHandlers(name);
       wireApproversHandlers(name, results[0].body);
       var pendingEl = detail.querySelector('#pendingContent');

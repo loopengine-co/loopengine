@@ -207,6 +207,7 @@ export type HttpNotifierConfig =
   | { channel: 'webhook'; config: { webhookUrl: string; webhookSecret: string; publicUrl?: string }; events: HttpNotifierEvent[] }
   | { channel: 'slack'; config: { botToken: string; channelId: string; publicUrl?: string; buttons?: boolean; replyHint?: boolean }; events: HttpNotifierEvent[] }
   | { channel: 'lark'; config: { appId: string; appSecret: string; chatId: string; publicUrl?: string; buttons?: boolean }; events: HttpNotifierEvent[] }
+  | { channel: 'telegram'; config: { botToken: string; chatId: string; publicUrl?: string }; events: HttpNotifierEvent[] }
   | {
       channel: 'email'
       config: { to: string; sendEmail: SendEmail; resolveBaseUrl?: string; answerBaseUrl?: string; signingSecret?: string; linkTtlMs?: number; publicUrl?: string }
