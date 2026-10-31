@@ -49,6 +49,17 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
   .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
+  /* Permissions: Allow / Ask me / Never, switched in place and saved at once. */
+  .decision-switch { display: inline-flex; gap: 4px; flex-wrap: nowrap; }
+  .actauth-rules td:nth-child(4), .actauth-rules td:nth-child(5) { white-space: nowrap; width: 1%; }
+  .actauth-rules td code { overflow-wrap: anywhere; }
+  .decision-switch button { min-width: 64px; padding: 5px 10px; white-space: nowrap; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .decision-switch button:hover { border-color: var(--ink-faint); }
+  .decision-switch button[aria-pressed="true"] { color: var(--on-accent); }
+  .decision-switch button[aria-pressed="true"][data-decision="allow"] { background: var(--accent); border-color: var(--accent); }
+  .decision-switch button[aria-pressed="true"][data-decision="ask"] { background: var(--warn); border-color: var(--warn); }
+  .decision-switch button[aria-pressed="true"][data-decision="deny"] { background: var(--ink-muted); border-color: var(--ink-muted); }
+  .decision-switch.is-saving button { cursor: progress; opacity: 0.7; }
   /* Messaging: one section per app; the primary one is outlined. */
   .msg-conns { display: grid; gap: 10px; max-width: 720px; }
   .msg-conn { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 0 14px; }
@@ -993,6 +1004,19 @@ ${consoleShellScript}
     });
   }
 
+  // A decision in words, as on the homepage: Allow, Ask me (wait for a
+  // person) or Never.
+  var DECISION_LABELS = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
+
+  // Three buttons for a decision; the pressed one is current. attrs
+  // says what the switch sets (a rule, or the default decision).
+  function decisionSwitch(current, label, attrs) {
+    return '<div class="decision-switch" role="group" aria-label="' + escapeHtml(label) + '" ' + attrs + '>' +
+      ['allow', 'ask', 'deny'].map(function (d) {
+        return '<button type="button" data-decision="' + d + '" aria-pressed="' + (current === d ? 'true' : 'false') + '">' + DECISION_LABELS[d] + '</button>';
+      }).join('') + '</div>';
+  }
+
   function renderActauthRuleRow(r) {
     var actionsHtml = r.name
       ? '<button type="button" class="edit-rule-btn" data-name="' + escapeHtml(r.name) + '">Edit</button> ' +
@@ -1005,31 +1029,25 @@ ${consoleShellScript}
       '<td><code>' + escapeHtml(r.name || '') + '</code></td>' +
       '<td><code>' + escapeHtml(r.scope) + '</code></td>' +
       '<td><code>' + escapeHtml(r.tool) + '</code></td>' +
-      '<td><span class="le-pill ' + escapeHtml(r.decision) + '">' + escapeHtml(r.decision) + '</span></td>' +
+      '<td>' + (r.name
+        ? decisionSwitch(r.decision, 'Decision for ' + r.name, 'data-rule="' + escapeHtml(r.name) + '"')
+        : '<span class="le-pill ' + escapeHtml(r.decision) + '">' + escapeHtml(DECISION_LABELS[r.decision] || r.decision) + '</span>') + '</td>' +
       '<td>' + actionsHtml + '</td>' +
       '</tr>';
   }
 
   function renderActauthConfigHtml(cfg) {
     var rulesHtml = cfg.rules.length
-      ? '<table><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
-        cfg.rules.map(renderActauthRuleRow).join('') + '</tbody></table>'
+      ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
+        cfg.rules.map(renderActauthRuleRow).join('') + '</tbody></table></div>'
       : '<p class="hint">No explicit rules — every tool call falls through to the default decision.</p>';
 
-    return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own, which wait for a person, and which never run. Stored in <code>actauth.yml</code> in this agent&#39;s folder.</p>' +
-      '<section><h3>Rules (' + cfg.rules.length + ')</h3>' + rulesHtml + '</section>' +
+    return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own (Allow), which wait for a person (Ask me), and which never run (Never). Click to change; it&#39;s saved at once, in <code>actauth.yml</code> in this agent&#39;s folder.</p>' +
+      '<section><h3>Rules (' + cfg.rules.length + ')</h3>' + rulesHtml + '<p class="error" id="rulesError" style="margin:6px 0 0"></p></section>' +
       '<section><h3>When no rule matches</h3>' +
-        '<form class="add-source" id="defaultDecisionForm" style="max-width:260px">' +
-          '<label>Decision' +
-            '<select name="defaultDecision" id="defaultDecisionSelect">' +
-              '<option value="allow"' + (cfg.defaultDecision === 'allow' ? ' selected' : '') + '>allow</option>' +
-              '<option value="ask"' + (cfg.defaultDecision === 'ask' ? ' selected' : '') + '>ask</option>' +
-              '<option value="deny"' + (cfg.defaultDecision === 'deny' ? ' selected' : '') + '>deny</option>' +
-            '</select>' +
-          '</label>' +
-          '<button type="submit">Save</button>' +
-          '<div id="defaultDecisionError" class="error"></div>' +
-        '</form></section>' +
+        decisionSwitch(cfg.defaultDecision, 'Decision when no rule matches', 'id="defaultDecisionSwitch"') +
+        '<p class="hint" style="margin:6px 0 0">For a tool call no rule above covers.</p>' +
+        '<p class="error" id="defaultDecisionError" style="margin:4px 0 0"></p></section>' +
       '<section><h3 id="ruleFormHeading">Add a rule</h3>' +
         '<form class="add-source" id="ruleForm">' +
           '<label>Name' +
@@ -1043,9 +1061,9 @@ ${consoleShellScript}
           '</label>' +
           '<label>Decision' +
             '<select name="decision" id="ruleDecisionInput">' +
-              '<option value="allow">allow</option>' +
-              '<option value="ask" selected>ask</option>' +
-              '<option value="deny">deny</option>' +
+              '<option value="allow">Allow</option>' +
+              '<option value="ask" selected>Ask me</option>' +
+              '<option value="deny">Never</option>' +
             '</select>' +
           '</label>' +
           '<button type="submit" id="ruleSubmitBtn">Add</button>' +
@@ -1883,26 +1901,56 @@ ${consoleShellScript}
         });
     });
 
-    var defaultForm = content.querySelector('#defaultDecisionForm');
-    defaultForm.addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      var errorEl = content.querySelector('#defaultDecisionError');
-      errorEl.textContent = '';
-      var decision = content.querySelector('#defaultDecisionSelect').value;
-      fetch('/agents/' + encodeURIComponent(name) + '/actauth/default-decision', {
+    // Allow / Ask me / Never: a click saves at once. The pressed button
+    // moves straight away and moves back if the save fails.
+    function wireDecisionSwitch(group, errorEl, save) {
+      group.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('button[data-decision]');
+        if (!btn || btn.getAttribute('aria-pressed') === 'true' || group.classList.contains('is-saving')) return;
+        var buttons = group.querySelectorAll('button[data-decision]');
+        var before = group.querySelector('button[aria-pressed="true"]');
+        function press(target) {
+          for (var k = 0; k < buttons.length; k++) buttons[k].setAttribute('aria-pressed', buttons[k] === target ? 'true' : 'false');
+        }
+        press(btn);
+        group.classList.add('is-saving');
+        errorEl.textContent = '';
+        save(btn.getAttribute('data-decision'))
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+          .then(function (result) {
+            if (!result.ok) throw new Error(result.body.error || 'request failed');
+            applyActauthConfig(name, result.body);
+            refreshOverviewPanel(name);
+          })
+          .catch(function (err) {
+            press(before);
+            group.classList.remove('is-saving');
+            errorEl.textContent = 'Could not save: ' + err.message;
+          });
+      });
+    }
+
+    var ruleSwitches = content.querySelectorAll('.decision-switch[data-rule]');
+    for (var s = 0; s < ruleSwitches.length; s++) {
+      (function (group) {
+        var rule = ruleByName(group.getAttribute('data-rule'));
+        if (!rule) return;
+        wireDecisionSwitch(group, content.querySelector('#rulesError'), function (decision) {
+          return fetch('/agents/' + encodeURIComponent(name) + '/actauth/rules/' + encodeURIComponent(rule.name), {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ scope: rule.scope, tool: rule.tool, decision: decision }),
+          });
+        });
+      })(ruleSwitches[s]);
+    }
+
+    wireDecisionSwitch(content.querySelector('#defaultDecisionSwitch'), content.querySelector('#defaultDecisionError'), function (decision) {
+      return fetch('/agents/' + encodeURIComponent(name) + '/actauth/default-decision', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ decision: decision }),
-      })
-        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
-        .then(function (result) {
-          if (!result.ok) throw new Error(result.body.error || 'request failed');
-          applyActauthConfig(name, result.body);
-          refreshOverviewPanel(name);
-        })
-        .catch(function (err) {
-          errorEl.textContent = err.message;
-        });
+      });
     });
   }
 
