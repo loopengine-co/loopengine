@@ -53,9 +53,12 @@ export const consoleShellScript: string = `<script>
   // that's certainly missing (see core/agent-env.ts). Filled in per agent
   // after the list loads.
   var toSet = {};
+  // Tools and Skills live under Advanced (an agent's own tools and skills,
+  // Composio, subagents): what an agent can do is shown per ability in
+  // Abilities. ?tab=tools and ?tab=skills still open Advanced.
   var TABS = [
-    ['overview', 'Overview'], ['chat', 'Chat'], ['abilities', 'Abilities'], ['tools', 'Tools'],
-    ['skills', 'Skills'], ['actauth', 'Permissions'], ['messaging', 'Messaging'], ['schedules', 'Schedules'], ['env', 'Environment']
+    ['overview', 'Overview'], ['chat', 'Chat'], ['abilities', 'Abilities'], ['actauth', 'Permissions'],
+    ['messaging', 'Messaging'], ['schedules', 'Schedules'], ['env', 'Environment'], ['advanced', 'Advanced']
   ];
 
   function esc(s) {

@@ -48,10 +48,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="radio"] { width: auto; margin: 0; }
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
+  .advanced-part { font-size: 17px; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .advanced-part#advanced-tools { margin-top: 0; padding-top: 0; border-top: 0; }
   .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
   /* Permissions: Allow / Ask me / Never, switched in place and saved at once. */
   .decision-switch { display: inline-flex; gap: 4px; flex-wrap: nowrap; }
-  .actauth-rules td:nth-child(4), .actauth-rules td:nth-child(5) { white-space: nowrap; width: 1%; }
+  .actauth-rules td:nth-child(3) { white-space: nowrap; width: 1%; }
+  .actauth-rules-full td:nth-child(3) { white-space: normal; width: auto; }
+  .actauth-rules-full td:nth-child(5), .actauth-rules-full td:nth-child(6) { white-space: nowrap; width: 1%; }
   .actauth-rules td code { overflow-wrap: anywhere; }
   .decision-switch button { min-width: 64px; padding: 5px 10px; white-space: nowrap; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .decision-switch button:hover { border-color: var(--ink-faint); }
@@ -1025,9 +1029,11 @@ ${consoleShellScript}
       // update/removeActauthRule (both keyed by name) can address — left
       // visible, but not editable here.
       : '<span class="hint">unnamed — edit actauth.yml directly</span>';
+    // Advanced's rule editor: every rule in full, name and scope included.
     return '<tr>' +
       '<td><code>' + escapeHtml(r.name || '') + '</code></td>' +
       '<td><code>' + escapeHtml(r.scope) + '</code></td>' +
+      '<td>' + (r.ability ? '<code>' + escapeHtml(r.ability) + '</code>' : '') + '</td>' +
       '<td><code>' + escapeHtml(r.tool) + '</code></td>' +
       '<td>' + (r.name
         ? decisionSwitch(r.decision, 'Decision for ' + r.name, 'data-rule="' + escapeHtml(r.name) + '"')
@@ -1036,19 +1042,45 @@ ${consoleShellScript}
       '</tr>';
   }
 
-  function renderActauthConfigHtml(cfg) {
-    var rulesHtml = cfg.rules.length
-      ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
-        cfg.rules.map(renderActauthRuleRow).join('') + '</tbody></table></div>'
-      : '<p class="hint">No explicit rules — every tool call falls through to the default decision.</p>';
-
-    return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own (Allow), which wait for a person (Ask me), and which never run (Never). Click to change; it&#39;s saved at once, in <code>actauth.yml</code> in this agent&#39;s folder.</p>' +
-      '<section><h3>Rules (' + cfg.rules.length + ')</h3>' + rulesHtml + '<p class="error" id="rulesError" style="margin:6px 0 0"></p></section>' +
+  // The Permissions tab: every tool the agent has, each with its ability
+  // and Allow / Ask me / Never (saved at once: its rule for everyone is
+  // updated, or added), then the decision when no rule matches. Rules in
+  // full (scopes, names, adding and removing) are in Advanced.
+  function renderPermissionsHtml(cfg) {
+    var tools = cfg.tools || [];
+    var rows = tools.map(function (t) {
+      var decision = t.editable
+        ? decisionSwitch(t.decision, 'Decision for ' + t.tool, 'data-tool="' + escapeHtml(t.tool) + '"')
+        : '<span class="le-pill ' + escapeHtml(t.decision) + '">' + escapeHtml(DECISION_LABELS[t.decision] || t.decision) + '</span>';
+      var note = t.isDefault ? 'default' : t.scopeNote;
+      return '<tr>' +
+        '<td>' + (t.ability ? '<code>' + escapeHtml(t.ability) + '</code>' : '') + '</td>' +
+        '<td><code>' + escapeHtml(t.tool) + '</code></td>' +
+        '<td>' + decision + (note ? ' <span class="hint">' + escapeHtml(note) + '</span>' : '') + '</td>' +
+        '</tr>';
+    }).join('');
+    return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own (Allow), which wait for a person (Ask me), and which never run (Never). Click to change; it&#39;s saved at once. Scoped rules, adding and removing rules are in <a href="?tab=advanced" data-tab="advanced">Advanced</a>.</p>' +
+      '<section><h3>Tools (' + tools.length + ')</h3>' +
+        (tools.length
+          ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>Ability</th><th>Tool</th><th>Decision</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+          : '<p class="hint">This agent has no tools yet. Install an ability, or add a tool in Advanced.</p>') +
+        '<p class="error" id="toolsDecisionError" style="margin:6px 0 0"></p></section>' +
       '<section><h3>When no rule matches</h3>' +
         decisionSwitch(cfg.defaultDecision, 'Decision when no rule matches', 'id="defaultDecisionSwitch"') +
-        '<p class="hint" style="margin:6px 0 0">For a tool call no rule above covers.</p>' +
-        '<p class="error" id="defaultDecisionError" style="margin:4px 0 0"></p></section>' +
-      '<section><h3 id="ruleFormHeading">Add a rule</h3>' +
+        '<p class="hint" style="margin:6px 0 0">For a tool with no rule (shown as default above), and any call no rule covers.</p>' +
+        '<p class="error" id="defaultDecisionError" style="margin:4px 0 0"></p></section>';
+  }
+
+  // Advanced's Permission rules: every rule in actauth.yml, with its name
+  // and scope, to edit, remove or add.
+  function renderRulesEditorHtml(cfg) {
+    var rulesHtml = cfg.rules.length
+      ? '<div class="le-table-wrap"><table class="actauth-rules actauth-rules-full"><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>Ability</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
+        cfg.rules.map(renderActauthRuleRow).join('') + '</tbody></table></div>'
+      : '<p class="hint">No rules yet: every tool call gets the decision for when no rule matches.</p>';
+    return '<p class="muted" style="margin:0 0 12px">Every rule in <code>actauth.yml</code>. The first rule that matches a call decides it; Who narrows a rule to a tenant and environment (<code>*/*</code> is everyone).</p>' +
+      rulesHtml + '<p class="error" id="rulesError" style="margin:6px 0 0"></p>' +
+      '<h3 id="ruleFormHeading" style="margin-top:20px">Add a rule</h3>' +
         '<form class="add-source" id="ruleForm">' +
           '<label>Name' +
             '<input name="name" id="ruleNameInput" required placeholder="my-rule-name">' +
@@ -1798,9 +1830,16 @@ ${consoleShellScript}
     return detail.querySelector('#actauthContent');
   }
 
+  function advancedRulesEl() {
+    return detail.querySelector('#advancedRulesContent');
+  }
+
+  // Permissions (one switch per tool, and the default) and Advanced's rule
+  // editor (per-rule switches, Edit, Delete, Add a rule).
   function wireActauthHandlers(name, cfg) {
-    var content = actauthContentEl();
-    if (!content) return;
+    var perm = actauthContentEl();
+    var content = advancedRulesEl();
+    if (!content || !perm) return;
     var editingRuleName = null;
 
     function ruleByName(ruleName) {
@@ -1945,7 +1984,21 @@ ${consoleShellScript}
       })(ruleSwitches[s]);
     }
 
-    wireDecisionSwitch(content.querySelector('#defaultDecisionSwitch'), content.querySelector('#defaultDecisionError'), function (decision) {
+    var toolSwitches = perm.querySelectorAll('.decision-switch[data-tool]');
+    for (var ts = 0; ts < toolSwitches.length; ts++) {
+      (function (group) {
+        var tool = group.getAttribute('data-tool');
+        wireDecisionSwitch(group, perm.querySelector('#toolsDecisionError'), function (decision) {
+          return fetch('/agents/' + encodeURIComponent(name) + '/actauth/tools/' + encodeURIComponent(tool), {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ decision: decision }),
+          });
+        });
+      })(toolSwitches[ts]);
+    }
+
+    wireDecisionSwitch(perm.querySelector('#defaultDecisionSwitch'), perm.querySelector('#defaultDecisionError'), function (decision) {
       return fetch('/agents/' + encodeURIComponent(name) + '/actauth/default-decision', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -1956,8 +2009,10 @@ ${consoleShellScript}
 
   function applyActauthConfig(name, cfg) {
     var content = actauthContentEl();
-    if (!content) return;
-    content.innerHTML = renderActauthConfigHtml(cfg);
+    var advanced = advancedRulesEl();
+    if (!content || !advanced) return;
+    content.innerHTML = renderPermissionsHtml(cfg);
+    advanced.innerHTML = renderRulesEditorHtml(cfg);
     wireActauthHandlers(name, cfg);
     actauthLoadedFor = name;
   }
@@ -1966,6 +2021,8 @@ ${consoleShellScript}
     var content = actauthContentEl();
     if (!content) return;
     content.innerHTML = '<p class="hint">Loading&hellip;</p>';
+    var advanced = advancedRulesEl();
+    if (advanced) advanced.innerHTML = '<p class="hint">Loading&hellip;</p>';
     fetch('/agents/' + encodeURIComponent(name) + '/actauth')
       .then(function (r) { return r.json(); })
       .then(function (cfg) {
@@ -3337,10 +3394,18 @@ ${consoleShellScript}
 
   // ---- Tab switching + agent selection ----
 
-  var CONFIG_TABS = ['overview', 'tools', 'skills', 'abilities', 'actauth', 'messaging', 'schedules', 'env'];
+  var CONFIG_TABS = ['overview', 'abilities', 'actauth', 'messaging', 'schedules', 'env', 'advanced'];
+  // The old Tools and Skills tabs: now parts of Advanced. A link to one
+  // opens Advanced at that part.
+  var TAB_ALIASES = { tools: 'advanced', skills: 'advanced' };
 
-  function switchTab(tab) {
-    if (CONFIG_TABS.indexOf(tab) === -1) tab = 'overview';
+  function resolveTab(tab) {
+    tab = TAB_ALIASES[tab] || tab;
+    return CONFIG_TABS.indexOf(tab) === -1 ? 'overview' : tab;
+  }
+
+  function switchTab(requested) {
+    var tab = resolveTab(requested);
     currentTab = tab;
     leShell.setTab(tab);
     // Same URL a fresh load of this tab would have, so reload, back/forward
@@ -3352,10 +3417,15 @@ ${consoleShellScript}
     for (var i = 0; i < panels.length; i++) {
       panels[i].style.display = panels[i].dataset.tabPanel === tab ? 'block' : 'none';
     }
-    if (tab === 'tools' && gatewayLoadedFor !== currentName) {
+    if (tab === 'advanced' && gatewayLoadedFor !== currentName) {
       loadGatewayTab(currentName);
     }
-    if (tab === 'actauth' && actauthLoadedFor !== currentName) {
+    // Opened through an old Tools or Skills link: scroll to that part.
+    if (TAB_ALIASES[requested]) {
+      var part = detail.querySelector('#advanced-' + requested);
+      if (part) part.scrollIntoView({ block: 'start' });
+    }
+    if ((tab === 'actauth' || tab === 'advanced') && actauthLoadedFor !== currentName) {
       loadActauthTab(currentName);
     }
     if (tab === 'messaging') loadApprovalsSection(currentName);
@@ -3460,8 +3530,18 @@ ${consoleShellScript}
       }) +
       '<div class="le-scroll"><div class="le-page" style="display:block">' +
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +
-      '<div class="tab-panel" data-tab-panel="skills">' + renderSkillsTabHtml(cfg) + '</div>' +
-      '<div class="tab-panel" data-tab-panel="tools">' + renderToolsTabHtml(cfg) + '</div>' +
+      // Advanced: the agent's own tools (and Composio, subagents), then its
+      // own skills. Each part keeps its old data-tab-panel name, which the
+      // code that redraws it looks for; only .tab-panel is shown or hidden.
+      '<div class="tab-panel" data-tab-panel="advanced">' +
+        '<p class="muted" style="margin:0 0 20px">For building your own: tools and skills that don&#39;t come from an ability, Composio tools, subagents and permission rules in full. What each ability adds is in its Details on the Abilities tab.</p>' +
+        '<h2 class="advanced-part" id="advanced-tools">Tools</h2>' +
+        '<div data-tab-panel="tools">' + renderToolsTabHtml(cfg) + '</div>' +
+        '<h2 class="advanced-part" id="advanced-skills">Skills</h2>' +
+        '<div data-tab-panel="skills">' + renderSkillsTabHtml(cfg) + '</div>' +
+        '<h2 class="advanced-part" id="advanced-rules">Permission rules</h2>' +
+        '<div id="advancedRulesContent"><p class="hint">Loading&hellip;</p></div>' +
+      '</div>' +
       '<div class="tab-panel" data-tab-panel="actauth">' + renderActauthTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="messaging">' + renderMessagingTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="env">' + renderEnvTabPlaceholder() + '</div>' +
@@ -3479,7 +3559,8 @@ ${consoleShellScript}
 
     empty.style.display = 'none';
     detail.style.display = 'flex';
-    switchTab(currentTab);
+    switchTab(initialAdvancedPart || currentTab);
+    initialAdvancedPart = null;
     fillOverviewCards(cfg.name);
   }
 
@@ -3524,7 +3605,9 @@ ${consoleShellScript}
   });
 
   var initialParams = new URLSearchParams(location.search);
-  currentTab = CONFIG_TABS.indexOf(initialParams.get('tab')) === -1 ? 'overview' : initialParams.get('tab');
+  currentTab = resolveTab(initialParams.get('tab'));
+  // An old ?tab=tools or ?tab=skills link: scrolled to that part once loaded.
+  var initialAdvancedPart = TAB_ALIASES[initialParams.get('tab')] ? initialParams.get('tab') : null;
   leShell.ready.then(function (agents) {
     if (!agents.length) {
       empty.innerHTML = leShell.loadError()

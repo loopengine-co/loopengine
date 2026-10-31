@@ -1765,12 +1765,86 @@ function parseActauthRuleBody(body: Record<string, unknown>, requireName: boolea
   return { ok: true, value: { name: typeof body.name === 'string' ? body.name : '', scope: body.scope, tool: body.tool, decision: body.decision } }
 }
 
-function handleActauthGet(res: ServerResponse, agentName: string): void {
+// The Permissions data. `rules`: every rule, each with the ability it
+// belongs to (empty for none): the one that added it when installed, else
+// the one whose tool it's for. Edited in full from the Advanced tab.
+// `tools`: every tool the agent has (its own, subagents, Composio), each
+// with its ability and decision: its rule for everyone (*/*), else its
+// first rule, else the default; `scopeNote` says when that isn't the whole
+// story, so the Permissions tab doesn't look like it has duplicates.
+async function actauthConfigWithAbilities(agentName: string) {
+  const config = readActauthConfig(agentName)
+  let installed: Array<{ name: string; tools: string[]; actauthRules: string[] }> = []
+  try {
+    installed = listInstalledAbilities(agentName)
+  } catch {}
+  const abilityFor = (tool: string, ruleName?: string) =>
+    (installed.find((a) => ruleName && a.actauthRules.includes(ruleName)) ?? installed.find((a) => a.tools.includes(tool)))?.name ?? null
+  const rules = config.rules.map((rule) => ({ ...rule, ability: abilityFor(rule.tool, rule.name) }))
+
+  const entry = getEntry(agentName)
+  let toolNames: string[] = []
+  if (entry) {
+    try {
+      const own = entry.config.tools ?? (await loadDefaultTools(entry.config))
+      const all = [...own, ...(await loadSubagentAsTools(entry.config)), ...(await loadGatewayToolsFromDir(agentDir(agentName)))]
+      toolNames = [...new Set(all.map((t) => t.name))]
+    } catch {}
+  }
+  const tools = toolNames.map((tool) => {
+    const forTool = rules.filter((r) => r.tool === tool)
+    const rule = forTool.find((r) => r.scope === '*/*') ?? forTool[0]
+    const others = forTool.length - (rule ? 1 : 0)
+    const scopeNote = rule && rule.scope !== '*/*' ? `${rule.scope} only` : others ? `+${others} scoped ${others === 1 ? 'rule' : 'rules'} in Advanced` : null
+    return {
+      tool,
+      ability: rule?.ability ?? abilityFor(tool),
+      decision: rule?.decision ?? config.defaultDecision,
+      isDefault: !rule,
+      // A rule with no name can't be changed here (rules are changed by name).
+      editable: !rule || Boolean(rule.name),
+      scopeNote,
+    }
+  })
+  return { ...config, rules, tools }
+}
+
+// The Permissions tab's switch for one tool: updates its rule for everyone
+// (*/*), or adds one (tool-<name>) when it has none.
+async function handleActauthToolPut(req: IncomingMessage, res: ServerResponse, agentName: string, tool: string): Promise<void> {
   if (!getEntry(agentName)) {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(readActauthConfig(agentName)))
+  const body = await readJsonBody(req)
+  if (!isDecision(body.decision)) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: "decision must be 'allow', 'ask', or 'deny'" }))
+    return
+  }
+  const { rules } = readActauthConfig(agentName)
+  const existing = rules.find((r) => r.tool === tool && r.scope === '*/*' && r.name)
+  try {
+    if (existing) {
+      updateActauthRule(agentName, existing.name!, { scope: existing.scope, tool, decision: body.decision })
+    } else {
+      const base = `tool-${tool}`.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').slice(0, 80)
+      let name = base
+      for (let i = 2; rules.some((r) => r.name === name); i++) name = `${base}-${i}`
+      addActauthRule(agentName, { name, scope: '*/*', tool, decision: body.decision })
+    }
+  } catch (err) {
+    res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await actauthConfigWithAbilities(agentName)))
+}
+
+async function handleActauthGet(res: ServerResponse, agentName: string): Promise<void> {
+  if (!getEntry(agentName)) {
+    res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await actauthConfigWithAbilities(agentName)))
 }
 
 async function handleActauthRulePost(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
@@ -1791,7 +1865,7 @@ async function handleActauthRulePost(req: IncomingMessage, res: ServerResponse, 
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(readActauthConfig(agentName)))
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await actauthConfigWithAbilities(agentName)))
 }
 
 async function handleActauthRulePut(req: IncomingMessage, res: ServerResponse, agentName: string, ruleName: string): Promise<void> {
@@ -1812,10 +1886,10 @@ async function handleActauthRulePut(req: IncomingMessage, res: ServerResponse, a
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(readActauthConfig(agentName)))
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await actauthConfigWithAbilities(agentName)))
 }
 
-function handleActauthRuleDelete(res: ServerResponse, agentName: string, ruleName: string): void {
+async function handleActauthRuleDelete(res: ServerResponse, agentName: string, ruleName: string): Promise<void> {
   if (!getEntry(agentName)) {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
     return
@@ -1827,7 +1901,7 @@ function handleActauthRuleDelete(res: ServerResponse, agentName: string, ruleNam
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
     return
   }
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(readActauthConfig(agentName)))
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await actauthConfigWithAbilities(agentName)))
 }
 
 async function handleActauthDefaultDecisionPut(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
@@ -1841,7 +1915,7 @@ async function handleActauthDefaultDecisionPut(req: IncomingMessage, res: Server
     return
   }
   setDefaultDecision(agentName, body.decision)
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(readActauthConfig(agentName)))
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await actauthConfigWithAbilities(agentName)))
 }
 
 // GET /agents content-negotiates on this: a browser navigating there sends
@@ -3825,13 +3899,19 @@ const server = createServer(async (req, res) => {
       return
     }
 
+    const actauthToolMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)\/actauth\/tools\/([^/]+)$/)
+    if (actauthToolMatch) {
+      await handleActauthToolPut(req, res, decodeURIComponent(actauthToolMatch[1]), decodeURIComponent(actauthToolMatch[2]))
+      return
+    }
+
     const actauthRuleMatch = pathname.match(/^\/agents\/([^/]+)\/actauth\/rules\/([^/]+)$/)
     if (actauthRuleMatch && req.method === 'PUT') {
       await handleActauthRulePut(req, res, decodeURIComponent(actauthRuleMatch[1]), decodeURIComponent(actauthRuleMatch[2]))
       return
     }
     if (actauthRuleMatch && req.method === 'DELETE') {
-      handleActauthRuleDelete(res, decodeURIComponent(actauthRuleMatch[1]), decodeURIComponent(actauthRuleMatch[2]))
+      await handleActauthRuleDelete(res, decodeURIComponent(actauthRuleMatch[1]), decodeURIComponent(actauthRuleMatch[2]))
       return
     }
 
@@ -3843,7 +3923,7 @@ const server = createServer(async (req, res) => {
 
     const actauthMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/actauth$/)
     if (actauthMatch) {
-      handleActauthGet(res, decodeURIComponent(actauthMatch[1]))
+      await handleActauthGet(res, decodeURIComponent(actauthMatch[1]))
       return
     }
 

@@ -174,7 +174,7 @@ export function setupChecklist(candidate: AgentCandidate, agentName: string): Ch
       case 'ability':
         return { label: `Install the ${need.name ?? need.description} ability`, href: tab('abilities') }
       case 'api':
-        return { label: `Connect ${need.description} (an HTTP tool, or an MCP server)`, href: tab('tools') }
+        return { label: `Connect ${need.description} (an HTTP tool, or an MCP server)`, href: tab('advanced') }
       case 'key':
         return { label: `Add ${need.description}`, href: tab('env') }
       case 'messaging':
