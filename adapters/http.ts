@@ -78,7 +78,6 @@ import {
   listComposioConnections,
   listComposioTools,
   loadGatewayToolsFromDir,
-  readGatewayToolsFromDir,
   removeGatewayTool,
   removeGatewayToolSlug,
   GatewayToolExistsError,
@@ -927,11 +926,15 @@ async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
       if (!entry) return []
       return [(async (): Promise<WorkflowAgentInfo> => {
         const { rules, defaultDecision } = readActauthConfig(name)
+        // Abilities by default: gateway tools (Composio and the like) are
+        // left out, so a workflow is never built on one.
         let tools: string[] = []
+        let gateway = new Set<string>()
         try {
+          gateway = new Set((await loadGatewayToolsFromDir(agentDir(name))).map((t) => t.name))
           const own = entry.config.tools ?? (await loadDefaultTools(entry.config))
-          const all = [...own, ...(await loadSubagentAsTools(entry.config)), ...(await loadGatewayToolsFromDir(agentDir(name)))]
-          tools = [...new Set(all.map((t) => t.name))]
+          const all = [...own, ...(await loadSubagentAsTools(entry.config))]
+          tools = [...new Set(all.map((t) => t.name))].filter((t) => !gateway.has(t))
         } catch {}
         let abilities: string[] = []
         try {
@@ -943,16 +946,11 @@ async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
           messaging = n.source === 'none' ? null : (n.primary ?? n.channel ?? null)
         } catch {}
         const decided = (d: unknown): d is 'allow' | 'ask' | 'deny' => d === 'allow' || d === 'ask' || d === 'deny'
-        let connected: WorkflowAgentInfo['connected'] = []
-        try {
-          connected = readGatewayToolsFromDir(agentDir(name)).map((e) => ({ source: e.name, tools: e.slugs.map((s) => `${e.name}_${s}`) }))
-        } catch {}
         return {
           name,
-          tools: [...new Set([...tools, ...connected.flatMap((c) => c.tools)])],
+          tools,
           abilities,
-          connected,
-          rules: rules.flatMap((r) => (decided(r.decision) ? [{ tool: r.tool, decision: r.decision, scope: r.scope }] : [])),
+          rules: rules.flatMap((r) => (decided(r.decision) && !gateway.has(r.tool) ? [{ tool: r.tool, decision: r.decision, scope: r.scope }] : [])),
           defaultDecision: decided(defaultDecision) ? defaultDecision : 'ask',
           messaging,
         }
@@ -968,7 +966,14 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
   const [action, jobId] = pathname.split('/').slice(2) // after /workflows
   const dirOf = (name: string) => join(projectDir(), 'agents', name)
   try {
-    const picked = pickInterviewModel(interviewAgents())
+    // No model to plan with until an agent names one and its key is set
+    // (building the model call throws without the key).
+    let picked: ReturnType<typeof pickInterviewModel>
+    try {
+      picked = pickInterviewModel(interviewAgents())
+    } catch {
+      picked = undefined
+    }
     if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents() })
     // A planning job's progress (the page checks every few seconds).
     if (action === 'plan' && jobId && req.method === 'GET') {
@@ -976,7 +981,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
       return job ? json(200, job) : json(404, { error: 'No such planning job (it may have expired); plan it again.' })
     }
     if (action === 'plan' && !jobId && req.method === 'POST') {
-      if (!picked) return json(409, { error: 'No agent here names a model yet. Set one on an agent (Overview → Model) and add its key under Models.' })
+      if (!picked) return json(409, { error: 'No model is ready to plan with: set one on an agent (Overview → Model) and add its key under Models.' })
       const body = await readJsonBody(req)
       const base = interviewTools(interviewAgents())
       // The same model, with room for a whole plan in one reply (an
@@ -998,8 +1003,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           messaging: a.messaging,
           defaultDecision: a.defaultDecision,
           toolCount: a.tools.length,
-          tools: a.tools.filter((t) => !a.connected?.some((c) => c.tools.includes(t))).slice(0, 40),
-          connectedTools: (a.connected ?? []).map((c) => ({ source: c.source, tools: c.tools.slice(0, 60) })),
+          tools: a.tools.slice(0, 40),
           rules: a.rules.filter((r) => r.decision !== a.defaultDecision).slice(0, 40).map((r) => `${r.tool}: ${r.decision}`),
         })),
         searchPublicAbilities: (query) => base.searchPublicAbilities(query),
