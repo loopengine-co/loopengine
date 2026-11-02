@@ -87,13 +87,11 @@ export const WORKFLOW_PLANNER_PROMPT = `You turn a workflow a person describes i
 LoopEngine agents call tools. Tools come from abilities (installable packages: public ones on npm, or the workspace's own private ones) or are built in. Each tool has a permission: allow (runs on its own), ask (waits for a person to approve, edit or deny it) or deny. When nobody is in Chat, questions and approvals go to the agent's messaging app (Slack, Telegram, Lark or email) and the run waits, for days if needed, then carries on.
 
 How to plan:
-1. Look before you plan: list_agents (what exists, and what each agent's tools and rules are), list_workspace_abilities, search_public_abilities for each kind of step (even when an agent already has a connected tool for it), ability_details for any ability you might use (its exact tool names and the settings it needs), and list_connections.
+1. Look before you plan: list_agents (what exists, and what each agent's tools and rules are), list_workspace_abilities, search_public_abilities for each kind of step, ability_details for any ability you might use (its exact tool names and the settings it needs), and list_connections.
 2. Split the workflow into steps, in order. For each step:
    - something to fetch or do: kind "tool", with the exact tool name and where it comes from. Pick the source in this order:
      a. A tool the target agent already has (from list_agents): use it, nothing to install.
      b. An ability: a workspace ability (list_workspace_abilities) or a public one (search_public_abilities, e.g. "firecrawl" or "web search" for searching and reading the web). Set "ability" to its install spec (the npm name, or a workspace ability's spec) and use the exact tool name from ability_details.
-     c. Only when no ability does it: a tool in some agent's connectedTools (a connected service, usually one that needs a person to sign in, like Gmail or HubSpot). Give its exact tool name, set "connection" to that source's name and leave "ability" empty (it's copied to the agent that runs the workflow). Never put a connection's name in abilities.
-     An ability beats a connected tool even when another agent already has the connected one: it's faster, needs only a key, and travels with the agent. If you chose a connected tool, say why in gaps.
    - the person chooses or answers ("ask me which", "let me pick"): kind "ask", tool "system_ask_user" (built in, no ability). Say what options are offered. It reaches them through the agent's messaging app by itself, so don't add a separate step to post to Slack or another chat first, and don't install a chat ability just to ask.
    - the person reviews or approves before something happens ("let me review it", "before it's sent"): kind "approval", on the tool that does that thing; its rule becomes "ask".
    - the agent's own work (writing, summarising, choosing): kind "other".
@@ -116,7 +114,6 @@ export function workflowPlannerTools(): ToolSchema[] {
       ability: { type: 'string' },
       detail: { type: 'string' },
       missing: { type: 'string' },
-      connection: { type: 'string' },
     },
     required: ['title', 'kind'],
   }
