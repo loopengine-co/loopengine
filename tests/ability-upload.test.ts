@@ -74,7 +74,8 @@ describe('uploading an ability into the workspace', () => {
     const src = join(dir, 'tarsrc')
     mkdirSync(src)
     writeFileSync(join(dir, 'outside.txt'), 'x')
-    execFileSync('tar', ['-czf', join(dir, 'evil.tgz'), '-C', src, '../outside.txt'])
+    // -P keeps the ../ (GNU tar, on CI's Linux, strips it otherwise).
+    execFileSync('tar', ['-P', '-czf', join(dir, 'evil.tgz'), '-C', src, '../outside.txt'])
     await expect(installUploadedAbility({ kind: 'archive', fileName: 'evil.tgz', data: base64(join(dir, 'evil.tgz')) })).rejects.toThrow(/outside its folder/)
   })
 
