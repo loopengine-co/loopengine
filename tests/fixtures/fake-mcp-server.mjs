@@ -7,12 +7,15 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { pathToFileURL } from 'node:url'
 
 const TOOLS = [
-  { name: 'echo', description: 'Echoes the text back', inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
+  { name: 'echo', description: 'Echoes the text back', inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, annotations: { readOnlyHint: true } },
   { name: 'addNumbers', description: 'Adds two numbers', inputSchema: { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } } } },
-  { name: 'fail', description: 'Always fails', inputSchema: { type: 'object', properties: {} } },
+  { name: 'fail', description: 'Always fails', inputSchema: { type: 'object', properties: {} }, annotations: { destructiveHint: true } },
   { name: 'whoami', description: 'Returns FAKE_TOKEN from its environment', inputSchema: { type: 'object', properties: {} } },
   { name: 'big', description: 'Returns a long text', inputSchema: { type: 'object', properties: {} } },
-  { name: 'secret_admin', description: 'Not allowlisted by the test ability', inputSchema: { type: 'object', properties: {} } },
+  { name: 'secret_admin', description: 'Not allowlisted by the test ability', inputSchema: { type: 'object', properties: {} }, annotations: { destructiveHint: true } },
+  { name: 'listThings', description: 'Lists things', inputSchema: { type: 'object', properties: {} } },
+  { name: 'createThing', description: 'Creates a thing', inputSchema: { type: 'object', properties: { title: { type: 'string' } } } },
+  { name: 'getThing', description: 'Gets a thing', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } },
 ]
 
 export function createFakeMcpServer() {
@@ -29,6 +32,8 @@ export function createFakeMcpServer() {
         return { content: [{ type: 'text', text: 'it broke' }], isError: true }
       case 'whoami':
         return { content: [{ type: 'text', text: process.env.FAKE_TOKEN ?? 'none' }] }
+      case 'createThing':
+        return { content: [{ type: 'text', text: `created ${args.title}` }] }
       case 'big':
         return { content: [{ type: 'text', text: 'x'.repeat(500) }] }
       default:

@@ -37,6 +37,9 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-btn { display: inline-block; padding: 7px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; background: var(--accent); color: var(--on-accent); border: 0; cursor: pointer; }
   .wf-btn.plain { background: none; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
   .wf-btn:disabled { opacity: 0.6; cursor: progress; }
+  .wf-mcp { display: grid; gap: 10px; }
+  .wf-mcp-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; background: var(--surface); }
+  .wf-mcp-row input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; max-width: 360px; box-sizing: border-box; }
   .hint { font-size: 12px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); }
 </style>
@@ -135,8 +138,16 @@ ${consoleShellScript}
   }
 
   // ---- 2. Check the plan ----
+  function mcpTitle(id) {
+    var servers = (state.planned && state.planned.plan.mcpServers) || [];
+    for (var i = 0; i < servers.length; i++) if (servers[i].id === id) return servers[i].title;
+    return id;
+  }
+
   function stepRow(step, i) {
-    var becomes = step.tool
+    var becomes = step.mcp
+      ? (step.tool ? '<code>' + esc(step.tool) + '</code> ' : '') + '<span class="hint">from ' + esc(mcpTitle(step.mcp)) + ' (MCP server)' + (step.tool ? '' : ', tool picked on Create') + '</span>'
+      : step.tool
       ? '<code>' + esc(step.tool) + '</code>' + (step.ability ? ' <span class="hint">from ' + esc(step.ability) + '</span>' : step.connection ? ' <span class="hint">connected service: ' + esc(step.connection) + '</span>' : (step.tool === 'system_ask_user' ? ' <span class="hint">built in</span>' : ''))
       : '<span class="hint">the agent' + String.fromCharCode(8217) + 's own work</span>';
     var badge = step.missing
@@ -147,6 +158,21 @@ ${consoleShellScript}
           ? '<span class="le-pill ask">You approve</span>'
           : '';
     return '<tr><td class="wf-num">' + (i + 1) + '</td><td><strong>' + esc(step.title) + '</strong>' + (step.detail ? '<div class="hint">' + esc(step.detail) + '</div>' : '') + '</td><td>' + becomes + '</td><td>' + badge + '</td></tr>';
+  }
+
+  function mcpRow(s) {
+    var badge = s.verified ? '<span class="le-pill allow">' + (s.source === 'saved' ? 'Saved server' : 'Verified') + '</span>' : '<span class="le-pill ask">Unverified</span>';
+    var what = s.existing
+      ? 'Uses <code>' + esc(s.ability) + '</code>, already in your workspace.'
+      : 'Set up as a private ability, <code>' + esc(s.ability) + '</code>: its tools and their permissions are picked when you create this (anything that changes data asks you first).';
+    var key = s.existing ? '' :
+      '<label class="hint" for="wfKey-' + esc(s.ability) + '">API key' + (s.keySet ? ' (one is saved; leave blank to use it)' : ' (if it needs one)') + '</label>' +
+      '<input type="password" autocomplete="off" id="wfKey-' + esc(s.ability) + '" data-mcp-key="' + esc(s.id) + '" placeholder="' + esc(s.keyEnv) + '">';
+    return '<div class="wf-mcp-row"><div><strong>' + esc(s.title) + '</strong> ' + badge + '</div>' +
+      '<div class="hint">' + esc(s.url) + (s.description ? ' ' + DASH + ' ' + esc(s.description) : '') + '</div>' +
+      '<div class="hint">' + what + '</div>' + key +
+      (s.verified ? '' : '<div class="hint">Not published on the app' + String.fromCharCode(8217) + 's own domain: only add a key if you trust who runs it.</div>') +
+      '</div>';
   }
 
   function renderPlan(error) {
@@ -161,6 +187,7 @@ ${consoleShellScript}
         '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th></th><th>Step</th><th>Becomes</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
         (p.rules.length ? '<h3>Permissions it sets</h3><ul class="wf-list">' + p.rules.map(function (r) { return '<li><code>' + esc(r.tool) + '</code> ' + pill(r.decision) + '</li>'; }).join('') + '</ul>' : '') +
         (p.abilities.length ? '<h3>Abilities it uses</h3><ul class="wf-list">' + p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; }).join('') + '</ul>' + (state.canInstall ? '' : '<p class="hint">Installing abilities needs LOOPENGINE_ADMIN_AUTH set; otherwise they head the checklist.</p>') : '') +
+        (p.mcpServers && p.mcpServers.length ? '<h3>Apps it connects to</h3><div class="wf-mcp">' + p.mcpServers.map(mcpRow).join('') + '</div>' : '') +
         (p.keys.length ? '<h3>Keys it needs</h3><p class="hint" style="margin:0">' + p.keys.map(esc).join(', ') + ' ' + DASH + ' you add them after, from the checklist.</p>' : '') +
         (p.needsApprovals ? '<p class="hint" style="margin:0">It asks you through the agent' + String.fromCharCode(8217) + 's primary messaging app (Messaging tab) when nobody is in Chat.</p>' : '') +
       '</div>' +
@@ -185,8 +212,11 @@ ${consoleShellScript}
       var target = chosen.value === 'new' ? { kind: 'new' } : { kind: 'existing', agent: chosen.value === 'other' ? document.getElementById('wfOther').value : chosen.dataset.agent };
       var btn = document.getElementById('wfCreate');
       btn.disabled = true;
-      document.getElementById('wfStatus').textContent = 'Creating' + ELLIPSIS + ' installing abilities can take a minute.';
-      post('/workflows/create', { plan: p, target: target, description: state.description }).then(function (r) {
+      var mcpKeys = {};
+      var keyInputs = page.querySelectorAll('[data-mcp-key]');
+      for (var k = 0; k < keyInputs.length; k++) if (keyInputs[k].value.trim()) mcpKeys[keyInputs[k].dataset.mcpKey] = keyInputs[k].value.trim();
+      document.getElementById('wfStatus').textContent = 'Creating' + ELLIPSIS + (p.mcpServers && p.mcpServers.length ? ' connecting to its apps and installing abilities can take a minute or two.' : ' installing abilities can take a minute.');
+      post('/workflows/create', { plan: p, target: target, description: state.description, mcpKeys: mcpKeys }).then(function (r) {
         if (!r.ok) { renderPlan(r.body.error || 'Could not create it.'); return; }
         renderDone(r.body);
       }).catch(function (err) { renderPlan(err.message); });

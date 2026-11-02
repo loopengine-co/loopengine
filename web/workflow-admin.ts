@@ -10,7 +10,9 @@ import { addActauthRule, readActauthConfig } from './actauth-admin.js'
 import { writeSkill } from './skills-admin.js'
 import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
-import { planWorkflowWithModel, slugify, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
+import { planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
+import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
+import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { readWorkflows, removeWorkflow, saveWorkflow, type WorkflowRecord } from '../core/workflows.js'
 import { createScheduledTask, listScheduledTasks, pauseScheduledTask, runScheduledTaskNow } from '../core/scheduler.js'
 import { workspaceTimeZone } from '../core/time-zone.js'
@@ -113,6 +115,145 @@ function specNames(spec: string): string[] {
   return [...new Set([scoped, named, last.replace(/@.*$/, '')].filter((n): n is string => Boolean(n)))]
 }
 
+// ---- MCP servers ----
+
+/** What planning and Create need for steps done by an MCP server. */
+export interface WorkflowMcpDeps {
+  getServer(id: string): Promise<McpDirectoryServer | undefined>
+  /** The workspace ability already made from the server at `url`, with
+   * its tools (the server's names and the installed ones). */
+  existingFor(url: string): { spec: string; tools: { name: string; remote: string }[] } | undefined
+  /** A setting's value, project-wide. */
+  keyValue(name: string): string | undefined
+}
+
+export interface WorkflowMcpCreateDeps extends WorkflowMcpDeps {
+  generate(request: Omit<McpAbilityRequest, 'modelCall'>): Promise<GeneratedMcpAbility>
+  /** Stores a generated package as a workspace ability; returns its spec. */
+  store(dir: string, source: string): string
+  /** Saves a key project-wide. */
+  saveKey(name: string, value: string): Promise<void>
+}
+
+/** Looks up each MCP server the plan's steps name: a server that can't
+ * be found leaves its steps missing; the rest are listed on the plan
+ * with the ability each would become and whether its key is set. */
+export async function resolveMcpServers(plan: WorkflowPlan, deps: WorkflowMcpDeps): Promise<void> {
+  const ids = [...new Set(plan.steps.flatMap((s) => (s.mcp ? [s.mcp] : [])))]
+  const servers: PlannedMcpServer[] = []
+  for (const id of ids) {
+    const server = await deps.getServer(id).catch(() => undefined)
+    if (!server) {
+      for (const step of plan.steps) {
+        if (step.mcp !== id) continue
+        delete step.mcp
+        step.missing = `the MCP server ${id} couldn't be found`
+      }
+      plan.gaps = [...plan.gaps, `The MCP server ${id} couldn't be found, so its steps have no tool yet.`].slice(0, 10)
+      continue
+    }
+    const names = mcpAbilityNames(server)
+    const existing = deps.existingFor(server.url)
+    servers.push({
+      id,
+      title: server.title,
+      url: server.url,
+      description: server.description,
+      verified: server.verified,
+      source: server.source,
+      ability: names.name,
+      keyEnv: names.keyEnv,
+      keySet: deps.keyValue(names.keyEnv) !== undefined,
+      ...(existing ? { existing: existing.spec } : {}),
+    })
+  }
+  if (servers.length) plan.mcpServers = servers
+  else delete plan.mcpServers
+}
+
+/** On Create: each MCP server on the plan becomes a private ability (or
+ * reuses the one already made from it), and its steps point at that
+ * ability's tools. A server that can't be set up leaves its steps
+ * missing and is reported. `keys` are what the person typed per server. */
+export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<string, string>, deps: WorkflowMcpCreateDeps | undefined): Promise<{ made: string[]; failed: { name: string; error: string }[] }> {
+  const made: string[] = []
+  const failed: { name: string; error: string }[] = []
+  for (const planned of plan.mcpServers ?? []) {
+    const steps = plan.steps.map((step, index) => ({ step, index })).filter(({ step }) => step.mcp === planned.id)
+    if (!steps.length) continue
+    const fail = (error: string) => {
+      failed.push({ name: planned.title, error })
+      for (const { step } of steps) {
+        delete step.mcp
+        step.missing = `${planned.title}: ${error}`
+      }
+    }
+    if (!deps) {
+      fail('setting up MCP servers isn\'t available on this server')
+      continue
+    }
+    const existing = deps.existingFor(planned.url)
+    const reusable = existing && steps.every(({ step }) => step.tool && existing.tools.some((t) => t.remote === step.tool))
+    let spec: string
+    let stepTools: Record<number, string>
+    let renames: { remote: string; name: string }[]
+    if (existing && reusable) {
+      spec = existing.spec
+      stepTools = Object.fromEntries(steps.map(({ step, index }) => [index, existing.tools.find((t) => t.remote === step.tool)!.name]))
+      renames = existing.tools
+    } else {
+      const server = await deps.getServer(planned.id).catch(() => undefined)
+      if (!server) {
+        fail('the server couldn\'t be found any more')
+        continue
+      }
+      const typed = keys[planned.id]?.trim()
+      const key = typed || deps.keyValue(planned.keyEnv)
+      let generated: GeneratedMcpAbility
+      try {
+        generated = await deps.generate({
+          server,
+          ...(key ? { key } : {}),
+          workflow: { name: plan.name, summary: plan.summary, steps: steps.map(({ step, index }) => ({ index, title: step.title, kind: step.kind, ...(step.detail ? { detail: step.detail } : {}), ...(step.tool ? { tool: step.tool } : {}) })) },
+        })
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err))
+        continue
+      }
+      if (typed && generated.keyEnv) {
+        try {
+          await deps.saveKey(generated.keyEnv, typed)
+        } catch (err) {
+          failed.push({ name: planned.title, error: `its key wasn't saved (${err instanceof Error ? err.message : String(err)}); add ${generated.keyEnv} from the checklist` })
+          if (!plan.keys.includes(generated.keyEnv)) plan.keys.push(generated.keyEnv)
+        }
+      }
+      spec = deps.store(generated.dir, `mcp:${server.url}`)
+      stepTools = generated.stepTools
+      renames = generated.tools
+      made.push(generated.name)
+    }
+    for (const { step, index } of steps) {
+      delete step.mcp
+      step.ability = spec
+      const tool = stepTools[index]
+      if (tool) step.tool = tool
+      else {
+        delete step.tool
+        step.missing = `${planned.title} has no tool for this`
+      }
+    }
+    // The skill was written with the server's own tool names.
+    for (const { remote, name } of renames) {
+      if (remote === name) continue
+      plan.skill.body = plan.skill.body.replace(new RegExp(`(?<![A-Za-z0-9_])${remote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), name)
+    }
+    if (!plan.abilities.includes(spec)) plan.abilities.push(spec)
+  }
+  delete plan.mcpServers
+  return { made, failed }
+}
+
 export interface PlannedWorkflow {
   plan: WorkflowPlan
   /** The check against the suggested agent, when the plan names one. */
@@ -124,7 +265,7 @@ export interface PlannedWorkflow {
 /** Plans a workflow from a description, then checks the suggested agent:
  * one that would have a decision changed, or doesn't exist, becomes a new
  * agent instead, saying why. */
-export async function planWorkflow(description: unknown, modelCall: ModelCall, tools: WorkflowPlannerTools & { agentInfo(): Promise<WorkflowAgentInfo[]> }): Promise<PlannedWorkflow> {
+export async function planWorkflow(description: unknown, modelCall: ModelCall, tools: WorkflowPlannerTools & { agentInfo(): Promise<WorkflowAgentInfo[]>; mcp?: WorkflowMcpDeps }): Promise<PlannedWorkflow> {
   const text = typeof description === 'string' ? description.trim() : ''
   if (text.length < 15) throw new WorkflowError('Describe the workflow in a sentence or two: what starts it, the steps, and where you want to decide.')
   if (text.length > 4000) throw new WorkflowError('That description is too long: keep it under 4000 characters.')
@@ -133,6 +274,8 @@ export async function planWorkflow(description: unknown, modelCall: ModelCall, t
   const plan = result.plan
   const agents = await tools.agentInfo()
   resolveConnections(plan, agents)
+  if (tools.mcp) await resolveMcpServers(plan, tools.mcp)
+  else for (const step of plan.steps) if (step.mcp) { delete step.mcp; step.missing = step.missing ?? 'no ability does this' }
   if (plan.target.kind !== 'existing' || !plan.target.agent) return { plan }
   const agent = agents.find((a) => a.name === plan.target.agent)
   if (!agent) {
@@ -201,6 +344,8 @@ export interface WorkflowCreateDeps extends TemplateCreateDeps {
   agentInfo(): Promise<WorkflowAgentInfo[]>
   /** Makes sure the agent is loaded once its new tools and skill are in place. */
   reloadAgent(name: string): Promise<void>
+  /** Sets up the plan's MCP servers as private abilities. */
+  mcp?: WorkflowMcpCreateDeps
 }
 
 /** A to-do for each step nothing could be found for, first in the list. */
@@ -213,7 +358,7 @@ function withMissingSteps(plan: WorkflowPlan, agent: string, checklist: Template
 /** Creates the workflow: in a new agent (as a template would), or in an
  * existing one. An existing agent keeps every decision it already has: a
  * conflicting rule is left alone and reported, not changed. */
-export async function createWorkflow(input: { plan?: unknown; target?: unknown; description?: unknown }, deps: WorkflowCreateDeps): Promise<CreatedWorkflow> {
+export async function createWorkflow(input: { plan?: unknown; target?: unknown; description?: unknown; mcpKeys?: unknown }, deps: WorkflowCreateDeps): Promise<CreatedWorkflow> {
   const plan = input.plan as WorkflowPlan | undefined
   if (!plan || typeof plan !== 'object' || !Array.isArray(plan.steps) || !plan.skill || !plan.newAgent) throw new WorkflowError('Plan the workflow first.')
   const target = (input.target ?? plan.target) as { kind?: string; agent?: string }
@@ -231,6 +376,8 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   })
   const agents = await deps.agentInfo()
   resolveConnections(plan, agents)
+  const keys = input.mcpKeys && typeof input.mcpKeys === 'object' ? Object.fromEntries(Object.entries(input.mcpKeys as Record<string, unknown>).flatMap(([k, v]) => (typeof v === 'string' && v.trim() ? [[k, v.trim()]] : []))) : {}
+  const mcp = await prepareMcpAbilities(plan, keys, deps.mcp)
   const template = workflowTemplate(plan)
 
   if (target.kind !== 'existing') {
@@ -243,7 +390,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
       agent: created.name,
       newAgent: true,
       workflow: plan.name,
-      abilities: { installed: [...created.abilities.installed, ...connected.copied], failed: [...created.abilities.failed, ...connected.failed] },
+      abilities: { installed: [...created.abilities.installed, ...connected.copied], failed: [...mcp.failed, ...created.abilities.failed, ...connected.failed] },
       keptDecisions: [],
       checklist: withMissingSteps(plan, created.name, created.checklist),
       ...(created.schedule ? { schedule: created.schedule } : {}),
@@ -268,7 +415,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
 
   // 2. Abilities it doesn't have yet.
   const installed: string[] = []
-  const failed: { name: string; error: string }[] = []
+  const failed: { name: string; error: string }[] = [...mcp.failed]
   for (const spec of check.toInstall) {
     if (!deps.installAbility) {
       failed.push({ name: spec, error: 'installing abilities needs LOOPENGINE_ADMIN_AUTH set on the server' })

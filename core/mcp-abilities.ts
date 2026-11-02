@@ -199,6 +199,53 @@ export async function closeMcpConnections(): Promise<void> {
   await Promise.all(open.map((c) => c.then((client) => client.close()).catch(() => {})))
 }
 
+/** Whether a connection failed because the server wants (other)
+ * credentials: an HTTP 401/403, or the SDK's own UnauthorizedError. */
+export function isMcpAuthError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code
+  if (code === 401 || code === 403) return true
+  const e = err as { name?: unknown; message?: unknown } | null
+  return e?.name === 'UnauthorizedError' || /\b(401|403)\b|unauthori[sz]ed|forbidden/i.test(String(e?.message ?? ''))
+}
+
+/** A server tool as listed, for choosing tools before an ability exists. */
+export interface McpToolInfo {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+  /** The server's own hints (MCP tool annotations), when it gives them. */
+  readOnly?: boolean
+  destructive?: boolean
+}
+
+/** Every tool a server offers, over a one-off connection (closed after).
+ * `server` is an `mcp` block without its allowlist; settings in it are
+ * read from `env`. */
+export async function listMcpServerTools(server: InstalledMcpRecord['server'], env: AgentEnv): Promise<McpToolInfo[]> {
+  const client = await connect(resolveServer(server, env))
+  try {
+    const tools: McpToolInfo[] = []
+    let cursor: string | undefined
+    do {
+      const page = await client.listTools(cursor ? { cursor } : undefined)
+      for (const tool of page.tools) {
+        const hints = (tool.annotations ?? {}) as { readOnlyHint?: unknown; destructiveHint?: unknown }
+        tools.push({
+          name: tool.name,
+          description: tool.description ?? '',
+          inputSchema: tool.inputSchema as Record<string, unknown>,
+          ...(typeof hints.readOnlyHint === 'boolean' ? { readOnly: hints.readOnlyHint } : {}),
+          ...(typeof hints.destructiveHint === 'boolean' ? { destructive: hints.destructiveHint } : {}),
+        })
+      }
+      cursor = page.nextCursor
+    } while (cursor && tools.length < 500)
+    return tools
+  } finally {
+    await client.close().catch(() => {})
+  }
+}
+
 // ---- Schema cache ----
 
 interface CachedTool {

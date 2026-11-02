@@ -263,6 +263,51 @@ Upgrading an MCP ability takes the new version's server and tool list
 as they are (there's no file to merge); removing it removes its tools,
 rules and skills.
 
+### MCP abilities made by the workflow builder
+
+People don't have to write an MCP ability by hand. When "Describe a
+workflow" plans a step that no installed, workspace or public ability
+can do, the planner can look for the app's MCP server instead: first in
+the workspace's saved servers, then in the official MCP Registry
+(`registry.modelcontextprotocol.io`). Only remote servers are offered.
+The app's own server ranks first. A registry server whose URL isn't on
+its publisher's verified domain is labeled *Unverified* on the plan.
+
+The plan lists each server with a key field. On **Create**, LoopEngine:
+
+1. connects with the key, if one was given (saved project-wide as
+   `<APP>_MCP_KEY`);
+2. picks the tools the steps need, plus closely related read-only ones
+   (at most 15), using the planning model;
+3. sets permissions strictly. A tool runs on its own only when the
+   server marks it read-only (or, with no mark, its name reads as a
+   lookup). An approval step's tool, and anything marked destructive,
+   always asks;
+4. writes a skill for it, and saves the result as a workspace ability
+   named `mcp-<app>` (source `mcp:<url>`);
+5. installs it into the agent like any other ability, and points the
+   workflow's steps at its tools.
+
+The next workflow that needs the same server reuses that workspace
+ability. If a server can't be set up (for example it needs a key, or a
+sign-in, which isn't supported yet), its steps are left as missing and
+appear first in the checklist.
+
+Saved servers, for internal or private ones, go in `mcp-servers.yml` in
+the project root (or the file `LOOPENGINE_MCP_SERVERS_FILE` names):
+
+```yaml
+servers:
+  - id: acme-crm
+    title: Acme CRM
+    description: Our internal CRM
+    url: https://mcp.acme.internal/mcp
+    auth: { header: X-Api-Key, prefix: "" }   # optional; default Authorization: Bearer
+```
+
+`LOOPENGINE_MCP_REGISTRY_URL` points at another registry, or turns
+registry search off with `off`.
+
 ## Installing
 
 ```

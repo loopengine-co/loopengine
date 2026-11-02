@@ -33,6 +33,31 @@ export interface WorkflowStep {
    * an ability): the source's name. It's copied to the agent that runs the
    * workflow, not installed. */
   connection?: string
+  /** For a step done by an MCP server's tool, when no ability has it: the
+   * server's id (search_mcp_servers). `tool` is then the server's own
+   * tool name, if the planner could see them. On Create the server
+   * becomes a private ability (core/mcp-ability-generator.ts) and the
+   * step points at its tool instead. */
+  mcp?: string
+}
+
+/** An MCP server a plan would set up as a private ability. */
+export interface PlannedMcpServer {
+  id: string
+  title: string
+  url: string
+  description: string
+  /** Saved by the workspace, or on its publisher's verified domain. */
+  verified: boolean
+  source: 'saved' | 'registry'
+  /** The private ability it becomes, e.g. mcp-linear. */
+  ability: string
+  /** The setting its key is saved as, when it takes one. */
+  keyEnv: string
+  /** Whether that setting already has a value. */
+  keySet: boolean
+  /** The workspace already has an ability made from this server. */
+  existing?: string
 }
 
 export interface WorkflowPlan {
@@ -67,6 +92,8 @@ export interface WorkflowPlan {
   newAgent: { name: string; systemPrompt: string }
   /** What the workspace can't do yet, in plain words. */
   gaps: string[]
+  /** MCP servers its steps use, set up on Create (filled in after planning). */
+  mcpServers?: PlannedMcpServer[]
 }
 
 export interface WorkflowPlannerTools {
@@ -78,6 +105,10 @@ export interface WorkflowPlannerTools {
   /** An ability's tools (with the decision each ships with) and settings. */
   abilityDetails(spec: string): Promise<unknown>
   listConnections(): Promise<Record<string, unknown>>
+  /** MCP servers matching a query (core/mcp-directory.ts). Optional: without it the planner only plans with abilities. */
+  searchMcpServers?(query: string): Promise<unknown>
+  /** A server's tools, when it can be listed without a key (or with one already set). */
+  mcpServerTools?(id: string): Promise<unknown>
 }
 
 const MAX_TOOL_ROUNDS = 12
@@ -92,6 +123,7 @@ How to plan:
    - something to fetch or do: kind "tool", with the exact tool name and where it comes from. Pick the source in this order:
      a. A tool the target agent already has (from list_agents): use it, nothing to install.
      b. An ability: a workspace ability (list_workspace_abilities) or a public one (search_public_abilities, e.g. "firecrawl" or "web search" for searching and reading the web). Set "ability" to its install spec (the npm name, or a workspace ability's spec) and use the exact tool name from ability_details.
+     c. Only when no ability can do it, and search_mcp_servers is available: an app's MCP server. Search for the app (e.g. "linear", "stripe"), pick the app's own server (official), else a saved or verified one, then call mcp_server_tools. Set "mcp" to the server's id, and "tool" to its exact tool name when mcp_server_tools lists them (leave "tool" empty when it needs a key first, and say in "detail" what the step does). It's set up as a private ability when the workflow is created, which picks its tools and their permissions, so add no rules for MCP tools.
    - the person chooses or answers ("ask me which", "let me pick"): kind "ask", tool "system_ask_user" (built in, no ability). Say what options are offered. It reaches them through the agent's messaging app by itself, so don't add a separate step to post to Slack or another chat first, and don't install a chat ability just to ask.
    - the person reviews or approves before something happens ("let me review it", "before it's sent"): kind "approval", on the tool that does that thing; its rule becomes "ask".
    - the agent's own work (writing, summarising, choosing): kind "other".
@@ -100,11 +132,11 @@ How to plan:
 4. Skill: the steps in order, as numbered instructions the agent follows, naming the tools and saying exactly when to stop and ask. Write it so the agent keeps going after each answer or decision.
 5. Trigger: a schedule ("every Monday at 9" is every "7d", at "09:00", weekday 1) or on_request (started from Chat or a message). startMessage is what the agent receives when it starts.
 6. Target: an existing agent only when it already has (or can install) the tools, none of the workflow's rules would change a decision it already has, and the same people would approve. Otherwise a new agent, with a short lowercase-hyphenated name and a system prompt saying who it is and what it's for. Give the reason either way.
-7. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings).
+7. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
 
 Then call save_plan once, with the whole plan. Don't ask the person questions: if something is unclear, plan the most reasonable version and note the assumption in gaps.`
 
-export function workflowPlannerTools(): ToolSchema[] {
+export function workflowPlannerTools(withMcp = false): ToolSchema[] {
   const step = {
     type: 'object',
     properties: {
@@ -112,6 +144,7 @@ export function workflowPlannerTools(): ToolSchema[] {
       kind: { type: 'string', enum: ['tool', 'ask', 'approval', 'other'] },
       tool: { type: 'string' },
       ability: { type: 'string' },
+      mcp: { type: 'string', description: "an MCP server's id, for a step no ability can do" },
       detail: { type: 'string' },
       missing: { type: 'string' },
     },
@@ -123,6 +156,10 @@ export function workflowPlannerTools(): ToolSchema[] {
     { name: 'search_public_abilities', description: 'Search public LoopEngine abilities on npm, e.g. "web search", "wordpress", "slack".', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
     { name: 'ability_details', description: "An ability's exact tool names, what each does, the permission each ships with, and the settings it needs. spec: its npm name or workspace spec.", input_schema: { type: 'object', properties: { spec: { type: 'string' } }, required: ['spec'] } },
     { name: 'list_connections', description: 'What is set up: model providers with keys, messaging apps per agent.', input_schema: { type: 'object', properties: {} } },
+    ...(withMcp ? [
+      { name: 'search_mcp_servers', description: "Search apps' MCP servers (the workspace's saved ones, then the public MCP Registry), for a step no ability can do. query: the app's name, e.g. \"linear\".", input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+      { name: 'mcp_server_tools', description: "An MCP server's tools (name, description, read-only or not), or a note that it needs a key before they can be seen. id: from search_mcp_servers.", input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+    ] : []),
     {
       name: 'save_plan',
       description: 'Save the workflow plan. Call once, at the end.',
@@ -196,6 +233,7 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
       ...(str(step.detail, 600) ? { detail: str(step.detail, 600) } : {}),
       ...(str(step.missing, 300) ? { missing: str(step.missing, 300) } : {}),
       ...(str(step.connection, 120) ? { connection: str(step.connection, 120) } : {}),
+      ...(str(step.mcp, 200) && !str(step.ability, 300) ? { mcp: str(step.mcp, 200) } : {}),
     }]
   })
   if (!steps.length) return undefined
@@ -212,14 +250,17 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
       }
     : { kind: 'on_request', description: str(triggerRaw.description, 200) ?? 'when asked' }
 
+  // An MCP step's permissions are set when its server becomes an ability.
+  const mcpTools = new Set(steps.flatMap((s) => (s.mcp && s.tool ? [s.tool] : [])))
   const rules = (Array.isArray(r.rules) ? r.rules : []).flatMap((x) => {
     const rule = (x ?? {}) as Record<string, unknown>
     const tool = str(rule.tool, 120)
     return tool && isDecision(rule.decision) && tool !== 'system_ask_user' ? [{ tool, decision: rule.decision }] : []
-  })
-  // An approval step's tool always asks first.
+  }).filter((rule) => !mcpTools.has(rule.tool))
+  // An approval step's tool always asks first (an MCP step's tool gets
+  // that when its ability is made).
   for (const step of steps) {
-    if (step.kind !== 'approval' || !step.tool) continue
+    if (step.kind !== 'approval' || !step.tool || step.mcp) continue
     const rule = rules.find((x) => x.tool === step.tool)
     if (rule) rule.decision = 'ask'
     else rules.push({ tool: step.tool, decision: 'ask' })
@@ -267,7 +308,7 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     let response
     try {
-      response = await modelCall(messages, WORKFLOW_PLANNER_PROMPT, workflowPlannerTools())
+      response = await modelCall(messages, WORKFLOW_PLANNER_PROMPT, workflowPlannerTools(Boolean(tools.searchMcpServers)))
     } catch (err) {
       // A reply cut off part-way (its tool arguments end mid-JSON) usually
       // means it ran out of room: ask again, for a shorter plan.
@@ -315,6 +356,12 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
             break
           case 'list_connections':
             output = await tools.listConnections()
+            break
+          case 'search_mcp_servers':
+            output = tools.searchMcpServers ? await tools.searchMcpServers(String(input.query ?? '')) : 'not available'
+            break
+          case 'mcp_server_tools':
+            output = tools.mcpServerTools ? await tools.mcpServerTools(String(input.id ?? '')) : 'not available'
             break
           case 'save_plan':
             plan = validateWorkflowPlan(input)

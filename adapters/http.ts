@@ -26,7 +26,7 @@
 // file's call — see AgentConfig.sessionIdFor and defaultSessionIdFor below.
 import { execFile } from 'node:child_process'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
-import { createReadStream, existsSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, rmSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { extname, join, resolve as resolvePath, sep } from 'node:path'
@@ -102,10 +102,13 @@ import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlack
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
-import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, planWorkflow, runWorkflowNow, startPlanJob, type WorkflowAgentInfo } from '#web/workflow-admin.js'
+import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, planWorkflow, runWorkflowNow, startPlanJob, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
-import { WorkspaceAbilityError, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
+import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
+import { getMcpServer, searchMcpServers } from '#core/mcp-directory.js'
+import { isMcpAuthError, listMcpServerTools, resolveMcpManifest } from '#core/mcp-abilities.js'
+import { generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
 import { AbilitySourceError, abilityOrigin, readAbilitySources, type AbilitySource } from '#core/ability-sources.js'
 import {
   installAbility,
@@ -959,6 +962,43 @@ async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
   )
 }
 
+// Steps no ability can do can use an app's MCP server
+// (core/mcp-directory.ts), made into a private ability on Create.
+const workflowMcp: WorkflowMcpDeps = {
+  getServer: getMcpServer,
+  existingFor(url) {
+    const found = listWorkspaceAbilities().find((a) => a.source === `mcp:${url}`)
+    if (!found) return undefined
+    try {
+      const manifest = JSON.parse(readFileSync(join(found.spec.replace(/^file:/, ''), 'loopengine.ability.json'), 'utf8')) as { mcp?: unknown }
+      return { spec: found.spec, tools: resolveMcpManifest(found.name, manifest.mcp).tools }
+    } catch {
+      return undefined
+    }
+  },
+  keyValue: (name) => process.env[name],
+}
+
+/** A server's tools for the planner, or why they can't be seen yet. */
+async function workflowMcpServerTools(id: string): Promise<unknown> {
+  const server = await getMcpServer(id)
+  if (!server) return `No MCP server ${id}.`
+  const { keyEnv } = mcpAbilityNames(server)
+  const key = process.env[keyEnv]
+  try {
+    const tools = await listMcpServerTools(
+      { url: server.url, ...(server.transport === 'sse' ? { transport: 'sse' as const } : {}), auth: key ? { type: 'key', env: keyEnv, ...(server.auth ?? {}) } : { type: 'none' } },
+      { get: (n) => (n === keyEnv ? key : undefined), require: (n) => { if (n === keyEnv && key) return key; throw new Error(`${n} is not set`) } },
+    )
+    return { server: server.title, tools: tools.slice(0, 80).map((t) => ({ name: t.name, description: t.description.split('\n')[0].slice(0, 200), ...(t.readOnly !== undefined ? { readOnly: t.readOnly } : {}) })) }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return isMcpAuthError(err)
+      ? `${server.title} needs a key before its tools can be seen. Plan its steps by what they do (leave "tool" empty); the person adds the key on the plan, and its tools are picked on Create.`
+      : `Couldn't reach ${server.title}: ${message.slice(0, 200)}`
+  }
+}
+
 async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
   const json = (status: number, body: unknown): void => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
@@ -1013,6 +1053,9 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           return { name: d.name, tools: d.tools.map((t) => ({ name: t.name, description: t.description.slice(0, 300), decision: t.decision ?? null })), settings: d.settings.map((x) => x.name) }
         },
         listConnections: () => base.listConnections(),
+        searchMcpServers: async (query) => (await searchMcpServers(query)).map((s) => ({ id: s.id, title: s.title, description: s.description, url: s.url, official: Boolean(s.official), verified: s.verified, source: s.source })),
+        mcpServerTools: workflowMcpServerTools,
+        mcp: workflowMcp,
       }))
       return json(202, job)
     }
@@ -1020,6 +1063,22 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
       const body = await readJsonBody(req)
       const model = pickAgentModel(interviewAgents())
       const created = await createWorkflow(body, {
+        mcp: {
+          ...workflowMcp,
+          // The planning model picks the server's tools and writes the skill.
+          generate: (request) => generateMcpAbility({ ...request, ...(picked ? { modelCall: picked.modelCall } : {}) }),
+          store: (dir, source) => {
+            try {
+              return addWorkspaceAbility(dir, source).spec
+            } finally {
+              rmSync(dir, { recursive: true, force: true })
+            }
+          },
+          saveKey: async (name, value) => {
+            if (!secretsProtected) throw new Error('saving keys needs LOOPENGINE_ADMIN_AUTH set on the server')
+            await setEnvVar(name, value)
+          },
+        },
         agentExists: (name) => Boolean(getEntry(name)) || existsSync(dirOf(name)),
         agentDir: dirOf,
         agentInfo: workflowAgentInfo,
