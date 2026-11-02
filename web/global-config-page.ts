@@ -118,7 +118,7 @@ ${consoleSidebarHtml}
   </div>
   <div class="section-panel" data-section-panel="apps" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Apps</h1><p>Connect the apps your agents work in. All of a connected app&rsquo;s tools become available to the workspace, each with a default permission; each agent then chooses which tools it gets, from its Abilities tab.</p></div></div></div>
+      <div><h1>Apps</h1><p>Connect the apps your agents work in. All of a connected app&rsquo;s tools become available to the workspace, each with a default permission; each agent then chooses which tools it gets, from its Apps tab.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="appsContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
   <div class="section-panel" data-section-panel="abilities" style="display:none">
@@ -253,12 +253,12 @@ ${consoleShellScript}
 
   // ---- Abilities section ----
   // How agents reach outside apps. Public abilities (npm) are browsed
-  // here and installed from an agent's own Abilities tab. A private one
+  // here and installed from an agent's own Apps tab. A private one
   // (from the sources in Settings) is installed here into the workspace
   // (core/workspace-abilities.ts), then added to any agent from its tab.
 
   // An ability's details (tools with their permissions, skills, settings)
-  // come from the console shell, shared with each agent's Abilities tab.
+  // come from the console shell, shared with each agent's Apps tab.
   var toggleAbilityDetails = leShell.toggleAbilityDetails;
 
   function detailsButton(spec) {
@@ -272,13 +272,13 @@ ${consoleShellScript}
   function renderAbilities() {
     var content = document.getElementById('abilitiesContent');
     content.innerHTML = '<section>' +
-      '<h4>Public <span class="hint">npm packages tagged loopengine-ability; add one to an agent from its Abilities tab</span></h4>' +
+      '<h4>Public <span class="hint">npm packages tagged loopengine-ability; add one to an agent from its Apps tab</span></h4>' +
       '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
         '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search public abilities" style="flex:1">' +
         '<button type="submit">Search</button>' +
       '</form>' +
       '<div id="abilitySearchResults"><p class="hint">Loading&hellip;</p></div>' +
-      '<h4 id="private-abilities">Private <span class="hint">your own, from the sources in <a href="/config?section=settings">Settings</a>; install one into the workspace, then add it to agents from their Abilities tab</span></h4>' +
+      '<h4 id="private-abilities">Private <span class="hint">your own, from the sources in <a href="/config?section=settings">Settings</a>; install one into the workspace, then add it to agents from their Apps tab</span></h4>' +
       '<p id="abilityInstallStatus" class="hint"></p>' +
       '<div id="workspaceAbilities"></div>' +
       '<div id="privateAbilities"><p class="hint">Loading&hellip;</p></div>' +
@@ -328,7 +328,7 @@ ${consoleShellScript}
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (r) {
         if (!r.ok) throw new Error(r.body.error || 'upload failed');
-        status.textContent = 'Uploaded ' + label + ' into the workspace. Add it to an agent from the agent' + String.fromCharCode(8217) + 's Abilities tab.';
+        status.textContent = 'Uploaded ' + label + ' into the workspace. Add it to an agent from the agent' + String.fromCharCode(8217) + 's Apps tab.';
         workspaceAbilities = r.body.abilities || [];
         renderWorkspaceAbilities();
         renderPrivateAbilities();
@@ -403,7 +403,7 @@ ${consoleShellScript}
     var fromApps = workspaceAbilities.filter(function (a) { return a.app || a.source.indexOf('mcp:') === 0; }).length;
     var own = workspaceAbilities.filter(function (a) { return !a.app && a.source.indexOf('mcp:') !== 0; });
     el.innerHTML = (fromApps ? '<p class="hint" style="margin:0 0 8px">' + fromApps + ' connected app' + (fromApps === 1 ? '' : 's') + ' also in this workspace: see <a href="/config?section=apps">Apps</a>.</p>' : '') + (own.length
-      ? '<div class="source"><p style="margin:0 0 8px"><strong>In this workspace</strong> <span class="hint">add these to an agent from its Abilities tab</span></p>' +
+      ? '<div class="source"><p style="margin:0 0 8px"><strong>In this workspace</strong> <span class="hint">add these to an agent from its Apps tab</span></p>' +
           '<table><thead><tr><th>Ability</th><th>From</th><th></th></tr></thead><tbody>' + own.map(function (a) {
             return '<tr><td><code>' + escapeHtml(a.name) + '</code>' + (a.version ? ' <span class="hint">' + escapeHtml(a.version) + '</span>' : '') + '</td>' +
               '<td><span class="hint">' + escapeHtml(a.source.indexOf('upload:') === 0 ? 'Uploaded ' + a.source.slice(7) : a.source) + '</span></td>' +
@@ -443,7 +443,7 @@ ${consoleShellScript}
     }).join('');
   }
 
-  // Linked from an agent's Abilities tab (/config?section=abilities#private-abilities):
+  // Linked from an agent's Apps tab (/config?section=abilities#private-abilities):
   // once every list has loaded, so the public results don't push it down.
   var scrolledToPrivate = false;
   function scrollToPrivateIfLinked() {
@@ -507,7 +507,7 @@ ${consoleShellScript}
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (r) {
         if (!r.ok) throw new Error(r.body.error || 'request failed');
-        status.textContent = 'Installed ' + spec + ' into the workspace. Add it to an agent from the agent' + String.fromCharCode(8217) + 's Abilities tab.';
+        status.textContent = 'Installed ' + spec + ' into the workspace. Add it to an agent from the agent' + String.fromCharCode(8217) + 's Apps tab.';
         workspaceAbilities = r.body.abilities || [];
         renderWorkspaceAbilities();
         renderPrivateAbilities();
@@ -541,7 +541,7 @@ ${consoleShellScript}
   // ---- Apps section ----
   // Popular apps' own MCP servers (core/mcp-apps.ts) and the connected
   // ones. Connecting makes a workspace ability from the server; agents
-  // add it from their Abilities tab.
+  // add it from their Apps tab.
 
   var apps = null;
   var appCategory = 'All';
@@ -583,7 +583,7 @@ ${consoleShellScript}
       (apps.canConnect ? '' : '<p class="error">Connecting an app saves its key on this server, so it needs LOOPENGINE_ADMIN_AUTH set first.</p>') +
       '<section><h3>Connected</h3>' + (apps.connected.length
         ? '<div class="app-list">' + apps.connected.map(function (c) {
-            var used = c.agents.length ? 'Used by ' + c.agents.map(escapeHtml).join(', ') : 'Not added to an agent yet: add <code>' + escapeHtml(c.ability) + '</code> from an agent' + String.fromCharCode(8217) + 's Abilities tab';
+            var used = c.agents.length ? 'Used by ' + c.agents.map(escapeHtml).join(', ') : 'Not added to an agent yet: add <code>' + escapeHtml(c.ability) + '</code> from an agent' + String.fromCharCode(8217) + 's Apps tab';
             return '<div class="app-row"><div class="app-head">' + appIcon(findApp(c) || c) + '</div>' +
               '<div class="app-row-main"><div><strong>' + escapeHtml(c.title) + '</strong> <span class="hint">' + c.tools.length + ' tool' + (c.tools.length === 1 ? '' : 's') + ' &middot; <code>' + escapeHtml(c.ability) + '</code></span></div>' +
                 '<div class="hint">' + used + '</div>' +
@@ -618,7 +618,7 @@ ${consoleShellScript}
     var f = (panel.filter || '').toLowerCase();
     var shown = panel.tools.filter(function (t) { return !f || (t.remote + ' ' + t.description).toLowerCase().indexOf(f) !== -1; });
     return '<div class="app-tools">' +
-      '<p class="hint" style="margin:0">All ' + panel.tools.length + ' tools are available to this workspace; ' + used + ' are used by an agent. Agents choose their own tools and permissions when you add the app to them (their Abilities tab). The permission here is the default an agent starts from: Allow runs it, Ask me waits for your OK, Never blocks it.</p>' +
+      '<p class="hint" style="margin:0">All ' + panel.tools.length + ' tools are available to this workspace; ' + used + ' are used by an agent. Agents choose their own tools and permissions when you add the app to them (their Apps tab). The permission here is the default an agent starts from: Allow runs it, Ask me waits for your OK, Never blocks it.</p>' +
       '<div class="app-foot">' + (panel.tools.length > 12 ? '<input type="search" class="app-tools-filter" data-ability="' + escapeHtml(ability) + '" placeholder="Filter tools" value="' + escapeHtml(panel.filter || '') + '" aria-label="Filter tools">' : '') +
         '<button type="button" class="app-refresh" data-ability="' + escapeHtml(ability) + '"' + (apps.canConnect && !panel.busy ? '' : ' disabled') + '>Check for new tools</button></div>' +
       (panel.message ? '<p class="' + (panel.messageBad ? 'error' : 'hint') + '" style="margin:0">' + escapeHtml(panel.message) + '</p>' : '') +

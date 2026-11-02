@@ -56,10 +56,11 @@ export const consoleShellScript: string = `<script>
   // after the list loads.
   var toSet = {};
   // Tools and Skills live under Advanced (an agent's own tools and skills,
-  // Composio, subagents): what an agent can do is shown per ability in
-  // Abilities. ?tab=tools and ?tab=skills still open Advanced.
+  // Composio, subagents): what an agent can do is shown per app and
+  // ability on the Apps tab (id 'abilities', so older links still work).
+  // ?tab=tools and ?tab=skills still open Advanced.
   var TABS = [
-    ['overview', 'Overview'], ['chat', 'Chat'], ['abilities', 'Abilities'], ['actauth', 'Permissions'],
+    ['overview', 'Overview'], ['chat', 'Chat'], ['abilities', 'Apps'], ['actauth', 'Permissions'],
     ['messaging', 'Messaging'], ['schedules', 'Schedules'], ['env', 'Environment'], ['advanced', 'Advanced']
   ];
 
@@ -353,7 +354,7 @@ export const consoleShellScript: string = `<script>
   }
 
   // ---- Abilities: where one came from, and what it can do ----
-  // Used by the Abilities page and each agent's Abilities tab.
+  // Used by the Abilities page and each agent's Apps tab.
 
   var DECISION_LABELS = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
 

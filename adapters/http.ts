@@ -430,7 +430,7 @@ async function describeAgent(entry: RegistryEntry): Promise<Record<string, unkno
     skillIndexBudgetTokens: config.skillIndexBudgetTokens ?? 2000,
     skillsDirs: skillsDirs,
     // How many abilities are installed — just the count, for the console's
-    // tab badge; the Abilities tab's own GET .../abilities has the detail
+    // tab badge; the Apps tab's own GET .../abilities has the detail
     // (and its slower npm version lookups).
     abilityCount: listInstalledAbilities(config.name).length,
     skills: skillIndex.map((s) => ({ name: s.name, description: s.description })),
@@ -1288,7 +1288,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           const indexPath = join(dirOf(name), 'index.ts')
           registerAgent(await loadAgentModule(indexPath, indexPath))
         },
-        // As for templates and the Abilities tab: installing runs
+        // As for templates and the Apps tab: installing runs
         // third-party code, so only behind the admin login.
         ...(secretsProtected ? { installAbility: async (name: string, spec: string, options?: { mcpTools?: string[] }) => void (await installAbility(name, spec, options ?? {})) } : {}),
         prepareApp: prepareWorkspaceApp,
@@ -1365,7 +1365,7 @@ async function handleStarterTemplates(req: IncomingMessage, res: ServerResponse,
           const indexPath = join(dirOf(name), 'index.ts')
           registerAgent(await loadAgentModule(indexPath, indexPath))
         },
-        // Same rule as the Abilities tab: installing runs third-party code,
+        // Same rule as the Apps tab: installing runs third-party code,
         // so only behind the admin login. The agent isn't loaded yet, so
         // nothing needs a restart.
         ...(secretsProtected ? { installAbility: async (name: string, spec: string, options?: { mcpTools?: string[] }) => void (await installAbility(name, spec, options ?? {})) } : {}),
@@ -1962,7 +1962,7 @@ function hasNodeModule(name: string): boolean {
   return existsSync(join(process.cwd(), 'node_modules', name))
 }
 
-// Backs the Admin UI's Abilities tab list — everything currently
+// Backs the Admin UI's Apps tab list — everything currently
 // installed for this agent, each annotated with the latest version
 // currently published on the public npm registry (fetchLatestAbilityVersion,
 // best-effort — null for a private/file:/git-installed ability, or on any
@@ -2002,7 +2002,7 @@ async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promi
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ abilities }))
 }
 
-// Backs the Abilities tab's search box — proxies to npm's own public
+// Backs the Apps tab's search box — proxies to npm's own public
 // registry search (abilities-admin.ts's searchPublicAbilities) so the
 // browser never needs direct access to registry.npmjs.org, and the
 // actual query text (the loopengine-ability keyword filter) stays a
@@ -3818,7 +3818,7 @@ const server = createServer(async (req, res) => {
       return
     }
     // An agent's tools from one connected app: which it has, and each
-    // one's permission for this agent (the Abilities tab's app picker).
+    // one's permission for this agent (the Apps tab's app picker).
     const agentAppMatch = pathname.match(/^\/agents\/([^/]+)\/apps\/([^/]+)$/)
     if (agentAppMatch) {
       await handleAgentApp(req, res, decodeURIComponent(agentAppMatch[1]), decodeURIComponent(agentAppMatch[2]))
@@ -4189,7 +4189,7 @@ const server = createServer(async (req, res) => {
       return
     }
 
-    // Backs the Admin UI's Abilities tab — see handleAbilitiesGet/
+    // Backs the Admin UI's Apps tab — see handleAbilitiesGet/
     // handleAbilitiesSearchGet/handleAbilityInstallPost's own doc
     // comments above. The /search route is checked before the plain
     // :agentName routes right below since 'search' would otherwise

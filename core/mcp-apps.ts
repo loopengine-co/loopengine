@@ -3,7 +3,7 @@
 // connected. Connecting one makes a private ability from its server
 // (core/mcp-ability-generator.ts, with no workflow to fit, so it picks
 // the tools most useful day to day) and stores it as a workspace ability
-// with source `mcp:<url>`; agents then add it from their Abilities tab.
+// with source `mcp:<url>`; agents then add it from their Apps tab.
 //
 // Every entry below is the app's own server as listed in the official MCP
 // Registry (checked November 2026). The URL is kept here so the page works

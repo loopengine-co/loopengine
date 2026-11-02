@@ -108,7 +108,7 @@ export const devUiCss: string = `
   .le-pill.ask, .le-pill.warn { background: var(--warn-soft); color: var(--warn); }
   .le-pill.deny, .le-pill.bad { background: var(--bad-soft); color: var(--bad); }
   /* An ability's details (leShell.toggleAbilityDetails), on the Abilities
-     page and each agent's Abilities tab. */
+     page and each agent's Apps tab. */
   .ability-details-row > td { padding: 0 10px 14px; border-top: 0; background: transparent; }
   .ability-details { border: 1px solid var(--accent); border-left-width: 4px; border-radius: var(--radius); background: var(--accent-soft); padding: 12px 16px 14px; }
   .ability-details-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }

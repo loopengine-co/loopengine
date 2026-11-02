@@ -96,7 +96,7 @@ export interface CreatedTemplateAgent {
 export function installFailureReason(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err)
   if (/E404|404 Not Found|is not in this registry/i.test(text)) return "it isn't published on npm yet"
-  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN/.test(text)) return 'npm could not be reached; try again from the Abilities tab'
+  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN/.test(text)) return 'npm could not be reached; try again from the Apps tab'
   const line = text.split('\n').map((l) => l.trim()).find((l) => l && !/^Command failed:/.test(l)) ?? text.split('\n')[0]
   return line.length > 200 ? `${line.slice(0, 200)}…` : line
 }
@@ -163,7 +163,7 @@ export function previewTemplate(id: string, deps: Pick<TemplateCreateDeps, 'agen
 export function templateChecklist(template: StarterTemplate, name: string, deps: Pick<TemplateCreateDeps, 'envValue' | 'messagingConfigured'>, failed: { name: string; error: string }[] = [], appsToConnect: string[] = []): TemplateChecklistItem[] {
   const tab = (t: string) => `/agents/config?agent=${encodeURIComponent(name)}&tab=${t}`
   const items: TemplateChecklistItem[] = []
-  for (const title of appsToConnect) items.push({ label: `Connect ${title} on the Apps page, then add it to ${name} from its Abilities tab`, href: '/config?section=apps' })
+  for (const title of appsToConnect) items.push({ label: `Connect ${title} on the Apps page, then add it to ${name} from its Apps tab`, href: '/config?section=apps' })
   for (const f of failed) items.push({ label: `Install the ${f.name} ability (it couldn't be installed: ${f.error})`, href: tab('abilities') })
 
   const missing = keyGroups(template).filter((names) => !names.some((n) => deps.envValue(name, n)))

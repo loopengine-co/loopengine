@@ -1,6 +1,6 @@
 // The workspace's own copies of private abilities: installed once from a
 // private source (core/ability-sources.ts) on the console's Abilities
-// page, then added to any agent from its Abilities tab. Each copy is a
+// page, then added to any agent from its Apps tab. Each copy is a
 // folder under abilities/ in the project root (or the folder
 // LOOPENGINE_ABILITIES_DIR names), and abilities/workspace.json says
 // where each came from:

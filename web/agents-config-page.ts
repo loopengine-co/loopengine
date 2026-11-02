@@ -372,7 +372,7 @@ ${consoleShellScript}
   var actauthLoadedFor = null;
   // Same idea again, for the Environment tab's own GET .../env.
   var envLoadedFor = null;
-  // Same idea again, for the Abilities tab's own GET .../abilities.
+  // Same idea again, for the Apps tab's own GET .../abilities.
   var abilitiesLoadedFor = null;
   // The full /agents/:name/config response the currently-open agent was
   // last rendered from — kept around so refreshActauthDependentPanels/
@@ -648,8 +648,8 @@ ${consoleShellScript}
     return '<div class="le-cards" style="margin-bottom:28px">' +
       card(null, 'Model', escapeHtml(modelValue), escapeHtml(modelDetail)) +
       (cfg.abilityCount != null
-        ? card('abilities', 'Abilities', String(cfg.abilityCount), cfg.abilityCount ? 'Installed for this agent' : 'Add tools, skills and rules in one install')
-        : card('abilities', 'Abilities', 'Browse', 'Add tools, skills and rules in one install')) +
+        ? card('abilities', 'Apps', String(cfg.abilityCount), cfg.abilityCount ? 'Apps and abilities added to this agent' : 'Add apps and abilities, with the tools you choose')
+        : card('abilities', 'Apps', 'Browse', 'Add apps and abilities, with the tools you choose')) +
       card('tools', 'Tools', String(cfg.tools.length), escapeHtml(toolNames.slice(0, 3).join(', ') + (toolNames.length > 3 ? ', \u2026' : '')) || 'None yet') +
       card('skills', 'Skills', String(cfg.skills.length), escapeHtml(cfg.skills.map(function (k) { return k.name; }).join(', ')) || 'None yet') +
       card('actauth', 'Permissions', rules.length + (rules.length === 1 ? ' rule' : ' rules'),
@@ -2319,7 +2319,7 @@ ${consoleShellScript}
       });
   }
 
-  // ---- Abilities tab: what's already installed for this agent, a
+  // ---- Apps tab: what's already installed for this agent, a
   // search box over public (npm, tagged loopengine-ability) packages,
   // and a plain spec field for a private ability (a git URL, a local
   // file:../path, or a private registry name) — both installs go
@@ -2385,9 +2385,11 @@ ${consoleShellScript}
     var installedHtml = installed.length
       ? '<table><thead><tr><th>Name</th><th>Version</th><th>Source</th><th>Tools</th><th></th></tr></thead><tbody>' + installed.map(renderInstalledAbilityRow).join('') + '</tbody></table>' +
         '<p id="abilityUpgradeStatus" class="hint"></p>'
-      : '<p class="hint">No abilities installed for this agent yet.</p>';
+      : '<p class="hint">Nothing added to this agent yet.</p>';
 
-    return '<h3>Installed</h3>' + installedHtml +
+    // What this agent has first; then the workspace's connected apps (each
+    // with the tools this agent gets), then public and private abilities.
+    return '<h3 style="justify-content:flex-start;align-items:baseline;gap:8px">Installed <span class="hint" style="font-weight:400">the apps and abilities this agent has</span></h3>' + installedHtml +
       // Installing by name or spec is on the console's Abilities page.
       '<p id="abilityInstallStatus" class="hint"></p>' +
       '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Apps <span class="hint" style="font-weight:400">connected in this workspace; choose which of their tools this agent gets, and each one' + String.fromCharCode(8217) + 's permission</span></h3>' +
@@ -3644,7 +3646,8 @@ ${consoleShellScript}
   var CONFIG_TABS = ['overview', 'abilities', 'actauth', 'messaging', 'schedules', 'env', 'advanced'];
   // The old Tools and Skills tabs: now parts of Advanced. A link to one
   // opens Advanced at that part.
-  var TAB_ALIASES = { tools: 'advanced', skills: 'advanced' };
+  // The Apps tab keeps the id 'abilities'; ?tab=apps opens it too.
+  var TAB_ALIASES = { tools: 'advanced', skills: 'advanced', apps: 'abilities' };
 
   function resolveTab(tab) {
     tab = TAB_ALIASES[tab] || tab;
@@ -3781,7 +3784,7 @@ ${consoleShellScript}
       // own skills. Each part keeps its old data-tab-panel name, which the
       // code that redraws it looks for; only .tab-panel is shown or hidden.
       '<div class="tab-panel" data-tab-panel="advanced">' +
-        '<p class="muted" style="margin:0 0 20px">For building your own: tools and skills that don&#39;t come from an ability, Composio tools, subagents and permission rules in full. What each ability adds is in its Details on the Abilities tab.</p>' +
+        '<p class="muted" style="margin:0 0 20px">For building your own: tools and skills that don&#39;t come from an ability, Composio tools, subagents and permission rules in full. What each ability adds is in its Details on the Apps tab.</p>' +
         '<h2 class="advanced-part" id="advanced-tools">Tools</h2>' +
         '<div data-tab-panel="tools">' + renderToolsTabHtml(cfg) + '</div>' +
         '<h2 class="advanced-part" id="advanced-skills">Skills</h2>' +

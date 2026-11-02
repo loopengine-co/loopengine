@@ -125,7 +125,7 @@ describe('templates', () => {
     const env = { GMAIL_CLIENT_ID: 'x', GMAIL_CLIENT_SECRET: 'x', GMAIL_REFRESH_TOKEN: 'x', GITHUB_TOKEN: 'x', GITHUB_DEFAULT_REPO: 'a/b', SLACK_BOT_TOKEN: 'x' }
     const created = await admin.createFromTemplate('incident-triage', deps({ messagingConfigured: () => true }, env))
     expect(created.checklist.map((c) => c.label)).toEqual([
-      'Connect GitHub on the Apps page, then add it to incident-triage from its Abilities tab',
+      'Connect GitHub on the Apps page, then add it to incident-triage from its Apps tab',
       'Add its key: SLACK_DEFAULT_CHANNEL',
       'Send it alerts: paste one into Chat, have your alerting tool call it over HTTP, or reply to it in Slack',
     ])
@@ -148,7 +148,7 @@ describe('templates', () => {
   it('turns npm\'s install output into one plain line', () => {
     const npm404 = new Error('Command failed: npm pack lp-gmail --pack-destination /tmp/x\nnpm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/lp-gmail - Not found')
     expect(admin.installFailureReason(npm404)).toBe("it isn't published on npm yet")
-    expect(admin.installFailureReason(new Error('Command failed: npm pack x\nnpm error code EAI_AGAIN'))).toBe('npm could not be reached; try again from the Abilities tab')
+    expect(admin.installFailureReason(new Error('Command failed: npm pack x\nnpm error code EAI_AGAIN'))).toBe('npm could not be reached; try again from the Apps tab')
     expect(admin.installFailureReason(new Error('Command failed: npm pack x\nlp-x needs loopengine ^0.2.0'))).toBe('lp-x needs loopengine ^0.2.0')
   })
 
@@ -172,10 +172,10 @@ describe('templates', () => {
     expect(prepared).toEqual(['io.github.github/github-mcp-server'])
     expect(steps).toContain('install file:/ws/mcp-github [list_commits,list_pull_requests,actions_list,search_issues,issue_read,issue_write,add_issue_comment]')
     expect(connected.abilities.installed).toEqual(['lp-slack-notifier', 'GitHub'])
-    expect(connected.checklist.map((c) => c.label)).not.toContain('Connect GitHub on the Apps page, then add it to incident-triage from its Abilities tab')
+    expect(connected.checklist.map((c) => c.label)).not.toContain('Connect GitHub on the Apps page, then add it to incident-triage from its Apps tab')
 
     const notConnected = await admin.createFromTemplate('incident-triage', deps({ agentExists: (n) => n === 'incident-triage', prepareApp: async () => undefined }))
-    expect(notConnected.checklist[0]).toEqual({ label: 'Connect GitHub on the Apps page, then add it to incident-triage-2 from its Abilities tab', href: '/config?section=apps' })
+    expect(notConnected.checklist[0]).toEqual({ label: 'Connect GitHub on the Apps page, then add it to incident-triage-2 from its Apps tab', href: '/config?section=apps' })
   })
 
   it('still returns the agent, with the reason, when it can\'t be loaded', async () => {

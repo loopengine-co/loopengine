@@ -287,7 +287,7 @@ agents using it. A changed default applies to agents that add the tool
 from then on; **Check for new tools** adds tools the server gained since,
 at their default.
 
-**Adding it to an agent** (the agent's Abilities tab → Apps): choose its
+**Adding it to an agent** (the agent's Apps tab): choose its
 tools (none are preselected; *Select read-only tools* is one click) and
 each one's permission for this agent. Only those tools load, with those
 permissions; choose again any time. Programmatically:

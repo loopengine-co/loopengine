@@ -1,4 +1,4 @@
-// Backs the Admin UI's Abilities tab search box — "public" here means
+// Backs the Admin UI's Apps tab search box — "public" here means
 // any npm package tagged with the loopengine-ability keyword every
 // lp-* ability in this ecosystem already carries in its own
 // package.json (see ABILITIES.md's "Publishing an ability"), not a
@@ -65,7 +65,7 @@ const NPM_LATEST_VERSION_TIMEOUT_MS = 5000
  * `packageName`, or null if it can't be determined — not published
  * there at all (a private/file:/git-installed ability, the common case
  * during local development), a network hiccup, or a timeout. Best-effort
- * only: the Abilities tab uses this to decide whether an installed
+ * only: the Apps tab uses this to decide whether an installed
  * ability's own "Upgrade" button is worth showing, not to block
  * anything, so a failure here surfaces as "can't tell, show the button
  * anyway" rather than an error the operator has to deal with. */
