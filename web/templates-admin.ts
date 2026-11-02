@@ -178,7 +178,12 @@ export function templateChecklist(template: StarterTemplate, name: string, deps:
  * first free name, so the same template can be used more than once. */
 export async function createFromTemplate(id: string, deps: TemplateCreateDeps | LegacyTemplateCreateDeps): Promise<CreatedTemplateAgent> {
   if (!('scaffoldAgent' in deps)) return createFromTemplateLegacy(id, deps)
-  const template = templateAt(id)
+  return createFromTemplateObject(templateAt(id), deps)
+}
+
+/** createFromTemplate for a template that isn't one of the built-in ones:
+ * a workflow planned from a description (web/workflow-admin.ts). */
+export async function createFromTemplateObject(template: StarterTemplate, deps: TemplateCreateDeps): Promise<CreatedTemplateAgent> {
   const { candidate, setup } = template
   const name = freeAgentName(candidate.agent.name, deps.agentExists)
 

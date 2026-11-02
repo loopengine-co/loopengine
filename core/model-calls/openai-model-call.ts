@@ -60,6 +60,44 @@ export interface OpenAIModelCallOptions {
   client?: OpenAI
 }
 
+/** A tool call's arguments. Some OpenAI-compatible models now and then
+ * add something after the JSON object (a second copy, a stray character):
+ * the first complete object is used then. Arguments cut off part-way still
+ * throw, so the caller can ask again. */
+export function parseToolArguments(raw: string): Record<string, unknown> {
+  const text = (raw ?? '').trim()
+  if (!text) return {}
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch (err) {
+    const end = firstObjectEnd(text)
+    if (end > 0 && end < text.length) return JSON.parse(text.slice(0, end)) as Record<string, unknown>
+    throw err
+  }
+}
+
+/** Where the first top-level JSON object in `text` ends (after its closing
+ * brace), or -1 when it doesn't close. */
+function firstObjectEnd(text: string): number {
+  if (text[0] !== '{') return -1
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') inString = true
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return i + 1
+  }
+  return -1
+}
+
 export function toMessageParams(message: Message): ChatMessage[] {
   if (typeof message.content === 'string') {
     return [{ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }]
@@ -133,7 +171,7 @@ export function toModelResponse(choice: OpenAI.Chat.Completions.ChatCompletion.C
       type: 'tool_use',
       id: call.id,
       name: call.function.name,
-      input: JSON.parse(call.function.arguments) as Record<string, unknown>,
+      input: parseToolArguments(call.function.arguments),
     })
   }
   return { stop_reason: toStopReason(choice.finish_reason), content }

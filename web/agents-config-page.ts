@@ -48,6 +48,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="radio"] { width: auto; margin: 0; }
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
+  .workflow-card { margin-bottom: 10px; }
+  .workflow-steps { margin: 0; padding-left: 20px; font-size: 13px; }
+  .workflow-steps li { margin: 3px 0; }
   .advanced-part { font-size: 17px; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
   .advanced-part#advanced-tools { margin-top: 0; padding-top: 0; border-top: 0; }
   .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
@@ -652,6 +655,76 @@ ${consoleShellScript}
   // Messaging and Schedules come from their own endpoints, so their
   // cards are filled in once those answer. Called after every render of
   // Overview, which is also re-rendered after edits.
+  // ---- Overview: the agent's workflows (web/workflow-admin.ts), added
+  // from "Describe a workflow": each with its trigger, its schedule's
+  // state, its steps (checkpoints marked) and Run now. ----
+
+  function renderWorkflowsHtml(name, workflows) {
+    if (!workflows.length) {
+      return '<p class="hint" style="margin:0">No workflows yet. <a href="/workflows/new">Describe a workflow</a>: say the steps and where you want to decide, and it' + String.fromCharCode(8217) + 's set up for you.</p>';
+    }
+    return workflows.map(function (w) {
+      var s = w.schedule;
+      var state = !s
+        ? (w.trigger.kind === 'schedule' ? '<span class="hint">no schedule found</span>' : '<span class="hint">started when asked</span>')
+        : s.waiting
+          ? '<span class="le-pill ask">Waiting for a decision</span>'
+          : s.status === 'paused'
+            ? '<span class="le-pill">Schedule paused</span>'
+            : s.status === 'running'
+              ? '<span class="le-pill accent">Running</span>'
+              : '<span class="le-pill good">On</span>' + (s.nextRunAt ? ' <span class="hint">next ' + escapeHtml(new Date(s.nextRunAt).toLocaleString()) + '</span>' : '');
+      var steps = (w.steps || []).map(function (st) {
+        var mark = st.kind === 'ask' ? ' <span class="le-pill accent">Asks you</span>' : st.kind === 'approval' ? ' <span class="le-pill ask">You approve</span>' : '';
+        return '<li>' + escapeHtml(st.title) + (st.tool && st.tool !== 'system_ask_user' ? ' <code>' + escapeHtml(st.tool) + '</code>' : '') + mark + '</li>';
+      }).join('');
+      return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
+        '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
+          '<strong>' + escapeHtml(w.name) + '</strong><span>' + state + '</span></div>' +
+        '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.summary) + ' ' + String.fromCharCode(183) + ' ' + escapeHtml(w.trigger.description) + '</p>' +
+        '<ol class="workflow-steps">' + steps + '</ol>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
+          '<button type="button" class="workflow-run">Run now</button>' +
+          (s ? '<a href="?tab=schedules" data-tab="schedules" class="hint" style="align-self:center">Schedule</a>' : '') +
+          '<button type="button" class="delete-btn workflow-forget">Forget</button>' +
+        '</div><div class="hint workflow-result"></div></div>';
+    }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
+  }
+
+  function loadWorkflowsSection(name) {
+    var el = detail.querySelector('#workflowsContent');
+    if (!el) return;
+    fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows').then(function (r) {
+      if (currentName !== name) return;
+      if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
+      el.innerHTML = renderWorkflowsHtml(name, r.body.workflows || []);
+      var cards = el.querySelectorAll('.workflow-card');
+      for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
+    });
+  }
+
+  function wireWorkflowCard(name, card) {
+    var id = card.dataset.workflow;
+    var result = card.querySelector('.workflow-result');
+    var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
+    card.querySelector('.workflow-run').addEventListener('click', function (ev) {
+      var btn = ev.currentTarget;
+      btn.disabled = true;
+      result.textContent = 'Starting' + String.fromCharCode(8230);
+      fetchJsonRetryOnce(base + '/run', { method: 'POST' }).then(function (r) {
+        btn.disabled = false;
+        result.textContent = r.ok
+          ? 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; its result shows in the Schedules tab.'
+          : (r.body.error || 'Could not start it.');
+      });
+    });
+    card.querySelector('.workflow-forget').addEventListener('click', function (ev) {
+      var btn = ev.currentTarget;
+      if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again (its skill, schedule and rules stay)'; return; }
+      fetchJsonRetryOnce(base, { method: 'DELETE' }).then(function () { loadWorkflowsSection(name); });
+    });
+  }
+
   function fillOverviewCards(name) {
     Promise.all([
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier'),
@@ -740,6 +813,7 @@ ${consoleShellScript}
     }
 
     return renderOverviewCards(cfg) +
+      '<section id="workflowsSection"><h3>Workflows</h3><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '<section>' + systemPromptSection + '</section>' +
       '<section>' + modelSection + '</section>' +
       '<section><h3>Hooks</h3><dl class="kv">' +
@@ -3562,6 +3636,7 @@ ${consoleShellScript}
     switchTab(initialAdvancedPart || currentTab);
     initialAdvancedPart = null;
     fillOverviewCards(cfg.name);
+    loadWorkflowsSection(cfg.name);
   }
 
   function selectAgent(name) {

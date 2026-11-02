@@ -78,6 +78,7 @@ import {
   listComposioConnections,
   listComposioTools,
   loadGatewayToolsFromDir,
+  readGatewayToolsFromDir,
   removeGatewayTool,
   removeGatewayToolSlug,
   GatewayToolExistsError,
@@ -102,6 +103,8 @@ import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlack
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
+import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, planWorkflow, runWorkflowNow, startPlanJob, type WorkflowAgentInfo } from '#web/workflow-admin.js'
+import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
 import { AbilitySourceError, abilityOrigin, readAbilitySources, type AbilitySource } from '#core/ability-sources.js'
@@ -911,6 +914,170 @@ async function handleInterviews(req: IncomingMessage, res: ServerResponse, pathn
     if (err instanceof InterviewError) return json(message === 'No such interview' || message === 'No such candidate' ? 404 : 400, { error: message })
     console.error('[loopengine] interview failed:', err)
     return json(502, { error: `The interviewer couldn't answer: ${message}` })
+  }
+}
+
+// "Describe a workflow" (web/workflow-admin.ts): what the planner and the
+// checks know about each agent: its tools, abilities, rules and primary
+// messaging app.
+async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
+  return Promise.all(
+    listAgents().flatMap((name) => {
+      const entry = getEntry(name)
+      if (!entry) return []
+      return [(async (): Promise<WorkflowAgentInfo> => {
+        const { rules, defaultDecision } = readActauthConfig(name)
+        let tools: string[] = []
+        try {
+          const own = entry.config.tools ?? (await loadDefaultTools(entry.config))
+          const all = [...own, ...(await loadSubagentAsTools(entry.config)), ...(await loadGatewayToolsFromDir(agentDir(name)))]
+          tools = [...new Set(all.map((t) => t.name))]
+        } catch {}
+        let abilities: string[] = []
+        try {
+          abilities = listInstalledAbilities(name).map((a) => a.name)
+        } catch {}
+        let messaging: string | null = null
+        try {
+          const n = describeAgentNotifier(entry.config, defaultWebhook)
+          messaging = n.source === 'none' ? null : (n.primary ?? n.channel ?? null)
+        } catch {}
+        const decided = (d: unknown): d is 'allow' | 'ask' | 'deny' => d === 'allow' || d === 'ask' || d === 'deny'
+        let connected: WorkflowAgentInfo['connected'] = []
+        try {
+          connected = readGatewayToolsFromDir(agentDir(name)).map((e) => ({ source: e.name, tools: e.slugs.map((s) => `${e.name}_${s}`) }))
+        } catch {}
+        return {
+          name,
+          tools: [...new Set([...tools, ...connected.flatMap((c) => c.tools)])],
+          abilities,
+          connected,
+          rules: rules.flatMap((r) => (decided(r.decision) ? [{ tool: r.tool, decision: r.decision, scope: r.scope }] : [])),
+          defaultDecision: decided(defaultDecision) ? defaultDecision : 'ask',
+          messaging,
+        }
+      })()]
+    }),
+  )
+}
+
+async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  const [action, jobId] = pathname.split('/').slice(2) // after /workflows
+  const dirOf = (name: string) => join(projectDir(), 'agents', name)
+  try {
+    const picked = pickInterviewModel(interviewAgents())
+    if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents() })
+    // A planning job's progress (the page checks every few seconds).
+    if (action === 'plan' && jobId && req.method === 'GET') {
+      const job = getPlanJob(jobId)
+      return job ? json(200, job) : json(404, { error: 'No such planning job (it may have expired); plan it again.' })
+    }
+    if (action === 'plan' && !jobId && req.method === 'POST') {
+      if (!picked) return json(409, { error: 'No agent here names a model yet. Set one on an agent (Overview → Model) and add its key under Models.' })
+      const body = await readJsonBody(req)
+      const base = interviewTools(interviewAgents())
+      // The same model, with room for a whole plan in one reply (an
+      // agent's own model call stops at its maxTokens, often 4096).
+      let modelCall = picked.modelCall
+      try {
+        modelCall = (await synthesizeCreateModelCall({ ...picked.model, maxTokens: 8192 } as AgentModelConfig))()
+      } catch {}
+      if (typeof body.description !== 'string' || body.description.trim().length < 15) {
+        return json(400, { error: 'Describe the workflow in a sentence or two: what starts it, the steps, and where you want to decide.' })
+      }
+      const job = startPlanJob(() => planWorkflow(body.description, modelCall, {
+        agentInfo: workflowAgentInfo,
+        // A summary: an agent's first tools and its rules that aren't the
+        // default, to keep what the model reads short.
+        listAgents: async () => (await workflowAgentInfo()).map((a) => ({
+          name: a.name,
+          abilities: a.abilities,
+          messaging: a.messaging,
+          defaultDecision: a.defaultDecision,
+          toolCount: a.tools.length,
+          tools: a.tools.filter((t) => !a.connected?.some((c) => c.tools.includes(t))).slice(0, 40),
+          connectedTools: (a.connected ?? []).map((c) => ({ source: c.source, tools: c.tools.slice(0, 60) })),
+          rules: a.rules.filter((r) => r.decision !== a.defaultDecision).slice(0, 40).map((r) => `${r.tool}: ${r.decision}`),
+        })),
+        searchPublicAbilities: (query) => base.searchPublicAbilities(query),
+        listWorkspaceAbilities: async () => listWorkspaceAbilities().map((a) => ({ name: a.name, description: a.description, spec: a.spec })),
+        abilityDetails: async (spec) => {
+          const d = await abilityDetails(spec)
+          return { name: d.name, tools: d.tools.map((t) => ({ name: t.name, description: t.description.slice(0, 300), decision: t.decision ?? null })), settings: d.settings.map((x) => x.name) }
+        },
+        listConnections: () => base.listConnections(),
+      }))
+      return json(202, job)
+    }
+    if (action === 'create' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const model = pickAgentModel(interviewAgents())
+      const created = await createWorkflow(body, {
+        agentExists: (name) => Boolean(getEntry(name)) || existsSync(dirOf(name)),
+        agentDir: dirOf,
+        agentInfo: workflowAgentInfo,
+        scaffoldAgent: async (name, systemPrompt) => {
+          const parsed = parseAgentTemplateOptions({ systemPrompt, ...(model ? { model } : {}) })
+          if (!parsed.ok) throw new WorkflowError(parsed.error)
+          await scaffoldAgent(projectDir(), name, parsed.value)
+        },
+        registerAgent: async (name) => {
+          const indexPath = join(dirOf(name), 'index.ts')
+          registerAgent(await loadAgentModule(indexPath, indexPath))
+        },
+        // Skills, rules and gateway tools are read on every run, so a
+        // loaded agent already sees them; new ability code restarts the
+        // server (exitIfCodeChanged). Only an agent not loaded yet is.
+        reloadAgent: async (name) => {
+          if (getEntry(name)) return
+          const indexPath = join(dirOf(name), 'index.ts')
+          registerAgent(await loadAgentModule(indexPath, indexPath))
+        },
+        // As for templates and the Abilities tab: installing runs
+        // third-party code, so only behind the admin login.
+        ...(secretsProtected ? { installAbility: async (name: string, spec: string) => void (await installAbility(name, spec)) } : {}),
+        envValue: (name, variable) => createAgentEnv(name, dirOf(name)).get(variable),
+        messagingConfigured: (name) => {
+          const entry = getEntry(name)
+          return entry ? describeAgentNotifier(entry.config, defaultWebhook).source !== 'none' : false
+        },
+      })
+      json(200, created)
+      // New tools in an agent that was already running load with a restart,
+      // as after installing an ability from its tab.
+      if (!created.newAgent && created.abilities.installed.length) exitIfCodeChanged(res)
+      return
+    }
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (err instanceof WorkflowError) return json(400, { error: message })
+    console.error('[loopengine] workflow failed:', err)
+    return json(502, { error: `Couldn't plan or create the workflow: ${message}` })
+  }
+}
+
+// An agent's workflows (its Overview): list, run now, forget.
+async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, agentName: string, id: string | undefined, action: string | undefined): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  if (!getEntry(agentName)) return json(404, { error: `unknown agent '${agentName}'` })
+  const dir = agentDir(agentName)
+  try {
+    if (!id && req.method === 'GET') return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
+    if (id && action === 'run' && req.method === 'POST') return json(200, await runWorkflowNow(agentName, dir, id))
+    if (id && !action && req.method === 'DELETE') {
+      forgetWorkflow(dir, id)
+      return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
+    }
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return json(err instanceof WorkflowError ? 400 : 500, { error: message })
   }
 }
 
@@ -3385,6 +3552,20 @@ const server = createServer(async (req, res) => {
     }
     if (pathname === '/interviews' || pathname.startsWith('/interviews/')) {
       await handleInterviews(req, res, pathname)
+      return
+    }
+    // "Describe a workflow": the page, and its routes.
+    if (req.method === 'GET' && pathname === '/workflows/new') {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(workflowPageHtml)
+      return
+    }
+    if (pathname === '/workflows' || pathname === '/workflows/plan' || pathname.startsWith('/workflows/plan/') || pathname === '/workflows/create') {
+      await handleWorkflows(req, res, pathname)
+      return
+    }
+    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run))?$/)
+    if (agentWorkflowsMatch) {
+      await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3])
       return
     }
     // Templates: the page, and its routes.
