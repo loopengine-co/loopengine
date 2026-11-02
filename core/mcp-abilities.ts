@@ -87,7 +87,7 @@ export function resolveMcpManifest(abilityName: string, mcp: unknown): Installed
     throw new McpManifestError(`'mcp.tools' must list the server tools to expose.`)
   }
   const prefix = m.prefix ?? abilityName.replace(/^@[^/]+\//, '').replace(/^lp-/, '')
-  const tools = m.tools.map((remote) => ({ name: snakeCase(`${prefix}_${remote}`), remote }))
+  const tools = m.tools.map((remote) => ({ name: mcpToolName(prefix, remote), remote }))
   const seen = new Set<string>()
   for (const tool of tools) {
     if (!TOOL_NAME.test(tool.name)) throw new McpManifestError(`'${tool.remote}' doesn't make a valid tool name (got '${tool.name}').`)
@@ -96,6 +96,15 @@ export function resolveMcpManifest(abilityName: string, mcp: unknown): Installed
   }
   const { tools: _tools, prefix: _prefix, ...server } = m
   return { server, tools }
+}
+
+/** An installed tool's name: `<prefix>_<tool>` in snake_case, or just the
+ * tool's own name when it already carries the prefix as a word
+ * (`web_search_exa` stays as is for prefix `exa`). */
+export function mcpToolName(prefix: string, remote: string): string {
+  const own = snakeCase(remote)
+  const p = snakeCase(prefix)
+  return p && own.split('_').includes(p) ? own : snakeCase(`${prefix}_${remote}`)
 }
 
 function snakeCase(value: string): string {

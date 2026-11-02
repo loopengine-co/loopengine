@@ -79,6 +79,24 @@ export const globalConfigPageHtml: string = `<!doctype html>
   form.key-form button { font-size: 12px; }
   .key-msg { font-size: 11px; margin-top: 4px; }
   .key-msg.bad { color: var(--bad); }
+  .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .app-tile { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: grid; gap: 8px; align-content: start; background: var(--bg); }
+  .app-head { display: flex; gap: 10px; align-items: center; min-width: 0; }
+  .app-head strong { overflow-wrap: anywhere; }
+  .app-icon { width: 32px; height: 32px; border-radius: 8px; flex: none; object-fit: contain; background: var(--surface); border: 1px solid var(--line); }
+  .app-letter { width: 32px; height: 32px; border-radius: 8px; flex: none; display: grid; place-items: center; font-weight: 700; font-size: 15px; background: var(--accent-soft, var(--surface)); color: var(--accent); border: 1px solid var(--line); }
+  .app-desc { font-size: 12.5px; color: var(--ink-muted); margin: 0; }
+  .app-foot { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .app-form { display: grid; gap: 6px; }
+  .app-form input { font: inherit; font-size: 12px; font-family: ui-monospace, monospace; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; box-sizing: border-box; }
+  .app-row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .app-row:first-child { border-top: 0; }
+  .app-row-main { flex: 1; min-width: 200px; display: grid; gap: 3px; }
+  .app-list { border: 1px solid var(--line); border-radius: var(--radius); }
+  .app-tools { display: grid; gap: 3px; margin-top: 6px; font-size: 12.5px; }
+  .app-cats { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+  .app-cats button { font-size: 12px; }
+  .app-cats button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 </style>
 </head>
 <body data-le-page="config">
@@ -90,9 +108,14 @@ ${consoleSidebarHtml}
       <div><h1>Models</h1><p>API keys for each model provider, and which agents use each one. A saved key is stored on this server and never shown again.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="modelsContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
+  <div class="section-panel" data-section-panel="apps" style="display:none">
+    <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+      <div><h1>Apps</h1><p>Connect the apps your agents work in. A connected app becomes an ability any agent can add, with tools that change things set to ask you first.</p></div></div></div>
+    <div class="le-scroll"><div class="le-page" style="display:block"><div id="appsContent"><p class="hint">Loading&hellip;</p></div></div></div>
+  </div>
   <div class="section-panel" data-section-panel="abilities" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Abilities</h1><p>How agents reach your apps, such as Gmail, Shopify or GitHub. An ability installed into an agent adds its tools, skills and permission rules.</p></div></div></div>
+      <div><h1>Abilities</h1><p>What agents can do beyond your connected apps: search the web, read documents, schedule work, or your own code. An ability added to an agent brings its tools, skills and permission rules.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="abilitiesContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
   <div class="section-panel" data-section-panel="settings" style="display:none">
@@ -368,14 +391,17 @@ ${consoleShellScript}
   function renderWorkspaceAbilities() {
     var el = document.getElementById('workspaceAbilities');
     if (!el || !workspaceAbilities) return;
-    el.innerHTML = workspaceAbilities.length
+    // Abilities made from a connected app are listed under Apps.
+    var fromApps = workspaceAbilities.filter(function (a) { return a.source.indexOf('mcp:') === 0; }).length;
+    var own = workspaceAbilities.filter(function (a) { return a.source.indexOf('mcp:') !== 0; });
+    el.innerHTML = (fromApps ? '<p class="hint" style="margin:0 0 8px">' + fromApps + ' connected app' + (fromApps === 1 ? '' : 's') + ' also in this workspace: see <a href="/config?section=apps">Apps</a>.</p>' : '') + (own.length
       ? '<div class="source"><p style="margin:0 0 8px"><strong>In this workspace</strong> <span class="hint">add these to an agent from its Abilities tab</span></p>' +
-          '<table><thead><tr><th>Ability</th><th>From</th><th></th></tr></thead><tbody>' + workspaceAbilities.map(function (a) {
+          '<table><thead><tr><th>Ability</th><th>From</th><th></th></tr></thead><tbody>' + own.map(function (a) {
             return '<tr><td><code>' + escapeHtml(a.name) + '</code>' + (a.version ? ' <span class="hint">' + escapeHtml(a.version) + '</span>' : '') + '</td>' +
               '<td><span class="hint">' + escapeHtml(a.source.indexOf('upload:') === 0 ? 'Uploaded ' + a.source.slice(7) : a.source) + '</span></td>' +
               '<td style="white-space:nowrap">' + detailsButton(a.spec) + ' <button type="button" class="delete-btn workspace-remove-btn" data-name="' + escapeHtml(a.name) + '">Remove</button></td></tr>';
           }).join('') + '</tbody></table></div>'
-      : '';
+      : '');
   }
 
   // Each source's abilities: Install puts one into the workspace; one
@@ -503,6 +529,167 @@ ${consoleShellScript}
     renderAbilities();
     loadedSections.abilities = true;
   }
+
+  // ---- Apps section ----
+  // Popular apps' own MCP servers (core/mcp-apps.ts) and the connected
+  // ones. Connecting makes a workspace ability from the server; agents
+  // add it from their Abilities tab.
+
+  var apps = null;
+  var appCategory = 'All';
+  var appSearch = { q: '', servers: null, error: '' };
+
+  function appLetter(title) {
+    return '<span class="app-letter" aria-hidden="true">' + escapeHtml((title || '?').charAt(0).toUpperCase()) + '</span>';
+  }
+  function appIcon(app) {
+    return app.icon
+      ? '<img class="app-icon" src="' + escapeHtml(app.icon) + '" alt="" data-title="' + escapeHtml(app.title || '') + '" loading="lazy" referrerpolicy="no-referrer">'
+      : appLetter(app.title);
+  }
+  // An icon that doesn't load becomes the app's first letter.
+  document.getElementById('appsContent').addEventListener('error', function (ev) {
+    var img = ev.target;
+    if (!img.classList || !img.classList.contains('app-icon')) return;
+    var holder = document.createElement('span');
+    holder.innerHTML = appLetter(img.dataset.title);
+    img.replaceWith(holder.firstChild);
+  }, true);
+
+  function connectForm(id) {
+    return '<form class="app-form" data-connect="' + escapeHtml(id) + '">' +
+      '<input type="password" name="key" autocomplete="off" placeholder="API key, if it needs one" aria-label="API key">' +
+      '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="app-cancel">Cancel</button></div>' +
+      '<p class="hint app-msg" style="margin:0"></p></form>';
+  }
+
+  function renderApps() {
+    var el = document.getElementById('appsContent');
+    if (!apps) return;
+    var categories = ['All'];
+    apps.apps.forEach(function (a) { if (categories.indexOf(a.category) === -1) categories.push(a.category); });
+    var shown = apps.apps.filter(function (a) { return appCategory === 'All' || a.category === appCategory; });
+    el.innerHTML =
+      (apps.canConnect ? '' : '<p class="error">Connecting an app saves its key on this server, so it needs LOOPENGINE_ADMIN_AUTH set first.</p>') +
+      '<section><h3>Connected</h3>' + (apps.connected.length
+        ? '<div class="app-list">' + apps.connected.map(function (c) {
+            var used = c.agents.length ? 'Used by ' + c.agents.map(escapeHtml).join(', ') : 'Not added to an agent yet: add <code>' + escapeHtml(c.ability) + '</code> from an agent' + String.fromCharCode(8217) + 's Abilities tab';
+            return '<div class="app-row"><div class="app-head">' + appIcon(findApp(c) || c) + '</div>' +
+              '<div class="app-row-main"><div><strong>' + escapeHtml(c.title) + '</strong> <span class="hint">' + c.tools.length + ' tool' + (c.tools.length === 1 ? '' : 's') + ' &middot; <code>' + escapeHtml(c.ability) + '</code></span></div>' +
+                '<div class="hint">' + used + '</div>' +
+                (c.keyEnv && !c.keySet ? '<div class="error" style="font-size:12px">Its key, ' + escapeHtml(c.keyEnv) + ', isn' + String.fromCharCode(8217) + 't set.</div>' : '') +
+              '<div class="app-tools" hidden>' + c.tools.map(function (tool) { return '<div><code>' + escapeHtml(tool.name) + '</code> <span class="hint">' + escapeHtml(tool.decision === 'allow' ? 'Allow' : tool.decision === 'deny' ? 'Never' : 'Ask me') + '</span></div>'; }).join('') + '</div>' +
+              '</div>' +
+              '<div class="app-foot"><button type="button" class="app-tools-btn">Tools</button> <button type="button" class="delete-btn app-disconnect" data-ability="' + escapeHtml(c.ability) + '">Disconnect</button></div></div>';
+          }).join('') + '</div>'
+        : '<p class="hint">No apps connected yet. Pick one below.</p>') + '</section>' +
+      '<section><h3>Popular apps</h3>' +
+        '<div class="app-cats">' + categories.map(function (c) { return '<button type="button" class="' + (c === appCategory ? 'active' : '') + '" data-app-cat="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>'; }).join('') + '</div>' +
+        '<div class="app-grid">' + shown.map(function (a) {
+          return '<div class="app-tile" data-app="' + escapeHtml(a.id) + '"><div class="app-head">' + appIcon(a) + '<div><strong>' + escapeHtml(a.title) + '</strong><div class="hint">' + escapeHtml(a.category) + '</div></div></div>' +
+            '<p class="app-desc">' + escapeHtml(a.description) + '</p>' +
+            '<div class="app-slot">' + (a.connected ? '<span class="badge badge-custom">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(a.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div></div>';
+        }).join('') + '</div>' +
+        '<p class="hint">Each is the app' + String.fromCharCode(8217) + 's own MCP server. Apps that only offer a sign-in (OAuth) can' + String.fromCharCode(8217) + 't be connected yet; their Connect says so.</p>' +
+      '</section>' +
+      '<section><h3>More apps</h3>' +
+        '<form id="appSearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px"><input type="search" name="q" placeholder="Search the MCP Registry, e.g. calendly" aria-label="Search apps" style="flex:1" value="' + escapeHtml(appSearch.q) + '"><button type="submit">Search</button></form>' +
+        '<div id="appSearchResults">' + renderAppSearch() + '</div>' +
+      '</section>';
+  }
+
+  function findApp(c) {
+    for (var i = 0; i < apps.apps.length; i++) if (apps.apps[i].id === c.id || apps.apps[i].url === c.url) return apps.apps[i];
+    return null;
+  }
+
+  function renderAppSearch() {
+    if (appSearch.error) return '<p class="error">' + escapeHtml(appSearch.error) + '</p>';
+    if (!appSearch.servers) return '<p class="hint">Over a thousand apps publish an MCP server. Verified means it' + String.fromCharCode(8217) + 's on its publisher' + String.fromCharCode(8217) + 's own domain; only add a key to one you trust.</p>';
+    if (!appSearch.servers.length) return '<p class="hint">Nothing found for ' + escapeHtml(appSearch.q) + '.</p>';
+    return '<div class="app-list">' + appSearch.servers.map(function (s) {
+      var connected = apps.connected.some(function (c) { return c.url === s.url; });
+      return '<div class="app-row" data-app="' + escapeHtml(s.id) + '"><div class="app-head">' + appIcon(s) + '</div>' +
+        '<div class="app-row-main"><div><strong>' + escapeHtml(s.title) + '</strong> ' + (s.verified ? '<span class="badge badge-custom">Verified</span>' : '<span class="badge badge-default">Unverified</span>') + '</div>' +
+          '<div class="hint">' + escapeHtml(s.url) + (s.description ? ' &middot; ' + escapeHtml(s.description) : '') + '</div></div>' +
+        '<div class="app-slot">' + (connected ? '<span class="badge badge-custom">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  function loadApps() {
+    loadedSections.apps = true;
+    fetch('/config/apps', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { apps = d; renderApps(); })
+      .catch(function (err) { document.getElementById('appsContent').innerHTML = '<p class="error">Could not load apps: ' + escapeHtml(err.message) + '</p>'; });
+  }
+
+  document.getElementById('appsContent').addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t.dataset && t.dataset.appCat) { appCategory = t.dataset.appCat; renderApps(); return; }
+    if (t.classList.contains('app-tools-btn')) {
+      var list = t.closest('.app-row').querySelector('.app-tools');
+      list.hidden = !list.hidden;
+      t.textContent = list.hidden ? 'Tools' : 'Hide tools';
+      return;
+    }
+    if (t.classList.contains('app-connect')) {
+      var slot = t.parentNode;
+      slot.innerHTML = connectForm(t.dataset.id);
+      slot.querySelector('input').focus();
+      return;
+    }
+    if (t.classList.contains('app-cancel')) { renderApps(); return; }
+    if (t.classList.contains('app-disconnect')) {
+      if (t.dataset.confirming !== '1') { t.dataset.confirming = '1'; t.textContent = 'Click again to disconnect'; return; }
+      t.disabled = true;
+      fetch('/config/apps/connect?ability=' + encodeURIComponent(t.dataset.ability), { method: 'DELETE' })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.body.error || 'request failed');
+          apps = r.body;
+          renderApps();
+        })
+        .catch(function (err) { t.disabled = false; t.textContent = 'Could not disconnect: ' + err.message; });
+    }
+  });
+
+  document.getElementById('appsContent').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var form = ev.target;
+    if (form.id === 'appSearchForm') {
+      var q = form.q.value.trim();
+      appSearch = { q: q, servers: null, error: '' };
+      document.getElementById('appSearchResults').innerHTML = '<p class="hint">Searching' + String.fromCharCode(8230) + '</p>';
+      fetch('/config/apps/search?q=' + encodeURIComponent(q))
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.body.error || 'search failed');
+          appSearch.servers = r.body.servers || [];
+          document.getElementById('appSearchResults').innerHTML = renderAppSearch();
+        })
+        .catch(function (err) { appSearch.error = 'Could not search: ' + err.message; document.getElementById('appSearchResults').innerHTML = renderAppSearch(); });
+      return;
+    }
+    if (!form.dataset.connect) return;
+    var btn = form.querySelector('button[type=submit]');
+    var msg = form.querySelector('.app-msg');
+    btn.disabled = true;
+    msg.className = 'hint app-msg';
+    msg.textContent = 'Connecting' + String.fromCharCode(8230) + ' it looks at the app' + String.fromCharCode(8217) + 's tools and sets their permissions, which can take a minute.';
+    fetch('/config/apps/connect', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: form.dataset.connect, key: form.key.value }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'request failed');
+        apps = r.body;
+        renderApps();
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        msg.className = 'error app-msg';
+        msg.textContent = err.message;
+      });
+  });
 
   // ---- Settings section ----
 
@@ -842,6 +1029,7 @@ ${consoleShellScript}
     }
     if (section === 'models' && !loadedSections.models) loadModels();
     if (section === 'abilities' && !loadedSections.abilities) loadAbilities();
+    if (section === 'apps' && !loadedSections.apps) loadApps();
     if (section === 'settings' && !loadedSections.settings) loadSettings();
   }
 
@@ -856,7 +1044,7 @@ ${consoleShellScript}
   var requestedSection = new URLSearchParams(location.search).get('section');
   // ?section=gateways is the old Integrations page's link.
   if (requestedSection === 'gateways') requestedSection = 'abilities';
-  var initialSection = requestedSection === 'abilities' || requestedSection === 'models' || requestedSection === 'settings' ? requestedSection : currentSection;
+  var initialSection = requestedSection === 'abilities' || requestedSection === 'apps' || requestedSection === 'models' || requestedSection === 'settings' ? requestedSection : currentSection;
   switchSection(initialSection);
 })();
 </script>

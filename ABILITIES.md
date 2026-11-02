@@ -293,6 +293,14 @@ ability. If a server can't be set up (for example it needs a key, or a
 sign-in, which isn't supported yet), its steps are left as missing and
 appear first in the checklist.
 
+Apps can also be connected ahead of time from the console's **Apps**
+page (Workspace → Apps): popular apps' own MCP servers as tiles, a search
+of the MCP Registry for the rest, and the workspace's connected apps,
+each with its tools and permissions and the agents that use it.
+Connecting makes the same kind of workspace ability, picking the tools
+most useful day to day since there's no workflow to fit yet; agents add
+it from their Abilities tab, and the workflow builder reuses it.
+
 Saved servers, for internal or private ones, go in `mcp-servers.yml` in
 the project root (or the file `LOOPENGINE_MCP_SERVERS_FILE` names):
 

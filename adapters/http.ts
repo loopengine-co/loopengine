@@ -108,7 +108,8 @@ import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
 import { getMcpServer, searchMcpServers } from '#core/mcp-directory.js'
 import { isMcpAuthError, listMcpServerTools, resolveMcpManifest } from '#core/mcp-abilities.js'
-import { generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
+import { McpAbilityGenerationError, generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
+import { appCatalog, appServer, connectedApps, loadAppIcons } from '#core/mcp-apps.js'
 import { AbilitySourceError, abilityOrigin, readAbilitySources, type AbilitySource } from '#core/ability-sources.js'
 import {
   installAbility,
@@ -996,6 +997,76 @@ async function workflowMcpServerTools(id: string): Promise<unknown> {
     return isMcpAuthError(err)
       ? `${server.title} needs a key before its tools can be seen. Plan its steps by what they do (leave "tool" empty); the person adds the key on the plan, and its tools are picked on Create.`
       : `Couldn't reach ${server.title}: ${message.slice(0, 200)}`
+  }
+}
+
+function describeApps(): { apps: ReturnType<typeof appCatalog>; connected: ReturnType<typeof connectedApps>; canConnect: boolean } {
+  const agentAbilities: Record<string, string[]> = {}
+  for (const name of listAgents()) {
+    try {
+      agentAbilities[name] = listInstalledAbilities(name).map((a) => a.name)
+    } catch {}
+  }
+  const connected = connectedApps(listWorkspaceAbilities(), agentAbilities, (name) => process.env[name])
+  return { apps: appCatalog(connected), connected, canConnect: secretsProtected }
+}
+
+async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  try {
+    if (pathname === '/config/apps' && req.method === 'GET') {
+      // Icons arrive from the registry on a first load; wait briefly.
+      await Promise.race([loadAppIcons(), new Promise((resolve) => setTimeout(resolve, 2500))])
+      return json(200, describeApps())
+    }
+    if (pathname === '/config/apps/search' && req.method === 'GET') {
+      const q = new URL(req.url ?? '/', 'http://localhost').searchParams.get('q')?.trim() ?? ''
+      if (q.length < 2) return json(400, { error: 'Type at least two letters.' })
+      return json(200, { servers: await searchMcpServers(q, 15) })
+    }
+    if (pathname === '/config/apps/connect' && req.method === 'POST') {
+      if (!secretsProtected) return json(403, { error: 'Connecting an app saves its key on this server, so it needs LOOPENGINE_ADMIN_AUTH set first.' })
+      const body = await readJsonBody(req)
+      const id = typeof body.id === 'string' ? body.id.trim() : ''
+      const key = typeof body.key === 'string' ? body.key.trim() : ''
+      const server = id ? await appServer(id) : undefined
+      if (!server) return json(400, { error: 'No such app.' })
+      let picked: ReturnType<typeof pickInterviewModel>
+      try {
+        picked = pickInterviewModel(interviewAgents())
+      } catch {
+        picked = undefined
+      }
+      const generated = await generateMcpAbility({
+        server,
+        ...(key ? { key } : {}),
+        workflow: { name: `${server.title} for this workspace`, summary: `Everyday work with ${server.title}`, steps: [] },
+        ...(picked ? { modelCall: picked.modelCall } : {}),
+      })
+      try {
+        addWorkspaceAbility(generated.dir, `mcp:${server.url}`)
+      } finally {
+        rmSync(generated.dir, { recursive: true, force: true })
+      }
+      if (key && generated.keyEnv) await setEnvVar(generated.keyEnv, key)
+      return json(200, { ...describeApps(), connectedAbility: generated.name })
+    }
+    if (pathname === '/config/apps/connect' && req.method === 'DELETE') {
+      if (!secretsProtected) return json(403, { error: 'Disconnecting an app needs LOOPENGINE_ADMIN_AUTH set first.' })
+      const ability = new URL(req.url ?? '/', 'http://localhost').searchParams.get('ability') ?? ''
+      const found = listWorkspaceAbilities().find((a) => a.name === ability && a.source.startsWith('mcp:'))
+      if (!found) return json(400, { error: 'That app isn\'t connected.' })
+      removeWorkspaceAbility(found.name)
+      return json(200, describeApps())
+    }
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (err instanceof McpAbilityGenerationError || err instanceof WorkspaceAbilityError) return json(400, { error: message })
+    console.error('[loopengine] apps failed:', err)
+    return json(502, { error: message })
   }
 }
 
@@ -4039,6 +4110,13 @@ const server = createServer(async (req, res) => {
       } catch (err) {
         res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
       }
+      return
+    }
+    // The workspace's Apps (core/mcp-apps.ts): popular apps' MCP servers,
+    // and the ones connected. Connecting stores a key and makes a
+    // workspace ability, so like installing one it needs the admin login.
+    if (pathname.startsWith('/config/apps')) {
+      await handleApps(req, res, pathname)
       return
     }
     // The workspace's private abilities (core/workspace-abilities.ts):

@@ -17,7 +17,7 @@ import { stringify as stringifyYaml } from 'yaml'
 import type { AgentEnv, ToolSchema } from './agent-config.js'
 import type { ModelCall } from './run-agent.js'
 import { isReadOnlyToolName } from './gateway-tools.js'
-import { isMcpAuthError, listMcpServerTools, type InstalledMcpRecord, type McpToolInfo } from './mcp-abilities.js'
+import { isMcpAuthError, listMcpServerTools, mcpToolName, type InstalledMcpRecord, type McpToolInfo } from './mcp-abilities.js'
 import type { McpDirectoryServer } from './mcp-directory.js'
 
 export type Decision = 'allow' | 'ask'
@@ -113,7 +113,7 @@ export async function generateMcpAbility(request: McpAbilityRequest): Promise<Ge
     if (isMcpAuthError(err)) {
       throw new McpAbilityGenerationError(key
         ? `${server.title} turned down the key.`
-        : `${server.title} needs a key to connect (or a sign-in, which LoopEngine doesn't support yet). Add its API key and create again.`)
+        : `${server.title} needs a key to connect (or a sign-in, which LoopEngine doesn't support yet). Add its API key and try again.`)
     }
     throw new McpAbilityGenerationError(`Couldn't connect to ${server.title} (${server.url}): ${message}`)
   }
@@ -140,12 +140,16 @@ export async function generateMcpAbility(request: McpAbilityRequest): Promise<Ge
   if (!chosen.length) throw new McpAbilityGenerationError(`None of ${server.title}'s tools fit the workflow's steps.`)
 
   const wanted = new Map(choice?.tools.map((t) => [t.name, t.decision]) ?? [])
-  const toolName = (remote: string) => snake(`${names.prefix}_${remote}`)
+  const toolName = (remote: string) => mcpToolName(names.prefix, remote)
   const tools = chosen.map((remote) => ({ name: toolName(remote), remote, decision: clampDecision(byName.get(remote)!, wanted.get(remote), approvalTools) }))
   const stepTools: Record<number, string> = {}
   for (const [index, remote] of stepRemote) stepTools[index] = toolName(remote)
 
-  const skillBody = choice?.skill.body || plainSkill(server, workflow, tools, byName)
+  // The model writes the server's own tool names; the agent sees the installed ones.
+  let skillBody = choice?.skill.body || plainSkill(server, workflow, tools, byName)
+  for (const t of tools) {
+    if (t.remote !== t.name) skillBody = skillBody.replace(new RegExp(`(?<![A-Za-z0-9_])${t.remote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), t.name)
+  }
   const skillDescription = choice?.skill.description || `How to use ${server.title} (its MCP server): which tool does what, and when to ask first.`
 
   const dir = mkdtempSync(join(tmpdir(), 'loopengine-mcp-generated-'))
@@ -217,7 +221,9 @@ async function chooseWithModel(modelCall: ModelCall, server: McpDirectoryServer,
   const content = [
     `Workflow: ${workflow.name}: ${workflow.summary}`,
     `Server: ${server.title} (${server.url})`,
-    `Steps that use it:\n${workflow.steps.map((s) => `- step ${s.index}: ${s.title}${s.detail ? `: ${s.detail}` : ''}${s.kind === 'approval' ? ' (a person approves first)' : ''}${s.tool ? ` (planner suggested ${s.tool})` : ''}`).join('\n')}`,
+    workflow.steps.length
+      ? `Steps that use it:\n${workflow.steps.map((s) => `- step ${s.index}: ${s.title}${s.detail ? `: ${s.detail}` : ''}${s.kind === 'approval' ? ' (a person approves first)' : ''}${s.tool ? ` (planner suggested ${s.tool})` : ''}`).join('\n')}`
+      : 'No particular workflow yet: the app is being connected for the workspace. Leave steps empty and pick the tools most useful for everyday work with it.',
     `Its tools:\n${JSON.stringify(toolList)}`,
   ].join('\n\n')
   for (let attempt = 0; attempt < 2; attempt++) {

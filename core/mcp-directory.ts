@@ -26,6 +26,8 @@ export interface McpDirectoryServer {
   url: string
   transport: 'streamable-http' | 'sse'
   website?: string
+  /** An https icon from its registry entry, when it has one. */
+  icon?: string
   source: 'saved' | 'registry'
   /** Saved by the workspace, or on its publisher's own verified domain. */
   verified: boolean
@@ -114,6 +116,7 @@ interface RegistryEntry {
     title?: string
     description?: string
     websiteUrl?: string
+    icons?: Array<{ src?: string; mimeType?: string }>
     remotes?: Array<{ type?: string; url?: string }>
   }
 }
@@ -126,6 +129,8 @@ function fromRegistry(entry: RegistryEntry): McpDirectoryServer | undefined {
   // full-access endpoint before a read-only variant.
   const remote = remotes.find((r) => r.type === 'streamable-http' && !/readonly|read-only/i.test(r.url!)) ?? remotes.find((r) => r.type === 'streamable-http') ?? remotes[0]
   if (!remote) return undefined
+  const icons = (s.icons ?? []).filter((i) => typeof i.src === 'string' && i.src.startsWith('https://'))
+  const icon = (icons.find((i) => i.mimeType === 'image/svg+xml') ?? icons[0])?.src
   return {
     id: s.name,
     title: s.title || s.name.split('/').pop() || s.name,
@@ -133,6 +138,7 @@ function fromRegistry(entry: RegistryEntry): McpDirectoryServer | undefined {
     url: remote.url!,
     transport: remote.type === 'sse' ? 'sse' : 'streamable-http',
     ...(s.websiteUrl ? { website: s.websiteUrl } : {}),
+    ...(icon ? { icon } : {}),
     source: 'registry',
     verified: onPublisherDomain(s.name, remote.url!),
   }

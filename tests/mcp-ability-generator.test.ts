@@ -107,7 +107,7 @@ describe('generateMcpAbility', () => {
     const generated = await generateMcpAbility({ server: server(), workflow: { ...workflow, steps: workflow.steps.map(({ tool: _t, ...s }) => s) }, modelCall })
 
     expect(generated.tools.map((t) => [t.name, t.decision])).toEqual([['fake_list_things', 'allow'], ['fake_create_thing', 'ask'], ['fake_get_thing', 'allow']])
-    expect(readFileSync(join(generated.dir, 'skills', 'fake', 'SKILL.md'), 'utf8')).toContain('Use listThings, then createThing.')
+    expect(readFileSync(join(generated.dir, 'skills', 'fake', 'SKILL.md'), 'utf8')).toContain('Use fake_list_things, then fake_create_thing.')
   })
 
   it('sends a key, and records the setting it is read from', async () => {
@@ -250,6 +250,12 @@ describe('MCP servers in a workflow plan', () => {
     expect(result).toEqual({ made: [], failed: [] })
     expect(p.steps.map((s) => s.tool)).toEqual(['fake_list_things', 'fake_create_thing'])
     expect(p.abilities).toEqual(['file:/ws/mcp-fake'])
+  })
+
+  it('doesn\'t repeat a prefix the tool name already has', async () => {
+    const { mcpToolName } = await import('../core/mcp-abilities.js')
+    expect(mcpToolName('exa', 'web_search_exa')).toBe('web_search_exa')
+    expect(mcpToolName('linear', 'list_issues')).toBe('linear_list_issues')
   })
 
   it('names abilities after the server', () => {
