@@ -220,6 +220,7 @@ export { templatesPageHtml } from './web/templates-page.js'
 export {
   TemplateError,
   createFromTemplate,
+  createFromTemplateObject,
   describeTemplateSchedule,
   listTemplates,
   previewTemplate,
@@ -241,6 +242,29 @@ export {
   type TemplateSetup,
   type TemplateSkill,
 } from './core/system-agents/templates.js'
+export { workflowPageHtml } from './web/workflow-page.js'
+export {
+  WorkflowError,
+  checkWorkflowForAgent,
+  createWorkflow,
+  forgetWorkflow,
+  getPlanJob,
+  listAgentWorkflows,
+  planWorkflow,
+  resolveConnections,
+  runWorkflowNow,
+  startPlanJob,
+  type AgentWorkflowView,
+  type CreatedWorkflow,
+  type PlanJob,
+  type PlannedWorkflow,
+  type WorkflowAgentInfo,
+  type WorkflowCheck,
+  type WorkflowConflict,
+  type WorkflowCreateDeps,
+} from './web/workflow-admin.js'
+export { WORKFLOW_PLANNER_PROMPT, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep } from './core/system-agents/workflow-planner.js'
+export { readWorkflows, removeWorkflow, saveWorkflow, type WorkflowRecord } from './core/workflows.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
 export { playgroundHtml } from './web/playground.js'
 
