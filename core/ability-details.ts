@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import ts from 'typescript'
 import { parse as parseYaml } from 'yaml'
+import { resolveMcpManifest } from './mcp-abilities.js'
 
 export type Decision = 'allow' | 'ask' | 'deny'
 
@@ -34,6 +35,7 @@ export interface AbilityDetails {
 
 interface AbilityManifest {
   tools?: unknown
+  mcp?: unknown
   skills?: unknown
   actauth?: unknown
   env?: unknown
@@ -58,6 +60,16 @@ export function readAbilityDetails(dir: string): AbilityDetails {
     const listed = found.length ? found : [{ name: basename(file).replace(/\.[cm]?[jt]s$/, ''), description: '' }]
     return listed.map((tool) => (decisions[tool.name] ? { ...tool, decision: decisions[tool.name] } : tool))
   })
+
+  // An MCP ability's tools are named from its allowlist; descriptions
+  // come from the server, so they're unknown until it's connected.
+  if (manifest.mcp !== undefined) {
+    try {
+      for (const tool of resolveMcpManifest(pkg.name || basename(dir), manifest.mcp).tools) {
+        tools.push(decisions[tool.name] ? { name: tool.name, description: '', decision: decisions[tool.name] } : { name: tool.name, description: '' })
+      }
+    } catch {}
+  }
 
   const skills = strings(manifest.skills).map((skillDir) => readSkill(join(dir, skillDir), skillDir))
   return { name: pkg.name || basename(dir), version: pkg.version || '', description: pkg.description || '', tools, skills, settings: readSettings(manifest) }

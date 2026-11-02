@@ -20,6 +20,7 @@ import { recordUsage } from './usage.js'
 import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
 import { loadGatewayToolsFromDir } from './gateway-tools.js'
+import { loadMcpAbilityTools } from './mcp-abilities.js'
 import { systemTools, createAskUserTool, createScheduleTools, CliQuestionHandler, isDurableQuestionHandler, type PendingQuestion } from './system-tools/index.js'
 import { resolveHttpNotifier } from './http-notifier.js'
 import type { LoopEvent } from './loop-events.js'
@@ -437,7 +438,9 @@ async function loadToolsFromDir(toolsDir: string): Promise<ToolDefinition[]> {
 }
 
 export async function loadDefaultTools(config: AgentConfig): Promise<ToolDefinition[]> {
-  return loadToolsFromDir(resolveAgentCodeDir(config.name, 'tools', true))
+  // MCP abilities' tools (core/mcp-abilities.ts) have no files in tools/,
+  // but are installed ability tools all the same, so they come with it.
+  return [...(await loadToolsFromDir(resolveAgentCodeDir(config.name, 'tools', true))), ...(await loadMcpAbilityTools(agentDirFor(config), config.name))]
 }
 
 /** Every other folder-form default in this file (loadDefaultTools,
@@ -472,7 +475,7 @@ export async function loadDefaultTools(config: AgentConfig): Promise<ToolDefinit
 async function resolveSubagentConfig(config: AgentConfig, dir: string): Promise<AgentConfig> {
   const resolved = { ...config }
 
-  const baseTools = resolved.tools === undefined ? await loadToolsFromDir(join(dir, 'tools')) : resolved.tools
+  const baseTools = resolved.tools === undefined ? [...(await loadToolsFromDir(join(dir, 'tools'))), ...(await loadMcpAbilityTools(dir, config.name))] : resolved.tools
   resolved.tools = [...baseTools, ...(await loadGatewayToolsFromDir(dir))]
 
   if (resolved.rules === undefined) {

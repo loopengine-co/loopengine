@@ -197,6 +197,72 @@ way keep working); then `process.env[name]`, unless an installed ability
 declared `name` with `scope: "agent"`. Per-agent values are never copied
 into `process.env`, since that's shared by every agent in the process.
 
+### Tools from an MCP server
+
+An ability can take its tools from an MCP server instead of shipping
+`tools/*.ts`. Its rules and skills stay ordinary files, so an MCP
+ability is usually just a manifest, a rules file and a skill:
+
+```
+lp-linear/
+├── package.json
+├── loopengine.ability.json
+├── actauth/rules.yml
+└── skills/linear/SKILL.md
+```
+
+```json
+{
+  "loopengineVersion": ">=0.1.99",
+  "mcp": {
+    "url": "https://mcp.linear.app/mcp",
+    "auth": { "type": "key", "env": "LINEAR_API_KEY" },
+    "tools": ["list_issues", "get_issue", "create_issue"]
+  },
+  "skills": ["skills/linear"],
+  "actauth": "actauth/rules.yml",
+  "env": [{ "name": "LINEAR_API_KEY", "secret": true, "scope": "overridable" }]
+}
+```
+
+- **`url`** (a remote server) or **`command`** + `args` (a local one,
+  started as a child process): exactly one. A remote server must be
+  `https` (plain `http` only for localhost). `transport: "sse"` selects
+  the older SSE transport; the default is streamable HTTP.
+- **`auth`**: `{ "type": "none" }` (the default), or `{ "type": "key",
+  "env": "<SETTING>" }`, sent as `Authorization: Bearer <value>`. Set
+  `header` (e.g. `"X-Api-Key"`) and `prefix` (`""` for none) to change
+  that. OAuth isn't supported yet.
+- **`tools`**: the server tools to expose. Nothing else on the server
+  is, so a tool the vendor adds later never appears without a new
+  version of the ability that lists it (and a rule for it).
+- **`prefix`**: installed tools are named `<prefix>_<tool>` in
+  snake_case (`list_issues` → `linear_list_issues`, `addNumbers` →
+  `linear_add_numbers`). Defaults to the package name without `lp-`.
+  Write `actauth/rules.yml` against these installed names.
+- **`headers`**, **`args`**, **`env`** (the local server's
+  environment): values may use `${SETTING}` to read one of the agent's
+  settings. A local server gets only these plus a minimal safe set
+  (`PATH`, `HOME`, ...), not the whole project environment.
+- **`maxOutputChars`**: longest result passed to the model (default
+  20000); longer ones are cut off with a note.
+
+Declare every setting the server needs under `env` as usual, so the
+Admin UI asks for it.
+
+At run time the server's tool descriptions and input schemas are
+fetched once and cached in `agents/<name>/.loopengine-mcp-cache.json`
+(cleared on upgrade); connections are opened on first use and reused.
+If the server can't be reached or a setting is missing, the ability's
+tools are left out of the agent rather than failing it, and the reason
+is available from `mcpAbilityLoadError`. A tool result marked as an
+error becomes a thrown error, which the agent sees like any failed
+tool call.
+
+Upgrading an MCP ability takes the new version's server and tool list
+as they are (there's no file to merge); removing it removes its tools,
+rules and skills.
+
 ## Installing
 
 ```

@@ -27,6 +27,7 @@ import semver from 'semver'
 import { agentDir } from '../core/gateway-tools.js'
 import { abilityFetchAuth } from '../core/ability-sources.js'
 import type { EnvScope } from '../core/agent-env.js'
+import { clearMcpSchemaCache, resolveMcpManifest, McpManifestError, type InstalledMcpRecord } from '../core/mcp-abilities.js'
 import { addToolToIndex, removeToolFromIndex, toCamelCase } from '../web/http-tool-admin.js'
 import { addActauthRule, updateActauthRule, removeActauthRule, readActauthConfig, type ActauthRuleInput } from '../web/actauth-admin.js'
 
@@ -199,6 +200,9 @@ export interface AbilityManifest {
   version: string
   loopengineVersion: string
   tools?: string[]
+  /** Tools served by an MCP server instead of tool files — see
+   * core/mcp-abilities.ts's McpServerManifest. */
+  mcp?: unknown
   skills?: string[]
   actauth?: string
   env?: AbilityEnvDecl[]
@@ -231,6 +235,10 @@ export interface InstalledAbilityRecord {
    * has no recorded value — see oldContentSpec's own fallback. */
   spec?: string
   tools: string[]
+  /** An MCP ability's server and tools (core/mcp-abilities.ts loads
+   * them at run time). Its tools have no files, so they aren't in
+   * `tools`. */
+  mcp?: InstalledMcpRecord
   skills: string[]
   actauthRules: string[]
   env: AbilityEnvDecl[]
@@ -476,6 +484,15 @@ function parseActauthRules(abilityDir: string, manifest: AbilityManifest): Actau
 
 // ---- Install ----
 
+function resolveMcp(manifest: AbilityManifest): InstalledMcpRecord {
+  try {
+    return resolveMcpManifest(manifest.name, manifest.mcp)
+  } catch (err) {
+    if (err instanceof McpManifestError) throw new AbilityManifestError(err.message)
+    throw err
+  }
+}
+
 /** Installs `spec` (anything `npm pack` accepts) for `agentName`:
  * writes each manifest-listed tool file and patches tools/index.ts
  * (reusing addToolToIndex exactly as web/http-tool-admin.ts's own
@@ -544,6 +561,18 @@ export async function installAbility(agentName: string, spec: string, options: F
       throw new AbilityCollisionError(`agents/${agentName}/tools/${installedToolName}.ts already exists.`)
     }
     toolNames.push(installedToolName)
+  }
+  const mcp = manifest.mcp === undefined ? undefined : resolveMcp(manifest)
+  if (mcp) {
+    // No namespacing fallback here, unlike tool files: the ability's own
+    // actauth rules name these tools, so a renamed tool would silently
+    // lose its rule.
+    const taken = new Set([...toolNames, ...Object.values(provenance).flatMap((r) => r.mcp?.tools.map((t) => t.name) ?? [])])
+    for (const tool of mcp.tools) {
+      if (taken.has(tool.name) || existsSync(join(toolsDir, `${tool.name}.ts`))) {
+        throw new AbilityCollisionError(`Agent '${agentName}' already has a tool named '${tool.name}'.`)
+      }
+    }
   }
   const skillIds: string[] = []
   for (const skillDir of skillDirs) {
@@ -655,6 +684,7 @@ export async function installAbility(agentName: string, spec: string, options: F
     version: manifest.version,
     spec,
     tools: toolNames,
+    ...(mcp ? { mcp } : {}),
     skills: skillIds,
     actauthRules: ruleNames,
     env: manifest.env ?? [],
@@ -662,9 +692,15 @@ export async function installAbility(agentName: string, spec: string, options: F
     contentHashes,
   }
   writeProvenance(agentName, provenance)
+  if (mcp) clearMcpSchemaCache(agentDir(agentName), manifest.name)
 
   return {
-    installed: [...toolNames.map((n) => `tools/${n}.ts`), ...skillIds.map((id) => `skills/${id}/`), ...ruleNames.map((n) => `actauth:${n}`)],
+    installed: [
+      ...toolNames.map((n) => `tools/${n}.ts`),
+      ...(mcp?.tools.map((t) => `mcp:${t.name}`) ?? []),
+      ...skillIds.map((id) => `skills/${id}/`),
+      ...ruleNames.map((n) => `actauth:${n}`),
+    ],
     dependencies: manifest.dependencies ?? [],
   }
 }
@@ -851,8 +887,14 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     results.push({ path, status: 'updated' })
   }
 
+  // An MCP ability's tools are data, not files, so there's nothing to
+  // merge: they take the new version's server and tool list as-is.
+  const { mcp: _oldMcp, ...rest } = record
+  const newMcp = newManifest.mcp === undefined ? undefined : resolveMcp(newManifest)
+  for (const tool of newMcp?.tools ?? []) results.push({ path: `mcp:${tool.name}`, status: record.mcp?.tools.some((t) => t.name === tool.name && t.remote === tool.remote) ? 'unchanged' : 'updated' })
   provenance[abilityName] = {
-    ...record,
+    ...rest,
+    ...(newMcp ? { mcp: newMcp } : {}),
     version: newManifest.version,
     spec,
     contentHashes: newContentHashes,
@@ -860,6 +902,7 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     dependencies: newManifest.dependencies ?? record.dependencies,
   }
   writeProvenance(agentName, provenance)
+  if (record.mcp || newMcp) clearMcpSchemaCache(agentDir(agentName), abilityName)
 
   return { files: results }
 }
@@ -949,12 +992,17 @@ export function removeAbility(agentName: string, abilityName: string, force = fa
     }
   }
 
+  // An MCP ability's tools have no files to be dirty, so they always go.
+  for (const tool of record.mcp?.tools ?? []) removed.push(`mcp:${tool.name}`)
+
   if (refused.length === 0) {
     delete provenance[abilityName]
   } else {
-    provenance[abilityName] = { ...record, tools: remainingTools, skills: remainingSkills, actauthRules: [] }
+    const { mcp: _mcp, ...rest } = record
+    provenance[abilityName] = { ...rest, tools: remainingTools, skills: remainingSkills, actauthRules: [] }
   }
   writeProvenance(agentName, provenance)
+  if (record.mcp) clearMcpSchemaCache(agentDir(agentName), abilityName)
 
   return { removed, refused }
 }
