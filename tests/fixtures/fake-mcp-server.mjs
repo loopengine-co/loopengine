@@ -16,6 +16,7 @@ const TOOLS = [
   { name: 'listThings', description: 'Lists things', inputSchema: { type: 'object', properties: {} } },
   { name: 'createThing', description: 'Creates a thing', inputSchema: { type: 'object', properties: { title: { type: 'string' } } } },
   { name: 'getThing', description: 'Gets a thing', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } },
+  { name: 'repoInfo', description: 'Names a repository', inputSchema: { type: 'object', properties: { owner: { type: 'string', description: 'Repository owner' }, repo: { type: 'string' } }, required: ['owner', 'repo'] }, annotations: { readOnlyHint: true } },
 ]
 
 export function createFakeMcpServer() {
@@ -32,6 +33,8 @@ export function createFakeMcpServer() {
         return { content: [{ type: 'text', text: 'it broke' }], isError: true }
       case 'whoami':
         return { content: [{ type: 'text', text: process.env.FAKE_TOKEN ?? 'none' }] }
+      case 'repoInfo':
+        return { content: [{ type: 'text', text: `${args.owner}/${args.repo}` }] }
       case 'createThing':
         return { content: [{ type: 'text', text: `created ${args.title}` }] }
       case 'big':

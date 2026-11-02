@@ -35,7 +35,7 @@ function deps(over: Partial<Deps> = {}, env: Record<string, string> = {}): Deps 
     agentExists: () => false,
     scaffoldAgent: async (name, prompt) => void steps.push(`scaffold ${name} ${prompt.split('\n')[0]}`),
     registerAgent: async (name) => void steps.push(`register ${name}`),
-    installAbility: async (name, spec) => void steps.push(`install ${spec}`),
+    installAbility: async (name, spec, options) => void steps.push(`install ${spec}${options?.mcpTools ? ` [${options.mcpTools.join(',')}]` : ''}`),
     envValue: (_name, variable) => env[variable],
     messagingConfigured: () => false,
     ...over,
@@ -125,6 +125,7 @@ describe('templates', () => {
     const env = { GMAIL_CLIENT_ID: 'x', GMAIL_CLIENT_SECRET: 'x', GMAIL_REFRESH_TOKEN: 'x', GITHUB_TOKEN: 'x', GITHUB_DEFAULT_REPO: 'a/b', SLACK_BOT_TOKEN: 'x' }
     const created = await admin.createFromTemplate('incident-triage', deps({ messagingConfigured: () => true }, env))
     expect(created.checklist.map((c) => c.label)).toEqual([
+      'Connect GitHub on the Apps page, then add it to incident-triage from its Abilities tab',
       'Add its key: SLACK_DEFAULT_CHANNEL',
       'Send it alerts: paste one into Chat, have your alerting tool call it over HTTP, or reply to it in Slack',
     ])
@@ -155,9 +156,26 @@ describe('templates', () => {
     const { installAbility: _skip, ...noInstall } = deps()
     const created = await admin.createFromTemplate('incident-triage', noInstall)
     expect(created.abilities.installed).toEqual([])
-    expect(created.abilities.failed.map((f) => f.error)).toEqual(['installing abilities needs LOOPENGINE_ADMIN_AUTH set on the server', 'installing abilities needs LOOPENGINE_ADMIN_AUTH set on the server'])
+    expect(created.abilities.failed.map((f) => f.error)).toEqual(['installing abilities needs LOOPENGINE_ADMIN_AUTH set on the server'])
     expect(steps.some((s) => s.startsWith('install'))).toBe(false)
     expect(steps).toContain('register incident-triage')
+  })
+
+  it('adds a connected app with the tools the template relies on, and asks to connect one that isn\'t', async () => {
+    const prepared: string[] = []
+    const connected = await admin.createFromTemplate('incident-triage', deps({
+      prepareApp: async (id) => {
+        prepared.push(id)
+        return 'file:/ws/mcp-github'
+      },
+    }))
+    expect(prepared).toEqual(['io.github.github/github-mcp-server'])
+    expect(steps).toContain('install file:/ws/mcp-github [list_commits,list_pull_requests,actions_list,search_issues,issue_read,issue_write,add_issue_comment]')
+    expect(connected.abilities.installed).toEqual(['lp-slack-notifier', 'GitHub'])
+    expect(connected.checklist.map((c) => c.label)).not.toContain('Connect GitHub on the Apps page, then add it to incident-triage from its Abilities tab')
+
+    const notConnected = await admin.createFromTemplate('incident-triage', deps({ agentExists: (n) => n === 'incident-triage', prepareApp: async () => undefined }))
+    expect(notConnected.checklist[0]).toEqual({ label: 'Connect GitHub on the Apps page, then add it to incident-triage-2 from its Abilities tab', href: '/config?section=apps' })
   })
 
   it('still returns the agent, with the reason, when it can\'t be loaded', async () => {

@@ -45,7 +45,15 @@ export interface McpServerManifest {
   prefix?: string
   /** Longest tool result passed back to the model, in characters. */
   maxOutputChars?: number
+  /** Tool inputs filled from the agent's settings when a call leaves them
+   * out, e.g. a default repository: `{ "repo": "${GITHUB_REPO}" }`, or a
+   * part of one setting, `{ "owner": { "env": "GITHUB_DEFAULT_REPO",
+   * "split": "/", "part": 0 } }`. An input with a default is no longer
+   * required in the schema the model sees, which says what it defaults to. */
+  defaults?: Record<string, McpDefault>
 }
+
+export type McpDefault = string | { env: string; split?: string; part?: number }
 
 /** What add-ability records for an MCP ability: the server block, and
  * each installed tool name with the server tool it calls. */
@@ -83,6 +91,10 @@ export function resolveMcpManifest(abilityName: string, mcp: unknown): Installed
     throw new McpManifestError(`'mcp.auth.type' must be 'none' or 'key' — OAuth isn't supported yet.`)
   }
   if (m.auth?.type === 'key' && !m.auth.env) throw new McpManifestError(`'mcp.auth' of type 'key' needs 'env', the setting that holds the key.`)
+  if (m.defaults !== undefined) {
+    const ok = m.defaults && typeof m.defaults === 'object' && Object.values(m.defaults).every((d) => typeof d === 'string' || (d && typeof d === 'object' && typeof d.env === 'string' && (d.part === undefined || Number.isInteger(d.part))))
+    if (!ok) throw new McpManifestError(`'mcp.defaults' maps input names to a "\${SETTING}" string or { env, split?, part? }.`)
+  }
   if (!Array.isArray(m.tools) || m.tools.length === 0 || !m.tools.every((t) => typeof t === 'string' && t)) {
     throw new McpManifestError(`'mcp.tools' must list the server tools to expose.`)
   }
@@ -340,9 +352,10 @@ export async function loadMcpAbilityTools(dir: string, agentName: string): Promi
       }
     }
     loadErrors.delete(errorKey)
+    const env = createAgentEnv(agentName, dir)
     for (const tool of record.mcp.tools) {
       const schema = cached[tool.remote]
-      if (schema) tools.push(toolDefinition(dir, abilityName, record.mcp, tool, schema))
+      if (schema) tools.push(toolDefinition(dir, abilityName, record.mcp, tool, schema, env))
     }
   }
   if (cacheChanged) writeCache(dir, cache)
@@ -368,15 +381,55 @@ async function fetchSchemas(dir: string, abilityName: string, mcp: InstalledMcpR
   return found
 }
 
-function toolDefinition(dir: string, abilityName: string, mcp: InstalledMcpRecord, tool: { name: string; remote: string }, schema: CachedTool): ToolDefinition {
+/** Each `defaults` entry's value from the agent's settings; a setting
+ * that isn't set (or a missing part) leaves that input without one. */
+function defaultValues(defaults: Record<string, McpDefault> | undefined, env: AgentEnv): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [input, spec] of Object.entries(defaults ?? {})) {
+    let value: string | undefined
+    if (typeof spec === 'string') {
+      let missing = false
+      value = spec.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name: string) => {
+        const v = env.get(name)
+        if (v === undefined) missing = true
+        return v ?? ''
+      })
+      if (missing) value = undefined
+    } else {
+      const raw = env.get(spec.env)
+      value = raw === undefined ? undefined : spec.split !== undefined ? raw.split(spec.split)[spec.part ?? 0] : raw
+    }
+    if (value?.trim()) out[input] = value.trim()
+  }
+  return out
+}
+
+/** The server's schema, with each input that has a default made optional
+ * and its description saying what it defaults to. */
+function withDefaults(schema: Record<string, unknown>, values: Record<string, string>): Record<string, unknown> {
+  const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>
+  const names = Object.keys(values).filter((n) => n in properties)
+  if (!names.length) return schema
+  const props = { ...properties }
+  for (const n of names) props[n] = { ...props[n], description: `${props[n].description ? `${props[n].description}. ` : ''}Defaults to ${values[n]}.` }
+  const required = Array.isArray(schema.required) ? (schema.required as string[]).filter((r) => !names.includes(r)) : schema.required
+  return { ...schema, properties: props, ...(required !== undefined ? { required } : {}) }
+}
+
+function toolDefinition(dir: string, abilityName: string, mcp: InstalledMcpRecord, tool: { name: string; remote: string }, schema: CachedTool, env?: AgentEnv): ToolDefinition {
   const maxChars = mcp.server.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS
+  const properties = (schema.input_schema.properties ?? {}) as Record<string, unknown>
   return {
     name: tool.name,
     description: schema.description || tool.remote,
-    input_schema: schema.input_schema,
+    input_schema: env ? withDefaults(schema.input_schema, defaultValues(mcp.server.defaults, env)) : schema.input_schema,
     async execute(input, ctx) {
       const server = resolveServer(mcp.server, ctx.env)
-      const call = async () => (await getClient(dir, abilityName, server)).callTool({ name: tool.remote, arguments: input })
+      const args = { ...input }
+      for (const [name, value] of Object.entries(defaultValues(mcp.server.defaults, ctx.env))) {
+        if (name in properties && (args[name] === undefined || args[name] === '')) args[name] = value
+      }
+      const call = async () => (await getClient(dir, abilityName, server)).callTool({ name: tool.remote, arguments: args })
       let result: Awaited<ReturnType<typeof call>>
       try {
         result = await call()

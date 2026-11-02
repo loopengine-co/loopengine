@@ -28,6 +28,7 @@ import { agentDir } from '../core/gateway-tools.js'
 import { abilityFetchAuth } from '../core/ability-sources.js'
 import type { EnvScope } from '../core/agent-env.js'
 import { clearMcpSchemaCache, resolveMcpManifest, McpManifestError, type InstalledMcpRecord } from '../core/mcp-abilities.js'
+import { appRuleName } from '../core/mcp-ability-generator.js'
 import { addToolToIndex, removeToolFromIndex, toCamelCase } from '../web/http-tool-admin.js'
 import { addActauthRule, updateActauthRule, removeActauthRule, readActauthConfig, type ActauthRuleInput } from '../web/actauth-admin.js'
 
@@ -523,7 +524,17 @@ function resolveMcp(manifest: AbilityManifest): InstalledMcpRecord {
  *
  * All-or-nothing: every collision check below runs, and the whole
  * install is refused, before a single file is written. */
-export async function installAbility(agentName: string, spec: string, options: FetchOptions = {}): Promise<{ installed: string[]; dependencies: string[] }> {
+/** For an ability that takes its tools from an MCP server: which of its
+ * server tools this agent gets (by the server's names), and each one's
+ * permission when it shouldn't be the ability's default. An app's ability
+ * (made from its server, listing every tool) given no choice gets just
+ * its read-only tools, those it allows by default. */
+export interface McpToolChoice {
+  mcpTools?: string[]
+  mcpDecisions?: Record<string, 'allow' | 'ask' | 'deny'>
+}
+
+export async function installAbility(agentName: string, spec: string, options: FetchOptions & McpToolChoice = {}): Promise<{ installed: string[]; dependencies: string[] }> {
   const fetch = options.fetchAbilityDir ?? fetchAbilityDir
   const abilityDir = fetch(spec)
   const manifest = readManifest(abilityDir)
@@ -536,7 +547,7 @@ export async function installAbility(agentName: string, spec: string, options: F
 
   const toolFiles = manifest.tools ?? []
   const skillDirs = manifest.skills ?? []
-  const rules = parseActauthRules(abilityDir, manifest)
+  let rules = parseActauthRules(abilityDir, manifest)
 
   const toolsDir = join(agentDir(agentName), 'tools')
   const skillsDirPath = join(agentDir(agentName), 'skills')
@@ -564,6 +575,22 @@ export async function installAbility(agentName: string, spec: string, options: F
   }
   const mcp = manifest.mcp === undefined ? undefined : resolveMcp(manifest)
   if (mcp) {
+    const chosen = options.mcpTools ?? ((manifest as { generatedFrom?: unknown }).generatedFrom ? mcp.tools.filter((t) => rules.some((r) => r.tool === t.name && r.decision === 'allow')).map((t) => t.remote) : undefined)
+    if (chosen) {
+      const unknown = chosen.filter((r) => !mcp.tools.some((t) => t.remote === r))
+      if (unknown.length) throw new AbilityManifestError(`${manifest.name} has no tool named ${unknown.join(', ')}.`)
+      const dropped = new Set(mcp.tools.filter((t) => !chosen.includes(t.remote)).map((t) => t.name))
+      mcp.tools = mcp.tools.filter((t) => chosen.includes(t.remote))
+      if (!mcp.tools.length) throw new AbilityManifestError(`Choose at least one of ${manifest.name}'s tools.`)
+      rules = rules.filter((r) => !dropped.has(r.tool))
+    }
+    for (const [remote, decision] of Object.entries(options.mcpDecisions ?? {})) {
+      const tool = mcp.tools.find((t) => t.remote === remote)
+      if (!tool) continue
+      const rule = rules.find((r) => r.tool === tool.name)
+      if (rule) rule.decision = decision
+      else rules.push({ name: appRuleName(manifest.name, tool.name), scope: '*/*', tool: tool.name, decision })
+    }
     // No namespacing fallback here, unlike tool files: the ability's own
     // actauth rules name these tools, so a renamed tool would silently
     // lose its rule.
@@ -737,7 +764,9 @@ function mergeFile(mine: string, base: string, theirs: string): { merged: string
 
 export interface UpgradeFileResult {
   path: string
-  status: 'updated' | 'unchanged' | 'conflict'
+  /** added/removed: a rule the new version adds, or a tool file it no
+   * longer has (e.g. once its tools come from an MCP server). */
+  status: 'updated' | 'unchanged' | 'conflict' | 'added' | 'removed'
 }
 
 // A git+ssh/git+https/git: URL, a plain https: tarball URL, or a local
@@ -805,6 +834,7 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
 
   const results: UpgradeFileResult[] = []
   const newContentHashes: Record<string, string> = { ...record.contentHashes }
+  const remainingTools: string[] = []
 
   for (const toolName of record.tools) {
     const relPath = `tools/${toolName}.ts`
@@ -814,7 +844,23 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     // off textually the way a skill id's "/" is.
     const oldFile = (oldManifest.tools ?? []).find((f) => matchesInstalledToolName(abilityName, f, toolName))
     const newFile = (newManifest.tools ?? []).find((f) => matchesInstalledToolName(abilityName, f, toolName))
-    if (!oldFile || !newFile) {
+    // The new version no longer has this tool file (its tools may now come
+    // from an MCP server): an unedited copy goes, an edited one stays.
+    if (!newFile) {
+      const minePath = join(agentDir(agentName), relPath)
+      if (isDirty(minePath, record.contentHashes[relPath])) {
+        remainingTools.push(toolName)
+        results.push({ path: relPath, status: 'conflict' })
+        continue
+      }
+      rmSync(minePath, { force: true })
+      removeToolFromIndex(join(agentDir(agentName), 'tools', 'index.ts'), toolName, toCamelCase(toolName))
+      delete newContentHashes[relPath]
+      results.push({ path: relPath, status: 'removed' })
+      continue
+    }
+    remainingTools.push(toolName)
+    if (!oldFile) {
       results.push({ path: relPath, status: 'unchanged' })
       continue
     }
@@ -886,6 +932,20 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     updateActauthRule(agentName, ruleName, { scope: newRule.scope, tool: newRule.tool, decision: newRule.decision })
     results.push({ path, status: 'updated' })
   }
+  // Rules the new version adds (for tools it adds) are installed, unless
+  // the agent already has a rule for that tool.
+  const actauthRules = [...record.actauthRules]
+  for (const rule of newRules) {
+    if (record.actauthRules.some((name) => matchesInstalledRuleName(abilityName, rule.name, name))) continue
+    const rules = readActauthConfig(agentName).rules
+    if (rules.some((r) => r.tool === rule.tool)) continue
+    const taken = new Set(rules.map((r) => r.name))
+    const name = taken.has(rule.name) ? namespacedRuleName(abilityName, rule.name) : rule.name
+    if (taken.has(name)) continue
+    addActauthRule(agentName, { ...rule, name })
+    actauthRules.push(name)
+    results.push({ path: `actauth:${name}`, status: 'added' })
+  }
 
   // An MCP ability's tools are data, not files, so there's nothing to
   // merge: they take the new version's server and tool list as-is.
@@ -895,6 +955,8 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
   provenance[abilityName] = {
     ...rest,
     ...(newMcp ? { mcp: newMcp } : {}),
+    tools: remainingTools,
+    actauthRules,
     version: newManifest.version,
     spec,
     contentHashes: newContentHashes,
@@ -905,6 +967,65 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
   if (record.mcp || newMcp) clearMcpSchemaCache(agentDir(agentName), abilityName)
 
   return { files: results }
+}
+
+// ---- An agent's MCP tools ----
+
+/** Sets which of an MCP ability's server tools an agent has, and each
+ * one's permission for that agent. `abilityDir` is the ability's folder
+ * (an app's workspace copy), which lists every tool. A tool's permission
+ * is its first rule in the agent's actauth.yml (an agent's own rule for a
+ * tool is changed rather than shadowed); a tool with no rule gets the
+ * ability's. Rules the ability added for tools taken away go with them. */
+export function configureAgentMcpTools(agentName: string, abilityName: string, abilityDir: string, choice: { remote: string; decision: 'allow' | 'ask' | 'deny' }[]): { added: string[]; removed: string[]; changed: string[] } {
+  const provenance = readProvenance(agentName)
+  const record = provenance[abilityName]
+  if (!record?.mcp) throw new AbilityNotInstalledError(`Ability '${abilityName}' isn't installed as an MCP ability for '${agentName}'.`)
+  const manifest = readManifest(abilityDir)
+  const all = resolveMcp(manifest)
+  const unknown = choice.filter((c) => !all.tools.some((t) => t.remote === c.remote)).map((c) => c.remote)
+  if (unknown.length) throw new AbilityManifestError(`${abilityName} has no tool named ${unknown.join(', ')}.`)
+  const tools = all.tools.filter((t) => choice.some((c) => c.remote === t.remote))
+  if (!tools.length) throw new AbilityManifestError(`Choose at least one of ${abilityName}'s tools, or remove it from the agent instead.`)
+
+  const before = new Set(record.mcp.tools.map((t) => t.name))
+  const after = new Set(tools.map((t) => t.name))
+  const added = [...after].filter((t) => !before.has(t))
+  const removed = [...before].filter((t) => !after.has(t))
+  const changed: string[] = []
+  const ruleNames = [...record.actauthRules]
+
+  for (const name of record.actauthRules) {
+    const rule = readActauthConfig(agentName).rules.find((r) => r.name === name)
+    if (rule && removed.includes(rule.tool)) {
+      try {
+        removeActauthRule(agentName, name)
+      } catch {}
+      ruleNames.splice(ruleNames.indexOf(name), 1)
+    }
+  }
+  for (const tool of tools) {
+    const decision = choice.find((c) => c.remote === tool.remote)!.decision
+    const current = readActauthConfig(agentName).rules
+    const rule = current.find((r) => r.tool === tool.name)
+    if (rule) {
+      if (rule.decision !== decision) {
+        updateActauthRule(agentName, rule.name, { scope: rule.scope, tool: rule.tool, decision })
+        changed.push(tool.name)
+      }
+      continue
+    }
+    const taken = new Set(current.map((r) => r.name))
+    let name = appRuleName(abilityName, tool.name)
+    for (let i = 2; taken.has(name); i++) name = `${appRuleName(abilityName, tool.name)}-${i}`
+    addActauthRule(agentName, { name, scope: '*/*', tool: tool.name, decision })
+    ruleNames.push(name)
+  }
+
+  provenance[abilityName] = { ...record, mcp: { ...all, tools }, version: manifest.version, actauthRules: ruleNames }
+  writeProvenance(agentName, provenance)
+  clearMcpSchemaCache(agentDir(agentName), abilityName)
+  return { added, removed, changed }
 }
 
 // ---- Remove ----

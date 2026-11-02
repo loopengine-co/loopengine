@@ -263,43 +263,47 @@ Upgrading an MCP ability takes the new version's server and tool list
 as they are (there's no file to merge); removing it removes its tools,
 rules and skills.
 
-### MCP abilities made by the workflow builder
+### Apps: abilities made from an app's MCP server
 
-People don't have to write an MCP ability by hand. When "Describe a
-workflow" plans a step that no installed, workspace or public ability
-can do, the planner can look for the app's MCP server instead: first in
-the workspace's saved servers, then in the official MCP Registry
-(`registry.modelcontextprotocol.io`). Only remote servers are offered.
-The app's own server ranks first. A registry server whose URL isn't on
-its publisher's verified domain is labeled *Unverified* on the plan.
+People don't have to write an MCP ability by hand. An app with its own
+MCP server is **connected** to the workspace, and each agent then
+**chooses** which of its tools it gets.
 
-The plan lists each server with a key field. On **Create**, LoopEngine:
+**Connecting** (the console's **Apps** page, Workspace → Apps): popular
+apps' own MCP servers as tiles, a search of the official MCP Registry
+(`registry.modelcontextprotocol.io`) for the rest, and the workspace's
+saved servers. Only remote servers are offered; the app's own server
+ranks first, and one not on its publisher's verified domain is labeled
+*Unverified*. Connecting checks the key (saved project-wide as
+`<APP>_MCP_KEY`), lists **every tool** the server offers, gives each a
+default permission, writes a skill, and saves it all as a workspace
+ability named `mcp-<app>` (source `mcp:<url>`). Default permissions are
+strict: a tool runs on its own only when the server marks it read-only
+(or, with no mark, its name reads as a lookup); anything else, and
+anything marked destructive, asks.
 
-1. connects with the key, if one was given (saved project-wide as
-   `<APP>_MCP_KEY`);
-2. picks the tools the steps need, plus closely related read-only ones
-   (at most 15), using the planning model;
-3. sets permissions strictly. A tool runs on its own only when the
-   server marks it read-only (or, with no mark, its name reads as a
-   lookup). An approval step's tool, and anything marked destructive,
-   always asks;
-4. writes a skill for it, and saves the result as a workspace ability
-   named `mcp-<app>` (source `mcp:<url>`);
-5. installs it into the agent like any other ability, and points the
-   workflow's steps at its tools.
+The app's page lists every tool with its default permission and the
+agents using it. A changed default applies to agents that add the tool
+from then on; **Check for new tools** adds tools the server gained since,
+at their default.
 
-The next workflow that needs the same server reuses that workspace
-ability. If a server can't be set up (for example it needs a key, or a
-sign-in, which isn't supported yet), its steps are left as missing and
-appear first in the checklist.
+**Adding it to an agent** (the agent's Abilities tab → Apps): choose its
+tools (none are preselected; *Select read-only tools* is one click) and
+each one's permission for this agent. Only those tools load, with those
+permissions; choose again any time. Programmatically:
+`installAbility(agent, spec, { mcpTools, mcpDecisions })` and
+`configureAgentMcpTools`. Without a choice, an app's ability installs
+with its read-only tools only.
 
-Apps can also be connected ahead of time from the console's **Apps**
-page (Workspace → Apps): popular apps' own MCP servers as tiles, a search
-of the MCP Registry for the rest, and the workspace's connected apps,
-each with its tools and permissions and the agents that use it.
-Connecting makes the same kind of workspace ability, picking the tools
-most useful day to day since there's no workflow to fit yet; agents add
-it from their Abilities tab, and the workflow builder reuses it.
+**Templates and Describe a workflow** add just the tools they need. A
+template lists them (`setup.apps`); the workflow builder works them out:
+when a step no installed, workspace or public ability can do, the
+planner can pick an app's MCP server, and Create connects the app if it
+isn't yet (with the key typed on the plan), finds the server tool for
+each step (using the planning model), and adds the app to the agent
+with only those tools; an approval step's tool asks first. If a server
+can't be set up (it needs a key, or a sign-in, which isn't supported
+yet), its steps are left as missing and appear first in the checklist.
 
 Saved servers, for internal or private ones, go in `mcp-servers.yml` in
 the project root (or the file `LOOPENGINE_MCP_SERVERS_FILE` names):

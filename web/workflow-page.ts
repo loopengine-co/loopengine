@@ -164,7 +164,7 @@ ${consoleShellScript}
     var badge = s.verified ? '<span class="le-pill allow">' + (s.source === 'saved' ? 'Saved server' : 'Verified') + '</span>' : '<span class="le-pill ask">Unverified</span>';
     var what = s.existing
       ? 'Uses <code>' + esc(s.ability) + '</code>, already in your workspace.'
-      : 'Set up as a private ability, <code>' + esc(s.ability) + '</code>: its tools and their permissions are picked when you create this (anything that changes data asks you first).';
+      : 'Connected to the workspace when you create this, as <code>' + esc(s.ability) + '</code>; the agent gets just the tools its steps use (anything that changes data asks you first).';
     var key = s.existing ? '' :
       '<label class="hint" for="wfKey-' + esc(s.ability) + '">API key' + (s.keySet ? ' (one is saved; leave blank to use it)' : ' (if it needs one)') + '</label>' +
       '<input type="password" autocomplete="off" id="wfKey-' + esc(s.ability) + '" data-mcp-key="' + esc(s.id) + '" placeholder="' + esc(s.keyEnv) + '">';

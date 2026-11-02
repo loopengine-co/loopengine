@@ -18,7 +18,7 @@ export type InterviewStage = (typeof INTERVIEW_STAGES)[number]
 export interface CandidateNeed {
   /** ability: a LoopEngine ability (name = its package). api: a system to
    * connect. key: a secret to add. messaging: an app for approvals. */
-  kind: 'ability' | 'api' | 'key' | 'messaging' | 'other'
+  kind: 'ability' | 'app' | 'api' | 'key' | 'messaging' | 'other'
   name?: string
   description: string
 }
@@ -206,7 +206,7 @@ export function validateCandidate(raw: unknown): AgentCandidate | undefined {
   const needs = Array.isArray(c.needs)
     ? c.needs.flatMap((n): CandidateNeed[] => {
         const need = (n ?? {}) as Record<string, unknown>
-        const needKind = ['ability', 'api', 'key', 'messaging', 'other'].includes(need.kind as string) ? (need.kind as CandidateNeed['kind']) : 'other'
+        const needKind = ['ability', 'app', 'api', 'key', 'messaging', 'other'].includes(need.kind as string) ? (need.kind as CandidateNeed['kind']) : 'other'
         const description = str(need.description, 300)
         return description ? [{ kind: needKind, ...(str(need.name, 120) ? { name: str(need.name, 120) } : {}), description }] : []
       })

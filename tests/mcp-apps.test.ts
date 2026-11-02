@@ -45,5 +45,6 @@ describe('Apps', () => {
     expect(new Set(APP_CATALOG.map((a) => a.id)).size).toBe(APP_CATALOG.length)
     expect(APP_CATALOG.every((a) => a.url.startsWith('https://'))).toBe(true)
     expect(await appServer('com.stripe/mcp')).toMatchObject({ title: 'Stripe', url: 'https://mcp.stripe.com', verified: true })
+    expect(await appServer('io.github.firecrawl/firecrawl-mcp-server')).toMatchObject({ title: 'Firecrawl', url: 'https://mcp.firecrawl.dev/v2/mcp' })
   })
 })

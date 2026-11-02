@@ -45,9 +45,21 @@ export interface TemplateSchedule {
   message: string
 }
 
+/** An app (core/mcp-apps.ts) a template works through, and the server
+ * tools it relies on: switched on when the agent is created, if the app is
+ * connected; otherwise connecting it heads the checklist. */
+export interface TemplateApp {
+  /** Its MCP Registry name, as in the Apps catalog. */
+  id: string
+  title: string
+  tools: string[]
+}
+
 export interface TemplateSetup {
   /** npm names of the abilities to install. */
   abilities: string[]
+  /** Apps it uses (connected on the Apps page). */
+  apps?: TemplateApp[]
   /** Keys the agent needs before it can work, from its abilities' declared
    * settings: a name, or a list where any one of them will do. */
   keys: (string | string[])[]
@@ -73,7 +85,7 @@ export interface StarterTemplate {
 
 const GMAIL_KEYS = ['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN']
 const SHOPIFY_KEYS = ['SHOPIFY_STORE_DOMAIN', 'SHOPIFY_ADMIN_TOKEN']
-const GITHUB_KEYS = ['GITHUB_TOKEN', 'GITHUB_DEFAULT_REPO']
+const GITHUB_APP = 'io.github.github/github-mcp-server'
 const SLACK_KEYS = ['SLACK_BOT_TOKEN', 'SLACK_DEFAULT_CHANNEL']
 const WEB_SEARCH_KEYS = [['TAVILY_API_KEY', 'BRAVE_API_KEY', 'FIRECRAWL_API_KEY']]
 const DOCS_NOTE = 'Put your policies and help articles in the project\'s docs folder, as Markdown or text files (or point DOCS_SEARCH_PATH at another folder)'
@@ -201,20 +213,22 @@ Rules:
       risk: 'medium',
       asksFirst: ['opening or commenting on issues'],
       needs: [
-        { kind: 'ability', name: 'lp-github', description: 'your repository\'s commits, deploys and issues' },
+        { kind: 'app', name: 'GitHub', description: 'your repository\'s commits, deploys and issues' },
         { kind: 'ability', name: 'lp-slack-notifier', description: 'posting the summary to Slack' },
       ],
       agent: {
         name: 'incident-triage',
         systemPrompt: `You help the on-call engineer triage incidents.
 
+Our repository on GitHub: [owner/name] (edit this). Pass its owner and repo to every GitHub tool.
+
 When you get an alert, error or bug report:
 1. Summarise it in two sentences: what is failing and who is affected.
 2. Rate the severity: SEV1 (customers can't use the product), SEV2 (a major feature is broken), SEV3 (degraded or a workaround exists), SEV4 (minor).
-3. Find what changed shortly before it started: github_list_workflow_runs for recent deploys and failed builds, github_list_pull_requests for recently merged changes, and github_list_commits (narrowed with since_hours and path) for detail. Match times carefully.
-4. Check whether it's already known with github_search_issues; read a match with github_get_issue.
+3. Find what changed shortly before it started: github_actions_list (method list_workflow_runs) for recent deploys and failed builds, github_list_pull_requests (state closed) for recently merged changes, and github_list_commits (narrowed with since and path) for detail. Match times carefully.
+4. Check whether it's already known with github_search_issues; read a match with github_issue_read (method get).
 5. Post a short summary to Slack with post_to_slack: what's broken, severity, the most likely cause with links, and one next step (who should look, what to check, or whether to roll back).
-6. If an issue already tracks it, add your findings with github_comment_issue; otherwise, for SEV1 or SEV2, open one with github_create_issue. Both ask a person first.
+6. If an issue already tracks it, add your findings with github_add_issue_comment; otherwise, for SEV1 or SEV2, open one with github_issue_write (method create). Both ask a person first.
 
 Rules:
 - Only read on your own; never roll anything back yourself.
@@ -224,12 +238,13 @@ Rules:
       },
     },
     setup: {
-      abilities: ['lp-github', 'lp-slack-notifier'],
-      keys: [...GITHUB_KEYS, ...SLACK_KEYS],
+      abilities: ['lp-slack-notifier'],
+      apps: [{ id: GITHUB_APP, title: 'GitHub', tools: ['list_commits', 'list_pull_requests', 'actions_list', 'search_issues', 'issue_read', 'issue_write', 'add_issue_comment'] }],
+      keys: [...SLACK_KEYS],
       rules: [
         { name: 'template-slack-summary-allowed', tool: 'post_to_slack', decision: 'allow' },
-        { name: 'template-new-issues-need-approval', tool: 'github_create_issue', decision: 'ask' },
-        { name: 'template-comments-need-approval', tool: 'github_comment_issue', decision: 'ask' },
+        { name: 'template-new-issues-need-approval', tool: 'github_issue_write', decision: 'ask' },
+        { name: 'template-comments-need-approval', tool: 'github_add_issue_comment', decision: 'ask' },
       ],
       needsApprovals: true,
       notes: ['Send it alerts: paste one into Chat, have your alerting tool call it over HTTP, or reply to it in Slack'],
@@ -353,11 +368,13 @@ Rules:
       asksFirst: ['replying to the sender'],
       needs: [
         { kind: 'ability', name: 'lp-gmail', description: 'the shared inbox' },
-        { kind: 'ability', name: 'lp-github', description: 'tasks, as GitHub issues' },
+        { kind: 'app', name: 'GitHub', description: 'tasks, as GitHub issues' },
       ],
       agent: {
         name: 'inbox-to-tasks',
         systemPrompt: `You turn requests in our shared inbox into tasks, kept as GitHub issues.
+
+Tasks live in this GitHub repository: [owner/name] (edit this). Pass its owner and repo to every GitHub tool.
 
 Who handles what (edit this; GitHub usernames):
 - Billing and invoices: [username]
@@ -367,8 +384,8 @@ Who handles what (edit this; GitHub usernames):
 When asked to handle new emails:
 1. Find them with gmail_search, query "is:unread in:inbox". Read each with gmail_get_thread.
 2. Decide whether it's a request someone needs to act on. Newsletters, receipts, out-of-office replies and spam are not: mark them read and move on.
-3. Check whether a task already exists with github_search_issues (the sender and subject). If so, add the new details with github_comment_issue instead.
-4. Otherwise open one with github_create_issue: a short title starting with a verb, a two-line summary, the sender, the due date (the date they asked for, or 2 working days if they didn't say), and the owner from the list above as the assignee.
+3. Check whether a task already exists with github_search_issues (the sender and subject). If so, add the new details with github_add_issue_comment instead.
+4. Otherwise open one with github_issue_write (method create): a short title starting with a verb, a two-line summary, the sender, the due date (the date they asked for, or 2 working days if they didn't say), and the owner from the list above as the assignee.
 5. Reply to the sender with gmail_send (reply_to_message_id set): who is handling it and by when. A person approves it first.
 6. Mark the email read with gmail_modify_labels.
 
@@ -380,14 +397,15 @@ Rules:
       },
     },
     setup: {
-      abilities: ['lp-gmail', 'lp-github'],
-      keys: [...GMAIL_KEYS, ...GITHUB_KEYS],
+      abilities: ['lp-gmail'],
+      apps: [{ id: GITHUB_APP, title: 'GitHub', tools: ['search_issues', 'issue_write', 'add_issue_comment'] }],
+      keys: [...GMAIL_KEYS],
       rules: [
         { name: 'template-read-mail-allowed', tool: 'gmail_search', decision: 'allow' },
         { name: 'template-read-thread-allowed', tool: 'gmail_get_thread', decision: 'allow' },
         { name: 'template-labels-allowed', tool: 'gmail_modify_labels', decision: 'allow' },
-        { name: 'template-tasks-allowed', tool: 'github_create_issue', decision: 'allow' },
-        { name: 'template-task-updates-allowed', tool: 'github_comment_issue', decision: 'allow' },
+        { name: 'template-tasks-allowed', tool: 'github_issue_write', decision: 'allow' },
+        { name: 'template-task-updates-allowed', tool: 'github_add_issue_comment', decision: 'allow' },
         { name: 'template-replies-need-approval', tool: 'gmail_send', decision: 'ask' },
       ],
       schedule: { every: '10m', name: 'Check the shared inbox', message: 'Turn the new emails in the shared inbox into tasks.' },

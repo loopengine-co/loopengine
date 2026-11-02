@@ -93,7 +93,15 @@ export const globalConfigPageHtml: string = `<!doctype html>
   .app-row:first-child { border-top: 0; }
   .app-row-main { flex: 1; min-width: 200px; display: grid; gap: 3px; }
   .app-list { border: 1px solid var(--line); border-radius: var(--radius); }
-  .app-tools { display: grid; gap: 3px; margin-top: 6px; font-size: 12.5px; }
+  .app-tools { display: grid; gap: 8px; margin-top: 8px; font-size: 12.5px; }
+  .app-tools input[type=search] { font: inherit; font-size: 12px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); max-width: 280px; }
+  .app-tool-list { display: grid; gap: 2px; max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px; }
+  .app-tool { display: flex; gap: 8px; align-items: flex-start; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+  .app-tool:hover { background: var(--surface); }
+  .app-tool input { margin-top: 3px; }
+  .app-tool code { overflow-wrap: anywhere; }
+  .app-tool-desc { display: block; }
+  .app-decision { font: inherit; font-size: 11.5px; padding: 1px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   .app-cats { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
   .app-cats button { font-size: 12px; }
   .app-cats button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
@@ -110,7 +118,7 @@ ${consoleSidebarHtml}
   </div>
   <div class="section-panel" data-section-panel="apps" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Apps</h1><p>Connect the apps your agents work in. A connected app becomes an ability any agent can add, with tools that change things set to ask you first.</p></div></div></div>
+      <div><h1>Apps</h1><p>Connect the apps your agents work in. All of a connected app&rsquo;s tools become available to the workspace, each with a default permission; each agent then chooses which tools it gets, from its Abilities tab.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="appsContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
   <div class="section-panel" data-section-panel="abilities" style="display:none">
@@ -392,8 +400,8 @@ ${consoleShellScript}
     var el = document.getElementById('workspaceAbilities');
     if (!el || !workspaceAbilities) return;
     // Abilities made from a connected app are listed under Apps.
-    var fromApps = workspaceAbilities.filter(function (a) { return a.source.indexOf('mcp:') === 0; }).length;
-    var own = workspaceAbilities.filter(function (a) { return a.source.indexOf('mcp:') !== 0; });
+    var fromApps = workspaceAbilities.filter(function (a) { return a.app || a.source.indexOf('mcp:') === 0; }).length;
+    var own = workspaceAbilities.filter(function (a) { return !a.app && a.source.indexOf('mcp:') !== 0; });
     el.innerHTML = (fromApps ? '<p class="hint" style="margin:0 0 8px">' + fromApps + ' connected app' + (fromApps === 1 ? '' : 's') + ' also in this workspace: see <a href="/config?section=apps">Apps</a>.</p>' : '') + (own.length
       ? '<div class="source"><p style="margin:0 0 8px"><strong>In this workspace</strong> <span class="hint">add these to an agent from its Abilities tab</span></p>' +
           '<table><thead><tr><th>Ability</th><th>From</th><th></th></tr></thead><tbody>' + own.map(function (a) {
@@ -537,6 +545,8 @@ ${consoleShellScript}
 
   var apps = null;
   var appCategory = 'All';
+  // Open tool panels, by ability: { tools, filter, error, busy }.
+  var openTools = {};
   var appSearch = { q: '', servers: null, error: '' };
 
   function appLetter(title) {
@@ -578,9 +588,9 @@ ${consoleShellScript}
               '<div class="app-row-main"><div><strong>' + escapeHtml(c.title) + '</strong> <span class="hint">' + c.tools.length + ' tool' + (c.tools.length === 1 ? '' : 's') + ' &middot; <code>' + escapeHtml(c.ability) + '</code></span></div>' +
                 '<div class="hint">' + used + '</div>' +
                 (c.keyEnv && !c.keySet ? '<div class="error" style="font-size:12px">Its key, ' + escapeHtml(c.keyEnv) + ', isn' + String.fromCharCode(8217) + 't set.</div>' : '') +
-              '<div class="app-tools" hidden>' + c.tools.map(function (tool) { return '<div><code>' + escapeHtml(tool.name) + '</code> <span class="hint">' + escapeHtml(tool.decision === 'allow' ? 'Allow' : tool.decision === 'deny' ? 'Never' : 'Ask me') + '</span></div>'; }).join('') + '</div>' +
+              (openTools[c.ability] ? toolsPanel(c.ability) : '') +
               '</div>' +
-              '<div class="app-foot"><button type="button" class="app-tools-btn">Tools</button> <button type="button" class="delete-btn app-disconnect" data-ability="' + escapeHtml(c.ability) + '">Disconnect</button></div></div>';
+              '<div class="app-foot"><button type="button" class="app-tools-btn" data-ability="' + escapeHtml(c.ability) + '">' + (openTools[c.ability] ? 'Hide tools' : 'Tools') + '</button> <button type="button" class="delete-btn app-disconnect" data-ability="' + escapeHtml(c.ability) + '">Disconnect</button></div></div>';
           }).join('') + '</div>'
         : '<p class="hint">No apps connected yet. Pick one below.</p>') + '</section>' +
       '<section><h3>Popular apps</h3>' +
@@ -596,6 +606,73 @@ ${consoleShellScript}
         '<form id="appSearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px"><input type="search" name="q" placeholder="Search the MCP Registry, e.g. calendly" aria-label="Search apps" style="flex:1" value="' + escapeHtml(appSearch.q) + '"><button type="submit">Search</button></form>' +
         '<div id="appSearchResults">' + renderAppSearch() + '</div>' +
       '</section>';
+  }
+
+  var DECISION_LABEL = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
+
+  function toolsPanel(ability) {
+    var panel = openTools[ability];
+    if (panel.error) return '<div class="app-tools"><p class="error" style="margin:0">' + escapeHtml(panel.error) + '</p></div>';
+    if (!panel.tools) return '<div class="app-tools"><p class="hint" style="margin:0">Asking the app for its tools' + String.fromCharCode(8230) + '</p></div>';
+    var used = panel.tools.filter(function (t) { return t.usedBy.length; }).length;
+    var f = (panel.filter || '').toLowerCase();
+    var shown = panel.tools.filter(function (t) { return !f || (t.remote + ' ' + t.description).toLowerCase().indexOf(f) !== -1; });
+    return '<div class="app-tools">' +
+      '<p class="hint" style="margin:0">All ' + panel.tools.length + ' tools are available to this workspace; ' + used + ' are used by an agent. Agents choose their own tools and permissions when you add the app to them (their Abilities tab). The permission here is the default an agent starts from: Allow runs it, Ask me waits for your OK, Never blocks it.</p>' +
+      '<div class="app-foot">' + (panel.tools.length > 12 ? '<input type="search" class="app-tools-filter" data-ability="' + escapeHtml(ability) + '" placeholder="Filter tools" value="' + escapeHtml(panel.filter || '') + '" aria-label="Filter tools">' : '') +
+        '<button type="button" class="app-refresh" data-ability="' + escapeHtml(ability) + '"' + (apps.canConnect && !panel.busy ? '' : ' disabled') + '>Check for new tools</button></div>' +
+      (panel.message ? '<p class="' + (panel.messageBad ? 'error' : 'hint') + '" style="margin:0">' + escapeHtml(panel.message) + '</p>' : '') +
+      '<div class="app-tool-list">' + shown.map(function (t) {
+        var who = t.usedBy.length
+          ? 'Used by ' + t.usedBy.map(function (u) { return escapeHtml(u.agent) + ' (' + escapeHtml(DECISION_LABEL[u.decision]) + ')'; }).join(', ')
+          : 'Not used by an agent';
+        return '<div class="app-tool"><span><code>' + escapeHtml(t.name) + '</code> ' +
+          '<select class="app-decision" data-tool="' + escapeHtml(t.remote) + '" data-ability="' + escapeHtml(ability) + '" aria-label="Default permission for ' + escapeHtml(t.name) + '"' + (apps.canConnect && !panel.busy ? '' : ' disabled') + '>' +
+            ['allow', 'ask', 'deny'].map(function (d) { return '<option value="' + d + '"' + (d === t.decision ? ' selected' : '') + '>' + DECISION_LABEL[d] + '</option>'; }).join('') + '</select>' +
+          (t.destructive ? ' <span class="hint">destructive</span>' : t.readOnly ? ' <span class="hint">read-only</span>' : '') +
+          (t.description ? '<span class="hint app-tool-desc">' + escapeHtml(t.description) + '</span>' : '') +
+          '<span class="hint app-tool-desc">' + who + '</span></span></div>';
+      }).join('') + '</div></div>';
+  }
+
+  function loadTools(ability, fresh) {
+    openTools[ability] = { tools: null, filter: openTools[ability] ? openTools[ability].filter : '' };
+    renderApps();
+    fetch('/config/apps/tools?ability=' + encodeURIComponent(ability) + (fresh ? '&fresh=1' : ''), { cache: 'no-store' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!openTools[ability]) return;
+        if (!r.ok) openTools[ability].error = r.body.error || 'Could not list its tools.';
+        else openTools[ability].tools = r.body.tools;
+        renderApps();
+      })
+      .catch(function (err) { if (openTools[ability]) { openTools[ability].error = err.message; renderApps(); } });
+  }
+
+  // Sets a tool's default permission, or (tool null) checks the server
+  // for tools it added since.
+  function setDefault(ability, tool, decision) {
+    var panel = openTools[ability];
+    panel.busy = true;
+    panel.message = (tool ? 'Setting ' + tool + String.fromCharCode(8217) + 's default to ' + DECISION_LABEL[decision] : 'Checking the app for new tools') + String.fromCharCode(8230);
+    panel.messageBad = false;
+    renderApps();
+    var path = tool ? '/config/apps/tools' : '/config/apps/refresh';
+    fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ability: ability, tool: tool, decision: decision }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        panel.busy = false;
+        if (!r.ok) { panel.message = r.body.error || 'Could not change it.'; panel.messageBad = true; renderApps(); return; }
+        panel.tools = r.body.tools;
+        if (r.body.connected) apps = { apps: r.body.apps, connected: r.body.connected, canConnect: r.body.canConnect };
+        panel.message = tool
+          ? tool + ' now starts at ' + DECISION_LABEL[decision] + ' for agents that add it; agents that have it keep theirs.'
+          : (r.body.added.length || r.body.removed.length
+            ? (r.body.added.length ? 'New: ' + r.body.added.join(', ') + '. ' : '') + (r.body.removed.length ? 'No longer offered: ' + r.body.removed.join(', ') + '.' : '')
+            : 'No new tools.');
+        renderApps();
+      })
+      .catch(function (err) { panel.busy = false; panel.message = err.message; panel.messageBad = true; renderApps(); });
   }
 
   function findApp(c) {
@@ -627,10 +704,10 @@ ${consoleShellScript}
   document.getElementById('appsContent').addEventListener('click', function (ev) {
     var t = ev.target;
     if (t.dataset && t.dataset.appCat) { appCategory = t.dataset.appCat; renderApps(); return; }
+    if (t.classList.contains('app-refresh')) { setDefault(t.dataset.ability, null, null); return; }
     if (t.classList.contains('app-tools-btn')) {
-      var list = t.closest('.app-row').querySelector('.app-tools');
-      list.hidden = !list.hidden;
-      t.textContent = list.hidden ? 'Tools' : 'Hide tools';
+      if (openTools[t.dataset.ability]) { delete openTools[t.dataset.ability]; renderApps(); }
+      else loadTools(t.dataset.ability, false);
       return;
     }
     if (t.classList.contains('app-connect')) {
@@ -652,6 +729,19 @@ ${consoleShellScript}
         })
         .catch(function (err) { t.disabled = false; t.textContent = 'Could not disconnect: ' + err.message; });
     }
+  });
+
+  document.getElementById('appsContent').addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (t.classList.contains('app-decision')) setDefault(t.dataset.ability, t.dataset.tool, t.value);
+  });
+  document.getElementById('appsContent').addEventListener('input', function (ev) {
+    var t = ev.target;
+    if (!t.classList.contains('app-tools-filter')) return;
+    openTools[t.dataset.ability].filter = t.value;
+    renderApps();
+    var again = document.querySelector('.app-tools-filter[data-ability="' + t.dataset.ability + '"]');
+    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
   });
 
   document.getElementById('appsContent').addEventListener('submit', function (ev) {
@@ -682,7 +772,9 @@ ${consoleShellScript}
       .then(function (r) {
         if (!r.ok) throw new Error(r.body.error || 'request failed');
         apps = r.body;
-        renderApps();
+        // Straight to its tools, to choose what agents may use.
+        if (r.body.connectedAbility) loadTools(r.body.connectedAbility, false);
+        else renderApps();
       })
       .catch(function (err) {
         btn.disabled = false;

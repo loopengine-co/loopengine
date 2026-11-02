@@ -192,15 +192,17 @@ export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<strin
       fail('setting up MCP servers isn\'t available on this server')
       continue
     }
+    // The app, connected already or connected now; and the server tool for
+    // each step (the planner's when the app has it, else worked out).
     const existing = deps.existingFor(planned.url)
-    const reusable = existing && steps.every(({ step }) => step.tool && existing.tools.some((t) => t.remote === step.tool))
+    const known = existing && steps.every(({ step }) => step.tool && existing.tools.some((t) => t.remote === step.tool))
     let spec: string
     let stepTools: Record<number, string>
-    let renames: { remote: string; name: string }[]
-    if (existing && reusable) {
+    let names: { remote: string; name: string }[]
+    if (existing && known) {
       spec = existing.spec
-      stepTools = Object.fromEntries(steps.map(({ step, index }) => [index, existing.tools.find((t) => t.remote === step.tool)!.name]))
-      renames = existing.tools
+      stepTools = Object.fromEntries(steps.map(({ step, index }) => [index, step.tool!]))
+      names = existing.tools
     } else {
       const server = await deps.getServer(planned.id).catch(() => undefined)
       if (!server) {
@@ -220,35 +222,51 @@ export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<strin
         fail(err instanceof Error ? err.message : String(err))
         continue
       }
-      if (typed && generated.keyEnv) {
-        try {
-          await deps.saveKey(generated.keyEnv, typed)
-        } catch (err) {
-          failed.push({ name: planned.title, error: `its key wasn't saved (${err instanceof Error ? err.message : String(err)}); add ${generated.keyEnv} from the checklist` })
-          if (!plan.keys.includes(generated.keyEnv)) plan.keys.push(generated.keyEnv)
-        }
-      }
-      spec = deps.store(generated.dir, `mcp:${server.url}`)
       stepTools = generated.stepTools
-      renames = generated.tools
-      made.push(generated.name)
+      names = generated.tools
+      if (existing) {
+        // Connected already: only the step matching was needed.
+        spec = existing.spec
+      } else {
+        if (typed && generated.keyEnv) {
+          try {
+            await deps.saveKey(generated.keyEnv, typed)
+          } catch (err) {
+            failed.push({ name: planned.title, error: `its key wasn't saved (${err instanceof Error ? err.message : String(err)}); add ${generated.keyEnv} from the checklist` })
+            if (!plan.keys.includes(generated.keyEnv)) plan.keys.push(generated.keyEnv)
+          }
+        }
+        spec = deps.store(generated.dir, `mcp:${server.url}`)
+        made.push(generated.name)
+      }
     }
+    const installedName = (remote: string) => names.find((t) => t.remote === remote)?.name ?? remote
+    const tools: string[] = []
     for (const { step, index } of steps) {
       delete step.mcp
       step.ability = spec
-      const tool = stepTools[index]
-      if (tool) step.tool = tool
-      else {
+      const remote = stepTools[index]
+      if (!remote) {
         delete step.tool
         step.missing = `${planned.title} has no tool for this`
+        continue
+      }
+      step.tool = installedName(remote)
+      if (!tools.includes(remote)) tools.push(remote)
+      // An approval step's tool asks first, whatever its default.
+      if (step.kind === 'approval') {
+        const rule = plan.rules.find((r) => r.tool === step.tool)
+        if (rule) rule.decision = 'ask'
+        else plan.rules.push({ tool: step.tool, decision: 'ask' })
       }
     }
     // The skill was written with the server's own tool names.
-    for (const { remote, name } of renames) {
+    for (const { remote, name } of names) {
       if (remote === name) continue
       plan.skill.body = plan.skill.body.replace(new RegExp(`(?<![A-Za-z0-9_])${remote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), name)
     }
-    if (!plan.abilities.includes(spec)) plan.abilities.push(spec)
+    // Added to the agent as an app, with just these tools.
+    if (tools.length) plan.apps = [...(plan.apps ?? []).filter((a) => a.id !== planned.id), { id: planned.id, title: planned.title, tools }]
   }
   delete plan.mcpServers
   return { made, failed }
@@ -346,6 +364,9 @@ export interface WorkflowCreateDeps extends TemplateCreateDeps {
   reloadAgent(name: string): Promise<void>
   /** Sets up the plan's MCP servers as private abilities. */
   mcp?: WorkflowMcpCreateDeps
+  /** Gives an agent that already has an app more of its tools (at their
+   * default permission), keeping the ones it has. */
+  addAppTools?: (agent: string, spec: string, tools: string[]) => Promise<void>
 }
 
 /** A to-do for each step nothing could be found for, first in the list. */
@@ -431,6 +452,35 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
     }
   }
 
+  // Apps: added with just the tools the steps use, or those tools added
+  // to the agent's when it has the app already.
+  const appsToConnect: string[] = []
+  for (const app of plan.apps ?? []) {
+    const spec = deps.prepareApp ? await deps.prepareApp(app.id) : undefined
+    if (!spec) {
+      appsToConnect.push(app.title)
+      continue
+    }
+    if (!deps.installAbility) {
+      failed.push({ name: app.title, error: 'adding apps needs LOOPENGINE_ADMIN_AUTH set on the server' })
+      continue
+    }
+    try {
+      await deps.installAbility(agent.name, spec, { mcpTools: app.tools })
+      installed.push(app.title)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (/already installed/i.test(message) && deps.addAppTools) {
+        try {
+          await deps.addAppTools(agent.name, spec, app.tools)
+          installed.push(app.title)
+        } catch (e) {
+          failed.push({ name: app.title, error: e instanceof Error ? e.message : String(e) })
+        }
+      } else failed.push({ name: app.title, error: installFailureReason(err) })
+    }
+  }
+
   // Connected-service tools it doesn't have yet.
   const connected = copyConnectedTools(plan, agent.name, agents, deps.agentDir)
   installed.push(...connected.copied)
@@ -471,7 +521,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
     workflow: plan.name,
     abilities: { installed, failed },
     keptDecisions: check.conflicts,
-    checklist: withMissingSteps(plan, agent.name, templateChecklist(template, agent.name, deps, failed)),
+    checklist: withMissingSteps(plan, agent.name, templateChecklist(template, agent.name, deps, failed, appsToConnect)),
     ...(schedule ? { schedule } : {}),
     ...(scheduleError ? { scheduleError } : {}),
     ...(loadError ? { loadError } : {}),

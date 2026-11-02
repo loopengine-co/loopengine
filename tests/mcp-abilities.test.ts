@@ -23,6 +23,7 @@ afterEach(async () => {
   rmSync(AGENT_DIR, { recursive: true, force: true })
   delete process.env.FAKE_MCP_KEY
   delete process.env.FAKE_TOKEN_VALUE
+  delete process.env.FAKE_DEFAULT_REPO
 })
 
 function buildMcpAbility(mcp: Record<string, unknown>, options: { name?: string; version?: string; rules?: string } = {}): string {
@@ -170,6 +171,70 @@ describe('loading and calling MCP ability tools (local server)', () => {
     expect(removed).toContain('mcp:fake_echo')
     expect(await loadMcpAbilityTools(AGENT_DIR, AGENT_NAME)).toEqual([])
     expect(JSON.parse(readFileSync(join(AGENT_DIR, '.loopengine-mcp-cache.json'), 'utf8'))).toEqual({})
+  })
+})
+
+describe('input defaults from settings', () => {
+  it('fills owner and repo from one setting, and makes them optional in the schema', async () => {
+    process.env.FAKE_DEFAULT_REPO = 'acme/checkout'
+    await install(stdioMcp(['repoInfo'], { defaults: { owner: { env: 'FAKE_DEFAULT_REPO', split: '/', part: 0 }, repo: { env: 'FAKE_DEFAULT_REPO', split: '/', part: 1 } } }), { rules: '[]' })
+    const [tool] = await loadMcpAbilityTools(AGENT_DIR, AGENT_NAME)
+    expect(tool.input_schema.required).toEqual([])
+    expect((tool.input_schema.properties as Record<string, { description: string }>).owner.description).toBe('Repository owner. Defaults to acme.')
+    expect(await tool.execute({}, ctx())).toBe('acme/checkout')
+    expect(await tool.execute({ repo: 'billing' }, ctx())).toBe('acme/billing')
+  })
+
+  it('leaves inputs required when the setting isn\'t set', async () => {
+    await install(stdioMcp(['repoInfo'], { defaults: { owner: { env: 'FAKE_DEFAULT_REPO', split: '/', part: 0 } } }), { rules: '[]' })
+    const [tool] = await loadMcpAbilityTools(AGENT_DIR, AGENT_NAME)
+    expect(tool.input_schema.required).toEqual(['owner', 'repo'])
+  })
+
+  it('refuses a malformed defaults block', async () => {
+    await expect(install(stdioMcp(['repoInfo'], { defaults: { owner: 42 } }), { rules: '[]' })).rejects.toThrow(/defaults/)
+  })
+})
+
+describe('upgrading from tool files to an MCP server', () => {
+  it('removes the old tool files, moves the ability\'s rules to the new tools, and adds new rules', async () => {
+    const v1 = mkdtempSync(join(tmpdir(), 'loopengine-mcp-v1-'))
+    mkdirSync(join(v1, 'tools'))
+    mkdirSync(join(v1, 'actauth'))
+    writeFileSync(join(v1, 'tools', 'fake_old.ts'), "export const fakeOld = { name: 'fake_old', description: 'old', input_schema: { type: 'object', properties: {} }, execute: async () => 'old' }\n")
+    writeFileSync(join(v1, 'actauth', 'rules.yml'), '- name: fake-read\n  scope: "*/*"\n  tool: fake_old\n  decision: allow\n')
+    writeFileSync(join(v1, 'package.json'), JSON.stringify({ name: 'lp-fake', version: '1.0.0' }))
+    writeFileSync(join(v1, 'loopengine.ability.json'), JSON.stringify({ loopengineVersion: '*', tools: ['tools/fake_old.ts'], actauth: 'actauth/rules.yml' }))
+    await installAbility(AGENT_NAME, 'lp-fake', { fetchAbilityDir: () => v1 })
+    expect(existsSync(join(AGENT_DIR, 'tools', 'fake_old.ts'))).toBe(true)
+
+    const v2 = buildMcpAbility(stdioMcp(['echo', 'fail']), { version: '2.0.0', rules: '- name: fake-read\n  scope: "*/*"\n  tool: fake_echo\n  decision: allow\n- name: fake-fail\n  scope: "*/*"\n  tool: fake_fail\n  decision: ask\n' })
+    const { files } = await upgradeAbility(AGENT_NAME, 'lp-fake', { fetchAbilityDir: (spec) => (spec.endsWith('@1.0.0') ? v1 : v2) })
+
+    expect(files).toContainEqual({ path: 'tools/fake_old.ts', status: 'removed' })
+    expect(files).toContainEqual({ path: 'actauth:fake-read', status: 'updated' })
+    expect(files).toContainEqual({ path: 'actauth:fake-fail', status: 'added' })
+    expect(existsSync(join(AGENT_DIR, 'tools', 'fake_old.ts'))).toBe(false)
+    expect(readFileSync(join(AGENT_DIR, 'tools', 'index.ts'), 'utf8')).not.toContain('fake_old')
+    expect(readActauthConfig(AGENT_NAME).rules.map((r) => [r.name, r.tool, r.decision])).toEqual([['fake-read', 'fake_echo', 'allow'], ['fake-fail', 'fake_fail', 'ask']])
+    const provenance = JSON.parse(readFileSync(join(AGENT_DIR, '.loopengine-abilities.json'), 'utf8'))
+    expect(provenance['lp-fake'].tools).toEqual([])
+    expect((await loadMcpAbilityTools(AGENT_DIR, AGENT_NAME)).map((t) => t.name)).toEqual(['fake_echo', 'fake_fail'])
+  })
+
+  it('keeps an old tool file that was edited, and reports it', async () => {
+    const v1 = mkdtempSync(join(tmpdir(), 'loopengine-mcp-v1-'))
+    mkdirSync(join(v1, 'tools'))
+    writeFileSync(join(v1, 'tools', 'fake_old.ts'), "export const fakeOld = { name: 'fake_old', description: 'old', input_schema: { type: 'object', properties: {} }, execute: async () => 'old' }\n")
+    writeFileSync(join(v1, 'package.json'), JSON.stringify({ name: 'lp-fake', version: '1.0.0' }))
+    writeFileSync(join(v1, 'loopengine.ability.json'), JSON.stringify({ loopengineVersion: '*', tools: ['tools/fake_old.ts'] }))
+    await installAbility(AGENT_NAME, 'lp-fake', { fetchAbilityDir: () => v1 })
+    writeFileSync(join(AGENT_DIR, 'tools', 'fake_old.ts'), '// edited\n' + readFileSync(join(AGENT_DIR, 'tools', 'fake_old.ts'), 'utf8'))
+
+    const v2 = buildMcpAbility(stdioMcp(['echo']), { version: '2.0.0', rules: '[]' })
+    const { files } = await upgradeAbility(AGENT_NAME, 'lp-fake', { fetchAbilityDir: (spec) => (spec.endsWith('@1.0.0') ? v1 : v2) })
+    expect(files).toContainEqual({ path: 'tools/fake_old.ts', status: 'conflict' })
+    expect(existsSync(join(AGENT_DIR, 'tools', 'fake_old.ts'))).toBe(true)
   })
 })
 

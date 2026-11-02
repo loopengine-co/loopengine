@@ -112,6 +112,7 @@ ${consoleShellScript}
         '<div><strong>Installs</strong> <span class="hint">(abilities: their tools, skills and permission rules)</span>' +
           listHtml(p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; })) +
           (canInstall ? '' : '<p class="error" style="margin:4px 0 0">Installing abilities needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server. Without it, the agent is created and its abilities head the checklist.</p>') + '</div>' +
+        (p.apps && p.apps.length ? '<div><strong>Apps it uses</strong> <span class="hint">(connected on the <a href="/config?section=apps">Apps</a> page; one that isn' + String.fromCharCode(8217) + 't connected yet heads the checklist)</span>' + listHtml(p.apps.map(function (a) { return '<li>' + esc(a) + '</li>'; })) + '</div>' : '') +
         '<div><strong>Permissions</strong> <span class="hint">(anything not listed asks you first)</span>' +
           listHtml(p.rules.map(function (rule) { return '<li><code>' + esc(rule.tool) + '</code>: ' + esc(DECISIONS[rule.decision] || rule.decision) + '</li>'; })) + '</div>' +
         '<div><strong>Keys it needs</strong>' +

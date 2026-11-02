@@ -336,6 +336,16 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   #httpToolAddFieldBtn, #httpToolAddHeaderBtn {
     padding: 6px 12px;
   }
+  .app-pick { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 6px 0 12px; display: grid; gap: 8px; background: var(--surface); }
+  .app-pick-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .app-pick-bar input[type=search] { font: inherit; font-size: 12px; padding: 5px 7px; max-width: 240px; }
+  .app-pick-list { display: grid; gap: 2px; max-height: 380px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px; background: var(--bg); }
+  .app-pick-tool { display: flex; gap: 8px; align-items: flex-start; padding: 5px 6px; border-radius: 6px; font-size: 12.5px; }
+  .app-pick-tool:hover { background: var(--surface); }
+  .app-pick-tool input { margin-top: 3px; }
+  .app-pick-tool code { overflow-wrap: anywhere; }
+  .app-pick-tool select { font: inherit; font-size: 11.5px; padding: 1px 4px; }
+  .app-pick-desc { display: block; }
 </style>
 </head>
 <body data-le-page="agent-config">
@@ -2350,7 +2360,7 @@ ${consoleShellScript}
       '<td><code>' + escapeHtml(a.name) + '</code></td>' +
       '<td>' + escapeHtml(a.version) + '</td>' +
       '<td>' + leShell.abilityOriginBadge(a.origin) + '</td>' +
-      '<td class="hint">' + escapeHtml((a.tools || []).join(', ')) + '</td>' +
+      '<td class="hint">' + escapeHtml((a.tools || []).concat(a.mcp ? a.mcp.tools.map(function (t) { return t.name; }) : []).join(', ')) + '</td>' +
       '<td style="white-space:nowrap">' + detailsHtml + ' ' + actionHtml + '</td>' +
       '</tr>';
   }
@@ -2380,6 +2390,8 @@ ${consoleShellScript}
     return '<h3>Installed</h3>' + installedHtml +
       // Installing by name or spec is on the console's Abilities page.
       '<p id="abilityInstallStatus" class="hint"></p>' +
+      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Apps <span class="hint" style="font-weight:400">connected in this workspace; choose which of their tools this agent gets, and each one' + String.fromCharCode(8217) + 's permission</span></h3>' +
+      '<div id="agentApps" style="margin-bottom:32px"><p class="hint">Loading&hellip;</p></div>' +
       '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Public abilities <span class="hint" style="font-weight:400">npm packages tagged loopengine-ability</span></h3>' +
       '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
         '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search public abilities" style="flex:1">' +
@@ -2457,7 +2469,8 @@ ${consoleShellScript}
       .then(function (result) {
         if (!result.ok) throw new Error(result.body.error || 'request failed');
         var files = result.body.files || [];
-        var updated = files.filter(function (f) { return f.status === 'updated'; });
+        // added/removed: new rules, and tool files a version dropped (its tools now come from the app's MCP server).
+        var updated = files.filter(function (f) { return f.status === 'updated' || f.status === 'added' || f.status === 'removed'; });
         var conflicts = files.filter(function (f) { return f.status === 'conflict'; });
         var message;
         if (!files.length || (!updated.length && !conflicts.length)) {
@@ -2566,7 +2579,8 @@ ${consoleShellScript}
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (currentName !== name) return;
-        var abilities = d.abilities || [];
+        // Connected apps are listed under Apps, above.
+        var abilities = (d.abilities || []).filter(function (a) { return !a.app; });
         if (!abilities.length) {
           el.innerHTML = '<p><a href="/config?section=abilities#private-abilities">Install private abilities</a></p>';
           return;
@@ -2666,6 +2680,165 @@ ${consoleShellScript}
       runAbilitySearch(name, '', content, resultsEl, installedNames);
     }
     loadPrivateAbilitiesFor(name, content, installedNames);
+    loadAgentApps(name, content);
+  }
+
+  // ---- Apps: a connected app's tools for this agent ----
+  // The workspace's connected apps (the console's Apps page). Adding one,
+  // or Choose tools on one already added, opens a picker: each tool with a
+  // checkbox and this agent's permission for it; Save installs the app
+  // with just those tools, or changes the agent's choice.
+
+  var agentApps = { name: null, connected: [], pickers: {} };
+  var DECISION_NAMES = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
+
+  function loadAgentApps(name, content) {
+    var el = content.querySelector('#agentApps');
+    if (!el) return;
+    if (agentApps.name !== name) agentApps = { name: name, connected: [], pickers: {} };
+    fetch('/config/apps', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (currentName !== name) return;
+        agentApps.connected = d.connected || [];
+        agentApps.canChange = Boolean(d.canConnect);
+        renderAgentApps();
+      })
+      .catch(function (err) { el.innerHTML = '<p class="error">Could not list apps: ' + escapeHtml(err.message) + '</p>'; });
+    if (!content.dataset.appsWired) {
+      content.dataset.appsWired = '1';
+      content.addEventListener('click', onAgentAppsClick);
+      content.addEventListener('change', onAgentAppsChange);
+      content.addEventListener('input', onAgentAppsInput);
+    }
+  }
+
+  function renderAgentApps() {
+    var content = abilitiesContentEl();
+    var el = content && content.querySelector('#agentApps');
+    if (!el) return;
+    var name = agentApps.name;
+    if (!agentApps.connected.length) {
+      el.innerHTML = '<p class="hint">No apps connected yet. <a href="/config?section=apps">Connect one on the Apps page</a>, then add it here.</p>';
+      return;
+    }
+    el.innerHTML = '<table><thead><tr><th>App</th><th>For this agent</th><th></th></tr></thead><tbody>' + agentApps.connected.map(function (c) {
+      var added = c.agents.indexOf(name) !== -1;
+      var open = agentApps.pickers[c.ability];
+      return '<tr><td><strong>' + escapeHtml(c.title) + '</strong> <span class="hint">' + escapeHtml(c.ability) + '</span></td>' +
+        '<td class="hint">' + (added ? 'Added' : 'Not added') + '</td>' +
+        '<td style="white-space:nowrap"><button type="button" class="app-pick-open" data-ability="' + escapeHtml(c.ability) + '">' + (open ? 'Close' : added ? 'Choose tools' : 'Add') + '</button></td></tr>' +
+        (open ? '<tr><td colspan="3">' + pickerHtml(c.ability) + '</td></tr>' : '');
+    }).join('') + '</tbody></table>' +
+    '<p class="hint" style="margin:6px 0 0"><a href="/config?section=apps">Connect more apps</a></p>';
+  }
+
+  function pickerHtml(ability) {
+    var p = agentApps.pickers[ability];
+    if (p.error) return '<div class="app-pick"><p class="error" style="margin:0">' + escapeHtml(p.error) + '</p></div>';
+    if (!p.tools) return '<div class="app-pick"><p class="hint" style="margin:0">Asking the app for its tools' + String.fromCharCode(8230) + '</p></div>';
+    var chosen = p.tools.filter(function (t) { return t.selected; }).length;
+    var f = (p.filter || '').toLowerCase();
+    var shown = p.tools.filter(function (t) { return !f || (t.remote + ' ' + t.description).toLowerCase().indexOf(f) !== -1; });
+    var disabled = agentApps.canChange && !p.busy ? '' : ' disabled';
+    return '<div class="app-pick">' +
+      '<p class="hint" style="margin:0">Choose the tools this agent can use, and what each may do on its own: Allow runs it, Ask me waits for your OK, Never blocks it. Each starts at the app' + String.fromCharCode(8217) + 's default.</p>' +
+      '<div class="app-pick-bar">' +
+        (p.tools.length > 12 ? '<input type="search" class="app-pick-filter" data-ability="' + escapeHtml(ability) + '" placeholder="Filter tools" value="' + escapeHtml(p.filter || '') + '" aria-label="Filter tools">' : '') +
+        '<button type="button" class="app-pick-readonly" data-ability="' + escapeHtml(ability) + '"' + disabled + '>Select read-only tools</button>' +
+        '<button type="button" class="app-pick-none" data-ability="' + escapeHtml(ability) + '"' + disabled + '>Clear</button>' +
+        '<span class="hint">' + chosen + ' of ' + p.tools.length + ' selected' + (chosen > 20 ? '. That' + String.fromCharCode(8217) + 's a lot: more tools make an agent slower to choose and likelier to pick the wrong one.' : '') + '</span>' +
+      '</div>' +
+      '<div class="app-pick-list">' + shown.map(function (t) {
+        return '<label class="app-pick-tool"><input type="checkbox" class="app-pick-check" data-ability="' + escapeHtml(ability) + '" data-tool="' + escapeHtml(t.remote) + '"' + (t.selected ? ' checked' : '') + disabled + '>' +
+          '<span><code>' + escapeHtml(t.name) + '</code> ' +
+            '<select class="app-pick-decision" data-ability="' + escapeHtml(ability) + '" data-tool="' + escapeHtml(t.remote) + '" aria-label="Permission for ' + escapeHtml(t.name) + '"' + disabled + '>' +
+              ['allow', 'ask', 'deny'].map(function (d) { return '<option value="' + d + '"' + (d === t.decision ? ' selected' : '') + '>' + DECISION_NAMES[d] + '</option>'; }).join('') + '</select>' +
+            (t.destructive ? ' <span class="hint">destructive</span>' : t.readOnly ? ' <span class="hint">read-only</span>' : '') +
+            (t.description ? '<span class="hint app-pick-desc">' + escapeHtml(t.description) + '</span>' : '') +
+          '</span></label>';
+      }).join('') + '</div>' +
+      '<div class="app-pick-bar"><button type="button" class="app-pick-save" data-ability="' + escapeHtml(ability) + '"' + (chosen && !p.busy && agentApps.canChange ? '' : ' disabled') + '>' + (p.installed ? 'Save' : 'Add with ' + chosen + ' tool' + (chosen === 1 ? '' : 's')) + '</button>' +
+        (agentApps.canChange ? '' : '<span class="error">Changing an agent' + String.fromCharCode(8217) + 's tools needs LOOPENGINE_ADMIN_AUTH set.</span>') +
+        (p.message ? '<span class="' + (p.messageBad ? 'error' : 'hint') + '">' + escapeHtml(p.message) + '</span>' : '') + '</div>' +
+      '</div>';
+  }
+
+  function pickerTool(ability, remote) {
+    var tools = agentApps.pickers[ability].tools;
+    for (var i = 0; i < tools.length; i++) if (tools[i].remote === remote) return tools[i];
+    return null;
+  }
+
+  function openPicker(ability) {
+    var name = agentApps.name;
+    agentApps.pickers[ability] = { tools: null, filter: '' };
+    renderAgentApps();
+    fetch('/agents/' + encodeURIComponent(name) + '/apps/' + encodeURIComponent(ability), { cache: 'no-store' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        var p = agentApps.pickers[ability];
+        if (!p || agentApps.name !== name) return;
+        if (!r.ok) p.error = r.body.error || 'Could not list its tools.';
+        else { p.tools = r.body.tools; p.installed = r.body.installed; }
+        renderAgentApps();
+      })
+      .catch(function (err) { var p = agentApps.pickers[ability]; if (p) { p.error = err.message; renderAgentApps(); } });
+  }
+
+  function savePicker(ability) {
+    var name = agentApps.name;
+    var p = agentApps.pickers[ability];
+    var tools = p.tools.filter(function (t) { return t.selected; }).map(function (t) { return { remote: t.remote, decision: t.decision }; });
+    p.busy = true;
+    p.message = 'Saving' + String.fromCharCode(8230);
+    p.messageBad = false;
+    renderAgentApps();
+    fetch('/agents/' + encodeURIComponent(name) + '/apps/' + encodeURIComponent(ability), { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tools: tools }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        p.busy = false;
+        if (!r.ok) { p.message = r.body.error || 'Could not save.'; p.messageBad = true; renderAgentApps(); return; }
+        delete agentApps.pickers[ability];
+        // The Installed table and the counts change too.
+        loadAbilitiesTab(name);
+      })
+      .catch(function (err) { p.busy = false; p.message = err.message; p.messageBad = true; renderAgentApps(); });
+  }
+
+  function onAgentAppsClick(ev) {
+    var t = ev.target;
+    if (!t.dataset || !t.dataset.ability) return;
+    var ability = t.dataset.ability;
+    if (t.classList.contains('app-pick-open')) {
+      if (agentApps.pickers[ability]) { delete agentApps.pickers[ability]; renderAgentApps(); }
+      else openPicker(ability);
+    } else if (t.classList.contains('app-pick-readonly') || t.classList.contains('app-pick-none')) {
+      var readOnly = t.classList.contains('app-pick-readonly');
+      agentApps.pickers[ability].tools.forEach(function (tool) { tool.selected = readOnly ? tool.default === 'allow' : false; });
+      renderAgentApps();
+    } else if (t.classList.contains('app-pick-save')) {
+      savePicker(ability);
+    }
+  }
+
+  function onAgentAppsChange(ev) {
+    var t = ev.target;
+    if (!t.dataset || !t.dataset.tool || !agentApps.pickers[t.dataset.ability]) return;
+    var tool = pickerTool(t.dataset.ability, t.dataset.tool);
+    if (!tool) return;
+    if (t.classList.contains('app-pick-check')) tool.selected = t.checked;
+    if (t.classList.contains('app-pick-decision')) { tool.decision = t.value; tool.selected = true; }
+    renderAgentApps();
+  }
+
+  function onAgentAppsInput(ev) {
+    var t = ev.target;
+    if (!t.classList.contains('app-pick-filter')) return;
+    agentApps.pickers[t.dataset.ability].filter = t.value;
+    renderAgentApps();
+    var again = abilitiesContentEl().querySelector('.app-pick-filter[data-ability="' + t.dataset.ability + '"]');
+    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
   }
 
   function applyAbilitiesConfig(name, data) {

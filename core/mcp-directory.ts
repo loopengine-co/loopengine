@@ -36,6 +36,8 @@ export interface McpDirectoryServer {
   official?: boolean
   /** How a key is sent, when it isn't Authorization: Bearer. */
   auth?: { header?: string; prefix?: string }
+  /** Extra headers the server needs (e.g. which toolsets to offer). */
+  headers?: Record<string, string>
 }
 
 export const MCP_REGISTRY_URL_ENV = 'LOOPENGINE_MCP_REGISTRY_URL'
@@ -91,6 +93,13 @@ function isRemoteUrl(url: string): boolean {
   }
 }
 
+/** io.github.firecrawl/… → firecrawl: the GitHub organisation the
+ * registry verified the name for. */
+function githubOrg(name: string): string | undefined {
+  const ns = name.split('/')[0]
+  return ns.startsWith('io.github.') ? ns.slice('io.github.'.length).toLowerCase() || undefined : undefined
+}
+
 /** com.stripe/mcp → stripe.com; io.github.* names aren't domains. */
 function publisherDomain(name: string): string | undefined {
   const ns = name.split('/')[0]
@@ -99,15 +108,27 @@ function publisherDomain(name: string): string | undefined {
   return parts.length >= 2 ? parts.reverse().join('.') : undefined
 }
 
+/** Whether the server's URL is on its publisher's own domain: the
+ * domain a reverse-domain name was verified for, or, for a name verified
+ * through a GitHub organisation, a domain named like it
+ * (io.github.firecrawl at mcp.firecrawl.dev). */
 function onPublisherDomain(name: string, url: string): boolean {
-  const domain = publisherDomain(name)
-  if (!domain) return false
+  let host: string
   try {
-    const host = new URL(url).hostname
-    return host === domain || host.endsWith(`.${domain}`)
+    host = new URL(url).hostname
   } catch {
     return false
   }
+  const domain = publisherDomain(name)
+  if (domain) return host === domain || host.endsWith(`.${domain}`)
+  const org = githubOrg(name)
+  const labels = host.split('.')
+  return Boolean(org && labels.length >= 2 && labels[labels.length - 2] === org)
+}
+
+/** The publisher's own name: firecrawl for io.github.firecrawl, stripe for com.stripe. */
+function publisherLabel(name: string): string | undefined {
+  return githubOrg(name) ?? publisherDomain(name)?.split('.')[0]
 }
 
 interface RegistryEntry {
@@ -180,7 +201,7 @@ export async function searchMcpServers(query: string, limit = 10): Promise<McpDi
     if (!registry.length && words.length > 1) registry = await registrySearch(words[0])
   } catch {}
   const ranked = registry
-    .map((r) => ({ ...r, official: r.verified && words.includes(publisherDomain(r.id)?.split('.')[0] ?? '') }))
+    .map((r) => ({ ...r, official: r.verified && words.includes(publisherLabel(r.id) ?? '') }))
     .sort((a, b) => Number(b.official) - Number(a.official) || Number(b.verified) - Number(a.verified))
   return [...saved, ...ranked.filter((r) => !saved.some((s) => s.url === r.url))].slice(0, limit)
 }

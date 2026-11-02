@@ -13,7 +13,7 @@
 // (web/workflow-admin.ts).
 import type { ToolSchema } from '#core/agent-config.js'
 import type { Message, ModelCall, ModelContentBlock } from '#core/run-agent.js'
-import type { StarterTemplate } from './templates.js'
+import type { StarterTemplate, TemplateApp } from './templates.js'
 
 export type Decision = 'allow' | 'ask' | 'deny'
 
@@ -94,6 +94,9 @@ export interface WorkflowPlan {
   gaps: string[]
   /** MCP servers its steps use, set up on Create (filled in after planning). */
   mcpServers?: PlannedMcpServer[]
+  /** Connected apps it adds to the agent, with just the tools its steps
+   * use (filled in on Create, from mcpServers). */
+  apps?: TemplateApp[]
 }
 
 export interface WorkflowPlannerTools {
@@ -399,6 +402,7 @@ export function workflowTemplate(plan: WorkflowPlan): StarterTemplate {
     },
     setup: {
       abilities: plan.abilities,
+      ...(plan.apps?.length ? { apps: plan.apps } : {}),
       keys: plan.keys,
       skills: [{ id: plan.id, description: plan.skill.description, body: plan.skill.body }],
       rules: plan.rules.map((r) => ({ name: slugify(`${plan.id}-${r.tool}`, `${plan.id}-rule`), tool: r.tool, decision: r.decision })),

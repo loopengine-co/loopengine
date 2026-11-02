@@ -74,7 +74,9 @@ describe('generateMcpAbility', () => {
     const generated = await generateMcpAbility({ server: server(), workflow })
 
     expect(generated.name).toBe('mcp-fake')
-    expect(generated.stepTools).toEqual({ 0: 'fake_list_things', 2: 'fake_create_thing' })
+    expect(generated.stepTools).toEqual({ 0: 'listThings', 2: 'createThing' })
+    // Every tool the server offers, each at its default permission.
+    expect(generated.tools.map((t) => t.name)).toContain('fake_secret_admin')
     const decisions = Object.fromEntries(generated.tools.map((t) => [t.name, t.decision]))
     expect(decisions.fake_list_things).toBe('allow')
     expect(decisions.fake_create_thing).toBe('ask')
@@ -82,15 +84,16 @@ describe('generateMcpAbility', () => {
     expect(readRules(generated.dir).find((r) => r.tool === 'fake_create_thing')?.decision).toBe('ask')
     const manifest = JSON.parse(readFileSync(join(generated.dir, 'loopengine.ability.json'), 'utf8'))
     expect(manifest.mcp).toMatchObject({ url: `${base}/mcp`, auth: { type: 'none' }, prefix: 'fake' })
+    expect(manifest.mcp.tools).toHaveLength(generated.tools.length)
     expect(readFileSync(join(generated.dir, 'skills', 'fake', 'SKILL.md'), 'utf8')).toContain('fake_create_thing')
 
-    await installAbility(AGENT_NAME, 'mcp-fake', { fetchAbilityDir: () => generated.dir })
+    await installAbility(AGENT_NAME, 'mcp-fake', { fetchAbilityDir: () => generated.dir, mcpTools: ['listThings', 'createThing'] })
     const tools = await loadMcpAbilityTools(AGENT_DIR, AGENT_NAME)
     const create = tools.find((t) => t.name === 'fake_create_thing')!
     expect(await create.execute({ title: 'x' }, { agentName: AGENT_NAME, tenant: 'default', env: createAgentEnv(AGENT_NAME, AGENT_DIR) })).toBe('created x')
   })
 
-  it('with a model: its step choices and skill, but never "allow" for a tool that changes things', async () => {
+  it('with a model: its step choices and skill, with the installed tool names', async () => {
     const modelCall: ModelCall = async () => ({
       stop_reason: 'tool_use',
       content: [{
@@ -99,14 +102,13 @@ describe('generateMcpAbility', () => {
         name: 'save_ability',
         input: {
           steps: [{ step: 0, tool: 'listThings' }, { step: 2, tool: 'createThing' }],
-          tools: [{ name: 'createThing', decision: 'allow' }, { name: 'getThing', decision: 'allow' }, { name: 'nope', decision: 'allow' }],
           skill: { description: 'Using Fake', body: 'Use listThings, then createThing.' },
         },
       }],
     })
     const generated = await generateMcpAbility({ server: server(), workflow: { ...workflow, steps: workflow.steps.map(({ tool: _t, ...s }) => s) }, modelCall })
 
-    expect(generated.tools.map((t) => [t.name, t.decision])).toEqual([['fake_list_things', 'allow'], ['fake_create_thing', 'ask'], ['fake_get_thing', 'allow']])
+    expect(generated.stepTools).toEqual({ 0: 'listThings', 2: 'createThing' })
     expect(readFileSync(join(generated.dir, 'skills', 'fake', 'SKILL.md'), 'utf8')).toContain('Use fake_list_things, then fake_create_thing.')
   })
 
@@ -140,6 +142,18 @@ describe('the MCP directory', () => {
     registryBody = { servers: [{ server: { name: 'app.vercel.checkup/stripe', remotes: [{ type: 'streamable-http', url: 'https://checkup.vercel.app/mcp' }] } }, ...(registryBody as { servers: unknown[] }).servers] }
     const found = await searchMcpServers('stripe')
     expect(found.map((s) => [s.id, s.verified, s.official])).toEqual([['com.stripe/mcp', true, true], ['app.vercel.checkup/stripe', true, false], ['io.github.someone/stripe', false, false]])
+  })
+
+  it('treats a server published under a GitHub organisation as the app\'s own when its URL is on a domain named like it', async () => {
+    process.env[MCP_REGISTRY_URL_ENV] = base
+    registryBody = {
+      servers: [
+        { server: { name: 'io.github.someone/firecrawl-proxy', remotes: [{ type: 'streamable-http', url: 'https://proxy.example.com/firecrawl' }] } },
+        { server: { name: 'io.github.firecrawl/firecrawl-mcp-server', title: 'Firecrawl MCP Server', remotes: [{ type: 'streamable-http', url: 'https://mcp.firecrawl.dev/v2/mcp' }] } },
+      ],
+    }
+    const found = await searchMcpServers('firecrawl')
+    expect(found.map((s) => [s.id, s.verified, s.official])).toEqual([['io.github.firecrawl/firecrawl-mcp-server', true, true], ['io.github.someone/firecrawl-proxy', false, false]])
   })
 
   it('puts the workspace\'s saved servers first', async () => {
@@ -190,7 +204,7 @@ describe('MCP servers in a workflow plan', () => {
     expect(gone.mcpServers).toBeUndefined()
   })
 
-  it('on Create: makes the ability, points the steps at its tools, and saves the key', async () => {
+  it('on Create: connects the app, points the steps at its tools, adds just those to the agent, and saves the key', async () => {
     requiredKey = 'k-2'
     const p = plan()
     const saved: Record<string, string> = {}
@@ -208,7 +222,10 @@ describe('MCP servers in a workflow plan', () => {
     expect(result).toEqual({ made: ['mcp-fake'], failed: [] })
     expect(p.steps.map((s) => [s.tool, s.mcp])).toEqual([['fake_list_things', undefined], ['fake_create_thing', undefined]])
     expect(p.steps[0].ability).toMatch(/^file:/)
-    expect(p.abilities).toEqual([p.steps[0].ability])
+    expect(p.abilities).toEqual([])
+    expect(p.apps).toEqual([{ id: 'dev.fake/fake', title: 'Fake', tools: ['listThings', 'createThing'] }])
+    // The approval step's tool asks first.
+    expect(p.rules).toEqual([{ tool: 'fake_create_thing', decision: 'ask' }])
     expect(p.skill.body).toBe('Run fake_list_things, then fake_create_thing.')
     expect(saved).toEqual({ FAKE_MCP_KEY: 'k-2' })
     expect(p.mcpServers).toBeUndefined()
@@ -249,7 +266,8 @@ describe('MCP servers in a workflow plan', () => {
     const result = await prepareMcpAbilities(p, {}, deps)
     expect(result).toEqual({ made: [], failed: [] })
     expect(p.steps.map((s) => s.tool)).toEqual(['fake_list_things', 'fake_create_thing'])
-    expect(p.abilities).toEqual(['file:/ws/mcp-fake'])
+    expect(p.abilities).toEqual([])
+    expect(p.apps).toEqual([{ id: 'dev.fake/fake', title: 'Fake', tools: ['listThings', 'createThing'] }])
   })
 
   it('doesn\'t repeat a prefix the tool name already has', async () => {

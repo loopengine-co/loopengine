@@ -27,7 +27,10 @@ export interface TemplateCreateDeps {
   /** Installs an ability (an npm spec) into the agent. Absent where
    * installing isn't allowed (no admin login): the abilities then head the
    * checklist instead. */
-  installAbility?: (name: string, spec: string) => Promise<void>
+  installAbility?: (name: string, spec: string, options?: { mcpTools?: string[] }) => Promise<void>
+  /** The workspace ability of a connected app (by catalog id), if it's
+   * connected. */
+  prepareApp?: (id: string) => Promise<string | undefined>
   /** A setting as the agent sees it (its own, else the shared one). */
   envValue(name: string, variable: string): string | undefined
   /** Whether approval requests from the agent reach anyone. */
@@ -57,6 +60,7 @@ export interface TemplateSummary {
   trigger: string
   asksFirst: string[]
   abilities: string[]
+  apps: string[]
   schedule: string | null
 }
 
@@ -64,6 +68,8 @@ export interface TemplatePreview {
   name: string
   systemPrompt: string
   abilities: string[]
+  /** Apps it uses, by title. */
+  apps: string[]
   skills: string[]
   rules: { tool: string; decision: string }[]
   keys: { names: string[]; set: boolean }[]
@@ -123,6 +129,7 @@ export function listTemplates(): TemplateSummary[] {
     trigger: setup.schedule ? describeTemplateSchedule(setup.schedule) : c.trigger.description,
     asksFirst: c.asksFirst,
     abilities: setup.abilities,
+    apps: (setup.apps ?? []).map((a) => a.title),
     schedule: setup.schedule ? describeTemplateSchedule(setup.schedule) : null,
   }))
 }
@@ -140,6 +147,7 @@ export function previewTemplate(id: string, deps: Pick<TemplateCreateDeps, 'agen
     name,
     systemPrompt: template.candidate.agent.systemPrompt,
     abilities: setup.abilities,
+    apps: (setup.apps ?? []).map((a) => a.title),
     skills: (setup.skills ?? []).map((s) => s.id),
     rules: setup.rules.map((r) => ({ tool: r.tool, decision: r.decision })),
     // A key set for the whole project already counts for a new agent.
@@ -152,9 +160,10 @@ export function previewTemplate(id: string, deps: Pick<TemplateCreateDeps, 'agen
 }
 
 /** What's left once the agent exists, each linked to where it's done. */
-export function templateChecklist(template: StarterTemplate, name: string, deps: Pick<TemplateCreateDeps, 'envValue' | 'messagingConfigured'>, failed: { name: string; error: string }[] = []): TemplateChecklistItem[] {
+export function templateChecklist(template: StarterTemplate, name: string, deps: Pick<TemplateCreateDeps, 'envValue' | 'messagingConfigured'>, failed: { name: string; error: string }[] = [], appsToConnect: string[] = []): TemplateChecklistItem[] {
   const tab = (t: string) => `/agents/config?agent=${encodeURIComponent(name)}&tab=${t}`
   const items: TemplateChecklistItem[] = []
+  for (const title of appsToConnect) items.push({ label: `Connect ${title} on the Apps page, then add it to ${name} from its Abilities tab`, href: '/config?section=apps' })
   for (const f of failed) items.push({ label: `Install the ${f.name} ability (it couldn't be installed: ${f.error})`, href: tab('abilities') })
 
   const missing = keyGroups(template).filter((names) => !names.some((n) => deps.envValue(name, n)))
@@ -216,6 +225,34 @@ export async function createFromTemplateObject(template: StarterTemplate, deps: 
     }
   }
 
+  // Apps: a connected one is added with just the tools the template relies
+  // on; one not connected heads the checklist.
+  const appsToConnect: string[] = []
+  for (const app of setup.apps ?? []) {
+    let spec: string | undefined
+    try {
+      spec = deps.prepareApp ? await deps.prepareApp(app.id) : undefined
+    } catch (err) {
+      failed.push({ name: app.title, error: err instanceof Error ? err.message : String(err) })
+      continue
+    }
+    if (!spec) {
+      appsToConnect.push(app.title)
+      continue
+    }
+    if (!deps.installAbility) {
+      failed.push({ name: app.title, error: 'adding apps needs LOOPENGINE_ADMIN_AUTH set on the server' })
+      continue
+    }
+    try {
+      // Just the tools the template relies on.
+      await deps.installAbility(name, spec, { mcpTools: app.tools })
+      installed.push(app.title)
+    } catch (err) {
+      failed.push({ name: app.title, error: installFailureReason(err) })
+    }
+  }
+
   // 3. Its own skills and non-secret settings.
   for (const skill of setup.skills ?? []) writeSkill(name, skill.id, { description: skill.description, body: skill.body })
   for (const [variable, value] of Object.entries(setup.env ?? {})) await setAgentEnvVar(name, variable, value)
@@ -250,7 +287,7 @@ export async function createFromTemplateObject(template: StarterTemplate, deps: 
   return {
     name,
     abilities: { installed, failed },
-    checklist: templateChecklist(template, name, deps, failed),
+    checklist: templateChecklist(template, name, deps, failed, appsToConnect),
     ...(candidate.agent.exampleMessage ? { exampleMessage: candidate.agent.exampleMessage } : {}),
     ...(schedule ? { schedule } : {}),
     ...(scheduleError ? { scheduleError } : {}),
