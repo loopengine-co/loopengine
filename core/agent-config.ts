@@ -232,7 +232,16 @@ export type HttpNotifierConfig =
  * `anthropic` (defaults to `'claude-sonnet-5'`), mirroring each factory's
  * own options exactly. */
 export type AgentModelConfig =
-  | { provider: 'anthropic'; model?: string; apiKey?: string; maxTokens?: number }
+  | {
+      provider: 'anthropic'
+      model?: string
+      apiKey?: string
+      maxTokens?: number
+      /** How much Claude thinks before answering; omitted, the model's own
+       * default. See AnthropicModelCallOptions.reasoningEffort
+       * (core/model-calls/anthropic-model-call.ts). */
+      reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    }
   | {
       provider: 'openai'
       model: string

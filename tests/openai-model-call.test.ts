@@ -72,6 +72,9 @@ describe('createOpenAIModelCall', () => {
     )
     expect(requests[0]).not.toHaveProperty('reasoning')
     expect(requests[1]).toMatchObject({ reasoning: { effort: 'high' } })
+    // Reasoning counts toward max_output_tokens, so the default is higher with it on.
+    expect(requests[0]).toMatchObject({ max_output_tokens: 4096 })
+    expect(requests[1]).toMatchObject({ max_output_tokens: 16000 })
   })
 
   it('stops with tool_use for a function call, and max_tokens when cut off', async () => {

@@ -251,7 +251,8 @@ export function fromResponse(response: OpenAI.Responses.Response): ModelResponse
 
 export function createOpenAIModelCall(options: OpenAIModelCallOptions): ModelCall {
   const client = options.client ?? new OpenAI({ apiKey: options.apiKey })
-  const maxTokens = options.maxTokens ?? 4096
+  // Reasoning counts toward max_output_tokens.
+  const maxTokens = options.maxTokens ?? (options.reasoningEffort && options.reasoningEffort !== 'none' ? 16000 : 4096)
 
   return async (messages: Message[], system: string, tools: ToolSchema[]): Promise<ModelResponse> => {
     const response = await client.responses.create({

@@ -52,6 +52,9 @@ export class AgentFileNotFoundError extends Error {}
 
 type Provider = 'anthropic' | 'openai' | 'deepseek' | 'kimi' | 'glm' | 'gemini' | 'xai' | 'meta'
 
+/** The providers whose model calls take a reasoning effort. */
+export const REASONING_PROVIDERS: Provider[] = ['openai', 'anthropic']
+
 const MODEL_ENV_VAR: Record<Provider, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
@@ -219,12 +222,12 @@ export function editAgentFile(agentName: string, fields: AgentEditableFields): A
       throw new AgentEditNotSupportedError('model.maxTokens must be a positive integer.')
     }
     const reasoningEffort = fields.model.reasoningEffort
-    // Only AgentModelConfig's 'openai' variant carries this (see its own
-    // doc comment) — refusing rather than silently dropping it for
-    // another provider, same "don't guess" posture the model-name check
-    // right above already follows.
-    if (reasoningEffort !== undefined && provider !== 'openai') {
-      throw new AgentModelError(`model.reasoningEffort only applies to provider 'openai' — '${provider}' doesn't support it.`)
+    // Only AgentModelConfig's 'openai' and 'anthropic' variants carry this
+    // (see their doc comments) — refusing rather than silently dropping it
+    // for another provider, same "don't guess" posture the model-name
+    // check right above already follows.
+    if (reasoningEffort !== undefined && !REASONING_PROVIDERS.includes(provider)) {
+      throw new AgentModelError(`model.reasoningEffort only applies to providers ${REASONING_PROVIDERS.join(' and ')} — '${provider}' doesn't support it.`)
     }
     // Every field the form actually round-trips (not just provider/model)
     // — omitting maxTokens/reasoningEffort here, the way this used to

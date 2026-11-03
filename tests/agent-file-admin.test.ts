@@ -75,10 +75,19 @@ describe('editAgentFile', () => {
     expect(readFileSync(INDEX_PATH, 'utf8')).toContain("model: { provider: 'openai', model: 'gpt-5.6-luna', maxTokens: 8000, reasoningEffort: 'none' }")
   })
 
-  it('rejects reasoningEffort for a non-openai provider, leaving the file untouched', () => {
+  it('takes reasoningEffort for anthropic too', () => {
     writeFixture(TEMPLATE)
 
-    expect(() => editAgentFile(AGENT_NAME, { model: { provider: 'anthropic', reasoningEffort: 'none' } })).toThrow(AgentModelError)
+    const result = editAgentFile(AGENT_NAME, { model: { provider: 'anthropic', reasoningEffort: 'medium' } })
+
+    expect(result).toEqual({ model: { provider: 'anthropic', model: 'claude-sonnet-5', maxTokens: undefined, reasoningEffort: 'medium' } })
+    expect(readFileSync(INDEX_PATH, 'utf8')).toContain("model: { provider: 'anthropic', model: 'claude-sonnet-5', reasoningEffort: 'medium' }")
+  })
+
+  it('rejects reasoningEffort for a provider without it, leaving the file untouched', () => {
+    writeFixture(TEMPLATE)
+
+    expect(() => editAgentFile(AGENT_NAME, { model: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'none' } })).toThrow(AgentModelError)
     expect(readFileSync(INDEX_PATH, 'utf8')).toBe(TEMPLATE)
   })
 

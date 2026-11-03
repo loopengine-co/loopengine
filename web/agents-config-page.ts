@@ -28,6 +28,7 @@
 import { devUiCss } from './dev-ui-styles.js'
 import { MESSAGING_ICONS } from './messaging-icons.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { REASONING_PROVIDERS } from './agent-file-admin.js'
 
 export const agentsConfigPageHtml: string = `<!doctype html>
 <html lang="en">
@@ -359,6 +360,8 @@ ${consoleSidebarHtml}
 ${consoleShellScript}
 <script>
 (function () {
+  // The providers whose models take a reasoning effort (web/agent-file-admin.ts).
+  var REASONING_PROVIDERS = ${JSON.stringify(REASONING_PROVIDERS)};
   var empty = document.getElementById('empty');
   var detail = document.getElementById('detail');
   var currentName = null;
@@ -793,7 +796,7 @@ ${consoleShellScript}
           '<dt>Provider</dt><dd>' + escapeHtml(cfg.model.provider) + '</dd>' +
           '<dt>Model</dt><dd>' + escapeHtml(cfg.model.model || '(provider default)') + '</dd>' +
           '<dt>Max tokens</dt><dd>' + escapeHtml(cfg.model.maxTokens != null ? cfg.model.maxTokens : '(default)') + '</dd>' +
-          '<dt>Reasoning effort</dt><dd>' + escapeHtml(cfg.model.reasoningEffort || (cfg.model.provider === 'openai' ? '(provider default)' : 'n/a')) + '</dd>' +
+          '<dt>Reasoning effort</dt><dd>' + escapeHtml(cfg.model.reasoningEffort || (REASONING_PROVIDERS.indexOf(cfg.model.provider) !== -1 ? '(model default)' : 'n/a')) + '</dd>' +
         '</dl>' +
         '<form class="add-source" id="modelForm" style="display:none">' +
           '<label>Provider' +
@@ -809,7 +812,7 @@ ${consoleShellScript}
           '<label>Max tokens <span class="hint">(blank for provider default)</span>' +
             '<input type="number" name="maxTokens" min="1" step="1" value="' + (cfg.model.maxTokens != null ? escapeHtml(cfg.model.maxTokens) : '') + '">' +
           '</label>' +
-          '<label>Reasoning effort <span class="hint">(openai only — some reasoning models reject function tools unless this is \\\'none\\\'; leave unset otherwise)</span>' +
+          '<label id="reasoningEffortField">Reasoning effort <span class="hint">(how much the model thinks before answering: none turns it off, unset uses the model\\\'s default)</span>' +
             '<select name="reasoningEffort">' +
               ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(function (v) {
                 return '<option value="' + v + '"' + (v === (cfg.model.reasoningEffort || '') ? ' selected' : '') + '>' + (v || '(unset)') + '</option>';
@@ -919,7 +922,19 @@ ${consoleShellScript}
       var modelForm = overviewPanel.querySelector('#modelForm');
       var modelError = overviewPanel.querySelector('#modelError');
 
+      // Only OpenAI and Anthropic models take a reasoning effort: the
+      // field shows for those, and is cleared for any other provider so
+      // it's never saved with one.
+      var providerSelect = modelForm.querySelector('select[name="provider"]');
+      var reasoningField = modelForm.querySelector('#reasoningEffortField');
+      function syncReasoningField() {
+        var supported = REASONING_PROVIDERS.indexOf(providerSelect.value) !== -1;
+        reasoningField.style.display = supported ? '' : 'none';
+        if (!supported) reasoningField.querySelector('select').value = '';
+      }
+      providerSelect.addEventListener('change', syncReasoningField);
       editModelBtn.addEventListener('click', function () {
+        syncReasoningField();
         modelDisplay.style.display = 'none';
         editModelBtn.style.display = 'none';
         modelForm.style.display = '';

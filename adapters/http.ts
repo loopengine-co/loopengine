@@ -418,7 +418,7 @@ async function describeAgent(entry: RegistryEntry): Promise<Record<string, unkno
           provider: config.model.provider,
           model: config.model.model,
           maxTokens: config.model.maxTokens,
-          // Only the 'openai' variant of AgentModelConfig carries this —
+          // Only the 'openai' and 'anthropic' variants of AgentModelConfig carry this —
           // an `in` check rather than a cast, so a provider that can
           // never have it just reports undefined instead of needing its
           // own narrowing branch here.
@@ -1507,23 +1507,20 @@ async function handleEditAgent(req: IncomingMessage, res: ServerResponse, agentN
   let createModelCall: RegistryEntry['createModelCall'] | undefined
   if (result.model) {
     // editAgentFile's own AgentEditResult.model is one flat shape across
-    // every provider (see that file's own reasoningEffort-only-for-openai
-    // check) — AgentModelConfig is a discriminated union instead, so
-    // reasoningEffort only ever type-checks on the 'openai' branch.
+    // every provider (see that file's own REASONING_PROVIDERS check) —
+    // AgentModelConfig is a discriminated union instead, so
+    // reasoningEffort only type-checks on the 'openai' and 'anthropic'
+    // branches.
     // reasoningEffort itself is narrowed no further than `string` at this
     // boundary (same as `model` — an arbitrary provider-defined name, not
     // an enum this layer validates); an invalid value surfaces as a clear
     // rejection from the provider's own API, same as an invalid model name
     // already does.
     const m = result.model
+    const reasoningEffort = m.reasoningEffort as Extract<AgentModelConfig, { provider: 'openai' }>['reasoningEffort']
     const modelConfig: AgentModelConfig =
-      m.provider === 'openai'
-        ? {
-            provider: 'openai',
-            model: m.model,
-            maxTokens: m.maxTokens,
-            reasoningEffort: m.reasoningEffort as Extract<AgentModelConfig, { provider: 'openai' }>['reasoningEffort'],
-          }
+      m.provider === 'openai' || m.provider === 'anthropic'
+        ? { provider: m.provider, model: m.model, maxTokens: m.maxTokens, reasoningEffort }
         : { provider: m.provider, model: m.model, maxTokens: m.maxTokens }
     configPatch.model = modelConfig
     createModelCall = await synthesizeCreateModelCall(modelConfig)
