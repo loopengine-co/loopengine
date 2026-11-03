@@ -262,6 +262,10 @@ export {
   type WorkflowCheck,
   type WorkflowConflict,
   type WorkflowCreateDeps,
+  type WorkflowMcpDeps,
+  type WorkflowMcpCreateDeps,
+  resolveMcpServers,
+  prepareMcpAbilities,
 } from './web/workflow-admin.js'
 export { WORKFLOW_PLANNER_PROMPT, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep } from './core/system-agents/workflow-planner.js'
 export { readWorkflows, removeWorkflow, saveWorkflow, type WorkflowRecord } from './core/workflows.js'
@@ -291,13 +295,32 @@ export {
   removeAbility,
   listInstalledAbilities,
   backfillDependencies,
+  configureAgentMcpTools,
   AbilityManifestError,
   AbilityVersionError,
   AbilityCollisionError,
   AbilityAlreadyInstalledError,
   AbilityNotInstalledError,
 } from './bin/ability-manager.js'
-export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult } from './bin/ability-manager.js'
+export type { InstalledAbilityRecord, AbilityEnvDecl, UpgradeFileResult, McpToolChoice } from './bin/ability-manager.js'
+export {
+  APP_CATALOG,
+  AppToolsError,
+  appCatalog,
+  appServer,
+  appTools,
+  catalogServer,
+  connectedApps,
+  isAppAbility,
+  loadAppIcons,
+  refreshAppTools,
+  setAppDefault,
+  type AgentAppTools,
+  type AppCatalogEntry,
+  type AppTool,
+  type AppView,
+  type ConnectedApp,
+} from './core/mcp-apps.js'
 
 export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
