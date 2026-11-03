@@ -238,11 +238,9 @@ export type AgentModelConfig =
       model: string
       apiKey?: string
       maxTokens?: number
-      /** Omit unless the model actually needs it — see
-       * OpenAIModelCallOptions.reasoningEffort's own doc comment
-       * (core/model-calls/openai-model-call.ts) for why a reasoning-
-       * capable model (gpt-5.x) can require this be `'none'` just to use
-       * function tools at all. */
+      /** How much the model reasons before answering; omitted, the
+       * model's own default. See OpenAIModelCallOptions.reasoningEffort
+       * (core/model-calls/openai-model-call.ts). */
       reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     }
   | { provider: 'deepseek'; model: string; apiKey?: string; maxTokens?: number; baseURL?: string }

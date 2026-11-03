@@ -3,6 +3,20 @@
 // the canned fake in any agent and nothing in run-agent.ts, the adapters,
 // or any AgentConfig changes.
 //
+// createOpenAIModelCall calls OpenAI's Responses API (/v1/responses):
+// OpenAI's reasoning models refuse function tools together with any
+// reasoning effort on /v1/chat/completions (every gpt-5.4 to gpt-6.1 model
+// checked live, Nov 2026), so an agent with tools could only run them with
+// reasoning off there. The Chat Completions translation below
+// (toMessageParams/toStopReason/toModelResponse) stays for the
+// OpenAI-compatible providers that reuse it.
+//
+// Responses is called statelessly (store: false): loopengine keeps the
+// conversation itself, so each reasoning item comes back encrypted, rides
+// in the conversation as an 'openai_reasoning' block, and is sent back
+// with the tool results it led to, which the API needs to carry the
+// model's reasoning across tool calls.
+//
 // Structural mismatch worth knowing: loopengine's Message bundles every
 // tool_result from one turn into a single user-role message's content
 // array (mirroring Anthropic's own shape, which this framework's Message
@@ -46,16 +60,10 @@ export interface OpenAIModelCallOptions {
    * one you actually want. */
   model: string
   maxTokens?: number
-  /** Omitted by default — a reasoning-capable model (the gpt-5.x family)
-   * otherwise gets whatever effort level OpenAI defaults it to, which
-   * some of these models refuse to combine with function tools on
-   * /v1/chat/completions at all ("Function tools with reasoning_effort
-   * are not supported ... set reasoning_effort to 'none'" — confirmed
-   * live against gpt-5.6-luna). Set this to `'none'` for a model that
-   * hits that error; every real loopengine call passes `tools` (even an
-   * empty array is still the `tools` field being present), so there's no
-   * tools-vs-no-tools branch here to get this wrong on. */
-  reasoningEffort?: OpenAI.Chat.Completions.ChatCompletionReasoningEffort
+  /** How much the model reasons before answering ('none' to 'max');
+   * omitted, the model's own default. Works with tools, since this calls
+   * /v1/responses. */
+  reasoningEffort?: OpenAI.ReasoningEffort
   /** Inject a pre-configured client instead of building one from apiKey — e.g. to pass a custom `fetch` in tests. */
   client?: OpenAI
 }
@@ -177,25 +185,87 @@ export function toModelResponse(choice: OpenAI.Chat.Completions.ChatCompletion.C
   return { stop_reason: toStopReason(choice.finish_reason), content }
 }
 
+type ResponseInputItem = OpenAI.Responses.ResponseInputItem
+
+/** The reasoning item an 'openai_reasoning' block carries, or undefined if
+ * its data isn't one (it is sent back only as OpenAI returned it). */
+function reasoningItem(block: ModelContentBlock): OpenAI.Responses.ResponseReasoningItem | undefined {
+  try {
+    const item = JSON.parse(block.data ?? '')
+    return item && item.type === 'reasoning' ? item : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** One loopengine Message as Responses input items: an assistant turn's
+ * reasoning, text and tool calls in the order the model produced them,
+ * and a user turn's tool results (or text). Another provider's 'thinking'
+ * blocks are dropped: OpenAI can't use them. */
+export function toResponsesInput(message: Message): ResponseInputItem[] {
+  const role = message.role === 'assistant' ? 'assistant' : 'user'
+  if (typeof message.content === 'string') return [{ role, content: message.content }]
+
+  const items: ResponseInputItem[] = []
+  for (const block of message.content) {
+    if (block.type === 'openai_reasoning') {
+      const item = reasoningItem(block)
+      if (item) items.push(item)
+    } else if (block.type === 'tool_use') {
+      items.push({ type: 'function_call', call_id: block.id!, name: block.name!, arguments: JSON.stringify(block.input ?? {}) })
+    } else if (block.type === 'tool_result') {
+      items.push({ type: 'function_call_output', call_id: block.tool_use_id!, output: block.content ?? '' })
+    } else if (block.type === 'text' && block.text) {
+      items.push({ role, content: block.text })
+    }
+  }
+  return items
+}
+
+/** A Response as a ModelResponse: reasoning items as 'openai_reasoning'
+ * blocks, message text, and function calls as tool_use blocks (their
+ * call_id is the id a tool result answers). */
+export function fromResponse(response: OpenAI.Responses.Response): ModelResponse {
+  const content: ModelContentBlock[] = []
+  let calledTools = false
+  for (const item of response.output) {
+    if (item.type === 'reasoning') {
+      content.push({ type: 'openai_reasoning', data: JSON.stringify(item) })
+    } else if (item.type === 'message') {
+      const text = item.content.map((part) => (part.type === 'output_text' ? part.text : part.refusal)).join('')
+      if (text) content.push({ type: 'text', text })
+    } else if (item.type === 'function_call') {
+      calledTools = true
+      content.push({ type: 'tool_use', id: item.call_id, name: item.name, input: parseToolArguments(item.arguments) })
+    }
+  }
+
+  const stop_reason = calledTools
+    ? 'tool_use'
+    : response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens'
+      ? 'max_tokens'
+      : 'end_turn'
+  const usage = response.usage ? { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens } : undefined
+  return { stop_reason, content, ...(usage ? { usage } : {}) }
+}
+
 export function createOpenAIModelCall(options: OpenAIModelCallOptions): ModelCall {
   const client = options.client ?? new OpenAI({ apiKey: options.apiKey })
   const maxTokens = options.maxTokens ?? 4096
 
   return async (messages: Message[], system: string, tools: ToolSchema[]): Promise<ModelResponse> => {
-    const response = await client.chat.completions.create({
+    const response = await client.responses.create({
       model: options.model,
-      max_completion_tokens: maxTokens,
-      messages: [{ role: 'system', content: system }, ...messages.flatMap(toMessageParams)],
+      instructions: system,
+      input: messages.flatMap(toResponsesInput),
+      max_output_tokens: maxTokens,
       tools: tools.length
-        ? tools.map((t) => ({
-            type: 'function',
-            function: { name: t.name, description: t.description, parameters: t.input_schema },
-          }))
+        ? tools.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.input_schema, strict: false }))
         : undefined,
-      reasoning_effort: options.reasoningEffort,
+      ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
+      store: false,
+      include: ['reasoning.encrypted_content'],
     })
-
-    const usage = response.usage ? { input_tokens: response.usage.prompt_tokens, output_tokens: response.usage.completion_tokens } : undefined
-    return { ...toModelResponse(response.choices[0]), usage }
+    return fromResponse(response)
   }
 }

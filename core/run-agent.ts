@@ -107,6 +107,10 @@ export interface ModelContentBlock {
   content?: string
   /** tool_result blocks: true if the tool call failed or was denied. */
   is_error?: boolean
+  /** Provider data carried opaquely and sent back to the same provider,
+   * e.g. an 'openai_reasoning' block's encrypted reasoning item (see
+   * model-calls/openai-model-call.ts). Never shown to a model as text. */
+  data?: string
   /** tool_result blocks: the actauth decision's own reason this call was
    * allowed (e.g. "matched rule '...'"). Extra metadata riding alongside
    * `content`, not folded into it — every model-calls/* adapter

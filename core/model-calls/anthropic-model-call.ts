@@ -42,7 +42,13 @@ function toContentBlockParam(block: ModelContentBlock): Anthropic.Messages.Conte
 function toMessageParam(message: Message): Anthropic.Messages.MessageParam {
   return {
     role: message.role === 'assistant' ? 'assistant' : 'user',
-    content: typeof message.content === 'string' ? message.content : message.content.map(toContentBlockParam),
+    // Blocks only another provider can use (another model's reasoning:
+    // 'thinking', 'openai_reasoning') are left out; as text they'd be
+    // empty text blocks, which the API rejects.
+    content:
+      typeof message.content === 'string'
+        ? message.content
+        : message.content.filter((block) => ['text', 'tool_use', 'tool_result'].includes(block.type)).map(toContentBlockParam),
   }
 }
 
