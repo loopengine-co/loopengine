@@ -6,7 +6,7 @@ import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import { planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
 import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
-import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, type WorkflowAgentInfo } from '#web/workflow-admin.js'
+import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
 import { FileRunStore, WorkflowRunner, setRunStore } from '#core/workflow-runs.js'
 
 const RAW_PLAN = {
@@ -261,6 +261,37 @@ describe("a workflow's runs and schedules", () => {
     const [w] = await listAgentWorkflows('cs', dir)
     expect(w.recentRuns.map((r) => [r.run_id, r.status])).toEqual([[run.run_id, 'awaiting_approval']])
     expect(w.schedules).toEqual([])
+  })
+
+  it('is edited from the console: title, start message, trigger and parameters, keeping its steps and other front matter', () => {
+    const path = join(dir, 'skills', 'refund-check', 'SKILL.md')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('name: refund-check\n', 'name: refund-check\npaths: ["orders/**"]\n'))
+
+    const w = updateWorkflow(dir, 'refund-check', {
+      title: 'Refund review',
+      start_message: '  Review the refund for order $order_number in $currency. ',
+      trigger: 'When support asks',
+      parameters: { order_number: { description: 'The order', required: true }, currency: { description: 'Its currency' } },
+    })
+
+    expect(w).toMatchObject({
+      title: 'Refund review',
+      startMessage: 'Review the refund for order $order_number in $currency.',
+      trigger: 'When support asks',
+      parameters: { order_number: { description: 'The order', required: true }, currency: { description: 'Its currency', required: false } },
+      steps: 'Steps.',
+    })
+    expect(readFileSync(path, 'utf8')).toContain('paths:')
+    expect(readFileSync(path, 'utf8')).not.toContain('customer_note')
+  })
+
+  it('refuses an edit it cannot save, saying why', () => {
+    expect(() => updateWorkflow(dir, 'refund-check', { start_message: '  ' })).toThrow(/Write the start message/)
+    expect(() => updateWorkflow(dir, 'refund-check', { start_message: 'Go.', parameters: { 'Order-Number': {} } })).toThrow(/lowercase letters/)
+    expect(() => updateWorkflow(dir, 'refund-check', { start_message: 'Go.', parameters: ['order_number'] })).toThrow(/parameters must be an object/)
+    expect(() => updateWorkflow(dir, 'refund-check', { start_message: 'x'.repeat(4001) })).toThrow(/too long/)
+    expect(() => updateWorkflow(dir, 'no-such-workflow', { start_message: 'Go.' })).toThrow(/No workflow no-such-workflow/)
+    expect(readWorkflow(dir, 'refund-check')?.title).toBe('Refund check')
   })
 
   it('forgetting it cancels its schedules and keeps the skill', async () => {

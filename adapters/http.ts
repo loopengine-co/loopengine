@@ -105,7 +105,7 @@ import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlack
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
-import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, planWorkflow, prepareWorkflowRun, startPlanJob, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
+import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -1322,7 +1322,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
 const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_000
 
 // An agent's workflows (its Overview, and apps over the API): list, run
-// now with parameters, forget.
+// now with parameters, edit how runs start (PUT), forget.
 //
 //   POST /agents/:name/workflows/:id/run  { "params": {…}, "wait": true }
 //
@@ -1355,6 +1355,10 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
         if (Date.now() >= deadline) return json(202, { runId: run.run_id, running: true })
         await new Promise((r) => setTimeout(r, 300))
       }
+    }
+    if (id && !action && req.method === 'PUT') {
+      updateWorkflow(dir, id, await readJsonBody(req))
+      return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
     }
     if (id && !action && req.method === 'DELETE') {
       const { cancelled } = await forgetWorkflow(agentName, dir, id)

@@ -254,6 +254,7 @@ export {
   planWorkflow,
   resolveConnections,
   prepareWorkflowRun,
+  updateWorkflow,
   startPlanJob,
   type AgentWorkflowView,
   type CreatedWorkflow,

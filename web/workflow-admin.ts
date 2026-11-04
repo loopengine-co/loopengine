@@ -607,6 +607,33 @@ export async function prepareWorkflowRun(agentName: string, agentDir: string, id
   return { workflow, params, message: workflowRunMessage(workflow, params) }
 }
 
+/** Changes how a workflow's runs start, from the console's workflow
+ * editor: its title, start message, trigger and parameters. Its steps
+ * (the skill body) and the skill's other front matter are kept. */
+export function updateWorkflow(agentDir: string, id: string, input: Record<string, unknown>): Workflow {
+  if (!readWorkflow(agentDir, id)) throw new WorkflowError(`No workflow ${id}.`)
+  const text = (value: unknown, field: string, max: number): string => {
+    if (value !== undefined && value !== null && typeof value !== 'string') throw new WorkflowError(`${field} must be text.`)
+    const trimmed = (value ?? '').toString().trim()
+    if (trimmed.length > max) throw new WorkflowError(`${field} is too long: keep it under ${max} characters.`)
+    return trimmed
+  }
+  const title = text(input.title, 'The title', 120)
+  const startMessage = text(input.start_message, 'The start message', 4000)
+  if (!startMessage) throw new WorkflowError('Write the start message: what each run begins with, e.g. "Check the refund request for order $order_number."')
+  const trigger = text(input.trigger, 'When it runs', 200)
+  const raw = input.parameters ?? {}
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new WorkflowError('parameters must be an object of names to { description, required }.')
+  const parameters: Record<string, { description: string; required: boolean }> = {}
+  for (const [name, spec] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new WorkflowError(`Parameter "${name}": use lowercase letters, digits and _, starting with a letter, e.g. "order_number".`)
+    const s = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : {}
+    parameters[name] = { description: text(s.description, `The description of "${name}"`, 300), required: s.required === true }
+  }
+  setWorkflowFields(agentDir, id, { ...(title ? { title } : {}), startMessage, ...(trigger ? { trigger } : {}), parameters })
+  return readWorkflow(agentDir, id)!
+}
+
 /** Forgets a workflow: its skill stays, as a plain skill, and the
  * schedules that ran it are cancelled. Returns how many were. */
 export async function forgetWorkflow(agentName: string, agentDir: string, id: string): Promise<{ cancelled: number }> {

@@ -53,6 +53,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-steps-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--le-surface, #f6f7f9); }
   .workflow-params { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .workflow-params[hidden] { display: none; }
+  .workflow-editor[hidden] { display: none; }
+  .workflow-param-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+  .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .workflow-param-row .wp-name { width: 160px; font-family: var(--le-mono, monospace); }
+  .workflow-param-row .wp-desc { flex: 1; min-width: 200px; }
   .workflow-param { display: flex; flex-direction: column; gap: 3px; font-size: 12px; min-width: 180px; }
   .advanced-part { font-size: 17px; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
   .advanced-part#advanced-tools { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -718,13 +723,18 @@ ${consoleShellScript}
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
           '<button type="button" class="workflow-run">Run now</button>' +
           (scheduleCount ? '<a href="?tab=schedules" data-tab="schedules" class="hint" style="align-self:center">' + (scheduleCount > 1 ? 'Schedules (' + scheduleCount + ')' : 'Schedule') + '</a>' : '') +
+          '<button type="button" class="workflow-edit">Edit</button>' +
           '<a href="?tab=skills" data-tab="skills" class="hint" style="align-self:center">Edit steps</a>' +
           '<button type="button" class="delete-btn workflow-forget">Forget</button>' +
-        '</div><div class="hint workflow-result"></div></div>';
+        '</div><div class="hint workflow-result"></div><div class="workflow-editor" hidden></div></div>';
     }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
   }
 
   var workflowsRefreshTimer = null;
+  var workflowsById = {};
+  // Set while a workflow's editor is open, so the running-run refresh
+  // doesn't redraw the card under someone typing.
+  var workflowEditing = false;
 
   function loadWorkflowsSection(name) {
     var el = detail.querySelector('#workflowsContent');
@@ -734,19 +744,114 @@ ${consoleShellScript}
       if (currentName !== name) return;
       if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
       var workflows = r.body.workflows || [];
+      workflowsById = {};
+      workflows.forEach(function (w) { workflowsById[w.id] = w; });
       el.innerHTML = renderWorkflowsHtml(name, workflows);
       var cards = el.querySelectorAll('.workflow-card');
       for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
       // Keep a running run's status current while the Overview is open.
       var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }); });
-      if (running && currentTab === 'overview') workflowsRefreshTimer = setTimeout(function () { loadWorkflowsSection(name); }, 3000);
+      if (running && currentTab === 'overview') workflowsRefreshTimer = setTimeout(function () { if (!workflowEditing) loadWorkflowsSection(name); }, 3000);
     });
+  }
+
+  // ---- The workflow editor: how a workflow's runs start. Its steps are
+  // the skill body, edited on the Skills tab.
+  function workflowParamRowHtml(pname, spec) {
+    return '<div class="workflow-param-row">' +
+      '<input class="wp-name" aria-label="Parameter name" placeholder="order_number" value="' + escapeHtml(pname || '') + '">' +
+      '<input class="wp-desc" aria-label="What it is" placeholder="What it is, e.g. The order to check" value="' + escapeHtml((spec && spec.description) || '') + '">' +
+      '<label class="http-tool-inline-label"><input type="checkbox" class="wp-required"' + (spec && spec.required ? ' checked' : '') + '> Required</label>' +
+      '<button type="button" class="delete-btn wp-remove">Remove</button></div>';
+  }
+
+  function workflowEditorHtml(w) {
+    var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
+    return '<form class="add-source workflow-editor-form" style="margin-top:10px">' +
+      '<label>Title<input name="title" maxlength="120" value="' + escapeHtml(w.title) + '"></label>' +
+      '<label>Start message <span class="hint">(what each run begins with; $name puts in a parameter&#39;s value)</span>' +
+        '<textarea name="start_message" maxlength="4000" required>' + escapeHtml(w.startMessage) + '</textarea></label>' +
+      '<label>When it runs <span class="hint">(in words, for people; the timing itself is its schedule)</span><input name="trigger" maxlength="200" value="' + escapeHtml(w.trigger) + '"></label>' +
+      '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
+        '<div class="workflow-param-rows">' + rows + '</div>' +
+        '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
+      '<p class="hint workflow-editor-check" style="margin:0"></p>' +
+      '<div style="display:flex;gap:8px"><button type="submit" class="primary">Save</button><button type="button" class="wp-cancel">Cancel</button></div>' +
+      '<div class="hint workflow-editor-result"></div></form>';
+  }
+
+  // Placeholders used in the start message or steps that no parameter
+  // declares, and declared parameters nothing uses.
+  function workflowPlaceholderCheck(w, form) {
+    var used = {};
+    var pattern = new RegExp('[$]([a-z_][a-z0-9_]*)', 'g');
+    var text = form.querySelector('[name="start_message"]').value + ' ' + (w.steps || '');
+    var m;
+    while ((m = pattern.exec(text))) used[m[1]] = true;
+    var declared = {};
+    var names = form.querySelectorAll('.wp-name');
+    for (var i = 0; i < names.length; i++) if (names[i].value.trim()) declared[names[i].value.trim()] = true;
+    var notes = [];
+    var missing = Object.keys(used).filter(function (n) { return !declared[n]; });
+    var unused = Object.keys(declared).filter(function (n) { return !used[n]; });
+    if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't a parameter: add ' + (missing.length > 1 ? 'them' : 'it') + ', or the text stays as written.');
+    if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't used in the start message or steps: its value is passed as an input.');
+    form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
+  }
+
+  function openWorkflowEditor(name, card) {
+    var w = workflowsById[card.dataset.workflow];
+    var box = card.querySelector('.workflow-editor');
+    if (!w || !box) return;
+    workflowEditing = true;
+    box.innerHTML = workflowEditorHtml(w);
+    box.hidden = false;
+    var form = box.querySelector('form');
+    var rows = form.querySelector('.workflow-param-rows');
+    var result = form.querySelector('.workflow-editor-result');
+    function check() { workflowPlaceholderCheck(w, form); }
+    function close() { workflowEditing = false; box.hidden = true; box.innerHTML = ''; }
+    rows.addEventListener('click', function (ev) {
+      if (ev.target.classList.contains('wp-remove')) { ev.target.closest('.workflow-param-row').remove(); check(); }
+    });
+    form.addEventListener('input', check);
+    form.querySelector('.wp-add').addEventListener('click', function () {
+      rows.insertAdjacentHTML('beforeend', workflowParamRowHtml('', null));
+      rows.lastElementChild.querySelector('.wp-name').focus();
+    });
+    form.querySelector('.wp-cancel').addEventListener('click', close);
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var parameters = {};
+      var problem = '';
+      var list = rows.querySelectorAll('.workflow-param-row');
+      for (var i = 0; i < list.length; i++) {
+        var pname = list[i].querySelector('.wp-name').value.trim();
+        if (!pname) continue;
+        if (!/^[a-z_][a-z0-9_]*$/.test(pname)) { problem = 'Parameter "' + pname + '": use lowercase letters, digits and _, starting with a letter, e.g. order_number.'; break; }
+        if (parameters[pname]) { problem = 'Parameter "' + pname + '" is listed twice.'; break; }
+        parameters[pname] = { description: list[i].querySelector('.wp-desc').value.trim(), required: list[i].querySelector('.wp-required').checked };
+      }
+      if (problem) { result.textContent = problem; return; }
+      result.textContent = 'Saving' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: form.title.value, start_message: form.start_message.value, trigger: form.trigger.value, parameters: parameters }),
+      }).then(function (r) {
+        if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
+        workflowEditing = false;
+        loadWorkflowsSection(name);
+      });
+    });
+    check();
+    form.title.focus();
   }
 
   function wireWorkflowCard(name, card) {
     var id = card.dataset.workflow;
     var result = card.querySelector('.workflow-result');
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
+    card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     card.querySelector('.workflow-run').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
       var params = {};
