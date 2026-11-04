@@ -1,57 +1,267 @@
-// An agent's workflows: jobs it does, each a skill (its steps), a trigger
-// (a schedule, or a message) and checkpoints (questions, and tools set to
-// "ask"). Recorded in agents/<name>/workflows.yml when one is added from
-// "Describe a workflow", so the agent's Overview can list them; the skill,
-// the schedule and the rules themselves live where they always do.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+// An agent's workflows: skills it can be told to run, by hand, from an app
+// over the API, or on a schedule. A workflow is a skill
+// (agents/<name>/skills/<id>/SKILL.md) whose front matter also says how a
+// run starts:
+//
+//   ---
+//   name: refund-check
+//   description: Check a refund request against the order and our policy
+//   title: Refund check
+//   start_message: Check the refund request for order $order_number.
+//   trigger: When a refund request comes in
+//   parameters:
+//     order_number: { description: The order to check, required: true }
+//     customer_note: { description: What the customer wrote }
+//   ---
+//   1. Look up order $order_number…
+//
+// The body is its steps. A run starts with the start message and those
+// steps, with each $parameter filled in, so the model has them from its
+// first turn rather than picking the skill from its index. None of these
+// keys reach the model otherwise: the skill index shows only a skill's
+// name and description (core/skillgarden).
+//
+// Agents from before kept their workflows in workflows.yml;
+// migrateWorkflowsFile moves those into their skills.
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { WorkflowStep } from './system-agents/workflow-planner.js'
+import { parseSkillFile, substituteParameters } from './skillgarden/index.js'
 
-export interface WorkflowRecord {
-  /** lowercase-hyphenated; also its skill's folder name. */
+export interface WorkflowParameter {
+  description: string
+  required: boolean
+}
+
+export interface Workflow {
+  /** The skill's id (its folder name). */
   id: string
-  name: string
-  summary: string
-  trigger: { kind: 'schedule' | 'on_request'; description: string }
-  steps: WorkflowStep[]
-  /** The message each run starts with. */
+  /** A name for people, e.g. "Refund check". */
+  title: string
+  description: string
   startMessage: string
-  /** Its schedule's name, when it has one (the Schedules tab's task_name). */
-  scheduleName?: string
-  /** What the person wrote, kept for reference. */
-  description?: string
-  createdAt: string
+  /** When it runs, in plain words: "Every Monday at 9", "When asked". */
+  trigger: string
+  parameters: Record<string, WorkflowParameter>
+  /** Its steps: the skill body, placeholders unfilled. */
+  steps: string
 }
 
-export function workflowsPath(agentDir: string): string {
-  return join(agentDir, 'workflows.yml')
+/** The front matter that makes a skill a workflow. */
+export interface WorkflowFields {
+  title?: string
+  startMessage: string
+  trigger?: string
+  parameters?: Record<string, WorkflowParameter>
 }
 
-/** The agent's workflows; none when it has no workflows.yml or it can't be read. */
-export function readWorkflows(agentDir: string): WorkflowRecord[] {
-  const path = workflowsPath(agentDir)
-  if (!existsSync(path)) return []
+export class WorkflowParamsError extends Error {}
+
+const PARAMETER_NAME = /^[a-z_][a-z0-9_]*$/
+const WORKFLOW_KEYS = ['title', 'start_message', 'trigger', 'parameters'] as const
+
+function skillsDir(agentDir: string): string {
+  return join(agentDir, 'skills')
+}
+
+function skillPath(agentDir: string, id: string): string {
+  return join(skillsDir(agentDir), id, 'SKILL.md')
+}
+
+function readSkillFile(path: string, id: string): { frontmatter: Record<string, unknown>; body: string } | undefined {
+  if (!existsSync(path)) return undefined
   try {
-    const parsed = parseYaml(readFileSync(path, 'utf8')) as { workflows?: unknown } | null
-    return Array.isArray(parsed?.workflows) ? (parsed!.workflows as WorkflowRecord[]).filter((w) => w && typeof w.id === 'string' && typeof w.name === 'string') : []
+    const { frontmatter, body } = parseSkillFile(readFileSync(path, 'utf8'), id)
+    return { frontmatter: frontmatter as Record<string, unknown>, body }
   } catch {
-    return []
+    return undefined
   }
 }
 
-/** Adds a workflow, replacing one with the same id. */
-export function saveWorkflow(agentDir: string, workflow: WorkflowRecord): void {
-  const workflows = readWorkflows(agentDir).filter((w) => w.id !== workflow.id)
-  workflows.push(workflow)
-  const header = "# This agent's workflows, added from the console's \"Describe a workflow\". Each one's\n# steps are its skill (skills/<id>/SKILL.md); its schedule and rules are in the Schedules and Permissions tabs.\n"
-  writeFileSync(workflowsPath(agentDir), header + stringifyYaml({ workflows }))
+/** Writes a skill file: its front matter (name and description first) and
+ * body. */
+export function writeSkillFile(path: string, frontmatter: Record<string, unknown>, body: string): void {
+  const { name, description, ...rest } = frontmatter
+  const ordered = { name, description, ...rest }
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `---\n${stringifyYaml(ordered).trimEnd()}\n---\n\n${body.trim()}\n`)
 }
 
-/** Forgets a workflow. Its skill, schedule and rules are left as they are. */
-export function removeWorkflow(agentDir: string, id: string): void {
-  const workflows = readWorkflows(agentDir)
-  if (!workflows.some((w) => w.id === id)) return
-  const rest = workflows.filter((w) => w.id !== id)
-  writeFileSync(workflowsPath(agentDir), stringifyYaml({ workflows: rest }))
+function titleFromId(id: string): string {
+  const words = id.replace(/-/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+function parametersFrom(value: unknown): Record<string, WorkflowParameter> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const parameters: Record<string, WorkflowParameter> = {}
+  for (const [name, spec] of Object.entries(value as Record<string, unknown>)) {
+    if (!PARAMETER_NAME.test(name)) continue
+    const s = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : {}
+    parameters[name] = { description: typeof s.description === 'string' ? s.description : '', required: s.required === true }
+  }
+  return parameters
+}
+
+function workflowFrom(id: string, frontmatter: Record<string, unknown>, body: string): Workflow | undefined {
+  const startMessage = typeof frontmatter.start_message === 'string' ? frontmatter.start_message.trim() : ''
+  if (!startMessage) return undefined
+  return {
+    id,
+    title: typeof frontmatter.title === 'string' && frontmatter.title.trim() ? frontmatter.title.trim() : titleFromId(id),
+    description: typeof frontmatter.description === 'string' ? frontmatter.description : '',
+    startMessage,
+    trigger: typeof frontmatter.trigger === 'string' && frontmatter.trigger.trim() ? frontmatter.trigger.trim() : 'When asked',
+    parameters: parametersFrom(frontmatter.parameters),
+    steps: body,
+  }
+}
+
+/** The agent's workflows: its skills that have a start message. */
+export function readWorkflows(agentDir: string): Workflow[] {
+  const dir = skillsDir(agentDir)
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .flatMap((id) => {
+      const skill = readSkillFile(skillPath(agentDir, id), id)
+      const workflow = skill && workflowFrom(id, skill.frontmatter, skill.body)
+      return workflow ? [workflow] : []
+    })
+}
+
+export function readWorkflow(agentDir: string, id: string): Workflow | undefined {
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(id)) return undefined
+  const skill = readSkillFile(skillPath(agentDir, id), id)
+  return skill && workflowFrom(id, skill.frontmatter, skill.body)
+}
+
+/** Makes a skill a workflow, or changes how its runs start. The skill must
+ * exist; its body and other front matter are kept. */
+export function setWorkflowFields(agentDir: string, id: string, fields: WorkflowFields): void {
+  const path = skillPath(agentDir, id)
+  const skill = readSkillFile(path, id)
+  if (!skill) throw new Error(`No skill "${id}" to make a workflow.`)
+  for (const name of Object.keys(fields.parameters ?? {})) {
+    if (!PARAMETER_NAME.test(name)) throw new Error(`Parameter "${name}": use lowercase letters, digits and _, starting with a letter, e.g. "order_number".`)
+  }
+  const frontmatter = { ...skill.frontmatter }
+  for (const key of WORKFLOW_KEYS) delete frontmatter[key]
+  writeSkillFile(path, {
+    ...frontmatter,
+    ...(fields.title ? { title: fields.title } : {}),
+    start_message: fields.startMessage,
+    ...(fields.trigger ? { trigger: fields.trigger } : {}),
+    ...(fields.parameters && Object.keys(fields.parameters).length ? { parameters: fields.parameters } : {}),
+  }, skill.body)
+}
+
+/** Stops a skill being a workflow. The skill itself stays. */
+export function clearWorkflowFields(agentDir: string, id: string): void {
+  const path = skillPath(agentDir, id)
+  const skill = readSkillFile(path, id)
+  if (!skill) return
+  const frontmatter = { ...skill.frontmatter }
+  for (const key of WORKFLOW_KEYS) delete frontmatter[key]
+  writeSkillFile(path, frontmatter, skill.body)
+}
+
+/** Checks a run's parameters against what the workflow declares: every
+ * required one given, no unknown ones. Values are given as text (numbers
+ * and true/false are accepted and turned into text). */
+export function validateParams(workflow: Workflow, input: unknown): Record<string, string> {
+  if (input !== undefined && input !== null && (typeof input !== 'object' || Array.isArray(input))) {
+    throw new WorkflowParamsError('params must be an object of names to values, e.g. { "order_number": "EM20-123" }')
+  }
+  const given = (input ?? {}) as Record<string, unknown>
+  const params: Record<string, string> = {}
+  const problems: string[] = []
+  for (const [name, value] of Object.entries(given)) {
+    if (!(name in workflow.parameters)) {
+      problems.push(`unknown parameter "${name}"`)
+      continue
+    }
+    if (value === undefined || value === null || value === '') continue
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+      problems.push(`"${name}" must be text`)
+      continue
+    }
+    params[name] = String(value)
+  }
+  for (const [name, spec] of Object.entries(workflow.parameters)) {
+    if (spec.required && !params[name]?.trim()) problems.push(`"${name}" is required`)
+  }
+  if (problems.length) {
+    const known = Object.keys(workflow.parameters)
+    throw new WorkflowParamsError(`${workflow.title}: ${problems.join('; ')}${known.length ? ` (its parameters: ${known.join(', ')})` : ' (it takes no parameters)'}`)
+  }
+  return params
+}
+
+/** The message a run of the workflow starts with: its start message, then
+ * its steps, each $parameter filled in. Values no placeholder uses are
+ * listed as inputs, so the agent still gets them. */
+export function workflowRunMessage(workflow: Workflow, params: Record<string, string> = {}): string {
+  const used = new Set<string>()
+  const declared = Object.keys(workflow.parameters)
+  // Named placeholders only: positional $1-style filling would eat dollar
+  // amounts like "$50" in the steps.
+  const fill = (text: string) => substituteParameters(text, params, { declared, used })
+  const start = fill(workflow.startMessage)
+  const steps = fill(workflow.steps).trim()
+  const unused = Object.entries(params).filter(([name]) => !used.has(name))
+  return [
+    start,
+    unused.length ? `Inputs:\n${unused.map(([name, value]) => `- ${name}: ${value}`).join('\n')}` : '',
+    steps ? `These are the steps, from your "${workflow.id}" skill:\n\n${steps}` : '',
+  ].filter(Boolean).join('\n\n')
+}
+
+// ---------- workflows.yml, from before workflows were skills ----------
+
+interface LegacyWorkflowRecord {
+  id: string
+  name?: string
+  summary?: string
+  trigger?: { description?: string }
+  startMessage?: string
+  scheduleName?: string
+}
+
+export function legacyWorkflowsPath(agentDir: string): string {
+  return join(agentDir, 'workflows.yml')
+}
+
+/** Moves the workflows in an agent's workflows.yml into their skills'
+ * front matter, then renames the file to workflows.migrated.yml. Returns
+ * each moved workflow's id with the schedule name it was linked by, so
+ * the caller can point those schedules at the workflow. Does nothing
+ * when there is no workflows.yml. */
+export function migrateWorkflowsFile(agentDir: string): { id: string; scheduleName?: string }[] {
+  const path = legacyWorkflowsPath(agentDir)
+  if (!existsSync(path)) return []
+  let records: LegacyWorkflowRecord[] = []
+  try {
+    const parsed = parseYaml(readFileSync(path, 'utf8')) as { workflows?: unknown } | null
+    records = Array.isArray(parsed?.workflows) ? (parsed!.workflows as LegacyWorkflowRecord[]).filter((w) => w && typeof w.id === 'string') : []
+  } catch {
+    return []
+  }
+  const moved: { id: string; scheduleName?: string }[] = []
+  for (const record of records) {
+    const skill = readSkillFile(skillPath(agentDir, record.id), record.id)
+    if (!skill || !record.startMessage?.trim()) continue
+    if (!workflowFrom(record.id, skill.frontmatter, skill.body)) {
+      setWorkflowFields(agentDir, record.id, {
+        ...(record.name ? { title: record.name } : {}),
+        startMessage: record.startMessage,
+        ...(record.trigger?.description ? { trigger: record.trigger.description } : {}),
+      })
+    }
+    moved.push({ id: record.id, ...(record.scheduleName ? { scheduleName: record.scheduleName } : {}) })
+  }
+  renameSync(path, join(agentDir, 'workflows.migrated.yml'))
+  return moved
 }

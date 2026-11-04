@@ -55,6 +55,67 @@ describe('creating tasks', () => {
   })
 })
 
+describe('workflow tasks', () => {
+  it('take a message or a workflow, never both or neither', async () => {
+    const task = await createScheduledTask({ agent: 'a', workflow_id: 'weekly-digest', schedule: { every: '7d' } })
+    expect(task).toMatchObject({ workflow_id: 'weekly-digest', message: '' })
+    await expect(createScheduledTask({ agent: 'a', message: 'hi', workflow_id: 'weekly-digest', schedule: { every: '1h' } })).rejects.toThrow(/not both/)
+    await expect(createScheduledTask({ agent: 'a', schedule: { every: '1h' } })).rejects.toThrow(/message or workflow_id is required/)
+  })
+
+  it("send the workflow's start message as it is at each run", async () => {
+    let current = 'Write the weekly digest.'
+    const resolve = vi.fn(() => current)
+    const fire = vi.fn<FireTask>(async () => ({ kind: 'done', text: 'ok' }))
+    const scheduler = new Scheduler({ fire, resolveWorkflowMessage: resolve })
+    const task = await createScheduledTask({ agent: 'a', workflow_id: 'weekly-digest', schedule: { every: '1m' } }, Date.now() - 2 * 60_000)
+
+    await scheduler.tick()
+    await flush()
+    current = 'Write the weekly digest, in French.'
+    await runScheduledTaskNow(task.task_id)
+    await scheduler.tick()
+    await flush()
+
+    expect(resolve).toHaveBeenCalledWith('a', 'weekly-digest', {})
+    expect(fire.mock.calls.map(([t]) => t.message)).toEqual(['Write the weekly digest.', 'Write the weekly digest, in French.'])
+    expect((await getScheduledTask(task.task_id))?.message).toBe('')
+  })
+
+  it('keep their params and hand them to the lookup at each run', async () => {
+    const resolve = vi.fn((_agent: string, _id: string, params: Record<string, string>) => `Digest for ${params.region}.`)
+    const fire = vi.fn<FireTask>(async () => ({ kind: 'done', text: 'ok' }))
+    const scheduler = new Scheduler({ fire, resolveWorkflowMessage: resolve })
+    const task = await createScheduledTask({ agent: 'a', workflow_id: 'weekly-digest', params: { region: 'EU' }, schedule: { every: '1m' } }, Date.now() - 2 * 60_000)
+    expect(task.params).toEqual({ region: 'EU' })
+
+    await scheduler.tick()
+    await flush()
+
+    expect(fire.mock.calls[0]![0].message).toBe('Digest for EU.')
+  })
+
+  it('fail a run when its params no longer fit the workflow', async () => {
+    const scheduler = new Scheduler({ fire: async () => ({ kind: 'done', text: 'ok' }), resolveWorkflowMessage: () => { throw new Error('Weekly digest: "region" is required') } })
+    const task = await createScheduledTask({ agent: 'a', workflow_id: 'weekly-digest', schedule: { every: '1m' } }, Date.now() - 2 * 60_000)
+    await scheduler.tick()
+    await flush()
+    expect(await getScheduledTask(task.task_id)).toMatchObject({ last_status: 'error', last_error: 'Weekly digest: "region" is required' })
+  })
+
+  it('fail a run when the workflow is gone, instead of sending nothing', async () => {
+    const fire = vi.fn<FireTask>(async () => ({ kind: 'done', text: 'ok' }))
+    const scheduler = new Scheduler({ fire, resolveWorkflowMessage: () => undefined })
+    const task = await createScheduledTask({ agent: 'a', workflow_id: 'forgotten', schedule: { every: '1m' } }, Date.now() - 2 * 60_000)
+
+    await scheduler.tick()
+    await flush()
+
+    expect(fire).not.toHaveBeenCalled()
+    expect(await getScheduledTask(task.task_id)).toMatchObject({ status: 'scheduled', last_status: 'error', last_error: expect.stringMatching(/workflow "forgotten" is no longer on a/) })
+  })
+})
+
 describe('Scheduler', () => {
   it('fires a due one-off once and marks it done with the reply', async () => {
     const fire = vi.fn<FireTask>(async () => ({ kind: 'done', text: 'sent the report' }))

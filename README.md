@@ -121,7 +121,7 @@ code changes or redeploy needed for most of it:
 | **Tools** | Your hand-written tools, tools from integrations (e.g. [Composio](https://composio.dev)) and subagents, with whether each call runs on its own, asks first, or is denied. Build an HTTP tool or connect an integration without touching a file. |
 | **Skills** | Create, edit, and delete `SKILL.md` files for this agent directly in the browser — write the body, preview the rendered markdown, save. |
 | **Permissions** | Add, edit, and delete permission rules (actauth) — who, tool, decision — and choose what happens when no rule matches. |
-| **Schedules** | Messages the agent receives on a timer — once at a set time, or every N minutes/hours/days. Run now, pause, resume, cancel, see each run's result, and optionally send results through the agent's notifier. |
+| **Schedules** | One of the agent's workflows (with values for its parameters), or a custom message, run on a timer — once at a set time, or every N minutes/hours/days. A workflow schedule starts each run with the workflow's start message and steps as they are then. Run now, pause, resume, cancel, see each run's result, and optionally send results through the agent's notifier. |
 | **Environment** | Every setting an installed ability reads, with its project-wide value and this agent's own value side by side, and which one the agent actually uses. A secret is never shown again once set. |
 
 Models and Integrations in the sidebar show which model providers have a

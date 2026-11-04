@@ -1,7 +1,7 @@
 // Scheduling tools every agent gets (unless its config sets
 // `selfScheduling: false`): an agent can schedule a message to *itself*
-// for later — once, or on an interval — and list, check or cancel its own
-// scheduled tasks. Bound to the calling agent at construction, so it can
+// for later — once, or on an interval — or one of its own workflows, and
+// list, check or cancel its own scheduled tasks. Bound to the calling agent at construction, so it can
 // never schedule, see or cancel another agent's tasks. The scheduler that
 // actually fires them is the server's (core/scheduler.ts); the console's
 // Schedules tab shows the same tasks.
@@ -15,6 +15,7 @@ import {
   type ScheduledTaskStatus,
 } from '../scheduler.js'
 import { formatWallTime, workspaceTimeZone } from '../time-zone.js'
+import { readWorkflows, validateParams, type Workflow } from '../workflows.js'
 
 /** How many active (not done or cancelled) tasks one agent may create
  * through these tools — each run is a model call, so a runaway loop of
@@ -34,7 +35,7 @@ function summary(t: ScheduledTask, timeZone: string) {
   return {
     task_id: t.task_id,
     task_name: t.task_name,
-    message: t.message,
+    ...(t.workflow_id ? { workflow_id: t.workflow_id, ...(t.params ? { params: t.params } : {}) } : { message: t.message }),
     schedule: t.schedule,
     status: t.status,
     next_run_at: t.next_run_at,
@@ -44,10 +45,18 @@ function summary(t: ScheduledTask, timeZone: string) {
   }
 }
 
-export function createScheduleTools(agentName: string): ToolDefinition[] {
-  // Read once per run: the time zone is in the tool description, which
-  // should stay the same from call to call.
+/** `agentDir`: the agent's folder, where its workflows are listed
+ * (workflows.yml). Without it the agent can only schedule messages. */
+export function createScheduleTools(agentName: string, options: { agentDir?: string } = {}): ToolDefinition[] {
+  // Read once per run: the time zone and the workflows are in the tool
+  // description, which should stay the same from call to call.
   const timeZone = workspaceTimeZone()
+  const workflows: Workflow[] = options.agentDir ? readWorkflows(options.agentDir) : []
+  const paramList = (w: Workflow) => {
+    const names = Object.entries(w.parameters).map(([name, p]) => `${name}${p.required ? '' : '?'}`)
+    return names.length ? `; params: ${names.join(', ')}` : ''
+  }
+  const workflowList = workflows.map((w) => `"${w.id}" (${w.title}: ${w.description}${paramList(w)})`).join('; ')
   async function ownTask(taskId: string, tool: string): Promise<ScheduledTask> {
     const task = await getScheduledTask(taskId)
     // Another agent's task reads exactly like a missing one.
@@ -58,14 +67,24 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
   const scheduleTask: ToolDefinition = {
     name: 'system_schedule_task',
     description:
-      'Schedule a message to yourself for later — once at a set time, or repeatedly on an interval — like setting a reminder or a cron job. When it fires you receive the message as a new conversation (none of the current one carries over, so make the message self-contained) and handle it with your tools as usual, with no person live. A tool call that needs approval goes wherever your approval requests are sent and waits; if nowhere is set, it is denied. Use only when the user asks for something to happen later or regularly, never on your own initiative. Times are in this workspace\'s time zone, ' + timeZone + ', unless you give an offset, so when the user means another time zone, give its offset. Prefer the longest interval that serves them since each run is a model call, and confirm the schedule back in plain words. Returns task_id, next_run_at and next_run_local (the workspace\'s time).',
+      'Schedule a message to yourself for later — once at a set time, or repeatedly on an interval — like setting a reminder or a cron job.' +
+      (workflows.length
+        ? ' To run one of your workflows on a schedule, give its workflow_id instead of a message, and its params (names ending in ? are optional): each run then starts with that workflow\'s start message and steps as they are at the time, so later edits to the workflow apply. Your workflows: ' + workflowList + '.'
+        : '') +
+      ' When it fires you receive the message as a new conversation (none of the current one carries over, so make the message self-contained) and handle it with your tools as usual, with no person live. A tool call that needs approval goes wherever your approval requests are sent and waits; if nowhere is set, it is denied. Use only when the user asks for something to happen later or regularly, never on your own initiative. Times are in this workspace\'s time zone, ' + timeZone + ', unless you give an offset, so when the user means another time zone, give its offset. Prefer the longest interval that serves them since each run is a model call, and confirm the schedule back in plain words. Returns task_id, next_run_at and next_run_local (the workspace\'s time).',
     input_schema: {
       type: 'object',
       properties: {
         message: {
           type: 'string',
-          description: 'What you will receive when the task fires, written as an instruction to your future self with every detail it needs, e.g. "Check whether order 4417 has shipped and email the customer at a@example.com if it has."',
+          description: 'What you will receive when the task fires, written as an instruction to your future self with every detail it needs, e.g. "Check whether order 4417 has shipped and email the customer at a@example.com if it has." Leave it out when giving workflow_id.',
         },
+        ...(workflows.length
+          ? {
+              workflow_id: { type: 'string', enum: workflows.map((w) => w.id), description: 'One of your workflows, to run it on this schedule instead of a message.' },
+              params: { type: 'object', description: 'The workflow\'s parameters for every run, e.g. { "region": "US" }.', additionalProperties: { type: 'string' } },
+            }
+          : {}),
         schedule: {
           type: 'object',
           description:
@@ -75,28 +94,43 @@ export function createScheduleTools(agentName: string): ToolDefinition[] {
         task_name: { type: 'string', description: 'Optional short label, shown when listing tasks and in the console.' },
         notify: { type: 'boolean', description: 'Optional — also send each run\'s result through your notifier (where your approval requests go), so a person sees it.' },
       },
-      required: ['message', 'schedule'],
+      required: ['schedule'],
     },
     execute: async (input) => {
       const active = (await listScheduledTasks({ agent: agentName })).filter((t) => t.status !== 'done' && t.status !== 'cancelled')
       if (active.length >= maxActivePerAgent()) {
         throw new Error(`system_schedule_task: you already have ${active.length} active scheduled tasks (the limit is ${maxActivePerAgent()}); cancel one you no longer need first`)
       }
+      const workflowId = typeof input.workflow_id === 'string' && input.workflow_id ? input.workflow_id : undefined
+      const workflow = workflowId ? workflows.find((w) => w.id === workflowId) : undefined
+      if (workflowId && !workflow) {
+        throw new Error(`system_schedule_task: you have no workflow "${workflowId}"${workflows.length ? `; yours are ${workflows.map((w) => `"${w.id}"`).join(', ')}` : ''}`)
+      }
+      let params: Record<string, string> | undefined
+      if (workflow) {
+        try {
+          params = validateParams(workflow, input.params)
+        } catch (err) {
+          throw new Error(`system_schedule_task: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
       const task = await createScheduledTask({
         agent: agentName,
-        message: String(input.message ?? ''),
+        message: workflowId ? undefined : String(input.message ?? ''),
+        workflow_id: workflowId,
+        ...(params && Object.keys(params).length ? { params } : {}),
         schedule: (input.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown; at?: unknown; weekday?: unknown },
         task_name: typeof input.task_name === 'string' ? input.task_name : undefined,
         notify: input.notify === true,
       })
-      return JSON.stringify({ task_id: task.task_id, next_run_at: task.next_run_at, next_run_local: nextRunLocal(task, timeZone), schedule: task.schedule })
+      return JSON.stringify({ task_id: task.task_id, ...(workflowId ? { workflow_id: workflowId } : {}), next_run_at: task.next_run_at, next_run_local: nextRunLocal(task, timeZone), schedule: task.schedule })
     },
   }
 
   const listTasks: ToolDefinition = {
     name: 'system_list_scheduled_tasks',
     description:
-      'List your own scheduled tasks (task_id, name, message, schedule, status, next_run_at, run_count, last_status). Check this before scheduling something recurring, so you don\'t create a duplicate. status "awaiting_approval" means a run is waiting on someone to approve or answer.',
+      'List your own scheduled tasks (task_id, name, message or workflow_id, schedule, status, next_run_at, run_count, last_status). Check this before scheduling something recurring, so you don\'t create a duplicate. status "awaiting_approval" means a run is waiting on someone to approve or answer.',
     input_schema: {
       type: 'object',
       properties: {

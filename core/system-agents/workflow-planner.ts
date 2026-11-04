@@ -407,7 +407,7 @@ export function workflowTemplate(plan: WorkflowPlan): StarterTemplate {
       skills: [{ id: plan.id, description: plan.skill.description, body: plan.skill.body }],
       rules: plan.rules.map((r) => ({ name: slugify(`${plan.id}-${r.tool}`, `${plan.id}-rule`), tool: r.tool, decision: r.decision })),
       ...(plan.trigger.kind === 'schedule' && plan.trigger.every
-        ? { schedule: { every: plan.trigger.every, ...(plan.trigger.at ? { at: plan.trigger.at } : {}), ...(plan.trigger.weekday !== undefined ? { weekday: plan.trigger.weekday } : {}), name: plan.name, message: plan.startMessage } }
+        ? { schedule: { every: plan.trigger.every, ...(plan.trigger.at ? { at: plan.trigger.at } : {}), ...(plan.trigger.weekday !== undefined ? { weekday: plan.trigger.weekday } : {}), name: plan.name, message: plan.startMessage, workflowId: plan.id } }
         : {}),
       needsApprovals: plan.needsApprovals,
     },

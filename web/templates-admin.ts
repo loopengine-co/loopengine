@@ -16,6 +16,13 @@ import { setAgentEnvVar } from './env-admin.js'
 import { freeAgentName } from './interview-admin.js'
 import { writeSkill } from './skills-admin.js'
 
+
+/** What a template's schedule runs: its workflow, when it comes from one,
+ * or its message. */
+function scheduleRuns(schedule: { message: string; workflowId?: string }): { message?: string; workflow_id?: string } {
+  return schedule.workflowId ? { workflow_id: schedule.workflowId } : { message: schedule.message }
+}
+
 export class TemplateError extends Error {}
 
 export interface TemplateCreateDeps {
@@ -273,7 +280,7 @@ export async function createFromTemplateObject(template: StarterTemplate, deps: 
       const startAt = templateScheduleStart(setup.schedule)
       const task = await createScheduledTask({
         agent: name,
-        message: setup.schedule.message,
+        ...scheduleRuns(setup.schedule),
         schedule: { every: setup.schedule.every, ...(startAt ? { start_at: startAt } : {}) },
         task_name: setup.schedule.name,
       })
@@ -317,7 +324,7 @@ async function createFromTemplateLegacy(id: string, deps: LegacyTemplateCreateDe
   if (setup.schedule) {
     try {
       const startAt = templateScheduleStart(setup.schedule)
-      const task = await createScheduledTask({ agent: name, message: setup.schedule.message, schedule: { every: setup.schedule.every, ...(startAt ? { start_at: startAt } : {}) }, task_name: setup.schedule.name })
+      const task = await createScheduledTask({ agent: name, ...scheduleRuns(setup.schedule), schedule: { every: setup.schedule.every, ...(startAt ? { start_at: startAt } : {}) }, task_name: setup.schedule.name })
       await pauseScheduledTask(task.task_id)
       schedule = { description: describeTemplateSchedule(setup.schedule), timeZone: workspaceTimeZone(), ...(startAt ? { next_run_at: startAt } : {}) }
     } catch (err) {

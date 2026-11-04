@@ -248,6 +248,7 @@ export {
   checkWorkflowForAgent,
   createWorkflow,
   forgetWorkflow,
+  migrateAgentWorkflows,
   getPlanJob,
   listAgentWorkflows,
   planWorkflow,
@@ -268,7 +269,7 @@ export {
   prepareMcpAbilities,
 } from './web/workflow-admin.js'
 export { WORKFLOW_PLANNER_PROMPT, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep } from './core/system-agents/workflow-planner.js'
-export { readWorkflows, removeWorkflow, saveWorkflow, type WorkflowRecord } from './core/workflows.js'
+export { readWorkflows, readWorkflow, setWorkflowFields, clearWorkflowFields, validateParams, workflowRunMessage, migrateWorkflowsFile, WorkflowParamsError, type Workflow, type WorkflowFields, type WorkflowParameter } from './core/workflows.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
 export { playgroundHtml } from './web/playground.js'
 

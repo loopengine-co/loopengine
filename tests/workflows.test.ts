@@ -1,11 +1,12 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import { planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
-import { readWorkflows, removeWorkflow, saveWorkflow } from '#core/workflows.js'
-import { checkWorkflowForAgent, planWorkflow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
+import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
+import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
+import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, runWorkflowNow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
 
 const RAW_PLAN = {
   name: 'Weekly blog post',
@@ -62,7 +63,7 @@ describe('a workflow plan', () => {
     const t = workflowTemplate(validateWorkflowPlan(RAW_PLAN)!)
     expect(t.setup.skills).toEqual([{ id: 'weekly-blog-post', description: 'The weekly blog post workflow', body: RAW_PLAN.skill.body }])
     expect(t.setup.rules.map((r) => [r.tool, r.decision])).toEqual([['web_search', 'allow'], ['draft_blog_post', 'ask']])
-    expect(t.setup.schedule).toEqual({ every: '7d', at: '09:00', weekday: 1, name: 'Weekly blog post', message: 'Run the weekly blog post workflow.' })
+    expect(t.setup.schedule).toEqual({ every: '7d', at: '09:00', weekday: 1, name: 'Weekly blog post', message: 'Run the weekly blog post workflow.', workflowId: 'weekly-blog-post' })
     expect(t.candidate.agent.name).toBe('blog-writer')
   })
 })
@@ -133,20 +134,151 @@ describe('planning with a model', () => {
   })
 })
 
-describe("an agent's workflows.yml", () => {
+// A skill file, as the planner or the Skills tab writes one.
+function writeSkill(agentDir: string, id: string, frontmatter: string, body: string): void {
+  mkdirSync(join(agentDir, 'skills', id), { recursive: true })
+  writeFileSync(join(agentDir, 'skills', id, 'SKILL.md'), `---\nname: ${id}\ndescription: ${id} steps\n${frontmatter}---\n\n${body}\n`)
+}
+
+const REFUND = [
+  'start_message: Check the refund request for order $order_number.',
+  'title: Refund check',
+  'trigger: When a refund request comes in',
+  'parameters:',
+  '  order_number: { description: The order to check, required: true }',
+  '  customer_note: { description: What the customer wrote }',
+  '',
+].join('\n')
+
+describe('workflows are skills with a start message', () => {
   let dir: string
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'le-workflows-')) })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  it('records, replaces by id, and forgets workflows', () => {
-    const plan = validateWorkflowPlan(RAW_PLAN)!
-    const record = { id: plan.id, name: plan.name, summary: plan.summary, trigger: { kind: plan.trigger.kind, description: plan.trigger.description }, steps: plan.steps, startMessage: plan.startMessage, scheduleName: plan.name, createdAt: '2026-10-31T00:00:00Z' }
-    saveWorkflow(dir, record)
-    saveWorkflow(dir, { ...record, summary: 'Updated' })
-    expect(readWorkflows(dir)).toHaveLength(1)
-    expect(readWorkflows(dir)[0]).toMatchObject({ id: 'weekly-blog-post', summary: 'Updated', steps: plan.steps })
-    removeWorkflow(dir, 'weekly-blog-post')
-    expect(readWorkflows(dir)).toEqual([])
+  it('lists only skills that have a start message, with their parameters and steps', () => {
+    writeSkill(dir, 'refund-check', REFUND, '1. Look up order $order_number.\n2. Weigh this: $customer_note')
+    writeSkill(dir, 'plain-skill', '', 'Just guidance, not a job.')
+
+    expect(readWorkflows(dir)).toEqual([{
+      id: 'refund-check',
+      title: 'Refund check',
+      description: 'refund-check steps',
+      startMessage: 'Check the refund request for order $order_number.',
+      trigger: 'When a refund request comes in',
+      parameters: { order_number: { description: 'The order to check', required: true }, customer_note: { description: 'What the customer wrote', required: false } },
+      steps: '1. Look up order $order_number.\n2. Weigh this: $customer_note',
+    }])
+    expect(readWorkflow(dir, 'plain-skill')).toBeUndefined()
+    expect(readWorkflow(dir, '../escape')).toBeUndefined()
+  })
+
+  it('becomes a workflow and stops being one by its front matter, keeping the skill', () => {
+    writeSkill(dir, 'digest', 'paths: ["reports/**"]\n', 'Write the digest.')
+    setWorkflowFields(dir, 'digest', { title: 'Weekly digest', startMessage: 'Write this week\'s digest.', trigger: 'Mondays at 9' })
+    expect(readWorkflow(dir, 'digest')).toMatchObject({ title: 'Weekly digest', startMessage: 'Write this week\'s digest.', steps: 'Write the digest.' })
+    expect(readFileSync(join(dir, 'skills', 'digest', 'SKILL.md'), 'utf8')).toContain('paths:')
+
+    clearWorkflowFields(dir, 'digest')
+    expect(readWorkflow(dir, 'digest')).toBeUndefined()
+    const file = readFileSync(join(dir, 'skills', 'digest', 'SKILL.md'), 'utf8')
+    expect(file).not.toContain('start_message')
+    expect(file).toContain('Write the digest.')
+    expect(() => setWorkflowFields(dir, 'nope', { startMessage: 'x' })).toThrow(/No skill "nope"/)
+    expect(() => setWorkflowFields(dir, 'digest', { startMessage: 'x', parameters: { 'Bad-Name': { description: '', required: false } } })).toThrow(/lowercase/)
+  })
+
+  it('checks parameters: required ones given, no unknown ones, values as text', () => {
+    writeSkill(dir, 'refund-check', REFUND, 'Steps.')
+    const w = readWorkflow(dir, 'refund-check')!
+    expect(validateParams(w, { order_number: 4821, customer_note: '' })).toEqual({ order_number: '4821' })
+    expect(() => validateParams(w, {})).toThrow(/"order_number" is required/)
+    expect(() => validateParams(w, { order_number: '1', coupon: 'x' })).toThrow(/unknown parameter "coupon".*its parameters: order_number, customer_note/)
+    expect(() => validateParams(w, { order_number: { id: 1 } })).toThrow(/must be text/)
+    expect(() => validateParams(w, 'order 1')).toThrow(WorkflowParamsError)
+  })
+
+  it('starts a run with its start message and steps, parameters filled in', () => {
+    writeSkill(dir, 'refund-check', REFUND, '1. Look up order $order_number.\n2. Weigh this: $customer_note\n3. Refund at most $50 without asking.')
+    const w = readWorkflow(dir, 'refund-check')!
+
+    expect(workflowRunMessage(w, { order_number: 'EM20-1' })).toBe(
+      'Check the refund request for order EM20-1.\n\nThese are the steps, from your "refund-check" skill:\n\n' +
+        '1. Look up order EM20-1.\n2. Weigh this: \n3. Refund at most $50 without asking.',
+    )
+  })
+
+  it('lists values no placeholder uses as inputs, so the agent still gets them', () => {
+    writeSkill(dir, 'triage', 'start_message: Triage this alert.\nparameters:\n  alert: { required: true }\n', 'Find what changed.')
+    expect(workflowRunMessage(readWorkflow(dir, 'triage')!, { alert: 'checkout 18% errors' })).toBe(
+      'Triage this alert.\n\nInputs:\n- alert: checkout 18% errors\n\nThese are the steps, from your "triage" skill:\n\nFind what changed.',
+    )
+  })
+})
+
+describe("a workflow's runs and schedules", () => {
+  let dir: string
+  let schedulerDir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'le-workflow-schedules-'))
+    schedulerDir = mkdtempSync(join(tmpdir(), 'le-workflow-scheduler-'))
+    setSchedulerStore(new FileSchedulerStore(schedulerDir))
+    writeSkill(dir, 'refund-check', REFUND, 'Steps.')
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(schedulerDir, { recursive: true, force: true })
+  })
+
+  it('are the tasks carrying its id, repeating ones first, whatever they are called', async () => {
+    const once = await createScheduledTask({ agent: 'cs', workflow_id: 'refund-check', params: { order_number: '1' }, schedule: { run_at: new Date(Date.now() + 3_600_000).toISOString() }, task_name: 'One more' })
+    const daily = await createScheduledTask({ agent: 'cs', workflow_id: 'refund-check', params: { order_number: '2' }, schedule: { every: '1d' }, task_name: 'Renamed later' })
+    await createScheduledTask({ agent: 'cs', message: 'something else', schedule: { every: '1d' }, task_name: 'Refund check' })
+
+    const [w] = await listAgentWorkflows('cs', dir)
+    expect(w.schedules.map((s) => s.taskId)).toEqual([daily.task_id, once.task_id])
+    expect(w.schedule).toMatchObject({ taskId: daily.task_id, repeating: true, params: { order_number: '2' } })
+  })
+
+  it('Run now queues a one-off with its parameters, refusing the same parameters twice but not others', async () => {
+    const first = await runWorkflowNow('cs', dir, 'refund-check', { order_number: 'EM20-1' })
+    expect(first.params).toEqual({ order_number: 'EM20-1' })
+    expect(await getScheduledTask(first.taskId)).toMatchObject({ workflow_id: 'refund-check', params: { order_number: 'EM20-1' }, message: '', task_name: 'Refund check (run now)' })
+
+    await expect(runWorkflowNow('cs', dir, 'refund-check', { order_number: 'EM20-1' })).rejects.toThrow(/already running with these parameters/)
+    await expect(runWorkflowNow('cs', dir, 'refund-check', { order_number: 'EM20-2' })).resolves.toMatchObject({ params: { order_number: 'EM20-2' } })
+    await expect(runWorkflowNow('cs', dir, 'refund-check', {})).rejects.toThrow(/"order_number" is required/)
+    await expect(runWorkflowNow('cs', dir, 'no-such-workflow')).rejects.toThrow(/No workflow no-such-workflow/)
+  })
+
+  it('forgetting it cancels its schedules and keeps the skill', async () => {
+    await createScheduledTask({ agent: 'cs', workflow_id: 'refund-check', params: { order_number: '3' }, schedule: { every: '1d' } })
+    expect(await forgetWorkflow('cs', dir, 'refund-check')).toEqual({ cancelled: 1 })
+    expect(readWorkflow(dir, 'refund-check')).toBeUndefined()
+    expect(existsSync(join(dir, 'skills', 'refund-check', 'SKILL.md'))).toBe(true)
+    expect((await listScheduledTasks({ agent: 'cs' })).map((t) => t.status)).toEqual(['cancelled'])
+  })
+
+  it("moves a workflows.yml from before into its skills, and points its named schedule at the workflow", async () => {
+    writeSkill(dir, 'weekly-blog-post', '', 'Draft the post.')
+    writeFileSync(join(dir, 'workflows.yml'), [
+      'workflows:',
+      '  - id: weekly-blog-post',
+      '    name: Weekly blog post',
+      '    trigger: { kind: schedule, description: Every Monday at 9 }',
+      '    startMessage: Run the weekly blog post workflow.',
+      '    scheduleName: Weekly blog post',
+      '',
+    ].join('\n'))
+    const legacy = await createScheduledTask({ agent: 'blog', message: 'Run the weekly blog post workflow.', schedule: { every: '7d' }, task_name: 'Weekly blog post' })
+    const unrelated = await createScheduledTask({ agent: 'blog', message: 'Something else', schedule: { every: '1d' }, task_name: 'Other' })
+
+    const [w] = (await listAgentWorkflows('blog', dir)).filter((x) => x.id === 'weekly-blog-post')
+    expect(w).toMatchObject({ title: 'Weekly blog post', startMessage: 'Run the weekly blog post workflow.', trigger: 'Every Monday at 9', steps: 'Draft the post.' })
+    expect(w.schedule?.taskId).toBe(legacy.task_id)
+    expect(await getScheduledTask(legacy.task_id)).toMatchObject({ workflow_id: 'weekly-blog-post', message: '' })
+    expect(await getScheduledTask(unrelated.task_id)).toMatchObject({ message: 'Something else' })
+    expect(existsSync(join(dir, 'workflows.yml'))).toBe(false)
+    expect(existsSync(join(dir, 'workflows.migrated.yml'))).toBe(true)
   })
 })
 

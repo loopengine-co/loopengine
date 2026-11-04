@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,6 +22,49 @@ function tools(agent: string) {
   const byName = Object.fromEntries(createScheduleTools(agent).map((t) => [t.name, t]))
   return (name: string, input: Record<string, unknown>) => byName[name]!.execute(input, ctx).then((r) => JSON.parse(String(r)))
 }
+
+describe('scheduling a workflow', () => {
+  let agentDir: string
+  beforeEach(() => {
+    agentDir = mkdtempSync(join(tmpdir(), 'loopengine-schedule-tools-agent-'))
+    mkdirSync(join(agentDir, 'skills', 'weekly-digest'), { recursive: true })
+    writeFileSync(join(agentDir, 'skills', 'weekly-digest', 'SKILL.md'), [
+      '---',
+      'name: weekly-digest',
+      'description: Summarises the week',
+      'title: Weekly digest',
+      'start_message: Write the weekly digest for $region.',
+      'parameters:',
+      '  region: { description: Which region, required: true }',
+      '  tone: { description: How to write it }',
+      '---',
+      '',
+      'Steps.',
+      '',
+    ].join('\n'))
+  })
+  afterEach(() => rmSync(agentDir, { recursive: true, force: true }))
+
+  it("offers the agent's workflows and schedules one by id", async () => {
+    const [scheduleTask] = createScheduleTools('alice', { agentDir })
+    expect(scheduleTask.description).toContain('"weekly-digest" (Weekly digest: Summarises the week; params: region, tone?)')
+    expect((scheduleTask.input_schema.properties as Record<string, { enum?: string[] }>).workflow_id?.enum).toEqual(['weekly-digest'])
+
+    const created = JSON.parse(String(await scheduleTask.execute({ workflow_id: 'weekly-digest', params: { region: 'EU' }, schedule: { every: '7d', at: '09:00', weekday: 'monday' } }, ctx)))
+    expect(created.workflow_id).toBe('weekly-digest')
+    expect(await getScheduledTask(created.task_id)).toMatchObject({ agent: 'alice', workflow_id: 'weekly-digest', params: { region: 'EU' }, message: '' })
+
+    await expect(scheduleTask.execute({ workflow_id: 'weekly-digest', schedule: { every: '7d' } }, ctx)).rejects.toThrow(/"region" is required/)
+
+    await expect(scheduleTask.execute({ workflow_id: 'monthly-report', schedule: { every: '1d' } }, ctx)).rejects.toThrow(/no workflow "monthly-report"; yours are "weekly-digest"/)
+  })
+
+  it('offers no workflow_id to an agent without workflows', () => {
+    const [scheduleTask] = createScheduleTools('bob')
+    expect((scheduleTask.input_schema.properties as Record<string, unknown>).workflow_id).toBeUndefined()
+    expect(scheduleTask.description).not.toContain('workflow_id')
+  })
+})
 
 describe('built-in scheduling tools', () => {
   it('schedule for the calling agent only, and treat another agent’s task as missing', async () => {

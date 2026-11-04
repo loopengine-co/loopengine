@@ -626,7 +626,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // Bound to this agent: it can schedule, list and cancel only its own
   // tasks (see core/system-tools/schedule.ts). AgentConfig.selfScheduling
   // false leaves them out.
-  const scheduleTools = config.selfScheduling === false ? [] : createScheduleTools(config.name)
+  const scheduleTools = config.selfScheduling === false ? [] : createScheduleTools(config.name, { agentDir: agentDirFor(config) })
 
   const tools = dedupeToolsByName([
     ...systemTools,
@@ -753,6 +753,11 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
           args: {
             type: 'string',
             description: 'Optional arguments for the skill body — substituted for $ARGUMENTS/$1/$2 placeholders.',
+          },
+          params: {
+            type: 'object',
+            description: 'Optional named values for a skill that takes them, e.g. { "order_number": "4821" }: each fills that $name in the skill body.',
+            additionalProperties: { type: 'string' },
           },
         },
         required: ['skill'],
@@ -968,7 +973,11 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
       // scheduling — but it's still a tool_use block the model emitted,
       // so it still needs a tool_result to answer it, same as any other.
       if (block.name === 'Skill' && skillGarden) {
-        const body = skillGarden.invoke(block.input!.skill as string, block.input?.args as string | undefined)
+        const rawParams = block.input?.params
+        const params = rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams)
+          ? Object.fromEntries(Object.entries(rawParams as Record<string, unknown>).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => [k, String(v)]))
+          : undefined
+        const body = skillGarden.invoke(block.input!.skill as string, block.input?.args as string | undefined, params)
         log({ type: 'skill:loaded', skill: block.input!.skill as string })
         resultBlocks.push({ type: 'tool_result', tool_use_id: block.id!, content: body })
         continue

@@ -50,8 +50,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
   .workflow-card { margin-bottom: 10px; }
-  .workflow-steps { margin: 0; padding-left: 20px; font-size: 13px; }
-  .workflow-steps li { margin: 3px 0; }
+  .workflow-steps-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--le-surface, #f6f7f9); }
+  .workflow-params { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .workflow-params[hidden] { display: none; }
+  .workflow-param { display: flex; flex-direction: column; gap: 3px; font-size: 12px; min-width: 180px; }
   .advanced-part { font-size: 17px; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
   .advanced-part#advanced-tools { margin-top: 0; padding-top: 0; border-top: 0; }
   .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
@@ -193,6 +195,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     max-width: 480px;
   }
   form.add-source label { font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+  form.add-source label[hidden] { display: none; }
   form.add-source input, form.add-source select, form.add-source textarea { width: 100%; }
   form.add-source textarea { font-family: ui-monospace, monospace; min-height: 60px; }
   /* Overrides form.add-source's shared max-width/textarea defaults for
@@ -679,7 +682,7 @@ ${consoleShellScript}
     return workflows.map(function (w) {
       var s = w.schedule;
       var state = !s
-        ? (w.trigger.kind === 'schedule' ? '<span class="hint">no schedule found</span>' : '<span class="hint">started when asked</span>')
+        ? '<span class="hint">' + escapeHtml(w.trigger) + '</span>'
         : s.waiting
           ? '<span class="le-pill ask">Waiting for a decision</span>'
           : s.status === 'paused'
@@ -687,18 +690,23 @@ ${consoleShellScript}
             : s.status === 'running'
               ? '<span class="le-pill accent">Running</span>'
               : '<span class="le-pill good">On</span>' + (s.nextRunAt ? ' <span class="hint">next ' + escapeHtml(new Date(s.nextRunAt).toLocaleString()) + '</span>' : '');
-      var steps = (w.steps || []).map(function (st) {
-        var mark = st.kind === 'ask' ? ' <span class="le-pill accent">Asks you</span>' : st.kind === 'approval' ? ' <span class="le-pill ask">You approve</span>' : '';
-        return '<li>' + escapeHtml(st.title) + (st.tool && st.tool !== 'system_ask_user' ? ' <code>' + escapeHtml(st.tool) + '</code>' : '') + mark + '</li>';
+      var paramNames = Object.keys(w.parameters || {});
+      var params = paramNames.map(function (p) {
+        var spec = w.parameters[p];
+        return '<label class="workflow-param">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">(optional)</span>') +
+          '<input name="' + escapeHtml(p) + '"' + (spec.required ? ' required' : '') + ' placeholder="' + escapeHtml(spec.description || '') + '"></label>';
       }).join('');
+      var scheduleCount = (w.schedules || []).filter(function (x) { return x.repeating; }).length;
       return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
-          '<strong>' + escapeHtml(w.name) + '</strong><span>' + state + '</span></div>' +
-        '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.summary) + ' ' + String.fromCharCode(183) + ' ' + escapeHtml(w.trigger.description) + '</p>' +
-        '<ol class="workflow-steps">' + steps + '</ol>' +
+          '<strong>' + escapeHtml(w.title) + '</strong><span>' + state + '</span></div>' +
+        '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(w.trigger) : '') + '</p>' +
+        '<details><summary class="hint">Steps <span>(the ' + escapeHtml(w.id) + ' skill)</span></summary><div class="workflow-steps-text">' + escapeHtml(w.steps) + '</div></details>' +
+        (params ? '<div class="workflow-params">' + params + '</div>' : '') +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
           '<button type="button" class="workflow-run">Run now</button>' +
-          (s ? '<a href="?tab=schedules" data-tab="schedules" class="hint" style="align-self:center">Schedule</a>' : '') +
+          (scheduleCount ? '<a href="?tab=schedules" data-tab="schedules" class="hint" style="align-self:center">' + (scheduleCount > 1 ? 'Schedules (' + scheduleCount + ')' : 'Schedule') + '</a>' : '') +
+          '<a href="?tab=skills" data-tab="skills" class="hint" style="align-self:center">Edit steps</a>' +
           '<button type="button" class="delete-btn workflow-forget">Forget</button>' +
         '</div><div class="hint workflow-result"></div></div>';
     }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
@@ -722,9 +730,16 @@ ${consoleShellScript}
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
     card.querySelector('.workflow-run').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
+      var params = {};
+      var inputs = card.querySelectorAll('.workflow-params input');
+      for (var i = 0; i < inputs.length; i++) {
+        var value = inputs[i].value.trim();
+        if (!value && inputs[i].required) { result.textContent = 'Fill in ' + inputs[i].name + ' first.'; inputs[i].focus(); return; }
+        if (value) params[inputs[i].name] = value;
+      }
       btn.disabled = true;
       result.textContent = 'Starting' + String.fromCharCode(8230);
-      fetchJsonRetryOnce(base + '/run', { method: 'POST' }).then(function (r) {
+      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params }) }).then(function (r) {
         btn.disabled = false;
         result.textContent = r.ok
           ? 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; its result shows in the Schedules tab.'
@@ -733,7 +748,7 @@ ${consoleShellScript}
     });
     card.querySelector('.workflow-forget').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
-      if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again (its skill, schedule and rules stay)'; return; }
+      if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again (its schedules are cancelled; the skill stays)'; return; }
       fetchJsonRetryOnce(base, { method: 'DELETE' }).then(function () { loadWorkflowsSection(name); });
     });
   }
@@ -1776,6 +1791,9 @@ ${consoleShellScript}
   // The workspace's time zone, from GET /agents/:name/schedules (an
   // older project adapter doesn't send it: then the browser's own).
   var schedulesTimeZone = null;
+  // The agent's workflows, from the same response: a new schedule can run
+  // one of them instead of a message.
+  var schedulesWorkflows = [];
 
   function fmtScheduleTime(iso) {
     var d = new Date(iso);
@@ -1809,7 +1827,12 @@ ${consoleShellScript}
     }).join('');
     return '<tr>' +
       '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' + (t.notify ? ' <span class="le-pill accent" title="Each result goes through this agent&#39;s notifier">notifies</span>' : '') +
-        '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div></td>' +
+        (t.workflow
+          ? '<div><span class="le-pill accent">Workflow</span> ' + escapeHtml(t.workflow.title) + '</div><div class="schedule-result hint">' + escapeHtml(t.workflow.start_message) +
+              (t.params ? '<br>' + Object.keys(t.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(t.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '') + '</div>'
+          : t.workflow_missing
+            ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
+            : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') + '</td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
         (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
@@ -1824,11 +1847,22 @@ ${consoleShellScript}
     var list = tasks.length
       ? '<div class="le-table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Status</th><th>Last run</th><th></th></tr></thead><tbody>' + tasks.map(renderScheduleRow).join('') + '</tbody></table></div>'
       : '<p class="hint">Nothing scheduled yet.</p>';
-    return '<p class="muted" style="margin:0 0 20px">Messages this agent receives on a timer, like a cron job. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
+    return '<p class="muted" style="margin:0 0 20px">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule starts with the workflow&#39;s start message as it is at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
       '<section><h3>Scheduled (' + active.length + ' active)</h3>' + list + '</section>' +
       '<section><h3>New schedule</h3>' +
         '<form class="add-source" id="scheduleForm" style="max-width:560px">' +
-          '<label>Message <span class="hint">(what the agent receives each time, as if someone typed it)</span><textarea name="message" required placeholder="Summarize yesterday&#39;s support tickets and post the summary."></textarea></label>' +
+          (schedulesWorkflows.length
+            ? '<div class="body-field">Runs' +
+                '<div class="schedule-when"><input type="radio" name="runs" value="workflow" id="runsWorkflow" checked><label for="runsWorkflow">A workflow</label>' +
+                  '<select name="workflow_id" aria-label="Workflow">' + schedulesWorkflows.map(function (w) {
+                    return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.title) + '</option>';
+                  }).join('') + '</select></div>' +
+                '<div class="workflow-params" id="scheduleParams" style="margin:0 0 4px 22px"></div>' +
+                '<p class="hint" style="margin:0 0 4px 22px">Each run starts with the workflow&#39;s start message as it is then, so changing the workflow changes what runs.</p>' +
+                '<div class="schedule-when"><input type="radio" name="runs" value="message" id="runsMessage"><label for="runsMessage">A message</label></div>' +
+              '</div>'
+            : '') +
+          '<label id="scheduleMessageField"' + (schedulesWorkflows.length ? ' hidden' : '') + '>Message <span class="hint">(what the agent receives each time, as if someone typed it)</span><textarea name="message" placeholder="Summarize yesterday&#39;s support tickets and post the summary."></textarea></label>' +
           '<div class="body-field">When' +
             '<div class="schedule-when"><input type="radio" name="when" value="every" id="whenEvery" checked><label for="whenEvery">Every</label>' +
               '<input type="number" name="everyN" value="1" min="1" aria-label="How many">' +
@@ -1844,6 +1878,15 @@ ${consoleShellScript}
           '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
           '<div id="scheduleResult" class="hint"></div>' +
         '</form></section>';
+  }
+
+  // The New schedule form's parameter fields ("param:<name>"), filled ones only.
+  function scheduleParams(data) {
+    var params = {};
+    data.forEach(function (value, key) {
+      if (key.indexOf('param:') === 0 && String(value).trim()) params[key.slice(6)] = String(value).trim();
+    });
+    return params;
   }
 
   // A date field's value ("2026-11-02T09:00") goes as it is, for the
@@ -1879,9 +1922,34 @@ ${consoleShellScript}
     }
     var form = content.querySelector('#scheduleForm');
     var result = content.querySelector('#scheduleResult');
+    var messageField = content.querySelector('#scheduleMessageField');
+    var runsRadios = content.querySelectorAll('input[name="runs"]');
+    var paramsBox = content.querySelector('#scheduleParams');
+    var workflowSelect = form.querySelector('select[name="workflow_id"]');
+    // One field per parameter of the chosen workflow.
+    function renderScheduleParams() {
+      if (!paramsBox || !workflowSelect) return;
+      var w = schedulesWorkflows.filter(function (x) { return x.id === workflowSelect.value; })[0];
+      var parameters = (w && w.parameters) || {};
+      paramsBox.innerHTML = Object.keys(parameters).map(function (p) {
+        return '<label class="workflow-param">' + escapeHtml(p) + (parameters[p].required ? '' : ' <span class="hint">(optional)</span>') +
+          '<input name="param:' + escapeHtml(p) + '" placeholder="' + escapeHtml(parameters[p].description || '') + '"></label>';
+      }).join('');
+    }
+    renderScheduleParams();
+    if (workflowSelect) workflowSelect.addEventListener('change', renderScheduleParams);
+    for (var k = 0; k < runsRadios.length; k++) {
+      runsRadios[k].addEventListener('change', function () {
+        var byMessage = form.querySelector('input[name="runs"]:checked').value === 'message';
+        messageField.hidden = !byMessage;
+        if (paramsBox) paramsBox.hidden = byMessage;
+      });
+    }
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var data = new FormData(form);
+      var runsWorkflow = data.get('runs') === 'workflow';
+      if (!runsWorkflow && !String(data.get('message') || '').trim()) { result.textContent = 'Write the message the agent receives.'; return; }
       var schedule;
       if (data.get('when') === 'once') {
         if (!data.get('runAt')) { result.textContent = 'Pick a date and time.'; return; }
@@ -1896,7 +1964,10 @@ ${consoleShellScript}
       result.textContent = 'Scheduling' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message: data.get('message'), schedule: schedule, task_name: data.get('task_name'), notify: data.get('notify') === 'on' }),
+        body: JSON.stringify(Object.assign(
+          runsWorkflow ? { workflow_id: data.get('workflow_id'), params: scheduleParams(data) } : { message: data.get('message') },
+          { schedule: schedule, task_name: data.get('task_name'), notify: data.get('notify') === 'on' }
+        )),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not schedule'; return; }
         loadSchedulesTab(name);
@@ -1913,6 +1984,7 @@ ${consoleShellScript}
       if (!r.ok) throw new Error(r.body.error || 'request failed');
       var tasks = r.body.tasks || [];
       schedulesTimeZone = r.body.time_zone || null;
+      schedulesWorkflows = r.body.workflows || [];
       content.innerHTML = renderSchedulesHtml(tasks);
       wireSchedulesHandlers(name);
       leShell.setCount('schedules', tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; }).length);

@@ -9,10 +9,11 @@
 // this repo's own example agents actually uses. Read-only display of a
 // nested skill (via describeAgent's own skills list) still works fine —
 // only adding/editing/removing one through this UI is out of scope.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseSkillFile } from '../core/skillgarden/index.js'
 import { agentDir } from '../core/gateway-tools.js'
+import { writeSkillFile } from '../core/workflows.js'
 
 export class SkillInvalidIdError extends Error {}
 export class SkillNotFoundError extends Error {}
@@ -56,20 +57,15 @@ export function readSkill(agentName: string, skillId: string): SkillContent {
   return { id: skillId, description: frontmatter.description ?? '', body }
 }
 
-/** Creates the skill if `skillId` doesn't exist yet, or overwrites it in
- * place if it does — same "this is the new content, not a diff to
- * merge" semantics as a PUT. Frontmatter is regenerated from `skillId`
- * (as `name`) and `description`; any *other* frontmatter keys a skill
- * might have (e.g. `paths` — see SkillFrontmatter's own doc comment) are
- * intentionally not preserved here, since this admin UI has no field for
- * them. A skill that needs those is still editable by hand — this just
- * isn't the tool for it. */
+/** Creates the skill if `skillId` doesn't exist yet, or replaces its
+ * description and body if it does. Its other front matter is kept: a
+ * workflow's start message, trigger and parameters (core/workflows.ts),
+ * `paths` and anything hand-written, none of which the Skills tab edits. */
 export function writeSkill(agentName: string, skillId: string, content: { description: string; body: string }): void {
   const path = skillFilePath(agentName, skillId)
   const description = content.description.replace(/\n/g, ' ').trim()
-  const frontmatter = `---\nname: ${skillId}\ndescription: ${JSON.stringify(description)}\n---\n\n`
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, frontmatter + content.body.trim() + '\n')
+  const existing = existsSync(path) ? parseSkillFile(readFileSync(path, 'utf8'), skillId).frontmatter : {}
+  writeSkillFile(path, { ...existing, name: skillId, description }, content.body)
 }
 
 export function deleteSkill(agentName: string, skillId: string): void {

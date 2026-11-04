@@ -45,7 +45,15 @@ export interface ScheduledTask {
   task_id: string
   task_name?: string
   agent: string
+  /** What the agent receives each run. Empty for a workflow task, which
+   * sends its workflow's start message instead. */
   message: string
+  /** Set on a workflow task: each run starts this workflow of the
+   * agent's (core/workflows.ts) as it is at run time, so editing the
+   * workflow changes what the next run does. */
+  workflow_id?: string
+  /** The workflow's parameters for every run of this task. */
+  params?: Record<string, string>
   schedule: Schedule
   status: ScheduledTaskStatus
   created_at: string
@@ -200,9 +208,21 @@ export function setSchedulerStore(next: SchedulerStore): void {
 
 // ---------- API for tools and the console ----------
 
+/** The message a workflow run starts with, worked out at run time;
+ * undefined when the agent has no such workflow (any more). It may throw
+ * when the task's params no longer fit the workflow. Supplied by the
+ * server, which knows where agents' workflows are kept. */
+export type ResolveWorkflowMessage = (agent: string, workflowId: string, params: Record<string, string>) => string | undefined | Promise<string | undefined>
+
 export interface CreateScheduledTaskInput {
   agent: string
-  message: string
+  /** A custom message, or… */
+  message?: string
+  /** …one of the agent's workflows, by id. Exactly one of the two. The
+   * caller checks the workflow exists and the params fit it; the
+   * scheduler only stores them. */
+  workflow_id?: string
+  params?: Record<string, string>
   /** `start_at` (with `every` only): when the first run is, and so the
    * time of day / day of week every later run keeps, e.g. every "1d"
    * from "2026-11-02T09:00:00+08:00" runs daily at 9:00. A start in the
@@ -218,7 +238,10 @@ export interface CreateScheduledTaskInput {
 
 export async function createScheduledTask(input: CreateScheduledTaskInput, nowMs = Date.now()): Promise<ScheduledTask> {
   if (!input.agent) throw new ScheduleError('agent is required')
-  if (!input.message?.trim()) throw new ScheduleError('message is required')
+  const message = typeof input.message === 'string' ? input.message : ''
+  const workflowId = typeof input.workflow_id === 'string' ? input.workflow_id.trim() : ''
+  if (message.trim() && workflowId) throw new ScheduleError('give either a message or a workflow_id, not both')
+  if (!message.trim() && !workflowId) throw new ScheduleError('message or workflow_id is required')
   let schedule: Schedule
   let nextRunMs: number
   const timeZone = workspaceTimeZone()
@@ -263,7 +286,9 @@ export async function createScheduledTask(input: CreateScheduledTaskInput, nowMs
     task_id: randomUUID(),
     task_name: input.task_name?.trim() || undefined,
     agent: input.agent,
-    message: input.message,
+    message: workflowId ? '' : message,
+    ...(workflowId ? { workflow_id: workflowId } : {}),
+    ...(workflowId && input.params && Object.keys(input.params).length ? { params: input.params } : {}),
     schedule,
     status: 'scheduled',
     created_at: new Date(nowMs).toISOString(),
@@ -427,13 +452,15 @@ export type FireTask = (task: ScheduledTask, sessionId: string) => Promise<{ kin
 
 export class Scheduler {
   private readonly fire: FireTask
+  private readonly resolveWorkflowMessage?: ResolveWorkflowMessage
   private readonly tickMs: number
   private readonly onSettled?: (task: ScheduledTask, run: ScheduledTaskRun) => void
   private readonly inFlight = new Set<string>()
   private timer?: ReturnType<typeof setInterval>
 
-  constructor(options: { fire: FireTask; tickMs?: number; onSettled?: (task: ScheduledTask, run: ScheduledTaskRun) => void }) {
+  constructor(options: { fire: FireTask; resolveWorkflowMessage?: ResolveWorkflowMessage; tickMs?: number; onSettled?: (task: ScheduledTask, run: ScheduledTaskRun) => void }) {
     this.fire = options.fire
+    this.resolveWorkflowMessage = options.resolveWorkflowMessage
     this.tickMs = options.tickMs ?? (Number(process.env.LOOPENGINE_SCHEDULER_TICK_MS) || 10_000)
     this.onSettled = options.onSettled
   }
@@ -478,7 +505,7 @@ export class Scheduler {
     if (!claimed || claimed.status !== 'running') return
     const sessionId = `sched-${taskId.slice(0, 8)}-${claimed.run_count + 1}-${Date.now().toString(36)}`
     try {
-      const outcome = await this.fire(claimed, sessionId)
+      const outcome = await this.fire(await this.withMessage(claimed), sessionId)
       if (outcome.kind === 'pending') {
         await getSchedulerStore().update(taskId, (t) => t && {
           ...t,
@@ -494,6 +521,16 @@ export class Scheduler {
     } catch (err) {
       await this.settle(taskId, ranAt, { status: 'error', error: err instanceof Error ? err.message : String(err), session_id: sessionId })
     }
+  }
+
+  /** The task as it fires: a workflow task gets its workflow's start
+   * message as it is now. A workflow that's gone fails the run, rather
+   * than sending a stale or empty message. */
+  private async withMessage(task: ScheduledTask): Promise<ScheduledTask> {
+    if (!task.workflow_id) return task
+    const message = this.resolveWorkflowMessage ? await this.resolveWorkflowMessage(task.agent, task.workflow_id, task.params ?? {}) : undefined
+    if (!message?.trim()) throw new ScheduleError(`The workflow "${task.workflow_id}" is no longer on ${task.agent}; cancel this schedule or schedule another workflow.`)
+    return { ...task, message }
   }
 
   /** A paused run resumed after a decision (adapters/http.ts calls this

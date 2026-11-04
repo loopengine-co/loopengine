@@ -88,6 +88,8 @@ import {
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
+import { WorkflowParamsError, readWorkflow, readWorkflows, validateParams, workflowRunMessage } from '#core/workflows.js'
+import { substituteParameters } from '#core/skillgarden/index.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
@@ -102,7 +104,7 @@ import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlack
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
-import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, planWorkflow, runWorkflowNow, startPlanJob, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
+import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, planWorkflow, runWorkflowNow, startPlanJob, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -439,7 +441,7 @@ async function describeAgent(entry: RegistryEntry): Promise<Record<string, unkno
     // createAskUserTool() with no onPending, purely to describe its
     // schema here — never executed, so the console-prompt fallback its
     // own doc comment mentions never applies to this call.
-    systemTools: [...systemTools, createAskUserTool({ agent: config.name }), ...(config.selfScheduling === false ? [] : createScheduleTools(config.name))].map(describeTool),
+    systemTools: [...systemTools, createAskUserTool({ agent: config.name }), ...(config.selfScheduling === false ? [] : createScheduleTools(config.name, { agentDir: agentDirFor(config) }))].map(describeTool),
     localTools: localTools.map((t) => ({ ...describeTool(t), httpToolEditable: editableHttpToolNames.has(t.name) })),
     agentAsTools: agentAsTools.map(describeTool),
     gatewayTools: gatewayTools.map(describeTool),
@@ -1313,7 +1315,21 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
   }
 }
 
-// An agent's workflows (its Overview): list, run now, forget.
+// How long POST .../workflows/:id/run with "wait": true waits for the run
+// before answering 202 with its runId; under the 90 s an ingress allows.
+const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_000
+
+// An agent's workflows (its Overview, and apps over the API): list, run
+// now with parameters, forget.
+//
+//   POST /agents/:name/workflows/:id/run  { "params": {…}, "wait": true }
+//
+// starts a one-off run. Without "wait" it answers 202 { runId } straight
+// away. With it, 200 { runId, text } once the run finishes, 202 { runId,
+// pending: true } if it stops for an approval or a question, or 202
+// { runId, running: true } if it's still going after WORKFLOW_WAIT_MS.
+// A failed run answers 502 { runId, error }. Wrong or missing params are
+// a 400 before anything runs.
 async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, agentName: string, id: string | undefined, action: string | undefined): Promise<void> {
   const json = (status: number, body: unknown): void => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
@@ -1322,15 +1338,32 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   const dir = agentDir(agentName)
   try {
     if (!id && req.method === 'GET') return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
-    if (id && action === 'run' && req.method === 'POST') return json(200, await runWorkflowNow(agentName, dir, id))
+    if (id && action === 'run' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const { taskId } = await runWorkflowNow(agentName, dir, id, body.params)
+      void scheduler.tick()
+      if (body.wait !== true) return json(202, { runId: taskId })
+      const deadline = Date.now() + WORKFLOW_WAIT_MS
+      for (;;) {
+        const task = await getScheduledTask(taskId)
+        if (task?.status === 'awaiting_approval') return json(202, { runId: taskId, pending: true })
+        if (task?.status === 'done' || task?.status === 'cancelled') {
+          return task.last_status === 'error'
+            ? json(502, { runId: taskId, error: task.last_error ?? 'The run failed.' })
+            : json(200, { runId: taskId, text: task.last_result ?? '' })
+        }
+        if (Date.now() >= deadline) return json(202, { runId: taskId, running: true })
+        await new Promise((r) => setTimeout(r, 300))
+      }
+    }
     if (id && !action && req.method === 'DELETE') {
-      forgetWorkflow(dir, id)
-      return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
+      const { cancelled } = await forgetWorkflow(agentName, dir, id)
+      return json(200, { cancelledSchedules: cancelled, workflows: await listAgentWorkflows(agentName, dir) })
     }
     return json(404, { error: 'not found' })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    return json(err instanceof WorkflowError ? 400 : 500, { error: message })
+    return json(err instanceof WorkflowError || err instanceof WorkflowParamsError ? 400 : 500, { error: message })
   }
 }
 
@@ -1653,24 +1686,63 @@ function announceScheduledRun(task: ScheduledTask, run: ScheduledTaskRun): void 
   announceToNotifier(entry.config, text, { scheduledTaskId: task.task_id, taskName: task.task_name ?? null, status: run.status, result: run.result ?? null, error: run.error ?? null }, defaultWebhook)
 }
 
-const scheduler = new Scheduler({ fire: fireScheduledTask, onSettled: announceScheduledRun })
+// A workflow task's message is worked out at run time from the workflow
+// as it is then: its start message and steps, with the task's params
+// (which must still fit its parameters) filled in.
+const scheduler = new Scheduler({
+  fire: fireScheduledTask,
+  resolveWorkflowMessage: (agent, workflowId, params) => {
+    const workflow = getEntry(agent) ? readWorkflow(agentDir(agent), workflowId) : undefined
+    return workflow && workflowRunMessage(workflow, validateParams(workflow, params))
+  },
+  onSettled: announceScheduledRun,
+})
 
 function scheduleJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
 }
 
+// The agent's tasks, a workflow task with its workflow's name and current
+// start message (or `workflow_missing` once the workflow is gone), and
+// the agent's workflows, for the New schedule form's choice.
 async function handleSchedulesGet(res: ServerResponse, agentName: string): Promise<void> {
   if (!getEntry(agentName)) return scheduleJson(res, 404, { error: `unknown agent '${agentName}'` })
-  scheduleJson(res, 200, { tasks: await listScheduledTasks({ agent: agentName }), time_zone: workspaceTimeZone() })
+  await migrateAgentWorkflows(agentName, agentDir(agentName))
+  const workflows = readWorkflows(agentDir(agentName))
+  const tasks = (await listScheduledTasks({ agent: agentName })).map((t) => {
+    if (!t.workflow_id) return t
+    const workflow = workflows.find((w) => w.id === t.workflow_id)
+    // Its start message as this task's runs see it, parameters filled in.
+    const startMessage = workflow && substituteParameters(workflow.startMessage, t.params ?? {}, { declared: Object.keys(workflow.parameters) })
+    return workflow ? { ...t, workflow: { id: workflow.id, title: workflow.title, start_message: startMessage } } : { ...t, workflow_missing: true }
+  })
+  scheduleJson(res, 200, {
+    tasks,
+    workflows: workflows.map((w) => ({ id: w.id, title: w.title, description: w.description, start_message: w.startMessage, parameters: w.parameters })),
+    time_zone: workspaceTimeZone(),
+  })
 }
 
 async function handleSchedulesPost(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
   if (!getEntry(agentName)) return scheduleJson(res, 404, { error: `unknown agent '${agentName}'` })
   const body = await readJsonBody(req)
+  const workflowId = typeof body.workflow_id === 'string' && body.workflow_id ? body.workflow_id : undefined
+  let params: Record<string, string> | undefined
+  if (workflowId) {
+    const workflow = readWorkflow(agentDir(agentName), workflowId)
+    if (!workflow) return scheduleJson(res, 400, { error: `${agentName} has no workflow "${workflowId}"` })
+    try {
+      params = validateParams(workflow, body.params)
+    } catch (err) {
+      return scheduleJson(res, 400, { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
   try {
     const task = await createScheduledTask({
       agent: agentName,
-      message: String(body.message ?? ''),
+      message: typeof body.message === 'string' ? body.message : undefined,
+      workflow_id: workflowId,
+      ...(params && Object.keys(params).length ? { params } : {}),
       schedule: (body.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown; at?: unknown; weekday?: unknown },
       task_name: typeof body.task_name === 'string' ? body.task_name : undefined,
       notify: body.notify === true,
@@ -4412,7 +4484,13 @@ server.listen(port, () => {
   console.log(`agent API listening on :${port}`)
   void warmAgentTools()
   // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.
-  if (process.env.LOOPENGINE_SCHEDULER !== 'off') void scheduler.start().catch((err) => console.error('[loopengine] scheduler failed to start:', err))
+  // Workflows from before they were skills move into their skills first,
+  // so their schedules run them.
+  const startScheduling = async () => {
+    for (const name of listAgents()) await migrateAgentWorkflows(name, agentDir(name)).catch((err) => console.error(`[loopengine] moving ${name}'s workflows.yml failed:`, err))
+    if (process.env.LOOPENGINE_SCHEDULER !== 'off') await scheduler.start()
+  }
+  void startScheduling().catch((err) => console.error('[loopengine] scheduler failed to start:', err))
 })
 
 // An agent that leaves `tools` unset gets its tools/ folder imported

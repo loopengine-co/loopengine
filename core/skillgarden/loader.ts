@@ -3,7 +3,7 @@ import { matchesActivationPaths } from './activation.js'
 import { buildBudgetedIndex, estimateTokens, type BudgetedIndex } from './budget.js'
 import { discoverSkillFiles } from './discovery.js'
 import { parseSkillFile } from './frontmatter.js'
-import { substituteArguments } from './substitute.js'
+import { substituteArguments, substituteParameters } from './substitute.js'
 import type { LoadedSkill, SkillFrontmatter, SkillIndexEntry } from './types.js'
 
 export interface SkillGardenOptions {
@@ -75,9 +75,16 @@ export class SkillGarden {
 
   /** Load + substitute placeholders, ready to inject into a running
    * conversation. */
-  invoke(name: string, args?: string): string {
+  /** A skill's body for the model, with `params` filled into its
+   * `$name` placeholders (those its front matter declares under
+   * `parameters` become empty when not given) and `args` into
+   * `$ARGUMENTS`/`$1`… */
+  invoke(name: string, args?: string, params?: Record<string, string>): string {
     const skill = this.load(name)
-    return substituteArguments(skill.body, args)
+    const declaredSpec = skill.frontmatter.parameters
+    const declared = declaredSpec && typeof declaredSpec === 'object' && !Array.isArray(declaredSpec) ? Object.keys(declaredSpec) : []
+    const named = params || declared.length ? substituteParameters(skill.body, params ?? {}, { declared }) : skill.body
+    return substituteArguments(named, args)
   }
 
   /** Filters index entries down to skills eligible given files touched

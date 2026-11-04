@@ -31,7 +31,21 @@ describe('readSkill / writeSkill / deleteSkill', () => {
   it('writes real frontmatter + body matching SkillGarden\'s own format', () => {
     writeSkill(AGENT_NAME, 'my-skill', { description: 'a skill', body: 'body text' })
     const raw = readFileSync(join(AGENT_DIR, 'skills', 'my-skill', 'SKILL.md'), 'utf8')
-    expect(raw).toBe('---\nname: my-skill\ndescription: "a skill"\n---\n\nbody text\n')
+    expect(raw).toBe('---\nname: my-skill\ndescription: a skill\n---\n\nbody text\n')
+  })
+
+  it('keeps front matter the Skills tab has no field for, such as a workflow\'s', () => {
+    writeSkill(AGENT_NAME, 'refund-check', { description: 'first', body: 'first body' })
+    const path = join(AGENT_DIR, 'skills', 'refund-check', 'SKILL.md')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('description: first\n', 'description: first\nstart_message: Check order $order_number.\nparameters:\n  order_number: { required: true }\n'))
+
+    writeSkill(AGENT_NAME, 'refund-check', { description: 'second', body: 'second body' })
+
+    const raw = readFileSync(path, 'utf8')
+    expect(raw).toContain('description: second')
+    expect(raw).toContain('start_message: Check order $order_number.')
+    expect(raw).toContain('order_number:')
+    expect(readSkill(AGENT_NAME, 'refund-check')).toEqual({ id: 'refund-check', description: 'second', body: 'second body' })
   })
 
   it('writeSkill overwrites an existing skill in place (PUT semantics)', () => {
