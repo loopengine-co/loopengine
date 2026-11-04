@@ -1,17 +1,21 @@
 /** Replaces `$ARGUMENTS` with the raw args string, and `$1`/`$2`/... with
  * whitespace-split positional args — the same placeholder convention
- * skill authors already expect from Claude Code's own Skill tool. */
+ * skill authors already expect from Claude Code's own Skill tool.
+ *
+ * A `$N` is filled only when that argument was given: with two args, `$1`
+ * and `$2` are, while `$3` and a dollar amount like `$50` stay as
+ * written; with none, nothing positional changes. `$$1` is a literal
+ * "$1", for a skill that takes args and mentions one. One pass, so an
+ * argument's own text is never filled in again. */
 export function substituteArguments(body: string, args?: string): string {
   const argString = args ?? ''
-  let result = body.replaceAll('$ARGUMENTS', argString)
-
   const positional = argString.split(/\s+/).filter(Boolean)
-  result = result.replace(/\$(\d+)/g, (_match, indexStr: string) => {
-    const index = Number(indexStr)
-    return positional[index - 1] ?? ''
+  return body.replace(/\$(\$(?=\d)|ARGUMENTS|\d+)/g, (match, token: string) => {
+    if (token === '$') return '$'
+    if (token === 'ARGUMENTS') return argString
+    const index = Number(token)
+    return index >= 1 && index <= positional.length ? positional[index - 1]! : match
   })
-
-  return result
 }
 
 /** Replaces `$name` placeholders (lowercase, e.g. `$order_number`) with
