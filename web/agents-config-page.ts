@@ -704,7 +704,7 @@ ${consoleShellScript}
           : '<span class="le-pill accent">Running</span>';
         var values = r.params ? Object.keys(r.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(r.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
         var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
-        return '<li>' + pill + ' <span class="hint">' + escapeHtml(new Date(r.started_at).toLocaleString()) + (r.source === 'api' ? ' ' + String.fromCharCode(183) + ' from an app' : '') + '</span>' +
+        return '<li>' + pill + ' <span class="hint">' + escapeHtml(new Date(r.started_at).toLocaleString()) + (r.source === 'api' ? ' ' + String.fromCharCode(183) + ' from an app' : r.source === 'schedule' ? ' ' + String.fromCharCode(183) + ' scheduled' + (r.task_name ? ' (' + escapeHtml(r.task_name) + ')' : '') : '') + '</span>' +
           (values ? '<div class="hint">' + values + '</div>' : '') +
           (outcome ? '<div class="schedule-result">' + escapeHtml(outcome) + '</div>' : '') + '</li>';
       }).join('');

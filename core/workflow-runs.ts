@@ -1,7 +1,8 @@
-// Workflow runs started by hand or by an app: Run now in the console, or
-// POST /agents/:name/workflows/:id/run. Each is a record of its own here,
-// not a schedule task, so the Schedules tab only lists what is set to run
-// and each run can be looked up by its id afterwards
+// Workflow runs: started by hand or by an app (Run now in the console, or
+// POST /agents/:name/workflows/:id/run), or by a schedule that runs the
+// workflow. Each is a record of its own here, so a workflow has one
+// history of every run whatever started it, the Schedules tab only lists
+// what is set to run, and each run can be looked up by its id afterwards
 // (GET /agents/:name/runs/:id).
 //
 // A run executes the same way a scheduled task fires (supplied by the
@@ -25,8 +26,12 @@ export interface WorkflowRun {
   agent: string
   workflow_id: string
   params?: Record<string, string>
-  /** Who started it: the console's Run now, or an app over the API. */
-  source: 'console' | 'api'
+  /** Who started it: the console's Run now, an app over the API, or a
+   * schedule. */
+  source: 'console' | 'api' | 'schedule'
+  /** The schedule that started it, for source "schedule". */
+  task_id?: string
+  task_name?: string
   status: WorkflowRunStatus
   started_at: string
   finished_at?: string
@@ -47,6 +52,8 @@ export type ExecuteRun = (agent: string, message: string, sessionId: string) => 
 
 const MAX_FINISHED_PER_AGENT = 500
 const SESSION_PREFIX = 'run-'
+/** A scheduled task's sessions (core/scheduler.ts). */
+const SCHEDULE_SESSION_PREFIX = 'sched-'
 
 export class RunError extends Error {}
 
@@ -186,6 +193,37 @@ export class WorkflowRunner {
     return run
   }
 
+  /** A schedule firing one of its agent's workflows (the scheduler's fire,
+   * for a workflow task): recorded as a run of the workflow, then run the
+   * usual way. Returns the outcome for the scheduler, and throws what the
+   * run threw, so the schedule's own history records it too. */
+  async runForSchedule(input: { agent: string; workflow_id: string; params?: Record<string, string>; task_id: string; task_name?: string; message: string; session_id: string }): Promise<RunOutcome> {
+    const run: WorkflowRun = {
+      run_id: randomUUID(),
+      agent: input.agent,
+      workflow_id: input.workflow_id,
+      ...(input.params && Object.keys(input.params).length ? { params: input.params } : {}),
+      source: 'schedule',
+      task_id: input.task_id,
+      ...(input.task_name ? { task_name: input.task_name } : {}),
+      status: 'running',
+      started_at: new Date().toISOString(),
+      message: input.message,
+      session_id: input.session_id,
+    }
+    await getRunStore().put(run)
+    await this.prune(input.agent)
+    try {
+      const outcome = await this.execute(run.agent, run.message, run.session_id)
+      if (outcome.kind === 'pending') await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds })
+      else await this.finish(run.run_id, { status: 'done', result: outcome.text })
+      return outcome
+    } catch (err) {
+      await this.finish(run.run_id, { status: 'error', error: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+  }
+
   /** Waits for the runs this process has started (tests, shutdown). */
   async idle(): Promise<void> {
     await Promise.all([...this.inFlight])
@@ -217,7 +255,7 @@ export class WorkflowRunner {
    * its resolve path, for every resumed session): settle it, or record
    * what it's waiting on now. */
   async settleFromResume(sessionId: string, outcome: { text: string; pendingIds?: string[] }): Promise<void> {
-    if (!sessionId.startsWith(SESSION_PREFIX)) return
+    if (!sessionId.startsWith(SESSION_PREFIX) && !sessionId.startsWith(SCHEDULE_SESSION_PREFIX)) return
     const run = (await getRunStore().list()).find((r) => r.session_id === sessionId)
     if (!run) return
     if (outcome.pendingIds?.length) {

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileRunStore, WorkflowRunner, getRun, listRuns, setRunStore, type ExecuteRun } from '#core/workflow-runs.js'
-import { FileSchedulerStore, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
+import { FileSchedulerStore, Scheduler, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
 
 let dir: string
 beforeEach(() => {
@@ -100,5 +100,44 @@ describe('workflow runs', () => {
     await runner.start(input)
     expect((await listRuns('cs')).filter((r) => r.status === 'done')).toHaveLength(2)
     await runner.idle()
+  })
+
+  it('record a schedule firing a workflow as a run of it, and hand the scheduler its outcome', async () => {
+    const runner = new WorkflowRunner({ execute: async () => ({ kind: 'done', text: 'Digest sent.' }) })
+    const outcome = await runner.runForSchedule({ agent: 'cs', workflow_id: 'weekly-digest', params: { region: 'EU' }, task_id: 'task-1', task_name: 'EU digest', message: 'Write the EU digest.', session_id: 'sched-task1-1' })
+
+    expect(outcome).toEqual({ kind: 'done', text: 'Digest sent.' })
+    const [run] = await listRuns('cs', { workflowId: 'weekly-digest' })
+    expect(run).toMatchObject({ source: 'schedule', task_id: 'task-1', task_name: 'EU digest', params: { region: 'EU' }, status: 'done', result: 'Digest sent.', session_id: 'sched-task1-1' })
+  })
+
+  it('record a scheduled run that fails, and still throw so the schedule records it', async () => {
+    const runner = new WorkflowRunner({ execute: async () => { throw new Error('model unavailable') } })
+    await expect(runner.runForSchedule({ agent: 'cs', workflow_id: 'weekly-digest', task_id: 'task-1', message: 'x', session_id: 'sched-task1-2' })).rejects.toThrow('model unavailable')
+    expect(await listRuns('cs')).toMatchObject([{ source: 'schedule', status: 'error', error: 'model unavailable' }])
+  })
+
+  it('settle a scheduled run that paused, by its schedule session', async () => {
+    const runner = new WorkflowRunner({ execute: async () => ({ kind: 'pending', pendingIds: ['p1'] }) })
+    await runner.runForSchedule({ agent: 'cs', workflow_id: 'weekly-digest', task_id: 'task-1', message: 'x', session_id: 'sched-task1-3' })
+    expect(await listRuns('cs')).toMatchObject([{ status: 'awaiting_approval', pending_ids: ['p1'] }])
+
+    await runner.settleFromResume('sched-task1-3', { text: 'Approved and sent.' })
+    expect(await listRuns('cs')).toMatchObject([{ status: 'done', result: 'Approved and sent.' }])
+  })
+
+  it('show up when the scheduler fires a workflow task', async () => {
+    const runner = new WorkflowRunner({ execute: async (_agent, message) => ({ kind: 'done', text: `did: ${message}` }) })
+    const scheduler = new Scheduler({
+      fire: (task, sessionId) => runner.runForSchedule({ agent: task.agent, workflow_id: task.workflow_id!, params: task.params, task_id: task.task_id, task_name: task.task_name, message: task.message, session_id: sessionId }),
+      resolveWorkflowMessage: (_agent, _id, params) => `Write the ${params.region} digest.`,
+    })
+    const task = await createScheduledTask({ agent: 'cs', workflow_id: 'weekly-digest', params: { region: 'US' }, schedule: { every: '1m' }, task_name: 'US digest' }, Date.now() - 2 * 60_000)
+
+    await scheduler.tick()
+    await new Promise((r) => setTimeout(r, 30))
+
+    expect(await getScheduledTask(task.task_id)).toMatchObject({ last_status: 'ok', last_result: 'did: Write the US digest.' })
+    expect(await listRuns('cs', { workflowId: 'weekly-digest' })).toMatchObject([{ source: 'schedule', task_id: task.task_id, task_name: 'US digest', params: { region: 'US' }, status: 'done' }])
   })
 })

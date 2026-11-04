@@ -1678,12 +1678,23 @@ async function executeUnattendedRun(agent: string, message: string, rawSessionId
   return { kind: 'done', text: outcome.text }
 }
 
-function fireScheduledTask(task: ScheduledTask, rawSessionId: string): ReturnType<typeof executeUnattendedRun> {
-  return executeUnattendedRun(task.agent, task.message, rawSessionId)
-}
-
-// Workflow runs started by hand or by an app, kept apart from schedules.
+// Workflow runs, whatever starts them, each recorded apart from schedules.
 const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun })
+
+// A task that runs a workflow is also recorded as a run of that workflow,
+// so the workflow's Recent runs shows its scheduled runs too.
+function fireScheduledTask(task: ScheduledTask, rawSessionId: string): ReturnType<typeof executeUnattendedRun> {
+  if (!task.workflow_id) return executeUnattendedRun(task.agent, task.message, rawSessionId)
+  return workflowRunner.runForSchedule({
+    agent: task.agent,
+    workflow_id: task.workflow_id,
+    params: task.params,
+    task_id: task.task_id,
+    task_name: task.task_name,
+    message: task.message,
+    session_id: rawSessionId,
+  })
+}
 
 // A task with `notify` on reports each run through its agent's notifier.
 function announceScheduledRun(task: ScheduledTask, run: ScheduledTaskRun): void {
