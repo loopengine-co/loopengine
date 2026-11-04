@@ -697,12 +697,24 @@ ${consoleShellScript}
           '<input name="' + escapeHtml(p) + '"' + (spec.required ? ' required' : '') + ' placeholder="' + escapeHtml(spec.description || '') + '"></label>';
       }).join('');
       var scheduleCount = (w.schedules || []).filter(function (x) { return x.repeating; }).length;
+      var runs = (w.recentRuns || []).map(function (r) {
+        var pill = r.status === 'done' ? '<span class="le-pill good">Done</span>'
+          : r.status === 'error' ? '<span class="le-pill bad">Failed</span>'
+          : r.status === 'awaiting_approval' ? '<span class="le-pill ask">Waiting for a decision</span>'
+          : '<span class="le-pill accent">Running</span>';
+        var values = r.params ? Object.keys(r.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(r.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
+        var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
+        return '<li>' + pill + ' <span class="hint">' + escapeHtml(new Date(r.started_at).toLocaleString()) + (r.source === 'api' ? ' ' + String.fromCharCode(183) + ' from an app' : '') + '</span>' +
+          (values ? '<div class="hint">' + values + '</div>' : '') +
+          (outcome ? '<div class="schedule-result">' + escapeHtml(outcome) + '</div>' : '') + '</li>';
+      }).join('');
       return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
           '<strong>' + escapeHtml(w.title) + '</strong><span>' + state + '</span></div>' +
         '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(w.trigger) : '') + '</p>' +
         '<details><summary class="hint">Steps <span>(the ' + escapeHtml(w.id) + ' skill)</span></summary><div class="workflow-steps-text">' + escapeHtml(w.steps) + '</div></details>' +
         (params ? '<div class="workflow-params">' + params + '</div>' : '') +
+        (runs ? '<details class="workflow-runs"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="hint">Recent runs (' + w.recentRuns.length + ')</summary><ul class="schedule-history">' + runs + '</ul></details>' : '') +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
           '<button type="button" class="workflow-run">Run now</button>' +
           (scheduleCount ? '<a href="?tab=schedules" data-tab="schedules" class="hint" style="align-self:center">' + (scheduleCount > 1 ? 'Schedules (' + scheduleCount + ')' : 'Schedule') + '</a>' : '') +
@@ -712,15 +724,22 @@ ${consoleShellScript}
     }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
   }
 
+  var workflowsRefreshTimer = null;
+
   function loadWorkflowsSection(name) {
     var el = detail.querySelector('#workflowsContent');
     if (!el) return;
+    if (workflowsRefreshTimer) { clearTimeout(workflowsRefreshTimer); workflowsRefreshTimer = null; }
     fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows').then(function (r) {
       if (currentName !== name) return;
       if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
-      el.innerHTML = renderWorkflowsHtml(name, r.body.workflows || []);
+      var workflows = r.body.workflows || [];
+      el.innerHTML = renderWorkflowsHtml(name, workflows);
       var cards = el.querySelectorAll('.workflow-card');
       for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
+      // Keep a running run's status current while the Overview is open.
+      var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }); });
+      if (running && currentTab === 'overview') workflowsRefreshTimer = setTimeout(function () { loadWorkflowsSection(name); }, 3000);
     });
   }
 
@@ -739,11 +758,11 @@ ${consoleShellScript}
       }
       btn.disabled = true;
       result.textContent = 'Starting' + String.fromCharCode(8230);
-      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params }) }).then(function (r) {
+      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params, source: 'console' }) }).then(function (r) {
         btn.disabled = false;
-        result.textContent = r.ok
-          ? 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; its result shows in the Schedules tab.'
-          : (r.body.error || 'Could not start it.');
+        if (!r.ok) { result.textContent = r.body.error || 'Could not start it.'; return; }
+        result.textContent = 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; the result shows under Recent runs.';
+        setTimeout(function () { loadWorkflowsSection(name); }, 800);
       });
     });
     card.querySelector('.workflow-forget').addEventListener('click', function (ev) {

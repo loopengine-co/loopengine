@@ -13,7 +13,8 @@ import { templateScheduleStart } from '../core/system-agents/templates.js'
 import { planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
-import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, type Workflow } from '../core/workflows.js'
+import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow } from '../core/workflows.js'
+import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
 import { cancelScheduledTask, createScheduledTask, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
 import { workspaceTimeZone } from '../core/time-zone.js'
 import type { ModelCall } from '../core/run-agent.js'
@@ -526,7 +527,11 @@ export interface AgentWorkflowView extends Workflow {
   schedule?: WorkflowScheduleView
   /** Every live task that runs it, repeating ones first. */
   schedules: WorkflowScheduleView[]
+  /** Its latest runs started by hand or by an app, newest first. */
+  recentRuns: WorkflowRun[]
 }
+
+const RECENT_RUNS = 5
 
 /** The live tasks that run a workflow: those carrying its id. */
 function workflowTasks(id: string, tasks: ScheduledTask[]): ScheduledTask[] {
@@ -567,9 +572,11 @@ export async function listAgentWorkflows(agentName: string, agentDir: string): P
   const workflows = readWorkflows(agentDir)
   if (!workflows.length) return []
   const tasks = await listScheduledTasks({ agent: agentName })
+  const runs = await listRuns(agentName)
   return workflows.map((w) => {
     const schedules = workflowTasks(w.id, tasks).map(scheduleView)
-    return { ...w, schedules, ...(schedules[0] ? { schedule: schedules[0] } : {}) }
+    const recentRuns = runs.filter((r) => r.workflow_id === w.id).slice(0, RECENT_RUNS)
+    return { ...w, schedules, recentRuns, ...(schedules[0] ? { schedule: schedules[0] } : {}) }
   })
 }
 
@@ -579,13 +586,12 @@ function sameParams(a: Record<string, string> | undefined, b: Record<string, str
   return [...keys].every((k) => (left[k] ?? '') === (b[k] ?? ''))
 }
 
-/** Starts a workflow now, with these parameters, as a one-off run: it
- * starts with the workflow's start message and steps as they are now.
- * Questions and approvals go to the agent's messaging app; the run's
- * result is on the task (and in the agent's Schedules tab). Refused while
- * a run of it with the same parameters is under way, so the same job
- * isn't done twice; runs with other parameters go ahead. */
-export async function runWorkflowNow(agentName: string, agentDir: string, id: string, rawParams?: unknown): Promise<{ taskId: string; params: Record<string, string> }> {
+/** Gets a run of a workflow ready to start, with these parameters: checks
+ * them, and that a run with the same parameters isn't already under way
+ * (runs with other parameters go ahead), and works out the message it
+ * starts with — the workflow's start message and steps as they are now.
+ * The server starts it (core/workflow-runs.ts). */
+export async function prepareWorkflowRun(agentName: string, agentDir: string, id: string, rawParams?: unknown): Promise<{ workflow: Workflow; params: Record<string, string>; message: string }> {
   const workflow = readWorkflow(agentDir, id)
   if (!workflow) throw new WorkflowError(`No workflow ${id} in ${agentName}.`)
   let params: Record<string, string>
@@ -594,16 +600,11 @@ export async function runWorkflowNow(agentName: string, agentDir: string, id: st
   } catch (err) {
     throw new WorkflowError(err instanceof Error ? err.message : String(err))
   }
-  const nowMs = Date.now()
-  const underWay = (t: ScheduledTask) =>
-    t.status === 'running' || t.status === 'awaiting_approval' || Boolean(t.pending) ||
-    // A one-off that's already due is a run waiting for the scheduler's next tick.
-    (!('every' in t.schedule) && t.status === 'scheduled' && Boolean(t.next_run_at) && Date.parse(t.next_run_at!) <= nowMs)
-  if (workflowTasks(id, await listScheduledTasks({ agent: agentName })).some((t) => underWay(t) && sameParams(t.params, params))) {
+  const runs = await listRuns(agentName, { workflowId: id })
+  if (runs.some((r) => isUnderWay(r) && sameParams(r.params, params))) {
     throw new WorkflowError(`${workflow.title} is already running${Object.keys(params).length ? ' with these parameters' : ''}, or waiting for a decision.`)
   }
-  const once = await createScheduledTask({ agent: agentName, workflow_id: id, ...(Object.keys(params).length ? { params } : {}), schedule: { run_at: new Date(nowMs).toISOString() }, task_name: `${workflow.title} (run now)` })
-  return { taskId: once.task_id, params }
+  return { workflow, params, message: workflowRunMessage(workflow, params) }
 }
 
 /** Forgets a workflow: its skill stays, as a plain skill, and the

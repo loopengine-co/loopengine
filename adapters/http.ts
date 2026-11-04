@@ -90,6 +90,7 @@ import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgent
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, validateParams, workflowRunMessage } from '#core/workflows.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
+import { WorkflowRunner, getRun, listRuns } from '#core/workflow-runs.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
@@ -104,7 +105,7 @@ import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlack
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
-import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, planWorkflow, runWorkflowNow, startPlanJob, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
+import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, planWorkflow, prepareWorkflowRun, startPlanJob, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -1316,7 +1317,8 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
 }
 
 // How long POST .../workflows/:id/run with "wait": true waits for the run
-// before answering 202 with its runId; under the 90 s an ingress allows.
+// before answering 202 with its runId (look it up later with GET
+// /agents/:name/runs/:runId); under the 90 s an ingress allows.
 const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_000
 
 // An agent's workflows (its Overview, and apps over the API): list, run
@@ -1338,21 +1340,19 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   const dir = agentDir(agentName)
   try {
     if (!id && req.method === 'GET') return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
+    if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
     if (id && action === 'run' && req.method === 'POST') {
       const body = await readJsonBody(req)
-      const { taskId } = await runWorkflowNow(agentName, dir, id, body.params)
-      void scheduler.tick()
-      if (body.wait !== true) return json(202, { runId: taskId })
+      const prepared = await prepareWorkflowRun(agentName, dir, id, body.params)
+      const run = await workflowRunner.start({ agent: agentName, workflow_id: id, params: prepared.params, source: body.source === 'console' ? 'console' : 'api', message: prepared.message })
+      if (body.wait !== true) return json(202, { runId: run.run_id })
       const deadline = Date.now() + WORKFLOW_WAIT_MS
       for (;;) {
-        const task = await getScheduledTask(taskId)
-        if (task?.status === 'awaiting_approval') return json(202, { runId: taskId, pending: true })
-        if (task?.status === 'done' || task?.status === 'cancelled') {
-          return task.last_status === 'error'
-            ? json(502, { runId: taskId, error: task.last_error ?? 'The run failed.' })
-            : json(200, { runId: taskId, text: task.last_result ?? '' })
-        }
-        if (Date.now() >= deadline) return json(202, { runId: taskId, running: true })
+        const current = await getRun(agentName, run.run_id)
+        if (current?.status === 'awaiting_approval') return json(202, { runId: run.run_id, pending: true })
+        if (current?.status === 'done') return json(200, { runId: run.run_id, text: current.result ?? '' })
+        if (current?.status === 'error') return json(502, { runId: run.run_id, error: current.error ?? 'The run failed.' })
+        if (Date.now() >= deadline) return json(202, { runId: run.run_id, running: true })
         await new Promise((r) => setTimeout(r, 300))
       }
     }
@@ -1648,33 +1648,42 @@ function handleEnvGet(res: ServerResponse, agentName: string): void {
 // durable approval, and with no notifier at all it's denied rather than
 // left waiting on nobody — a scheduled run has no one live in it. ----
 
-const NO_HUMAN_ANSWER = 'No human is available to answer — this is an unattended scheduled run. Use your own best judgement and proceed without waiting for a response.'
+const NO_HUMAN_ANSWER = 'No human is available to answer — this is an unattended run. Use your own best judgement and proceed without waiting for a response.'
 
-async function fireScheduledTask(task: ScheduledTask, rawSessionId: string): Promise<{ kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }> {
-  const entry = getEntry(task.agent)
-  if (!entry) throw new Error(`no agent named "${task.agent}" in this project`)
+// One unattended agent turn: a scheduled task firing, or a workflow run
+// started by hand or by an app (core/workflow-runs.ts).
+async function executeUnattendedRun(agent: string, message: string, rawSessionId: string): Promise<{ kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }> {
+  const entry = getEntry(agent)
+  if (!entry) throw new Error(`no agent named "${agent}" in this project`)
   const tenant = 'default'
   const environment = process.env.LOOPENGINE_ENV ?? 'production'
-  const outcome = await sessions.withSession(`${tenant}:${environment}:${task.agent}:${rawSessionId}`, async (history) => {
-    const result = await runAgent(entry.config, entry.createModelCall(), task.message, history, {
+  const outcome = await sessions.withSession(`${tenant}:${environment}:${agent}:${rawSessionId}`, async (history) => {
+    const result = await runAgent(entry.config, entry.createModelCall(), message, history, {
       tenant,
       sessionId: rawSessionId,
       channel: 'http',
       approver: defaultHttpWebhookNotifier ?? { requestApproval: async () => false },
       questionHandler: defaultHttpWebhookNotifier ?? { requestQuestion: async () => NO_HUMAN_ANSWER },
     })
-    if (result.pending) await createCheckpointFromPending(task.agent, tenant, rawSessionId, result.pending)
+    if (result.pending) await createCheckpointFromPending(agent, tenant, rawSessionId, result.pending)
     return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pendingIds: result.pending?.outstanding.map((o) => o.pendingId) } }
   })
   if (outcome.pendingIds?.length) return { kind: 'pending', pendingIds: outcome.pendingIds }
-  // run-agent's "you denied" wording is for someone live in a chat; in a
-  // scheduled run nobody denied anything, so say what actually happened.
+  // run-agent's "you denied" wording is for someone live in a chat; in an
+  // unattended run nobody denied anything, so say what actually happened.
   if (outcome.stopReason === 'denied') {
     const tools = /denied: (.+?)\. Send/.exec(outcome.text)?.[1] ?? 'a tool call'
-    throw new Error(`Not allowed: ${tools}. A call that needs approval is denied in a scheduled run unless the Permissions tab sends approval requests somewhere (or a rule denies it outright).`)
+    throw new Error(`Not allowed: ${tools}. A call that needs approval is denied in an unattended run unless the Permissions tab sends approval requests somewhere (or a rule denies it outright).`)
   }
   return { kind: 'done', text: outcome.text }
 }
+
+function fireScheduledTask(task: ScheduledTask, rawSessionId: string): ReturnType<typeof executeUnattendedRun> {
+  return executeUnattendedRun(task.agent, task.message, rawSessionId)
+}
+
+// Workflow runs started by hand or by an app, kept apart from schedules.
+const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun })
 
 // A task with `notify` on reports each run through its agent's notifier.
 function announceScheduledRun(task: ScheduledTask, run: ScheduledTaskRun): void {
@@ -3155,10 +3164,11 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
     return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pending: pendingSummary(result.pending) } }
   })
 
-  // A scheduled task's paused run (core/scheduler.ts) settles here.
-  void scheduler
-    .settleFromResume(finalCheckpoint.sessionId, { text: responseBody.text, pendingIds: responseBody.pending?.map((p) => p.pendingId) })
-    .catch((err) => console.error('[loopengine] could not settle scheduled run:', err))
+  // A scheduled task's paused run (core/scheduler.ts), or a workflow run's
+  // (core/workflow-runs.ts), settles here.
+  const resumed = { text: responseBody.text, pendingIds: responseBody.pending?.map((p) => p.pendingId) }
+  void scheduler.settleFromResume(finalCheckpoint.sessionId, resumed).catch((err) => console.error('[loopengine] could not settle scheduled run:', err))
+  void workflowRunner.settleFromResume(finalCheckpoint.sessionId, resumed).catch((err) => console.error('[loopengine] could not settle workflow run:', err))
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({ text: responseBody.text, sessionId: finalCheckpoint.sessionId, ...(responseBody.stopReason ? { stopReason: responseBody.stopReason } : {}), ...(responseBody.pending ? { pending: responseBody.pending } : {}) }),
   )
@@ -3352,7 +3362,7 @@ async function tracked<T>(fn: () => Promise<T>): Promise<T> {
 async function handleActivityGet(res: ServerResponse): Promise<void> {
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({
-      inFlightTurns: sessionTurns.size + scheduler.running + backgroundWork,
+      inFlightTurns: sessionTurns.size + scheduler.running + workflowRunner.running + backgroundWork,
       scheduledRuns: scheduler.running,
       // When the next scheduled task is due — wake this server by then
       // (POST /internal/scheduler/tick) if it's been stopped while idle.
@@ -3893,7 +3903,16 @@ const server = createServer(async (req, res) => {
       await handleAgentApp(req, res, decodeURIComponent(agentAppMatch[1]), decodeURIComponent(agentAppMatch[2]))
       return
     }
-    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run))?$/)
+    // One workflow run, by the runId its POST .../run returned.
+    const agentRunMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/runs\/([A-Za-z0-9_-]+)$/)
+    if (agentRunMatch) {
+      const agentName = decodeURIComponent(agentRunMatch[1])
+      const run = getEntry(agentName) ? await getRun(agentName, agentRunMatch[2]) : undefined
+      res.writeHead(run ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        .end(JSON.stringify(run ?? { error: `no run ${agentRunMatch[2]} for ${agentName}` }))
+      return
+    }
+    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs))?$/)
     if (agentWorkflowsMatch) {
       await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3])
       return
@@ -3964,7 +3983,7 @@ const server = createServer(async (req, res) => {
         return
       }
       try {
-        const outcome = await runUpgrade({ busy: () => sessionTurns.size + scheduler.running > 0 })
+        const outcome = await runUpgrade({ busy: () => sessionTurns.size + scheduler.running + workflowRunner.running > 0 })
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, outcome, restarting: exitOnCodeChange }))
       } catch (err) {
         const status = err instanceof UpgradeError ? 409 : 500
@@ -4488,7 +4507,10 @@ server.listen(port, () => {
   // so their schedules run them.
   const startScheduling = async () => {
     for (const name of listAgents()) await migrateAgentWorkflows(name, agentDir(name)).catch((err) => console.error(`[loopengine] moving ${name}'s workflows.yml failed:`, err))
-    if (process.env.LOOPENGINE_SCHEDULER !== 'off') await scheduler.start()
+    if (process.env.LOOPENGINE_SCHEDULER !== 'off') {
+      await workflowRunner.recover()
+      await scheduler.start()
+    }
   }
   void startScheduling().catch((err) => console.error('[loopengine] scheduler failed to start:', err))
 })

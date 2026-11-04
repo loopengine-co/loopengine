@@ -6,7 +6,8 @@ import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import { planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
 import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
-import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, runWorkflowNow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
+import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, type WorkflowAgentInfo } from '#web/workflow-admin.js'
+import { FileRunStore, WorkflowRunner, setRunStore } from '#core/workflow-runs.js'
 
 const RAW_PLAN = {
   name: 'Weekly blog post',
@@ -222,6 +223,7 @@ describe("a workflow's runs and schedules", () => {
     dir = mkdtempSync(join(tmpdir(), 'le-workflow-schedules-'))
     schedulerDir = mkdtempSync(join(tmpdir(), 'le-workflow-scheduler-'))
     setSchedulerStore(new FileSchedulerStore(schedulerDir))
+    setRunStore(new FileRunStore(schedulerDir))
     writeSkill(dir, 'refund-check', REFUND, 'Steps.')
   })
   afterEach(() => {
@@ -239,15 +241,26 @@ describe("a workflow's runs and schedules", () => {
     expect(w.schedule).toMatchObject({ taskId: daily.task_id, repeating: true, params: { order_number: '2' } })
   })
 
-  it('Run now queues a one-off with its parameters, refusing the same parameters twice but not others', async () => {
-    const first = await runWorkflowNow('cs', dir, 'refund-check', { order_number: 'EM20-1' })
-    expect(first.params).toEqual({ order_number: 'EM20-1' })
-    expect(await getScheduledTask(first.taskId)).toMatchObject({ workflow_id: 'refund-check', params: { order_number: 'EM20-1' }, message: '', task_name: 'Refund check (run now)' })
+  it('a run is prepared with its parameters checked and its first message worked out', async () => {
+    const prepared = await prepareWorkflowRun('cs', dir, 'refund-check', { order_number: 'EM20-1' })
+    expect(prepared.params).toEqual({ order_number: 'EM20-1' })
+    expect(prepared.message).toBe('Check the refund request for order EM20-1.\n\nThese are the steps, from your "refund-check" skill:\n\nSteps.')
+    await expect(prepareWorkflowRun('cs', dir, 'refund-check', {})).rejects.toThrow(/"order_number" is required/)
+    await expect(prepareWorkflowRun('cs', dir, 'no-such-workflow')).rejects.toThrow(/No workflow no-such-workflow/)
+  })
 
-    await expect(runWorkflowNow('cs', dir, 'refund-check', { order_number: 'EM20-1' })).rejects.toThrow(/already running with these parameters/)
-    await expect(runWorkflowNow('cs', dir, 'refund-check', { order_number: 'EM20-2' })).resolves.toMatchObject({ params: { order_number: 'EM20-2' } })
-    await expect(runWorkflowNow('cs', dir, 'refund-check', {})).rejects.toThrow(/"order_number" is required/)
-    await expect(runWorkflowNow('cs', dir, 'no-such-workflow')).rejects.toThrow(/No workflow no-such-workflow/)
+  it('a run with the same parameters as one under way is refused; others go ahead, and show as recent runs', async () => {
+    const runner = new WorkflowRunner({ execute: async () => ({ kind: 'pending', pendingIds: ['p1'] }) })
+    const prepared = await prepareWorkflowRun('cs', dir, 'refund-check', { order_number: 'EM20-1' })
+    const run = await runner.start({ agent: 'cs', workflow_id: 'refund-check', params: prepared.params, source: 'console', message: prepared.message })
+    await runner.idle()
+
+    await expect(prepareWorkflowRun('cs', dir, 'refund-check', { order_number: 'EM20-1' })).rejects.toThrow(/already running with these parameters/)
+    await expect(prepareWorkflowRun('cs', dir, 'refund-check', { order_number: 'EM20-2' })).resolves.toMatchObject({ params: { order_number: 'EM20-2' } })
+
+    const [w] = await listAgentWorkflows('cs', dir)
+    expect(w.recentRuns.map((r) => [r.run_id, r.status])).toEqual([[run.run_id, 'awaiting_approval']])
+    expect(w.schedules).toEqual([])
   })
 
   it('forgetting it cancels its schedules and keeps the skill', async () => {
