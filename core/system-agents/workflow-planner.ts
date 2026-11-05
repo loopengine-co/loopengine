@@ -284,7 +284,10 @@ const isDecision = (value: unknown): value is Decision => value === 'allow' || v
 export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const r = raw as Record<string, unknown>
-  const name = str(r.name, 80)
+  // A name for people: one written as an id ("daily-hn-digest") becomes
+  // words ("Daily hn digest").
+  const rawName = str(r.name, 80)
+  const name = rawName && /^[a-z0-9]+(-[a-z0-9]+)+$/.test(rawName) ? rawName.charAt(0).toUpperCase() + rawName.slice(1).replace(/-/g, ' ') : rawName
   const summary = str(r.summary, 600)
   const skillRaw = (r.skill ?? {}) as Record<string, unknown>
   const skillBody = str(skillRaw.body, 12000)

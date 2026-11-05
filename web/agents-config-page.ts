@@ -50,6 +50,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
   .workflow-card { margin-bottom: 10px; }
+  .workflow-card.workflow-focus { box-shadow: 0 0 0 2px var(--le-accent, #0f766e); transition: box-shadow 0.3s; }
   tr.schedule-focus td { background: var(--le-accent-soft, #e6f4ef); transition: background 0.3s; }
   .workflow-starts { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; background: var(--le-surface, #f6f7f9); }
   .workflow-starts h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
@@ -838,6 +839,35 @@ ${consoleShellScript}
   var workflowsRefreshTimer = null;
   // Set by a workflow's "Add a schedule", for the Schedules tab's form.
   var pendingScheduleWorkflow = null;
+  // Set by a schedule's workflow link: the card to scroll to and mark.
+  var pendingWorkflowFocus = null;
+
+  function focusWorkflowCard(tries) {
+    if (!pendingWorkflowFocus) return;
+    var card = detail.querySelector('.workflow-card[data-workflow="' + CSS.escape(pendingWorkflowFocus) + '"]');
+    if (!card) {
+      if ((tries || 0) < 40) setTimeout(function () { focusWorkflowCard((tries || 0) + 1); }, 150);
+      return;
+    }
+    pendingWorkflowFocus = null;
+    card.scrollIntoView({ block: 'start' });
+    card.classList.add('workflow-focus');
+    setTimeout(function () { card.classList.remove('workflow-focus'); }, 2500);
+  }
+
+  // Set by a workflow's Edit on the Skills list: the workflow to open in
+  // its editor once the Workflows tab has drawn it.
+  var pendingWorkflowEdit = null;
+
+  function openPendingWorkflowEdit() {
+    if (!pendingWorkflowEdit) return;
+    var card = detail.querySelector('.workflow-card[data-workflow="' + CSS.escape(pendingWorkflowEdit) + '"]');
+    if (!card) return;
+    pendingWorkflowEdit = null;
+    openWorkflowEditor(currentName, card);
+    card.scrollIntoView({ block: 'start' });
+  }
+
   // Set by a schedule on a workflow card (or a #schedule-<id> link): the
   // Schedules tab's row to show.
   var pendingScheduleFocus = /^#schedule-/.test(location.hash) ? location.hash.slice('#schedule-'.length) : null;
@@ -875,6 +905,7 @@ ${consoleShellScript}
       el.innerHTML = renderWorkflowsHtml(name, workflows);
       var cards = el.querySelectorAll('.workflow-card');
       for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
+      openPendingWorkflowEdit();
       // Keep a running run's status current while the Overview is open.
       var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }); });
       if (running && currentTab === 'workflows') workflowsRefreshTimer = setTimeout(function () { if (!workflowEditing) loadWorkflowsSection(name); }, 3000);
@@ -894,7 +925,10 @@ ${consoleShellScript}
   function workflowEditorHtml(w) {
     var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
     return '<form class="add-source workflow-editor-form" style="margin-top:10px">' +
-      '<label>Title<input name="title" maxlength="120" value="' + escapeHtml(w.title) + '"></label>' +
+      '<label>Title<input name="title" maxlength="120" value="' + escapeHtml(w.title) + '">' +
+        '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
+      '<label>Description <span class="hint">(one line on what this job is; the agent uses it to recognise the job when you ask in Chat)</span>' +
+        '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
       '<label>Instructions <span class="hint">(what the agent does, step by step; $name puts in a parameter&#39;s value. Chat uses them too.)</span>' +
         '<textarea name="instructions" maxlength="12000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></label>' +
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
@@ -961,7 +995,7 @@ ${consoleShellScript}
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters }),
+        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         workflowEditing = false;
@@ -2382,7 +2416,8 @@ ${consoleShellScript}
     return '<tr id="schedule-' + escapeHtml(t.task_id) + '">' +
       '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' +
         (t.workflow
-          ? '<div><span class="le-pill accent">Workflow</span> ' + escapeHtml(t.workflow.title) + '</div><div class="schedule-result hint">' + escapeHtml(t.workflow.start_message) +
+          ? '<div><span class="le-pill accent">Workflow</span> <a href="?agent=' + encodeURIComponent(currentName) + '&amp;tab=workflows" class="schedule-workflow-link" data-workflow="' + escapeHtml(t.workflow.id) + '" title="See it on the Workflows tab">' + escapeHtml(t.workflow.title) + '</a></div>' +
+            '<div class="schedule-result hint">' + escapeHtml(t.workflow.description || t.workflow.start_message) +
               (t.params ? '<br>' + Object.keys(t.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(t.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '') + '</div>'
           : t.workflow_missing
             ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
@@ -2456,6 +2491,17 @@ ${consoleShellScript}
   function wireSchedulesHandlers(name) {
     var content = schedulesContentEl();
     if (!content) return;
+    // A schedule's workflow opens its card on the Workflows tab.
+    var workflowLinks = content.querySelectorAll('.schedule-workflow-link');
+    for (var wl = 0; wl < workflowLinks.length; wl++) {
+      workflowLinks[wl].addEventListener('click', function (ev) {
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+        ev.preventDefault();
+        pendingWorkflowFocus = ev.currentTarget.dataset.workflow;
+        switchTab('workflows');
+        focusWorkflowCard();
+      });
+    }
     var actionBtns = content.querySelectorAll('.schedule-action');
     for (var i = 0; i < actionBtns.length; i++) {
       actionBtns[i].addEventListener('click', function (ev) {
@@ -3545,12 +3591,17 @@ ${consoleShellScript}
   // needs a further per-skill GET, to pull the body that index doesn't
   // carry. ----
 
+  // A skill that's a workflow is labelled, and its Edit opens the workflow
+  // editor: its instructions are one text there, with its title,
+  // description and parameters.
   function renderSkillCard(s) {
     return '<div class="source">' +
       '<div class="source-head">' +
-        '<h4>' + escapeHtml(s.name) + '</h4>' +
+        '<h4>' + escapeHtml(s.name) + (s.workflow ? ' <span class="le-pill accent">Workflow</span>' : '') + '</h4>' +
         '<span>' +
-          '<button type="button" class="edit-skill-btn" data-id="' + escapeHtml(s.name) + '">Edit</button> ' +
+          (s.workflow
+            ? '<button type="button" class="edit-workflow-skill-btn" data-id="' + escapeHtml(s.name) + '" title="Edit it as a workflow, on the Workflows tab">Edit</button> '
+            : '<button type="button" class="edit-skill-btn" data-id="' + escapeHtml(s.name) + '">Edit</button> ') +
           '<button type="button" class="delete-btn delete-skill-btn" data-id="' + escapeHtml(s.name) + '" title="Delete this skill" aria-label="Delete this skill">Delete</button>' +
         '</span>' +
       '</div>' +
@@ -3655,6 +3706,15 @@ ${consoleShellScript}
             alert('Could not delete: ' + err.message);
             btn.disabled = false;
           });
+      });
+    }
+
+    var workflowEditButtons = panel.querySelectorAll('.edit-workflow-skill-btn');
+    for (var we = 0; we < workflowEditButtons.length; we++) {
+      workflowEditButtons[we].addEventListener('click', function (ev) {
+        pendingWorkflowEdit = ev.currentTarget.getAttribute('data-id');
+        switchTab('workflows');
+        openPendingWorkflowEdit();
       });
     }
 

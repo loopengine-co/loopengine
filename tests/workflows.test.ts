@@ -55,6 +55,11 @@ describe('a workflow plan', () => {
     expect(plan.trigger).toEqual({ kind: 'schedule', description: 'every Monday at 09:00', every: '7d', at: '09:00', weekday: 1 })
   })
 
+  it('turns a name written as an id into words', () => {
+    expect(validateWorkflowPlan({ ...RAW_PLAN, name: 'daily-hacker-news-ai-agent-digest' })!.name).toBe('Daily hacker news ai agent digest')
+    expect(validateWorkflowPlan({ ...RAW_PLAN, name: 'Daily HN digest' })!.name).toBe('Daily HN digest')
+  })
+
   it('falls back to on request for a schedule it cannot read, and refuses a plan with no steps or skill', () => {
     expect(validateWorkflowPlan({ ...RAW_PLAN, trigger: { kind: 'schedule', every: 'mondays' } })!.trigger.kind).toBe('on_request')
     expect(validateWorkflowPlan({ ...RAW_PLAN, steps: [] })).toBeUndefined()
@@ -243,6 +248,21 @@ describe('workflows are skills with a start message', () => {
     expect(workflowRunMessage(w, { order_number: 'EM-1' })).toBe(
       'Run the "Refund check" workflow.\n\nThese are its instructions, from your "refund-check" skill:\n\nCheck the refund request for order EM-1.\n\n1. Look up order EM-1.\n2. Reply to the customer.',
     )
+  })
+
+  it("shows a title that's just its id as words", () => {
+    writeSkill(dir, 'daily-digest', 'workflow: true\ntitle: daily-digest\n', 'Write the digest.')
+    expect(readWorkflow(dir, 'daily-digest')?.title).toBe('Daily digest')
+  })
+
+  it("edits its description, the line chat recognises it by, and refuses an empty one", () => {
+    writeSkill(dir, 'refund-check', REFUND, '1. Look up order $order_number.')
+    updateWorkflow(dir, 'refund-check', { description: '  Checks a refund request\n against our policy ', instructions: 'Check order $order_number.', parameters: { order_number: { description: 'The order', required: true } } })
+    expect(readWorkflow(dir, 'refund-check')?.description).toBe('Checks a refund request against our policy')
+    expect(() => updateWorkflow(dir, 'refund-check', { description: ' ', instructions: 'Go.' })).toThrow(/one-line description/)
+    // Left out, it stays as it is.
+    updateWorkflow(dir, 'refund-check', { instructions: 'Check order $order_number again.', parameters: { order_number: { description: 'The order', required: true } } })
+    expect(readWorkflow(dir, 'refund-check')?.description).toBe('Checks a refund request against our policy')
   })
 
   it('becomes a workflow and stops being one by its front matter, keeping the skill', () => {

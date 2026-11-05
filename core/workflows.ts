@@ -67,6 +67,9 @@ export interface Workflow {
  * `startMessage` (from before) is kept for workflows saved that way. */
 export interface WorkflowFields {
   title?: string
+  /** The skill's one-line description: what the job is, which chat
+   * matches requests against. Kept as it is when not given. */
+  description?: string
   instructions?: string
   startMessage?: string
   trigger?: string
@@ -135,7 +138,8 @@ function workflowFrom(id: string, frontmatter: Record<string, unknown>, body: st
   if (frontmatter.workflow !== true && !startMessage) return undefined
   return {
     id,
-    title: typeof frontmatter.title === 'string' && frontmatter.title.trim() ? frontmatter.title.trim() : titleFromId(id),
+    // A title that's just the id (a plan once saved it that way) reads as words.
+    title: typeof frontmatter.title === 'string' && frontmatter.title.trim() && frontmatter.title.trim() !== id ? frontmatter.title.trim() : titleFromId(id),
     description: typeof frontmatter.description === 'string' ? frontmatter.description : '',
     startMessage,
     trigger: typeof frontmatter.trigger === 'string' && frontmatter.trigger.trim() ? frontmatter.trigger.trim() : 'When asked',
@@ -177,6 +181,7 @@ export function setWorkflowFields(agentDir: string, id: string, fields: Workflow
   }
   const frontmatter = { ...skill.frontmatter }
   for (const key of WORKFLOW_KEYS) delete frontmatter[key]
+  if (fields.description) frontmatter.description = fields.description
   const parameters = fields.parameters && Object.keys(fields.parameters).length ? { parameters: fields.parameters } : {}
   if (fields.instructions !== undefined) {
     writeSkillFile(path, { ...frontmatter, workflow: true, ...(fields.title ? { title: fields.title } : {}), ...parameters }, fields.instructions)

@@ -704,6 +704,8 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
     return trimmed
   }
   const title = text(input.title, 'The title', 120)
+  const description = input.description === undefined ? undefined : text(input.description, 'The description', 500)
+  if (description !== undefined && !description) throw new WorkflowError('Write a one-line description: what this job is, e.g. "Daily digest of AI-agent stories on Hacker News". The agent uses it to recognise the job in Chat.')
   const instructions = input.instructions === undefined ? undefined : text(input.instructions, 'The instructions', 12000)
   if (instructions !== undefined && !instructions) throw new WorkflowError('Write the instructions: what the agent does, e.g. "Check the refund request for order $order_number: look up the order, then…"')
   const startMessage = instructions === undefined ? text(input.start_message, 'The start message', 4000) : ''
@@ -717,7 +719,8 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
     const s = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : {}
     parameters[name] = { description: text(s.description, `The description of "${name}"`, 300), required: s.required === true }
   }
-  setWorkflowFields(agentDir, id, instructions !== undefined ? { ...(title ? { title } : {}), instructions, parameters } : { ...(title ? { title } : {}), startMessage, ...(trigger ? { trigger } : {}), parameters })
+  const named = { ...(title ? { title } : {}), ...(description ? { description: description.replace(/\s+/g, ' ') } : {}) }
+  setWorkflowFields(agentDir, id, instructions !== undefined ? { ...named, instructions, parameters } : { ...named, startMessage, ...(trigger ? { trigger } : {}), parameters })
   return readWorkflow(agentDir, id)!
 }
 
