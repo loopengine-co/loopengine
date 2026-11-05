@@ -861,7 +861,7 @@ ${consoleShellScript}
     started: ['good', 'Started a run'], filtered: ['', 'Skipped by the filter'], duplicate: ['', 'A retry, skipped'],
     busy: ['', 'Already running'], rejected: ['bad', 'Signature check failed'], invalid: ['bad', 'Couldn' + String.fromCharCode(8217) + 't start'], error: ['bad', 'Failed'],
   };
-  var HOOK_SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks' };
+  var HOOK_SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'your app' };
 
   function hookRowHtml(t) {
     var last = (t.deliveries || []).slice(0, 3).map(function (d) {
@@ -871,20 +871,30 @@ ${consoleShellScript}
     }).join('');
     var rules = [];
     if (t.verify) rules.push(t.verify.sender === 'custom'
-      ? 'checks the signature in ' + escapeHtml(t.verify.header) + ' (' + escapeHtml(t.verify.algorithm || 'sha256') + ', ' + escapeHtml(t.verify.encoding || 'hex') + ')'
+      ? 'checks the signature in ' + escapeHtml(t.verify.header || '(header not set yet)') + ' (' + escapeHtml(t.verify.algorithm || 'sha256') + ', ' + escapeHtml(t.verify.encoding || 'hex') + ')'
       : 'checks the ' + escapeHtml(HOOK_SENDERS[t.verify.sender] || t.verify.sender) + ' signature');
     if (t.filter) rules.push('only when ' + escapeHtml(t.filter.path) + ' is ' + t.filter.values.map(escapeHtml).join(' or '));
     if (t.mapping) rules.push(Object.keys(t.mapping).map(function (p) { return escapeHtml(p) + ' ' + String.fromCharCode(8592) + ' ' + escapeHtml(t.mapping[p]); }).join(', '));
     if (t.payload_param) rules.push('the whole payload goes to ' + escapeHtml(t.payload_param));
     if (t.notify) rules.push('sends each result to you');
     if (t.callback_url) rules.push('reports to ' + escapeHtml(t.callback_url));
+    // Made by the workflow planner without its secret: it turns on once
+    // the sender's signing secret is added.
+    var needsSecret = t.verify && !t.verify.secret_set;
     return '<div class="workflow-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">' +
       '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><strong>' + escapeHtml(t.name) + '</strong>' +
-        '<code class="hint">/hooks/workflows/' + escapeHtml(t.token_hint) + '</code>' + (t.enabled ? '' : ' <span class="le-pill">Off</span>') + '</div>' +
+        '<code class="hint">/hooks/workflows/' + escapeHtml(t.token_hint) + '</code>' + (needsSecret ? ' <span class="le-pill warn">Needs its signing secret</span>' : t.enabled ? '' : ' <span class="le-pill">Off</span>') + '</div>' +
       (rules.length ? '<p class="hint" style="margin:2px 0">' + rules.join(' ' + String.fromCharCode(183) + ' ') + '</p>' : '') +
+      (needsSecret
+        ? '<div class="workflow-param-row" style="margin:4px 0">' +
+            (t.verify.sender === 'custom' && !t.verify.header ? '<input class="hook-secret-header" placeholder="Signature header, e.g. X-Signature">' : '') +
+            '<input class="hook-secret-input" type="password" autocomplete="off" placeholder="' + escapeHtml(t.verify.sender === 'custom' ? 'The secret your app signs with' : 'The signing secret ' + (HOOK_SENDERS[t.verify.sender] || 'the sender') + ' shows') + '" style="flex:1">' +
+            '<button type="button" class="primary hook-secret-save">Add and turn on</button></div>' +
+          '<p class="hint" style="margin:0">Paste the URL into the sender first. Lost it? New URL makes another.</p>'
+        : '') +
       (last ? '<ul class="schedule-history">' + last + '</ul>' : '<p class="hint" style="margin:2px 0">No deliveries yet.</p>') +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">' +
-        '<button type="button" class="hook-toggle">' + (t.enabled ? 'Turn off' : 'Turn on') + '</button>' +
+        (needsSecret ? '' : '<button type="button" class="hook-toggle">' + (t.enabled ? 'Turn off' : 'Turn on') + '</button>') +
         '<button type="button" class="hook-rotate">New URL</button>' +
         '<button type="button" class="delete-btn hook-delete">Delete</button></div></div>';
   }
@@ -931,11 +941,14 @@ ${consoleShellScript}
     workflowEditing = true;
     box.hidden = false;
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/triggers';
+    var hooksById = {};
     function render(shownUrl) {
       box.innerHTML = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
       fetchJsonRetryOnce(base).then(function (r) {
         if (!r.ok) { box.innerHTML = '<p class="error">' + escapeHtml(r.body.error || 'Could not load webhooks') + '</p>'; return; }
         var list = r.body.triggers || [];
+        hooksById = {};
+        list.forEach(function (t) { hooksById[t.trigger_id] = t; });
         box.innerHTML = '<h4 style="margin:10px 0 4px">Webhooks</h4>' +
           '<p class="hint" style="margin:0 0 6px">A secret URL an outside service (Stripe, GitHub, a form, monitoring) posts its events to; each one starts a run.</p>' +
           (shownUrl ? hookUrlHtml(shownUrl) : '') +
@@ -954,8 +967,24 @@ ${consoleShellScript}
       for (var i = 0; i < rows.length; i++) {
         (function (row) {
           var id = row.dataset.trigger;
-          row.querySelector('.hook-toggle').addEventListener('click', function (ev) {
+          var toggle = row.querySelector('.hook-toggle');
+          if (toggle) toggle.addEventListener('click', function (ev) {
             act(id, '', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: ev.currentTarget.textContent === 'Turn on' }) });
+          });
+          var saveSecret = row.querySelector('.hook-secret-save');
+          if (saveSecret) saveSecret.addEventListener('click', function () {
+            var t = hooksById[id];
+            var secret = row.querySelector('.hook-secret-input').value.trim();
+            if (!secret || !t) return;
+            var verify = { sender: t.verify.sender, secret: secret };
+            if (t.verify.sender === 'custom') {
+              var headerInput = row.querySelector('.hook-secret-header');
+              verify.header = headerInput ? headerInput.value.trim() : t.verify.header;
+              verify.algorithm = t.verify.algorithm || 'sha256';
+              verify.encoding = t.verify.encoding || 'hex';
+              if (t.verify.prefix) verify.prefix = t.verify.prefix;
+            }
+            act(id, '', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ verify: verify, enabled: true }) });
           });
           row.querySelector('.hook-rotate').addEventListener('click', function (ev) {
             var btn = ev.currentTarget;

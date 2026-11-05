@@ -403,3 +403,43 @@ describe('a tool from a connected service', () => {
     expect(checkWorkflowForAgent(plan, web).toConnect).toEqual([])
   })
 })
+
+describe('the planner and webhooks', () => {
+  const base = {
+    name: 'Handle dispute', summary: 'Answers disputes', steps: [{ title: 'Read the dispute', kind: 'tool', tool: 'get_dispute' }],
+    skill: { description: 'd', body: 'Handle dispute $dispute_id.' }, startMessage: 'Handle dispute $dispute_id.', rules: [], target: { kind: 'new', reason: '' },
+    newAgent: { name: 'disputes', systemPrompt: 'You handle disputes.' }, parameters: { dispute_id: { description: 'The dispute', required: true } },
+  }
+
+  it('plans a webhook start with its sender, events and the parameters it fills', () => {
+    const plan = validateWorkflowPlan({
+      ...base,
+      trigger: { kind: 'webhook', description: 'When a Stripe dispute comes in' },
+      webhook: { sender: 'stripe', name: 'Stripe: new disputes', filter: { path: 'type', values: ['charge.dispute.created'] }, mapping: { dispute_id: 'data.object.id', nope: 'x' }, setup: 'Listen for charge.dispute.created.' },
+    })!
+    expect(plan.trigger.kind).toBe('webhook')
+    expect(plan.webhook).toEqual({ sender: 'stripe', name: 'Stripe: new disputes', filter: { path: 'type', values: ['charge.dispute.created'] }, mapping: { dispute_id: 'data.object.id' }, setup: 'Listen for charge.dispute.created.' })
+    // A webhook start keeps its required parameters required.
+    expect(plan.parameters.dispute_id!.required).toBe(true)
+    expect(plan.gaps).toEqual([])
+  })
+
+  it('says when nothing in the payload fills a required parameter', () => {
+    const plan = validateWorkflowPlan({ ...base, trigger: { kind: 'webhook', description: 'x' }, webhook: { sender: 'github', name: 'Issues' } })!
+    expect(plan.gaps.join(' ')).toContain("Nothing in the webhook's payload fills dispute_id")
+  })
+
+  it('treats a described webhook as the start, and a webhook start with none as started by hand', () => {
+    expect(validateWorkflowPlan({ ...base, trigger: { kind: 'on_request', description: 'x' }, webhook: { sender: 'shopify', name: 'Orders paid', mapping: { dispute_id: 'id' } } })!.trigger.kind).toBe('webhook')
+    const none = validateWorkflowPlan({ ...base, trigger: { kind: 'webhook', description: 'x' }, webhook: { sender: 'carrier-pigeon' } })!
+    expect(none.trigger.kind).toBe('on_request')
+    expect(none).not.toHaveProperty('webhook')
+  })
+
+  it('keeps a webhook next to a schedule, and a custom sender\'s header', () => {
+    const plan = validateWorkflowPlan({ ...base, trigger: { kind: 'schedule', description: 'daily', every: '24h' }, webhook: { sender: 'custom', name: 'Our app', header: 'X-EM-Signature', mapping: { dispute_id: 'id' } } })!
+    expect(plan.trigger.kind).toBe('schedule')
+    expect(plan.webhook).toMatchObject({ sender: 'custom', header: 'X-EM-Signature' })
+    expect(validateWorkflowPlan({ ...base, trigger: { kind: 'webhook', description: 'x' }, webhook: { sender: 'custom', name: 'a', header: 'bad header!' } })!.webhook).not.toHaveProperty('header')
+  })
+})

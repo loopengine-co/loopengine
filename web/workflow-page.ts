@@ -31,6 +31,11 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-target label { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
   .wf-notify { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
   .wf-notify input { margin: 0; }
+  .wf-hook { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 4px; background: var(--surface); font-size: 13px; }
+  .wf-hook ul { margin: 2px 0 0; padding-left: 18px; }
+  .wf-hook input[type="text"], .wf-hook input:not([type]) { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; box-sizing: border-box; }
+  .wf-hook-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .wf-hook-row input { flex: 1; min-width: 220px; }
   .wf-params { display: grid; gap: 6px; }
   .wf-param { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
   .wf-param .wf-param-name { width: 160px; font-family: var(--mono, monospace); }
@@ -74,8 +79,10 @@ ${consoleShellScript}
   var EXAMPLES = [
     ['Blog post', 'Every Monday morning, browse the web for timely blog post ideas about our product area. Ask me on Slack to pick one of the ideas. Then draft the post and let me review it before it is created.'],
     ['Weekly digest', 'Every Friday afternoon, search the web for news about our competitors and summarise the important changes. Send me the summary for review before it goes to the team channel.'],
-    ['Refund requests', 'When asked, look up the customer' + String.fromCharCode(8217) + 's order and check our refund policy. If a refund fits the policy, prepare it and ask me to approve it before it is issued.']
+    ['Refund requests', 'When asked, look up the customer' + String.fromCharCode(8217) + 's order and check our refund policy. If a refund fits the policy, prepare it and ask me to approve it before it is issued.'],
+    ['Stripe disputes', 'When a Stripe dispute comes in, look up the order and its delivery, write the evidence for Stripe, and ask me before submitting it.']
   ];
+  var SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'your app' };
   var state = { description: '', planned: null, agents: [], ready: false, canInstall: false };
 
   function esc(s) {
@@ -229,6 +236,24 @@ ${consoleShellScript}
     return { parameters: parameters };
   }
 
+  // The webhook the plan makes: whose events, which ones, and what each
+  // parameter is filled from. Made turned off; its signing secret comes
+  // from the sender, after Create.
+  function webhookPlanHtml(p) {
+    var w = p.webhook;
+    if (!w) return '';
+    var who = SENDERS[w.sender] || w.sender;
+    var lines = [];
+    if (w.filter) lines.push('Runs for ' + esc(w.filter.path) + ' ' + esc(w.filter.values.join(' or ')));
+    Object.keys(w.mapping || {}).forEach(function (param) { lines.push('<code>' + esc(param) + '</code> ' + String.fromCharCode(8592) + ' <code>' + esc(w.mapping[param]) + '</code> in the payload'); });
+    return '<div class="wf-hook">' +
+      '<label class="wf-notify"><input type="checkbox" id="wfWebhook" checked> <strong>' + (p.trigger.kind === 'schedule' ? 'Also start it from a webhook: ' : 'Webhook: ') + esc(w.name) + '</strong></label>' +
+      '<span class="hint">' + esc(who) + ' calls a private URL and each event starts a run. It' + String.fromCharCode(8217) + 's made turned off; after Create you paste the URL into ' + esc(w.sender === 'custom' ? 'your app' : who) + ' and add the signing secret.</span>' +
+      (lines.length ? '<ul class="hint">' + lines.map(function (l) { return '<li>' + l + '</li>'; }).join('') + '</ul>' : '') +
+      (w.setup ? '<span class="hint">' + esc(w.setup) + '</span>' : '') +
+      '</div>';
+  }
+
   function renderPlan(error) {
     var p = state.planned.plan;
     var suggested = p.target.kind === 'existing' && p.target.agent ? p.target.agent : '';
@@ -237,7 +262,8 @@ ${consoleShellScript}
       '<div class="wf-card">' +
         '<h2>' + esc(p.name) + '</h2><p style="margin:0">' + esc(p.summary) + '</p>' +
         '<p class="hint" style="margin:0"><strong>Starts:</strong> ' + esc(p.trigger.description) + (p.trigger.kind === 'schedule' ? ' (created paused; you turn it on)' : '') + '</p>' +
-        (p.trigger.kind === 'schedule'
+        webhookPlanHtml(p) +
+        (p.trigger.kind === 'schedule' || p.trigger.kind === 'webhook'
           ? '<label class="wf-notify"><input type="checkbox" id="wfNotify"' + (p.notify && p.notify.on ? ' checked' : '') + '> Send each run' + String.fromCharCode(8217) + 's result to you through the agent' + String.fromCharCode(8217) + 's messaging app</label>' +
             (p.notify && p.notify.reason ? '<p class="hint" style="margin:0 0 0 24px">' + esc(p.notify.reason) + '</p>' : '')
           : '') +
@@ -280,6 +306,11 @@ ${consoleShellScript}
       p.parameters = edited.parameters;
       var notifyBox = document.getElementById('wfNotify');
       if (notifyBox) p.notify = { on: notifyBox.checked, reason: (p.notify && p.notify.reason) || '' };
+      var webhookBox = document.getElementById('wfWebhook');
+      if (webhookBox && !webhookBox.checked) {
+        delete p.webhook;
+        if (p.trigger.kind === 'webhook') p.trigger.kind = 'on_request';
+      }
       var chosen = page.querySelector('input[name="wfTarget"]:checked');
       var target = chosen.value === 'new' ? { kind: 'new' } : { kind: 'existing', agent: chosen.value === 'other' ? document.getElementById('wfOther').value : chosen.dataset.agent };
       var btn = document.getElementById('wfCreate');
@@ -304,6 +335,7 @@ ${consoleShellScript}
       '<p style="margin:0">' + (c.newAgent ? 'Created as a new agent, <code>' + esc(c.agent) + '</code>.' : 'Added to <code>' + esc(c.agent) + '</code>.') + '</p>' +
       (c.schedule ? '<p class="hint" style="margin:0">Its schedule (' + esc(c.schedule.description) + ') is paused: turn it on in the agent' + String.fromCharCode(8217) + 's Schedules tab when you' + String.fromCharCode(8217) + 're ready.</p>' : '') +
       (c.scheduleError ? '<p class="error">The schedule could not be created: ' + esc(c.scheduleError) + '</p>' : '') +
+      webhookDoneHtml(c) +
       (c.loadError ? '<p class="error">The agent did not load: ' + esc(c.loadError) + '</p>' : '') +
       (c.abilities.failed.length ? '<p class="error">Not installed: ' + c.abilities.failed.map(function (f) { return esc(f.name) + ' (' + esc(f.error) + ')'; }).join('; ') + '</p>' : '') +
       (c.keptDecisions.length ? '<p class="hint" style="margin:0"><strong>Kept as they were:</strong> ' + c.keptDecisions.map(function (k) { return '<code>' + esc(k.tool) + '</code> stays ' + esc(LABELS[k.has]) + ' (the workflow wanted ' + esc(LABELS[k.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
@@ -312,6 +344,65 @@ ${consoleShellScript}
         '<button type="button" class="wf-btn plain" id="wfAnother">Describe another</button></div>' +
       '</div>';
     document.getElementById('wfAnother').addEventListener('click', function () { state.description = ''; state.planned = null; renderDescribe(); });
+    wireWebhookDone(c);
+  }
+
+  // The webhook made with the workflow: its URL (shown this once), where
+  // to paste it, and the signing secret that turns it on.
+  function webhookDoneHtml(c) {
+    if (c.webhookError) return '<p class="error">The webhook could not be made: ' + esc(c.webhookError) + '</p>';
+    if (!c.webhook) return '';
+    var t = c.webhook.trigger;
+    var who = SENDERS[t.verify.sender] || t.verify.sender;
+    var custom = t.verify.sender === 'custom';
+    return '<div class="wf-hook" id="wfHookDone">' +
+      '<strong>Turn on the webhook: ' + esc(t.name) + '</strong>' +
+      '<span>1. Copy this URL into ' + esc(custom ? 'your app' : who + String.fromCharCode(8217) + 's webhook settings') + '. It' + String.fromCharCode(8217) + 's shown only this once; make a new one on the workflow if it' + String.fromCharCode(8217) + 's lost.</span>' +
+      '<div class="wf-hook-row"><input id="wfHookUrl" readonly value="' + esc(c.webhook.url) + '"><button type="button" class="wf-btn plain" id="wfHookCopy">Copy</button></div>' +
+      (c.webhook.setup ? '<span class="hint">' + esc(c.webhook.setup) + '</span>' : '') +
+      '<span>2. ' + (custom
+        ? 'Choose a signing secret. Your app signs each request body with it (HMAC-SHA256, hex) in the <code>' + esc(t.verify.header || 'X-Signature') + '</code> header.'
+        : 'Paste the signing secret ' + esc(who) + ' shows for this webhook.') + '</span>' +
+      (custom && !t.verify.header ? '<div class="wf-hook-row"><input id="wfHookHeader" placeholder="Signature header, e.g. X-Signature" value="X-Signature"></div>' : '') +
+      '<div class="wf-hook-row"><input id="wfHookSecret" type="password" autocomplete="off" placeholder="Signing secret"><button type="button" class="wf-btn" id="wfHookOn">Turn it on</button></div>' +
+      '<span class="hint" id="wfHookStatus">Until then it' + String.fromCharCode(8217) + 's off: nothing that reaches the URL starts a run.</span>' +
+      '</div>';
+  }
+
+  function wireWebhookDone(c) {
+    if (!c.webhook) return;
+    var t = c.webhook.trigger;
+    var status = document.getElementById('wfHookStatus');
+    document.getElementById('wfHookCopy').addEventListener('click', function () {
+      var input = document.getElementById('wfHookUrl');
+      input.select();
+      if (navigator.clipboard) navigator.clipboard.writeText(input.value);
+      status.textContent = 'Copied.';
+    });
+    document.getElementById('wfHookOn').addEventListener('click', function () {
+      var secret = document.getElementById('wfHookSecret').value.trim();
+      if (!secret) { status.textContent = 'Paste the signing secret first.'; return; }
+      var verify = { sender: t.verify.sender, secret: secret };
+      if (t.verify.sender === 'custom') {
+        var headerInput = document.getElementById('wfHookHeader');
+        verify.header = headerInput ? headerInput.value.trim() : t.verify.header;
+        verify.algorithm = t.verify.algorithm || 'sha256';
+        verify.encoding = t.verify.encoding || 'hex';
+        if (t.verify.prefix) verify.prefix = t.verify.prefix;
+      }
+      var btn = document.getElementById('wfHookOn');
+      btn.disabled = true;
+      status.textContent = 'Turning it on' + ELLIPSIS;
+      fetch('/agents/' + encodeURIComponent(c.agent) + '/workflows/' + encodeURIComponent(t.workflow_id) + '/triggers/' + encodeURIComponent(t.trigger_id), {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ verify: verify, enabled: true }),
+      }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); }).then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) { status.textContent = r.body.error || 'Could not turn it on.'; return; }
+        document.getElementById('wfHookSecret').value = '';
+        status.textContent = 'On. ' + (t.filter ? 'Each ' + t.filter.values.join(' or ') + ' event' : 'Each event') + ' that reaches the URL now starts a run; deliveries show on the workflow' + String.fromCharCode(8217) + 's Webhooks.';
+        btn.textContent = 'Update the secret';
+      }).catch(function (err) { btn.disabled = false; status.textContent = err.message; });
+    });
   }
 
   fetch('/workflows', { cache: 'no-store' })

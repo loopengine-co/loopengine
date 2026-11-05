@@ -1327,6 +1327,11 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           return entry ? describeAgentNotifier(entry.config, defaultWebhook).source !== 'none' : false
         },
       })
+      // The planned webhook's URL, shown once on the done screen.
+      if (created.webhook) {
+        const { token, ...webhook } = created.webhook
+        return json(200, { ...created, webhook: { ...webhook, url: `${requestBaseUrl(req)}/hooks/workflows/${token}` } })
+      }
       json(200, created)
       // New tools in an agent that was already running load with a restart,
       // as after installing an ability from its tab.
@@ -3730,6 +3735,13 @@ async function handleWorkflowHook(req: IncomingMessage, res: ServerResponse, tok
   }
 }
 
+// This server's address as the request reached it (behind a proxy, as
+// the proxy says), for URLs shown in the console.
+function requestBaseUrl(req: IncomingMessage): string {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0]
+  return `${forwardedProto || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http')}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`
+}
+
 // A workflow's webhook triggers, for the console: list, make (its URL is
 // shown once), change, rotate (a new URL), delete.
 async function handleWorkflowTriggers(req: IncomingMessage, res: ServerResponse, agentName: string, workflowId: string, triggerId: string | undefined, action: string | undefined): Promise<void> {
@@ -3739,9 +3751,7 @@ async function handleWorkflowTriggers(req: IncomingMessage, res: ServerResponse,
   if (!getEntry(agentName)) return json(404, { error: `unknown agent '${agentName}'` })
   const workflow = readWorkflow(agentDir(agentName), workflowId)
   if (!workflow) return json(404, { error: `no workflow ${workflowId} in ${agentName}` })
-  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0]
-  const base = `${forwardedProto || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http')}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`
-  const urlFor = (token: string) => `${base}/hooks/workflows/${token}`
+  const urlFor = (token: string) => `${requestBaseUrl(req)}/hooks/workflows/${token}`
   try {
     if (!triggerId && req.method === 'GET') return json(200, { triggers: (await listTriggers(agentName, workflowId)).map(publicTrigger) })
     if (!triggerId && req.method === 'POST') {

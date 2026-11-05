@@ -10,7 +10,8 @@ import { addActauthRule, readActauthConfig } from './actauth-admin.js'
 import { writeSkill } from './skills-admin.js'
 import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
-import { planParameters, planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
+import { planParameters, planWebhook, planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
+import { createTrigger, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow } from '../core/workflows.js'
@@ -355,7 +356,43 @@ export interface CreatedWorkflow {
   checklist: TemplateChecklistItem[]
   schedule?: CreatedTemplateAgent['schedule']
   scheduleError?: string
+  /** The plan's webhook, made turned off until its signing secret is
+   * added. `token` makes its URL, shown once (the server turns it into
+   * `url`). */
+  webhook?: { trigger: PublicTrigger; token: string; setup?: string }
+  webhookError?: string
   loadError?: string
+}
+
+const SENDER_NAMES: Record<string, string> = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'the sender', custom: 'your app' }
+
+/** Makes the plan's webhook for the created workflow: turned off, since
+ * the sender's signing secret comes from the sender, after the URL is
+ * pasted there. */
+async function makePlannedWebhook(plan: WorkflowPlan, agent: string, agentDir: string): Promise<Pick<CreatedWorkflow, 'webhook' | 'webhookError' | 'checklist'>> {
+  const workflow = readWorkflow(agentDir, plan.id)
+  const webhook = workflow && planWebhook(plan.webhook, workflow.parameters)
+  if (!plan.webhook) return { checklist: [] }
+  if (!workflow || !webhook) return { webhookError: 'The webhook could not be set up from the plan; add it on the workflow’s Webhooks.', checklist: [] }
+  try {
+    const { trigger, token } = await createTrigger(agent, workflow, {
+      name: webhook.name,
+      enabled: false,
+      verify: { sender: webhook.sender, ...(webhook.header ? { header: webhook.header } : {}) },
+      ...(webhook.filter ? { filter: webhook.filter } : {}),
+      ...(webhook.mapping ? { mapping: webhook.mapping } : {}),
+      ...(plan.notify?.on && plan.trigger.kind === 'webhook' ? { notify: true } : {}),
+    })
+    return {
+      webhook: { trigger: publicTrigger(trigger), token, ...(webhook.setup ? { setup: webhook.setup } : {}) },
+      checklist: [{
+        label: `Turn on the ${webhook.name} webhook: paste its URL into ${SENDER_NAMES[webhook.sender]}'s webhook settings, then add the signing secret ${webhook.sender === 'custom' ? 'your app signs with' : 'it shows'}`,
+        href: `/agents/config?agent=${encodeURIComponent(agent)}&tab=overview`,
+      }],
+    }
+  } catch (err) {
+    return { webhookError: err instanceof Error ? err.message : String(err), checklist: [] }
+  }
 }
 
 export interface WorkflowCreateDeps extends TemplateCreateDeps {
@@ -402,13 +439,16 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
     const connected = copyConnectedTools(plan, created.name, agents, deps.agentDir)
     const loadError = created.loadError
     markWorkflow(deps.agentDir(created.name))
+    const hook = await makePlannedWebhook(plan, created.name, deps.agentDir(created.name))
     return {
       agent: created.name,
       newAgent: true,
       workflow: plan.name,
       abilities: { installed: [...created.abilities.installed, ...connected.copied], failed: [...mcp.failed, ...created.abilities.failed, ...connected.failed] },
       keptDecisions: [],
-      checklist: withMissingSteps(plan, created.name, created.checklist),
+      checklist: [...withMissingSteps(plan, created.name, created.checklist), ...hook.checklist],
+      ...(hook.webhook ? { webhook: hook.webhook } : {}),
+      ...(hook.webhookError ? { webhookError: hook.webhookError } : {}),
       ...(created.schedule ? { schedule: created.schedule } : {}),
       ...(created.scheduleError ? { scheduleError: created.scheduleError } : {}),
       ...(loadError ? { loadError } : {}),
@@ -511,13 +551,16 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   }
 
   markWorkflow(deps.agentDir(agent.name))
+  const hook = await makePlannedWebhook(plan, agent.name, deps.agentDir(agent.name))
   return {
     agent: agent.name,
     newAgent: false,
     workflow: plan.name,
     abilities: { installed, failed },
     keptDecisions: check.conflicts,
-    checklist: withMissingSteps(plan, agent.name, templateChecklist(template, agent.name, deps, failed, appsToConnect)),
+    checklist: [...withMissingSteps(plan, agent.name, templateChecklist(template, agent.name, deps, failed, appsToConnect)), ...hook.checklist],
+    ...(hook.webhook ? { webhook: hook.webhook } : {}),
+    ...(hook.webhookError ? { webhookError: hook.webhookError } : {}),
     ...(schedule ? { schedule } : {}),
     ...(scheduleError ? { scheduleError } : {}),
     ...(loadError ? { loadError } : {}),

@@ -3,7 +3,8 @@
 // is matched to a real tool (a public or workspace ability's, or the
 // built-in system_ask_user), the points where a person decides become
 // checkpoints (a question, or a tool set to "ask"), the steps in order
-// become a skill, and the trigger a schedule. The plan names the agent it
+// become a skill, and the trigger a schedule or a webhook (an outside
+// service's events start runs). The plan names the agent it
 // belongs in: an existing one when it fits without changing anything that
 // agent already does, else a new one.
 //
@@ -13,6 +14,7 @@
 // (web/workflow-admin.ts).
 import type { ToolSchema } from '#core/agent-config.js'
 import type { WorkflowParameter } from '#core/workflows.js'
+import type { TriggerSender } from '#core/workflow-triggers.js'
 import type { Message, ModelCall, ModelContentBlock } from '#core/run-agent.js'
 import type { StarterTemplate, TemplateApp } from './templates.js'
 
@@ -67,7 +69,8 @@ export interface WorkflowPlan {
   id: string
   summary: string
   trigger: {
-    kind: 'schedule' | 'on_request'
+    /** webhook: an outside service's events start runs (see `webhook`). */
+    kind: 'schedule' | 'on_request' | 'webhook'
     description: string
     /** schedule only: "1h", "24h", "7d". */
     every?: string
@@ -91,8 +94,13 @@ export interface WorkflowPlan {
   /** Values a run is given, filled into $name in the start message and
    * steps (core/workflows.ts). Empty when every run is the same. */
   parameters: Record<string, WorkflowParameter>
-  /** Whether each scheduled run's result is sent to the person through
-   * the agent's messaging app, and why (shown on the review screen). */
+  /** A webhook that starts runs: set when the trigger is "webhook", and
+   * also when a scheduled workflow should run on an event too. Made on
+   * Create, turned off until the person adds the sender's signing secret. */
+  webhook?: PlannedWebhook
+  /** Whether each scheduled or webhook-started run's result is sent to
+   * the person through the agent's messaging app, and why (shown on the
+   * review screen). */
   notify: { on: boolean; reason: string }
   target: { kind: 'existing' | 'new'; agent?: string; reason: string }
   /** For a new agent. */
@@ -104,6 +112,23 @@ export interface WorkflowPlan {
   /** Connected apps it adds to the agent, with just the tools its steps
    * use (filled in on Create, from mcpServers). */
   apps?: TemplateApp[]
+}
+
+export interface PlannedWebhook {
+  /** Whose events: the sender whose signature it checks. "custom" is the
+   * person's own app or any other service that signs the body. */
+  sender: TriggerSender
+  /** "Stripe: new disputes". */
+  name: string
+  /** custom only: the header the signature comes in, when known. */
+  header?: string
+  /** Only these events start a run: a dot path into the payload and its values. */
+  filter?: { path: string; values: string[] }
+  /** Workflow parameter → dot path into the payload. */
+  mapping?: Record<string, string>
+  /** What to choose in the sender's own webhook settings, in plain words:
+   * "In Stripe, listen for charge.dispute.created." */
+  setup?: string
 }
 
 export interface WorkflowPlannerTools {
@@ -140,8 +165,19 @@ How to plan:
    - nothing found can do it: set "missing" to what's needed, and add it to gaps.
 3. Rules: every tool the workflow uses gets one. Reading and searching: allow. Anything a person should see first (sending, publishing, paying, creating something others see): ask. Never set deny unless asked.
 4. Skill: the steps in order, as numbered instructions the agent follows, naming the tools and saying exactly when to stop and ask. Write it so the agent keeps going after each answer or decision.
-5. Trigger: a schedule ("every Monday at 9" is every "7d", at "09:00", weekday 1) or on_request (started from Chat or a message). startMessage is what the agent receives when it starts.
-6. Notify (scheduled workflows): whether each run's result is sent to the person through the agent's messaging app. true when the result is for them and no step already delivers it ("tell me", "send me", "let me know", a summary or findings that no step posts or emails). false when a step already sends it (posting to a channel, emailing a report): it would arrive twice. false when the work itself is the outcome (answering emails, filing tasks), where a message every run is noise; questions and approvals reach them either way. Say why in one short sentence.
+5. Trigger: how a run starts. startMessage is what the agent receives when it starts.
+   - schedule: a time or interval ("every Monday at 9" is every "7d", at "09:00", weekday 1).
+   - webhook: when something happens in another service that can call a URL ("when a Stripe dispute comes in", "when a GitHub issue is opened", "when a Shopify order is paid", "when our app sends a new signup"). Fill in "webhook" (below). Prefer it over polling on a schedule whenever the service sends webhooks.
+   - on_request: started by a person, from Chat, a message, the Run button or an app's API call.
+   A workflow that runs on a schedule and on an event as well: trigger schedule, and fill in "webhook" too.
+   webhook: sender ("stripe", "github", "shopify", "standard" for Standard Webhooks senders such as Clerk, Resend or Svix, else "custom" for the person's own app or any other service); a short name ("Stripe: new disputes"); setup: one sentence on what to pick in the sender's webhook settings; filter: which events start a run; mapping: each parameter from a dot path in the payload. What senders send:
+   - Stripe: one endpoint can get many event types, so filter path "type", values the event names (charge.dispute.created, checkout.session.completed, invoice.payment_failed, customer.subscription.deleted). The object is at data.object: data.object.id, data.object.customer, data.object.amount, data.object.charge.
+   - GitHub: the event type is chosen in GitHub's settings (Issues, Pull requests, Pushes), so say it in setup; filter path "action", values such as opened, closed, created. Fields: issue.number, issue.title, pull_request.number, repository.full_name, sender.login.
+   - Shopify: one webhook per topic (orders/paid, orders/create, customers/create), chosen in Shopify, so say it in setup and use no filter. The body is the object itself: id, name (the order number, like #1001), email, total_price, financial_status.
+   - standard: filter path "type" (user.created, email.bounced); fields under data (data.id, data.email_addresses).
+   - custom: whatever the person's app sends; say in setup what to post (JSON with these fields) and use the paths you described. Set "header" when the person names the signature header.
+   Every required parameter should come from the payload through mapping; parameters are the only way event details reach the run.
+6. Notify (scheduled and webhook workflows): whether each run's result is sent to the person through the agent's messaging app. true when the result is for them and no step already delivers it ("tell me", "send me", "let me know", a summary or findings that no step posts or emails). false when a step already sends it (posting to a channel, emailing a report): it would arrive twice. false when the work itself is the outcome (answering emails, filing tasks), where a message every run is noise; questions and approvals reach them either way. Say why in one short sentence.
 7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
 8. Target: an existing agent only when it already has (or can install) the tools, none of the workflow's rules would change a decision it already has, and the same people would approve. Otherwise a new agent, with a short lowercase-hyphenated name and a system prompt saying who it is and what it's for. Give the reason either way.
 9. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
@@ -184,7 +220,7 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
           trigger: {
             type: 'object',
             properties: {
-              kind: { type: 'string', enum: ['schedule', 'on_request'] },
+              kind: { type: 'string', enum: ['schedule', 'webhook', 'on_request'] },
               description: { type: 'string' },
               every: { type: 'string' },
               at: { type: 'string' },
@@ -199,9 +235,22 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
           needsApprovals: { type: 'boolean' },
           skill: { type: 'object', properties: { description: { type: 'string' }, body: { type: 'string' } }, required: ['description', 'body'] },
           startMessage: { type: 'string' },
+          webhook: {
+            type: 'object',
+            description: 'When an outside service\'s events start runs: its sender, which events, and the payload fields that fill each parameter.',
+            properties: {
+              sender: { type: 'string', enum: ['stripe', 'github', 'shopify', 'standard', 'custom'] },
+              name: { type: 'string' },
+              header: { type: 'string', description: 'custom only: the signature header, when known' },
+              setup: { type: 'string', description: 'one sentence: what to pick in the sender\'s webhook settings' },
+              filter: { type: 'object', properties: { path: { type: 'string' }, values: { type: 'array', items: { type: 'string' } } }, required: ['path', 'values'] },
+              mapping: { type: 'object', description: 'parameter name -> dot path in the payload', additionalProperties: { type: 'string' } },
+            },
+            required: ['sender', 'name'],
+          },
           notify: {
             type: 'object',
-            description: 'Scheduled workflows: whether each run\'s result goes to the person through the agent\'s messaging app, and why in one short sentence.',
+            description: 'Scheduled and webhook workflows: whether each run\'s result goes to the person through the agent\'s messaging app, and why in one short sentence.',
             properties: { on: { type: 'boolean' }, reason: { type: 'string' } },
             required: ['on', 'reason'],
           },
@@ -271,7 +320,9 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
         ...(typeof triggerRaw.at === 'string' && /^\d{1,2}:\d{2}$/.test(triggerRaw.at) ? { at: triggerRaw.at } : {}),
         ...(typeof triggerRaw.weekday === 'number' && triggerRaw.weekday >= 0 && triggerRaw.weekday <= 7 ? { weekday: triggerRaw.weekday } : {}),
       }
-    : { kind: 'on_request', description: str(triggerRaw.description, 200) ?? 'when asked' }
+    : triggerRaw.kind === 'webhook'
+      ? { kind: 'webhook', description: str(triggerRaw.description, 200) ?? 'when an event comes in' }
+      : { kind: 'on_request', description: str(triggerRaw.description, 200) ?? 'when asked' }
 
   // An MCP step's permissions are set when its server becomes an ability.
   const mcpTools = new Set(steps.flatMap((s) => (s.mcp && s.tool ? [s.tool] : [])))
@@ -298,6 +349,12 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
   const startMessage = str(r.startMessage, 1000) ?? `Run the "${name}" workflow.`
   const gaps = Array.isArray(r.gaps) ? r.gaps.flatMap((g) => (str(g, 400) ? [str(g, 400)!] : [])).slice(0, 10) : []
   const planned = planParameters(r.parameters, { startMessage, skillBody, scheduled: trigger.kind === 'schedule' })
+  const webhook = planWebhook(r.webhook, planned.parameters)
+  // A webhook described means events start it; a webhook start with none
+  // described is started by hand.
+  if (webhook && trigger.kind === 'on_request') trigger.kind = 'webhook'
+  if (!webhook && trigger.kind === 'webhook') trigger.kind = 'on_request'
+  if (webhook) planned.notes.push(...webhookNotes(webhook, planned.parameters))
   return {
     name,
     id,
@@ -311,6 +368,7 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     skill: { description: str(skillRaw.description, 400) ?? summary, body: skillBody },
     startMessage,
     parameters: planned.parameters,
+    ...(webhook ? { webhook } : {}),
     notify: planNotify(r.notify),
     target: {
       kind: targetRaw.kind === 'existing' && str(targetRaw.agent, 80) ? 'existing' : 'new',
@@ -320,6 +378,44 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     newAgent: { name: slugify(str(agentRaw.name, 60) ?? id, id), systemPrompt },
     gaps: [...gaps, ...planned.notes].slice(0, 12),
   }
+}
+
+const SENDERS: TriggerSender[] = ['stripe', 'github', 'shopify', 'standard', 'custom']
+
+/** A plan's webhook, tidied: a known sender, a filter with values, and a
+ * mapping only for parameters the workflow has. Undefined without a
+ * sender. Also used on a plan edited before Create. */
+export function planWebhook(raw: unknown, parameters: Record<string, WorkflowParameter>): PlannedWebhook | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const w = raw as Record<string, unknown>
+  if (!SENDERS.includes(w.sender as TriggerSender)) return undefined
+  const sender = w.sender as TriggerSender
+  const filterRaw = (w.filter ?? {}) as Record<string, unknown>
+  const filterPath = str(filterRaw.path, 120)
+  const values = Array.isArray(filterRaw.values) ? filterRaw.values.flatMap((v) => (str(v, 120) ? [str(v, 120)!] : [])).slice(0, 10) : []
+  const mapping: Record<string, string> = {}
+  if (w.mapping && typeof w.mapping === 'object' && !Array.isArray(w.mapping)) {
+    for (const [param, path] of Object.entries(w.mapping as Record<string, unknown>)) {
+      const p = str(path, 200)
+      if (p && parameters[param] && /^[A-Za-z0-9_.-]+$/.test(p)) mapping[param] = p
+    }
+  }
+  const header = sender === 'custom' ? str(w.header, 80) : undefined
+  return {
+    sender,
+    name: str(w.name, 80) ?? `${sender === 'custom' ? 'App' : sender[0]!.toUpperCase() + sender.slice(1)} events`,
+    ...(header && /^[A-Za-z0-9-]{1,80}$/.test(header) ? { header } : {}),
+    ...(filterPath && values.length ? { filter: { path: filterPath, values } } : {}),
+    ...(Object.keys(mapping).length ? { mapping } : {}),
+    ...(str(w.setup, 300) ? { setup: str(w.setup, 300) } : {}),
+  }
+}
+
+/** What the person should know about a planned webhook: required
+ * parameters nothing in the payload fills. */
+export function webhookNotes(webhook: PlannedWebhook, parameters: Record<string, WorkflowParameter>): string[] {
+  const unfilled = Object.entries(parameters).filter(([name, p]) => p.required && !webhook.mapping?.[name]).map(([name]) => name)
+  return unfilled.length ? [`Nothing in the webhook's payload fills ${unfilled.join(', ')}, so those runs would fail; map ${unfilled.length > 1 ? 'them' : 'it'} on the workflow's Webhooks after it's created.`] : []
 }
 
 /** A plan's notify choice; off when the planner gave none. */

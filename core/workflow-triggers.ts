@@ -85,8 +85,9 @@ export interface WorkflowTrigger {
   seen_ids: string[]
 }
 
-/** A trigger as the console and API show it: no token hash, no secret. */
-export type PublicTrigger = Omit<WorkflowTrigger, 'token_hash' | 'verify' | 'seen_ids'> & { verify?: Omit<TriggerVerify, 'secret'> }
+/** A trigger as the console and API show it: no token hash, no secret,
+ * only whether one is set. */
+export type PublicTrigger = Omit<WorkflowTrigger, 'token_hash' | 'verify' | 'seen_ids'> & { verify?: Omit<TriggerVerify, 'secret'> & { secret_set: boolean } }
 
 export class TriggerError extends Error {}
 
@@ -186,8 +187,8 @@ function newToken(): string {
 export function publicTrigger(t: WorkflowTrigger): PublicTrigger {
   const { token_hash: _hash, verify, seen_ids: _seen, ...rest } = t
   if (!verify) return rest
-  const { secret: _secret, ...shown } = verify
-  return { ...rest, verify: shown }
+  const { secret, ...shown } = verify
+  return { ...rest, verify: { ...shown, secret_set: Boolean(secret) } }
 }
 
 /** The settings a trigger can have, checked against its workflow. */
@@ -203,11 +204,23 @@ export interface TriggerSettings {
 }
 
 /** Checks settings for a trigger of `workflow`; throws TriggerError saying
- * what's wrong. `existing` keeps a sender's secret when only the sender
- * is given again (the console never sees the secret). */
+ * what's wrong. With `existing` (a change), a setting left out keeps its
+ * value and null removes it, and a sender's secret is kept when only the
+ * sender is given again (the console never sees the secret).
+ *
+ * A trigger that checks a signature can be made turned off without its
+ * secret yet: the workflow planner makes one that way, for the person to
+ * add the secret the sender shows them. It can't be turned on until the
+ * secret is there. */
 export function checkTriggerSettings(input: TriggerSettings, workflow: Workflow, existing?: WorkflowTrigger): Pick<WorkflowTrigger, 'name' | 'enabled' | 'verify' | 'filter' | 'mapping' | 'payload_param' | 'notify' | 'callback_url'> {
+  if (existing) {
+    const keys = ['verify', 'filter', 'mapping', 'payload_param', 'notify', 'callback_url'] as const
+    input = { ...input }
+    for (const key of keys) if (input[key] === undefined && existing[key] !== undefined) input[key] = existing[key]
+  }
   const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : existing?.name ?? 'Webhook'
   if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new TriggerError('enabled must be true or false')
+  const enabled = input.enabled === undefined ? existing?.enabled ?? true : (input.enabled as boolean)
 
   let verify: TriggerVerify | undefined
   if (input.verify !== undefined && input.verify !== null) {
@@ -215,9 +228,9 @@ export function checkTriggerSettings(input: TriggerSettings, workflow: Workflow,
     if (typeof v !== 'object' || !SENDERS.includes(v.sender as TriggerSender)) throw new TriggerError(`verify.sender must be one of ${SENDERS.join(', ')}`)
     const kept = existing?.verify && existing.verify.sender === v.sender ? existing.verify.secret : ''
     const secret = typeof v.secret === 'string' && v.secret.trim() ? v.secret.trim() : kept
-    if (!secret) throw new TriggerError(`Give the signing secret ${v.sender === 'custom' ? 'the sender' : v.sender} shows for this webhook, so its signature can be checked.`)
+    if (!secret && enabled) throw new TriggerError(`Give the signing secret ${v.sender === 'custom' ? 'the sender' : v.sender} shows for this webhook, so its signature can be checked.`)
     verify = { sender: v.sender as TriggerSender, secret }
-    if (v.sender === 'standard' && !/^(whsec_)?[A-Za-z0-9+/]+=*$/.test(secret)) throw new TriggerError('A Standard Webhooks secret looks like "whsec_" followed by base64 text.')
+    if (v.sender === 'standard' && secret && !/^(whsec_)?[A-Za-z0-9+/]+=*$/.test(secret)) throw new TriggerError('A Standard Webhooks secret looks like "whsec_" followed by base64 text.')
     if (v.sender === 'custom') {
       const headerName = typeof v.header === 'string' ? v.header.trim() : ''
       if (!/^[A-Za-z0-9-]{1,80}$/.test(headerName)) throw new TriggerError('Give the header the signature arrives in, e.g. "Linear-Signature" (letters, digits and dashes).')
@@ -263,7 +276,7 @@ export function checkTriggerSettings(input: TriggerSettings, workflow: Workflow,
 
   return {
     name,
-    enabled: input.enabled === undefined ? existing?.enabled ?? true : (input.enabled as boolean),
+    enabled,
     ...(verify ? { verify } : {}),
     ...(filter ? { filter } : {}),
     ...(mapping ? { mapping } : {}),
@@ -337,8 +350,10 @@ const header = (headers: Record<string, string | string[] | undefined>, name: st
   return Array.isArray(v) ? v[0] : v
 }
 
-/** Whether the sender's own signature on the raw body is right. */
+/** Whether the sender's own signature on the raw body is right. Never
+ * with no secret: anyone can sign with an empty key. */
 export function verifySenderSignature(verify: TriggerVerify, headers: Record<string, string | string[] | undefined>, raw: Buffer, nowS = Math.floor(Date.now() / 1000)): boolean {
+  if (!verify.secret) return false
   if (verify.sender === 'stripe') {
     const parts = (header(headers, 'stripe-signature') ?? '').split(',').map((p) => p.split('=') as [string, string])
     const t = Number(parts.find(([k]) => k === 't')?.[1])

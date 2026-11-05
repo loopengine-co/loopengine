@@ -35,7 +35,7 @@ describe('making a trigger', () => {
     expect(await findTriggerByToken('not-a-token')).toBeUndefined()
 
     const shown = publicTrigger(trigger)
-    expect(shown.verify).toEqual({ sender: 'stripe' })
+    expect(shown.verify).toEqual({ sender: 'stripe', secret_set: true })
     expect(JSON.stringify(shown)).not.toContain('whsec_test')
     expect(shown).not.toHaveProperty('token_hash')
   })
@@ -126,7 +126,7 @@ describe('other senders\' signatures', () => {
 
     const { trigger } = await createTrigger('payments', workflow, { verify: { sender: 'custom', secret: 'lin-secret', header: 'Linear-Signature' } })
     expect(trigger.verify).toEqual({ sender: 'custom', secret: 'lin-secret', header: 'linear-signature', algorithm: 'sha256', encoding: 'hex' })
-    expect(publicTrigger(trigger).verify).toEqual({ sender: 'custom', header: 'linear-signature', algorithm: 'sha256', encoding: 'hex' })
+    expect(publicTrigger(trigger).verify).toEqual({ sender: 'custom', header: 'linear-signature', algorithm: 'sha256', encoding: 'hex', secret_set: true })
 
     const updated = await updateTrigger(trigger.trigger_id, workflow, { verify: { sender: 'custom', header: 'Linear-Signature', encoding: 'base64' } })
     expect(updated.verify).toMatchObject({ secret: 'lin-secret', encoding: 'base64' })
@@ -168,5 +168,29 @@ describe('a delivery', () => {
     expect(saved.deliveries).toHaveLength(20)
     expect(saved.deliveries[0]!.at).toBe('2026-11-05T00:00:24Z')
     expect(saved.seen_ids).toContain('evt_24')
+  })
+})
+
+describe('a trigger waiting for its signing secret', () => {
+  it('can be made turned off without the secret, never checks against an empty one, and turns on once it is added', async () => {
+    await expect(createTrigger('payments', workflow, { verify: { sender: 'stripe' } })).rejects.toThrow('signing secret')
+    const { trigger } = await createTrigger('payments', workflow, { name: 'Stripe disputes', enabled: false, verify: { sender: 'stripe' }, filter: { path: 'type', values: ['charge.dispute.created'] } })
+    expect(publicTrigger(trigger).verify).toEqual({ sender: 'stripe', secret_set: false })
+    // Anyone can sign with an empty key, so nothing passes.
+    const body = Buffer.from('{}')
+    const t = Math.floor(Date.now() / 1000)
+    expect(verifySenderSignature(trigger.verify!, { 'stripe-signature': `t=${t},v1=${createHmac('sha256', '').update(`${t}.{}`).digest('hex')}` }, body)).toBe(false)
+    await expect(updateTrigger(trigger.trigger_id, workflow, { enabled: true })).rejects.toThrow('signing secret')
+    const on = await updateTrigger(trigger.trigger_id, workflow, { verify: { sender: 'stripe', secret: 'whsec_x' }, enabled: true })
+    expect(on).toMatchObject({ enabled: true, verify: { sender: 'stripe', secret: 'whsec_x' }, filter: { path: 'type', values: ['charge.dispute.created'] } })
+  })
+
+  it('keeps its signature check, filter and mapping when only turned off and on', async () => {
+    const { trigger } = await createTrigger('payments', workflow, { verify: { sender: 'stripe', secret: 'whsec_x' }, filter: { path: 'type', values: ['a'] }, mapping: { dispute_id: 'data.object.id' }, notify: true })
+    await updateTrigger(trigger.trigger_id, workflow, { enabled: false })
+    const back = await updateTrigger(trigger.trigger_id, workflow, { enabled: true })
+    expect(back).toMatchObject({ enabled: true, verify: { secret: 'whsec_x' }, filter: { values: ['a'] }, mapping: { dispute_id: 'data.object.id' }, notify: true })
+    // null removes a setting.
+    expect(await updateTrigger(trigger.trigger_id, workflow, { filter: null })).not.toHaveProperty('filter')
   })
 })
