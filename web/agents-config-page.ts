@@ -668,8 +668,9 @@ ${consoleShellScript}
       (cfg.abilityCount != null
         ? card('abilities', 'Apps', String(cfg.abilityCount), cfg.abilityCount ? 'Apps and abilities added to this agent' : 'Add apps and abilities, with the tools you choose')
         : card('abilities', 'Apps', 'Browse', 'Add apps and abilities, with the tools you choose')) +
-      card('tools', 'Tools', String(cfg.tools.length), escapeHtml(toolNames.slice(0, 3).join(', ') + (toolNames.length > 3 ? ', \u2026' : '')) || 'None yet') +
-      card('skills', 'Skills', String(cfg.skills.length), escapeHtml(cfg.skills.map(function (k) { return k.name; }).join(', ')) || 'None yet') +
+      card('workflows', 'Workflows', '<span id="ovWorkflowsValue">&hellip;</span>', '<span id="ovWorkflowsDetail">Loading&hellip;</span>') +
+      card('tools', 'Tools &amp; skills', cfg.tools.length + (cfg.tools.length === 1 ? ' tool' : ' tools'),
+        (cfg.skills.length + (cfg.skills.length === 1 ? ' skill' : ' skills')) + (toolNames.length ? ' \u00b7 ' + escapeHtml(toolNames.slice(0, 2).join(', ') + (toolNames.length > 2 ? ', \u2026' : '')) : '')) +
       card('actauth', 'Permissions', rules.length + (rules.length === 1 ? ' rule' : ' rules'),
         (asks ? asks + ' need approval \u00b7 ' : '') + 'unmatched calls: ' + escapeHtml(cfg.permissions.defaultDecision)) +
       card('messaging', 'Messaging', '<span id="ovMessagingValue">&hellip;</span>', '<span id="ovMessagingDetail">Loading&hellip;</span>') +
@@ -684,8 +685,48 @@ ${consoleShellScript}
   // cards are filled in once those answer. Called after every render of
   // Overview, which is also re-rendered after edits.
   // ---- Overview: the agent's workflows (web/workflow-admin.ts), added
-  // from "Describe a workflow": each with its trigger, its schedule's
-  // state, its steps (checkpoints marked) and Run now. ----
+  // from "Describe a workflow": each with its instructions, what starts it
+  // (its real schedules and webhooks), its recent runs and Run now. ----
+
+  // What starts a workflow, in a few words, from its schedules and
+  // webhooks: never a label that could say something else.
+  function workflowStartsSummary(w) {
+    var parts = (w.schedules || []).filter(function (x) { return x.repeating && x.status !== 'paused'; }).map(function (x) { return x.describe; });
+    if (w.webhooks) parts.push(w.webhooks === 1 ? 'when its webhook is called' : 'when one of its ' + w.webhooks + ' webhooks is called');
+    if (!parts.length) return 'When asked';
+    var text = parts.join(', and ');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  // How it starts: each schedule (pause, resume, remove), its webhooks,
+  // and Run now or the API, which always work.
+  function workflowStartsHtml(w) {
+    var schedules = (w.schedules || []).map(function (x) {
+      var state = x.waiting ? '<span class="le-pill ask">Waiting for a decision</span>'
+        : x.status === 'paused' ? '<span class="le-pill">Paused</span>'
+        : x.status === 'running' ? '<span class="le-pill accent">Running</span>'
+        : (x.nextRunAt ? '<span class="hint">next ' + escapeHtml(new Date(x.nextRunAt).toLocaleString()) + '</span>' : '');
+      var values = x.params ? Object.keys(x.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(x.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
+      return '<li style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+        '<span>' + escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + (x.name ? ' <span class="hint">(' + escapeHtml(x.name) + ')</span>' : '') + '</span>' + state +
+        (values ? '<span class="hint">' + values + '</span>' : '') +
+        (x.notify ? '<span class="hint">sends you each result</span>' : '') +
+        '<span style="display:flex;gap:6px;margin-left:auto">' +
+          (x.status === 'paused' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="resume">Resume</button>'
+            : x.status === 'scheduled' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="pause">Pause</button>' : '') +
+          '<button type="button" class="delete-btn workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="cancel">Remove</button>' +
+        '</span></li>';
+    }).join('');
+    return '<div class="body-field workflow-starts" style="margin:6px 0 0">How it starts' +
+      '<ul class="schedule-history" style="margin:4px 0 0">' + schedules +
+        (w.webhooks ? '<li>' + (w.webhooks === 1 ? 'A webhook' : w.webhooks + ' webhooks') + ' <span class="hint">another app calls it when something happens</span></li>' : '') +
+        '<li class="hint">Run now, below, or an app' + String.fromCharCode(8217) + 's API call, any time</li>' +
+      '</ul>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' +
+        '<button type="button" class="workflow-add-schedule">Add a schedule</button>' +
+        '<button type="button" class="workflow-hooks-btn">' + (w.webhooks ? 'Webhooks' : 'Add a webhook') + '</button>' +
+      '</div></div>';
+  }
 
   function renderWorkflowsHtml(name, workflows) {
     if (!workflows.length) {
@@ -694,7 +735,7 @@ ${consoleShellScript}
     return workflows.map(function (w) {
       var s = w.schedule;
       var state = !s
-        ? '<span class="hint">' + escapeHtml(w.trigger) + '</span>'
+        ? '<span class="hint">' + escapeHtml(workflowStartsSummary(w)) + '</span>'
         : s.waiting
           ? '<span class="le-pill ask">Waiting for a decision</span>'
           : s.status === 'paused'
@@ -708,7 +749,6 @@ ${consoleShellScript}
         return '<label class="workflow-param">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">(optional)</span>') +
           '<input name="' + escapeHtml(p) + '"' + (spec.required ? ' required' : '') + ' placeholder="' + escapeHtml(spec.description || '') + '"></label>';
       }).join('');
-      var scheduleCount = (w.schedules || []).filter(function (x) { return x.repeating; }).length;
       var runs = (w.recentRuns || []).map(function (r) {
         var pill = r.status === 'done' ? '<span class="le-pill good">Done</span>'
           : r.status === 'error' ? '<span class="le-pill bad">Failed</span>'
@@ -723,22 +763,44 @@ ${consoleShellScript}
       return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
           '<strong>' + escapeHtml(w.title) + '</strong><span>' + state + '</span></div>' +
-        '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(w.trigger) : '') + '</p>' +
-        '<details><summary class="hint">Steps <span>(the ' + escapeHtml(w.id) + ' skill)</span></summary><div class="workflow-steps-text">' + escapeHtml(w.steps) + '</div></details>' +
+        '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(workflowStartsSummary(w)) : '') + '</p>' +
+        '<details><summary class="hint">Instructions <span>(the ' + escapeHtml(w.id) + ' skill)</span></summary><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></details>' +
+        workflowStartsHtml(w) +
         (params ? '<div class="workflow-params">' + params + '</div>' : '') +
         (runs ? '<details class="workflow-runs"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="hint">Recent runs (' + w.recentRuns.length + ')</summary><ul class="schedule-history">' + runs + '</ul></details>' : '') +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
           '<button type="button" class="workflow-run">Run now</button>' +
-          (scheduleCount ? '<a href="?tab=schedules" data-tab="schedules" class="hint" style="align-self:center">' + (scheduleCount > 1 ? 'Schedules (' + scheduleCount + ')' : 'Schedule') + '</a>' : '') +
           '<button type="button" class="workflow-edit">Edit</button>' +
-          '<button type="button" class="workflow-hooks-btn">Webhooks</button>' +
-          '<a href="?tab=skills" data-tab="skills" class="hint" style="align-self:center">Edit steps</a>' +
           '<button type="button" class="delete-btn workflow-forget">Forget</button>' +
         '</div><div class="hint workflow-result"></div><div class="workflow-editor" hidden></div><div class="workflow-hooks" hidden></div></div>';
     }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
   }
 
+  // The Overview's Workflows tile: how many, the next scheduled run, and
+  // any waiting for a decision.
+  function fillWorkflowsCard(workflows) {
+    var value = detail.querySelector('#ovWorkflowsValue');
+    var detailEl = detail.querySelector('#ovWorkflowsDetail');
+    if (!value || !detailEl) return;
+    value.textContent = String(workflows.length);
+    var next = null;
+    var waiting = 0;
+    workflows.forEach(function (w) {
+      (w.schedules || []).forEach(function (x) {
+        if (x.waiting) waiting++;
+        if (x.status === 'scheduled' && x.nextRunAt && (!next || x.nextRunAt < next)) next = x.nextRunAt;
+      });
+      (w.recentRuns || []).forEach(function (r) { if (r.status === 'awaiting_approval') waiting++; });
+    });
+    var parts = [];
+    if (waiting) parts.push(waiting + ' waiting for a decision');
+    if (next) parts.push('next run ' + new Date(next).toLocaleString());
+    detailEl.textContent = parts.join(' \u00b7 ') || (workflows.length ? 'Run by hand, by an app or a webhook' : 'Describe a job for this agent to do');
+  }
+
   var workflowsRefreshTimer = null;
+  // Set by a workflow's "Add a schedule", for the Schedules tab's form.
+  var pendingScheduleWorkflow = null;
   var workflowsById = {};
   // Set while a workflow's editor is open, so the running-run refresh
   // doesn't redraw the card under someone typing.
@@ -752,6 +814,7 @@ ${consoleShellScript}
       if (currentName !== name) return;
       if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
       var workflows = r.body.workflows || [];
+      fillWorkflowsCard(workflows);
       workflowsById = {};
       workflows.forEach(function (w) { workflowsById[w.id] = w; });
       el.innerHTML = renderWorkflowsHtml(name, workflows);
@@ -759,12 +822,12 @@ ${consoleShellScript}
       for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
       // Keep a running run's status current while the Overview is open.
       var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }); });
-      if (running && currentTab === 'overview') workflowsRefreshTimer = setTimeout(function () { if (!workflowEditing) loadWorkflowsSection(name); }, 3000);
+      if (running && currentTab === 'workflows') workflowsRefreshTimer = setTimeout(function () { if (!workflowEditing) loadWorkflowsSection(name); }, 3000);
     });
   }
 
-  // ---- The workflow editor: how a workflow's runs start. Its steps are
-  // the skill body, edited on the Skills tab.
+  // ---- The workflow editor: its title, its instructions (the skill body)
+  // and the values a run is given. What starts it is on the card.
   function workflowParamRowHtml(pname, spec) {
     return '<div class="workflow-param-row">' +
       '<input class="wp-name" aria-label="Parameter name" placeholder="order_number" value="' + escapeHtml(pname || '') + '">' +
@@ -777,9 +840,8 @@ ${consoleShellScript}
     var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
     return '<form class="add-source workflow-editor-form" style="margin-top:10px">' +
       '<label>Title<input name="title" maxlength="120" value="' + escapeHtml(w.title) + '"></label>' +
-      '<label>Start message <span class="hint">(what each run begins with; $name puts in a parameter&#39;s value)</span>' +
-        '<textarea name="start_message" maxlength="4000" required>' + escapeHtml(w.startMessage) + '</textarea></label>' +
-      '<label>When it runs <span class="hint">(in words, for people; the timing itself is its schedule)</span><input name="trigger" maxlength="200" value="' + escapeHtml(w.trigger) + '"></label>' +
+      '<label>Instructions <span class="hint">(what the agent does, step by step; $name puts in a parameter&#39;s value. Chat uses them too.)</span>' +
+        '<textarea name="instructions" maxlength="12000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></label>' +
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
@@ -788,12 +850,12 @@ ${consoleShellScript}
       '<div class="hint workflow-editor-result"></div></form>';
   }
 
-  // Placeholders used in the start message or steps that no parameter
-  // declares, and declared parameters nothing uses.
+  // Placeholders the instructions use that no parameter declares, and
+  // declared parameters nothing uses.
   function workflowPlaceholderCheck(w, form) {
     var used = {};
     var pattern = new RegExp('[$]([a-z_][a-z0-9_]*)', 'g');
-    var text = form.querySelector('[name="start_message"]').value + ' ' + (w.steps || '');
+    var text = form.querySelector('[name="instructions"]').value;
     var m;
     while ((m = pattern.exec(text))) used[m[1]] = true;
     var declared = {};
@@ -803,7 +865,7 @@ ${consoleShellScript}
     var missing = Object.keys(used).filter(function (n) { return !declared[n]; });
     var unused = Object.keys(declared).filter(function (n) { return !used[n]; });
     if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't a parameter: add ' + (missing.length > 1 ? 'them' : 'it') + ', or the text stays as written.');
-    if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't used in the start message or steps: its value is passed as an input.');
+    if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't used in the instructions: its value is passed as an input.');
     form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
   }
 
@@ -844,7 +906,7 @@ ${consoleShellScript}
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, start_message: form.start_message.value, trigger: form.trigger.value, parameters: parameters }),
+        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         workflowEditing = false;
@@ -1041,6 +1103,21 @@ ${consoleShellScript}
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     card.querySelector('.workflow-hooks-btn').addEventListener('click', function () { openWorkflowHooks(name, card); });
+    // Add a schedule: the Schedules tab's form, with this workflow chosen.
+    card.querySelector('.workflow-add-schedule').addEventListener('click', function () {
+      pendingScheduleWorkflow = id;
+      switchTab('schedules');
+    });
+    var scheduleBtns = card.querySelectorAll('.workflow-schedule-action');
+    for (var sb = 0; sb < scheduleBtns.length; sb++) {
+      scheduleBtns[sb].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var action = btn.dataset.action;
+        if (action === 'cancel' && btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
+        btn.disabled = true;
+        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' }).then(function () { loadWorkflowsSection(name); });
+      });
+    }
     card.querySelector('.workflow-run').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
       var params = {};
@@ -1154,7 +1231,6 @@ ${consoleShellScript}
     }
 
     return renderOverviewCards(cfg) +
-      '<section id="workflowsSection"><h3>Workflows</h3><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '<section>' + systemPromptSection + '</section>' +
       '<section>' + modelSection + '</section>' +
       '<section><h3>Hooks</h3><dl class="kv">' +
@@ -2354,6 +2430,14 @@ ${consoleShellScript}
           '<input name="param:' + escapeHtml(p) + '" placeholder="' + escapeHtml(parameters[p].description || '') + '"></label>';
       }).join('');
     }
+    // Opened from a workflow's "Add a schedule": that workflow, chosen.
+    if (pendingScheduleWorkflow && workflowSelect) {
+      workflowSelect.value = pendingScheduleWorkflow;
+      var runsWorkflowRadio = form.querySelector('#runsWorkflow');
+      if (runsWorkflowRadio) runsWorkflowRadio.checked = true;
+      form.scrollIntoView({ block: 'start' });
+    }
+    pendingScheduleWorkflow = null;
     renderScheduleParams();
     if (workflowSelect) workflowSelect.addEventListener('change', renderScheduleParams);
     for (var k = 0; k < runsRadios.length; k++) {
@@ -4148,7 +4232,7 @@ ${consoleShellScript}
 
   // ---- Tab switching + agent selection ----
 
-  var CONFIG_TABS = ['overview', 'abilities', 'actauth', 'messaging', 'schedules', 'env', 'advanced'];
+  var CONFIG_TABS = ['overview', 'workflows', 'abilities', 'actauth', 'messaging', 'schedules', 'env', 'advanced'];
   // The old Tools and Skills tabs: now parts of Advanced. A link to one
   // opens Advanced at that part.
   // The Apps tab keeps the id 'abilities'; ?tab=apps opens it too.
@@ -4285,6 +4369,11 @@ ${consoleShellScript}
       }) +
       '<div class="le-scroll"><div class="le-page" style="display:block">' +
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +
+      // Workflows: the jobs this agent does, each with what starts it.
+      '<div class="tab-panel" data-tab-panel="workflows">' +
+        '<p class="muted" style="margin:0 0 20px">The jobs this agent does on its own: what it does, what starts it (schedules, webhooks, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
+        '<section id="workflowsSection"><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
+      '</div>' +
       // Advanced: the agent's own tools (and Composio, subagents), then its
       // own skills. Each part keeps its old data-tab-panel name, which the
       // code that redraws it looks for; only .tab-panel is shown or hidden.

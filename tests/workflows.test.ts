@@ -221,9 +221,27 @@ describe('workflows are skills with a start message', () => {
       trigger: 'When a refund request comes in',
       parameters: { order_number: { description: 'The order to check', required: true }, customer_note: { description: 'What the customer wrote', required: false } },
       steps: '1. Look up order $order_number.\n2. Weigh this: $customer_note',
+      // An older workflow's start message, in front of its steps.
+      instructions: 'Check the refund request for order $order_number.\n\n1. Look up order $order_number.\n2. Weigh this: $customer_note',
     }])
     expect(readWorkflow(dir, 'plain-skill')).toBeUndefined()
     expect(readWorkflow(dir, '../escape')).toBeUndefined()
+  })
+
+  it('saves instructions as one text: the body, marked a workflow, with the old start message and label gone', () => {
+    writeSkill(dir, 'refund-check', REFUND, '1. Look up order $order_number.')
+    const instructions = 'Check the refund request for order $order_number.\n\n1. Look up order $order_number.\n2. Reply to the customer.'
+    updateWorkflow(dir, 'refund-check', { title: 'Refund check', instructions, parameters: { order_number: { description: 'The order', required: true } } })
+    const file = readFileSync(join(dir, 'skills', 'refund-check', 'SKILL.md'), 'utf8')
+    expect(file).toContain('workflow: true')
+    expect(file).not.toContain('start_message')
+    expect(file).not.toContain('trigger:')
+    const w = readWorkflow(dir, 'refund-check')!
+    expect(w).toMatchObject({ startMessage: '', trigger: 'When asked', steps: instructions, instructions })
+    // A run starts with a line naming it, then the instructions, filled in.
+    expect(workflowRunMessage(w, { order_number: 'EM-1' })).toBe(
+      'Run the "Refund check" workflow.\n\nThese are its instructions, from your "refund-check" skill:\n\nCheck the refund request for order EM-1.\n\n1. Look up order EM-1.\n2. Reply to the customer.',
+    )
   })
 
   it('becomes a workflow and stops being one by its front matter, keeping the skill', () => {
@@ -339,7 +357,8 @@ describe("a workflow's runs and schedules", () => {
   })
 
   it('refuses an edit it cannot save, saying why', () => {
-    expect(() => updateWorkflow(dir, 'refund-check', { start_message: '  ' })).toThrow(/Write the start message/)
+    expect(() => updateWorkflow(dir, 'refund-check', { start_message: '  ' })).toThrow(/Write the instructions/)
+    expect(() => updateWorkflow(dir, 'refund-check', { instructions: '  ' })).toThrow(/Write the instructions/)
     expect(() => updateWorkflow(dir, 'refund-check', { start_message: 'Go.', parameters: { 'Order-Number': {} } })).toThrow(/lowercase letters/)
     expect(() => updateWorkflow(dir, 'refund-check', { start_message: 'Go.', parameters: ['order_number'] })).toThrow(/parameters must be an object/)
     expect(() => updateWorkflow(dir, 'refund-check', { start_message: 'x'.repeat(4001) })).toThrow(/too long/)

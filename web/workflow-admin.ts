@@ -11,13 +11,13 @@ import { writeSkill } from './skills-admin.js'
 import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
 import { planParameters, planWebhook, planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
-import { createTrigger, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
+import { createTrigger, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow } from '../core/workflows.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
-import { cancelScheduledTask, createScheduledTask, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
-import { workspaceTimeZone } from '../core/time-zone.js'
+import { cancelScheduledTask, createScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
+import { wallTimeAt, workspaceTimeZone } from '../core/time-zone.js'
 import type { ModelCall } from '../core/run-agent.js'
 
 export class WorkflowError extends Error {}
@@ -387,7 +387,7 @@ async function makePlannedWebhook(plan: WorkflowPlan, agent: string, agentDir: s
       webhook: { trigger: publicTrigger(trigger), token, ...(webhook.setup ? { setup: webhook.setup } : {}) },
       checklist: [{
         label: `Turn on the ${webhook.name} webhook: paste its URL into ${SENDER_NAMES[webhook.sender]}'s webhook settings, then add the signing secret ${webhook.sender === 'custom' ? 'your app signs with' : 'it shows'}`,
-        href: `/agents/config?agent=${encodeURIComponent(agent)}&tab=overview`,
+        href: `/agents/config?agent=${encodeURIComponent(agent)}&tab=workflows`,
       }],
     }
   } catch (err) {
@@ -425,8 +425,9 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   // matter. Its parameters are tidied again, as the plan may have been
   // edited on the review screen.
   const { parameters } = planParameters(plan.parameters, { startMessage: plan.startMessage, skillBody: plan.skill.body, scheduled: plan.trigger.kind === 'schedule' })
-  const markWorkflow = (agentDir: string) =>
-    setWorkflowFields(agentDir, plan.id, { title: plan.name, startMessage: plan.startMessage, trigger: plan.trigger.description, parameters })
+  // One text, as the editor shows it: the start message, then the steps.
+  const instructions = plan.skill.body.trim().startsWith(plan.startMessage.trim()) ? plan.skill.body : `${plan.startMessage.trim()}\n\n${plan.skill.body.trim()}`
+  const markWorkflow = (agentDir: string) => setWorkflowFields(agentDir, plan.id, { title: plan.name, instructions, parameters })
   const agents = await deps.agentInfo()
   resolveConnections(plan, agents)
   const keys = input.mcpKeys && typeof input.mcpKeys === 'object' ? Object.fromEntries(Object.entries(input.mcpKeys as Record<string, unknown>).flatMap(([k, v]) => (typeof v === 'string' && v.trim() ? [[k, v.trim()]] : []))) : {}
@@ -567,7 +568,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   }
 }
 
-type WorkflowScheduleView = { taskId: string; status: string; repeating: boolean; params?: Record<string, string>; nextRunAt?: string; lastRunAt?: string; lastStatus?: string; waiting: boolean }
+type WorkflowScheduleView = { taskId: string; status: string; repeating: boolean; describe: string; name?: string; notify: boolean; params?: Record<string, string>; nextRunAt?: string; lastRunAt?: string; lastStatus?: string; waiting: boolean }
 
 export interface AgentWorkflowView extends Workflow {
   /** Its main schedule: a repeating one if it has one. */
@@ -576,6 +577,8 @@ export interface AgentWorkflowView extends Workflow {
   schedules: WorkflowScheduleView[]
   /** Its latest runs started by hand or by an app, newest first. */
   recentRuns: WorkflowRun[]
+  /** Its webhook triggers that are on. */
+  webhooks: number
 }
 
 const RECENT_RUNS = 5
@@ -587,11 +590,42 @@ function workflowTasks(id: string, tasks: ScheduledTask[]): ScheduledTask[] {
     .sort((a, b) => Number('every' in b.schedule) - Number('every' in a.schedule))
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** A schedule in words, in its time zone: "every day at 18:05", "every
+ * Monday at 09:00", "every 10 minutes", "once on Nov 6 at 18:05". */
+export function plainSchedule(schedule: ScheduledTask['schedule']): string {
+  const zone = ('time_zone' in schedule && schedule.time_zone) || workspaceTimeZone()
+  const at = (iso: string) => {
+    const t = wallTimeAt(Date.parse(iso), zone)
+    return { ...t, clock: `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}` }
+  }
+  if ('run_at' in schedule) {
+    if (Number.isNaN(Date.parse(schedule.run_at))) return `once at ${schedule.run_at}`
+    const t = at(schedule.run_at)
+    return `once on ${MONTHS[t.month - 1]} ${t.day} at ${t.clock}`
+  }
+  const m = /^(\d+)([mhdw])$/.exec(schedule.every)
+  if (!m) return describeSchedule(schedule)
+  const n = Number(m[1])
+  const unit = m[2] as 'm' | 'h' | 'd' | 'w'
+  const anchor = schedule.anchor && !Number.isNaN(Date.parse(schedule.anchor)) ? at(schedule.anchor) : undefined
+  if (unit === 'm') return n === 1 ? 'every minute' : `every ${n} minutes`
+  if (unit === 'h') return (n === 1 ? 'every hour' : `every ${n} hours`) + (anchor && n === 1 ? ` at :${String(anchor.minute).padStart(2, '0')}` : '')
+  if (unit === 'd') return (n === 1 ? 'every day' : `every ${n} days`) + (anchor ? ` at ${anchor.clock}` : '')
+  if (n === 1 && anchor) return `every ${WEEKDAYS[anchor.weekday]} at ${anchor.clock}`
+  return (n === 1 ? 'every week' : `every ${n} weeks`) + (anchor ? ` on ${WEEKDAYS[anchor.weekday]} at ${anchor.clock}` : '')
+}
+
 function scheduleView(task: ScheduledTask): WorkflowScheduleView {
   return {
     taskId: task.task_id,
     status: task.status,
     repeating: 'every' in task.schedule,
+    describe: plainSchedule(task.schedule),
+    ...(task.task_name ? { name: task.task_name } : {}),
+    notify: Boolean(task.notify),
     ...(task.params ? { params: task.params } : {}),
     ...(task.next_run_at ? { nextRunAt: task.next_run_at } : {}),
     ...(task.last_run_at ? { lastRunAt: task.last_run_at } : {}),
@@ -620,10 +654,12 @@ export async function listAgentWorkflows(agentName: string, agentDir: string): P
   if (!workflows.length) return []
   const tasks = await listScheduledTasks({ agent: agentName })
   const runs = await listRuns(agentName)
+  const triggers = await listTriggers(agentName)
   return workflows.map((w) => {
     const schedules = workflowTasks(w.id, tasks).map(scheduleView)
     const recentRuns = runs.filter((r) => r.workflow_id === w.id).slice(0, RECENT_RUNS)
-    return { ...w, schedules, recentRuns, ...(schedules[0] ? { schedule: schedules[0] } : {}) }
+    const webhooks = triggers.filter((t) => t.workflow_id === w.id && t.enabled).length
+    return { ...w, schedules, recentRuns, webhooks, ...(schedules[0] ? { schedule: schedules[0] } : {}) }
   })
 }
 
@@ -654,9 +690,11 @@ export async function prepareWorkflowRun(agentName: string, agentDir: string, id
   return { workflow, params, message: workflowRunMessage(workflow, params) }
 }
 
-/** Changes how a workflow's runs start, from the console's workflow
- * editor: its title, start message, trigger and parameters. Its steps
- * (the skill body) and the skill's other front matter are kept. */
+/** Changes a workflow from the console's editor: its title, its
+ * instructions (the skill body, which an older workflow's start message
+ * and label are folded into), and its parameters. The skill's other front
+ * matter is kept. A body with `start_message` (and no `instructions`) is
+ * still taken, as before. */
 export function updateWorkflow(agentDir: string, id: string, input: Record<string, unknown>): Workflow {
   if (!readWorkflow(agentDir, id)) throw new WorkflowError(`No workflow ${id}.`)
   const text = (value: unknown, field: string, max: number): string => {
@@ -666,9 +704,11 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
     return trimmed
   }
   const title = text(input.title, 'The title', 120)
-  const startMessage = text(input.start_message, 'The start message', 4000)
-  if (!startMessage) throw new WorkflowError('Write the start message: what each run begins with, e.g. "Check the refund request for order $order_number."')
-  const trigger = text(input.trigger, 'When it runs', 200)
+  const instructions = input.instructions === undefined ? undefined : text(input.instructions, 'The instructions', 12000)
+  if (instructions !== undefined && !instructions) throw new WorkflowError('Write the instructions: what the agent does, e.g. "Check the refund request for order $order_number: look up the order, then…"')
+  const startMessage = instructions === undefined ? text(input.start_message, 'The start message', 4000) : ''
+  if (instructions === undefined && !startMessage) throw new WorkflowError('Write the instructions: what the agent does each run.')
+  const trigger = instructions === undefined ? text(input.trigger, 'When it runs', 200) : ''
   const raw = input.parameters ?? {}
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new WorkflowError('parameters must be an object of names to { description, required }.')
   const parameters: Record<string, { description: string; required: boolean }> = {}
@@ -677,7 +717,7 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
     const s = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : {}
     parameters[name] = { description: text(s.description, `The description of "${name}"`, 300), required: s.required === true }
   }
-  setWorkflowFields(agentDir, id, { ...(title ? { title } : {}), startMessage, ...(trigger ? { trigger } : {}), parameters })
+  setWorkflowFields(agentDir, id, instructions !== undefined ? { ...(title ? { title } : {}), instructions, parameters } : { ...(title ? { title } : {}), startMessage, ...(trigger ? { trigger } : {}), parameters })
   return readWorkflow(agentDir, id)!
 }
 

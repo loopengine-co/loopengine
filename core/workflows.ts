@@ -1,25 +1,34 @@
 // An agent's workflows: skills it can be told to run, by hand, from an app
 // over the API, or on a schedule. A workflow is a skill
-// (agents/<name>/skills/<id>/SKILL.md) whose front matter also says how a
-// run starts:
+// (agents/<name>/skills/<id>/SKILL.md) marked as one, with a title and the
+// values a run is given:
 //
 //   ---
 //   name: refund-check
 //   description: Check a refund request against the order and our policy
+//   workflow: true
 //   title: Refund check
-//   start_message: Check the refund request for order $order_number.
-//   trigger: When a refund request comes in
 //   parameters:
 //     order_number: { description: The order to check, required: true }
 //     customer_note: { description: What the customer wrote }
 //   ---
+//   Check the refund request for order $order_number.
 //   1. Look up order $order_number…
 //
-// The body is its steps. A run starts with the start message and those
-// steps, with each $parameter filled in, so the model has them from its
-// first turn rather than picking the skill from its index. None of these
-// keys reach the model otherwise: the skill index shows only a skill's
-// name and description (core/skillgarden).
+// The body is its instructions: one text, edited as one. A run starts with
+// a line naming the workflow and those instructions, with each $parameter
+// filled in, so the model has them from its first turn rather than
+// picking the skill from its index. In chat, the agent loads the same
+// body through the Skill tool. None of the workflow keys reach the model
+// otherwise: the skill index shows only a skill's name and description
+// (core/skillgarden).
+//
+// What starts a run (schedules, webhooks) isn't kept here: it's the
+// workflow's schedules and webhook triggers themselves.
+//
+// Workflows saved before had a separate start_message (a skill with one
+// is still a workflow) and a `trigger` label; both are folded into the
+// instructions the next time the workflow is saved.
 //
 // Agents from before kept their workflows in workflows.yml;
 // migrateWorkflowsFile moves those into their skills.
@@ -39,18 +48,27 @@ export interface Workflow {
   /** A name for people, e.g. "Refund check". */
   title: string
   description: string
+  /** A workflow saved before instructions: what its runs began with. Empty
+   * for one saved since. */
   startMessage: string
-  /** When it runs, in plain words: "Every Monday at 9", "When asked". */
+  /** A label from before, in words ("Every Monday at 9"); "When asked"
+   * when there's none. Nothing reads it to decide when to run. */
   trigger: string
   parameters: Record<string, WorkflowParameter>
-  /** Its steps: the skill body, placeholders unfilled. */
+  /** The skill body, placeholders unfilled. */
   steps: string
+  /** What the agent does, as one text: the body, with an older
+   * workflow's start message in front of it. What the editor shows. */
+  instructions: string
 }
 
-/** The front matter that makes a skill a workflow. */
+/** The front matter that makes a skill a workflow: `instructions` (the
+ * new way) replaces the body and drops any start message and label;
+ * `startMessage` (from before) is kept for workflows saved that way. */
 export interface WorkflowFields {
   title?: string
-  startMessage: string
+  instructions?: string
+  startMessage?: string
   trigger?: string
   parameters?: Record<string, WorkflowParameter>
 }
@@ -58,7 +76,7 @@ export interface WorkflowFields {
 export class WorkflowParamsError extends Error {}
 
 const PARAMETER_NAME = /^[a-z_][a-z0-9_]*$/
-const WORKFLOW_KEYS = ['title', 'start_message', 'trigger', 'parameters'] as const
+const WORKFLOW_KEYS = ['workflow', 'title', 'start_message', 'trigger', 'parameters'] as const
 
 function skillsDir(agentDir: string): string {
   return join(agentDir, 'skills')
@@ -103,9 +121,18 @@ function parametersFrom(value: unknown): Record<string, WorkflowParameter> {
   return parameters
 }
 
+/** An older workflow's start message and body as one text; the body
+ * alone when it already begins with the start message. */
+function combineInstructions(startMessage: string, body: string): string {
+  const steps = body.trim()
+  if (!startMessage) return steps
+  if (steps.startsWith(startMessage)) return steps
+  return steps ? `${startMessage}\n\n${steps}` : startMessage
+}
+
 function workflowFrom(id: string, frontmatter: Record<string, unknown>, body: string): Workflow | undefined {
   const startMessage = typeof frontmatter.start_message === 'string' ? frontmatter.start_message.trim() : ''
-  if (!startMessage) return undefined
+  if (frontmatter.workflow !== true && !startMessage) return undefined
   return {
     id,
     title: typeof frontmatter.title === 'string' && frontmatter.title.trim() ? frontmatter.title.trim() : titleFromId(id),
@@ -114,6 +141,7 @@ function workflowFrom(id: string, frontmatter: Record<string, unknown>, body: st
     trigger: typeof frontmatter.trigger === 'string' && frontmatter.trigger.trim() ? frontmatter.trigger.trim() : 'When asked',
     parameters: parametersFrom(frontmatter.parameters),
     steps: body,
+    instructions: combineInstructions(startMessage, body),
   }
 }
 
@@ -149,12 +177,18 @@ export function setWorkflowFields(agentDir: string, id: string, fields: Workflow
   }
   const frontmatter = { ...skill.frontmatter }
   for (const key of WORKFLOW_KEYS) delete frontmatter[key]
+  const parameters = fields.parameters && Object.keys(fields.parameters).length ? { parameters: fields.parameters } : {}
+  if (fields.instructions !== undefined) {
+    writeSkillFile(path, { ...frontmatter, workflow: true, ...(fields.title ? { title: fields.title } : {}), ...parameters }, fields.instructions)
+    return
+  }
+  if (!fields.startMessage) throw new Error('A workflow needs its instructions.')
   writeSkillFile(path, {
     ...frontmatter,
     ...(fields.title ? { title: fields.title } : {}),
     start_message: fields.startMessage,
     ...(fields.trigger ? { trigger: fields.trigger } : {}),
-    ...(fields.parameters && Object.keys(fields.parameters).length ? { parameters: fields.parameters } : {}),
+    ...parameters,
   }, skill.body)
 }
 
@@ -209,13 +243,15 @@ export function workflowRunMessage(workflow: Workflow, params: Record<string, st
   // Named placeholders only: positional $1-style filling would eat dollar
   // amounts like "$50" in the steps.
   const fill = (text: string) => substituteParameters(text, params, { declared, used })
-  const start = fill(workflow.startMessage)
+  // An older workflow begins with its own start message; one saved since
+  // with a line naming it, its instructions saying the rest.
+  const start = workflow.startMessage ? fill(workflow.startMessage) : `Run the "${workflow.title}" workflow.`
   const steps = fill(workflow.steps).trim()
   const unused = Object.entries(params).filter(([name]) => !used.has(name))
   return [
     start,
     unused.length ? `Inputs:\n${unused.map(([name, value]) => `- ${name}: ${value}`).join('\n')}` : '',
-    steps ? `These are the steps, from your "${workflow.id}" skill:\n\n${steps}` : '',
+    steps ? `${workflow.startMessage ? 'These are the steps' : 'These are its instructions'}, from your "${workflow.id}" skill:\n\n${steps}` : '',
   ].filter(Boolean).join('\n\n')
 }
 

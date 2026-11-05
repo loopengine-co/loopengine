@@ -328,7 +328,7 @@ ${consoleShellScript}
 
   // ---- 3. Done ----
   function renderDone(c) {
-    var agentHref = '/agents/config?agent=' + encodeURIComponent(c.agent);
+    var agentHref = '/agents/config?agent=' + encodeURIComponent(c.agent) + '&tab=workflows';
     var items = c.checklist || [];
     page.innerHTML = '<div class="wf-card">' +
       '<h2>' + esc(c.workflow) + ' is ready</h2>' +

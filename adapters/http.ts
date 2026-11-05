@@ -1816,12 +1816,14 @@ async function handleSchedulesGet(res: ServerResponse, agentName: string): Promi
     if (!t.workflow_id) return t
     const workflow = workflows.find((w) => w.id === t.workflow_id)
     // Its start message as this task's runs see it, parameters filled in.
-    const startMessage = workflow && substituteParameters(workflow.startMessage, t.params ?? {}, { declared: Object.keys(workflow.parameters) })
+    // An older workflow's start message, else its instructions' first line.
+    const lead = workflow && (workflow.startMessage || workflow.instructions.split('\n').find((line) => line.trim()) || '')
+    const startMessage = workflow && substituteParameters(lead!, t.params ?? {}, { declared: Object.keys(workflow.parameters) })
     return workflow ? { ...t, workflow: { id: workflow.id, title: workflow.title, start_message: startMessage } } : { ...t, workflow_missing: true }
   })
   scheduleJson(res, 200, {
     tasks,
-    workflows: workflows.map((w) => ({ id: w.id, title: w.title, description: w.description, start_message: w.startMessage, parameters: w.parameters })),
+    workflows: workflows.map((w) => ({ id: w.id, title: w.title, description: w.description, start_message: w.startMessage || w.instructions.split('\n').find((line) => line.trim()) || '', parameters: w.parameters })),
     time_zone: workspaceTimeZone(),
   })
 }
