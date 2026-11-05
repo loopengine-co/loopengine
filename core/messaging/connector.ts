@@ -2,7 +2,7 @@
 // there (core/messaging/engine.ts). The engine owns everything about
 // requests, decisions and safety; a connector only turns the app's own
 // payloads into these shapes and posts back. One per app, under
-// ./connectors/ — Slack today, Telegram and Lark next.
+// ./connectors/ — Slack and Telegram today, Lark next.
 //
 // Verifying an incoming request and parsing it stay with the connector's
 // own module (each app signs and shapes its payloads differently), and
@@ -23,6 +23,13 @@ export interface InboundMessage {
   ts: string
   /** Set for a reply in a thread: the thread's first message id. */
   threadTs?: string
+  /** Sent to the agent alone: a DM, or a private chat with the bot. */
+  direct?: boolean
+  /** Names the agent: an @mention of its bot. */
+  mentioned?: boolean
+  /** The person's name, when the app says it, for the console's
+   * approver picker. */
+  userName?: string
 }
 
 /** One message of a thread, as the connector reads it back. */

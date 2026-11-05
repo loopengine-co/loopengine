@@ -5,6 +5,7 @@
 // deliveries — and the decisions still waiting, shown in Permissions. Plain functions over loopengine's own modules
 // so adapters/http.ts (and the scaffolded copy create-loopengine ships)
 // only needs thin route handlers.
+import { randomBytes } from 'node:crypto'
 import type { AgentConfig } from '../core/agent-config.js'
 import { agentDirFor, createAgentEnv } from '../core/agent-env.js'
 import type { CheckpointStore } from '../core/durable-approvals.js'
@@ -17,8 +18,9 @@ import { LarkNotifier } from '../core/http-notify-triggers/lark.js'
 import { TelegramNotifier, sendTestTelegramMessage } from '../core/http-notify-triggers/telegram.js'
 import type { HttpNotifierConfig } from '../core/agent-config.js'
 import { listDeliveries } from '../core/notifier-deliveries.js'
-import { NOTIFIER_CHANNELS, NOTIFIER_SECRET_VARS, PRIMARY_CHANNELS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, NotifierFileError, notifierConfigFromFile, readActiveConnections, readMessagingConnections, readNotifierFile, removeMessagingConnection, removeNotifierFile, setPrimaryConnection, writeNotifierFile, type MessagingApprover, type MessagingConnections, type NotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
+import { NOTIFIER_CHANNELS, NOTIFIER_SECRET_VARS, PRIMARY_CHANNELS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, NOTIFIER_TELEGRAM_WEBHOOK_SECRET_VAR, NotifierFileError, notifierConfigFromFile, readActiveConnections, readMessagingConnections, readNotifierFile, removeMessagingConnection, removeNotifierFile, setPrimaryConnection, writeNotifierFile, type MessagingApprover, type MessagingConnections, type NotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
 import { listSlackChannelMembers, listSlackChannels, slackAppManifest, type SlackChannel, type SlackMember } from '../core/messaging/connectors/slack/index.js'
+import { telegramBotUsername, telegramPeople, setTelegramWebhook, telegramWebhookInfo, type TelegramPerson } from '../core/messaging/connectors/telegram/index.js'
 import { setAgentEnvVar } from './env-admin.js'
 
 /** The deployment-wide default webhook (LOOPENGINE_DEFAULT_WEBHOOK_URL /
@@ -69,6 +71,11 @@ export function describeAgentNotifier(config: AgentConfig, defaultWebhook?: Defa
       // interactivityPath as you type.
       manifestTemplate: slackAppManifest({ agentName: config.name, interactivityUrl: '__INTERACTIVITY_URL__' }),
     },
+    telegram: {
+      // Set once the bot's webhook points here (setupAgentTelegramWebhook).
+      webhookSet: env.get(NOTIFIER_TELEGRAM_WEBHOOK_SECRET_VAR) !== undefined,
+      webhookPath: `/hooks/telegram/${encodeURIComponent(config.name)}`,
+    },
     deliveries: listDeliveries(config.name),
   }
 }
@@ -111,45 +118,135 @@ export function slackCredentialsFor(config: AgentConfig): { botToken?: string; s
   return { botToken, signingSecret: env.get(NOTIFIER_SLACK_SIGNING_SECRET_VAR) }
 }
 
-/** Whether replies in a Slack request's thread are answered: on unless
- * the Messaging tab turned Conversations off. An agent whose Slack
- * notifier is set in code always answers. */
+/** The apps people can talk to an agent in (core/messaging/). */
+export type TwoWayApp = 'slack' | 'telegram'
+
+const APP_NAMES: Record<TwoWayApp, string> = { slack: 'Slack', telegram: 'Telegram' }
+
+/** Whether replies in an app's request threads are answered: on unless
+ * that app's section of the Messaging tab turned Conversations off. An
+ * agent whose notifier is set in code answers in that app only. */
+export function conversationsOn(config: AgentConfig, app: TwoWayApp): boolean {
+  if (config.httpNotifier) return config.httpNotifier.channel === app
+  const file = savedConnection(config, app)
+  return Boolean(file) && file!.conversations !== false
+}
+
 export function slackConversationsOn(config: AgentConfig): boolean {
-  if (config.httpNotifier) return config.httpNotifier.channel === 'slack'
-  try {
-    return readNotifierFile(agentDirFor(config))?.conversations !== false
-  } catch {
-    return false
-  }
+  return conversationsOn(config, 'slack')
 }
 
-/** The people who can decide this agent's requests from Slack: from
- * messaging.yml; none when the Slack notifier is set in code. */
-export function agentApprovers(config: AgentConfig): MessagingApprover[] {
+/** Whether a DM to the agent's bot in `app`, or a mention of it, starts a
+ * job (core/messaging/jobs.ts). Off unless turned on in that app's
+ * section; never for a notifier set in code. */
+export function jobsOn(config: AgentConfig, app: TwoWayApp): boolean {
+  if (config.httpNotifier) return false
+  return savedConnection(config, app)?.jobs === true
+}
+
+/** The people who can decide this agent's requests from `app`: from that
+ * app's connection in messaging.yml; none when the notifier is set in
+ * code. */
+export function agentApprovers(config: AgentConfig, app: TwoWayApp = 'slack'): MessagingApprover[] {
   if (config.httpNotifier) return []
-  try {
-    return readNotifierFile(agentDirFor(config))?.approvers ?? []
-  } catch {
-    return []
-  }
+  return savedConnection(config, app)?.approvers ?? []
 }
 
-/** Whether a Slack user's button click counts: anyone's does while the
- * agent has no approvers (as before approvers existed), only theirs once
- * it has some. `message` says who can, for a refused click. */
-export function slackClickAllowed(config: AgentConfig, user: string | undefined): { allowed: boolean; message?: string } {
-  const approvers = agentApprovers(config)
+function approverList(app: TwoWayApp, approvers: MessagingApprover[]): string {
+  return approvers.map((a) => (app === 'slack' ? `<@${a.user}>` : a.name ?? a.user)).join(', ')
+}
+
+/** Whether a person's button click counts: anyone's does while the
+ * agent has no approvers in that app (as before approvers existed), only
+ * theirs once it has some. `message` says who can, for a refused click. */
+export function clickAllowed(config: AgentConfig, app: TwoWayApp, user: string | undefined): { allowed: boolean; message?: string } {
+  const approvers = agentApprovers(config, app)
   if (!approvers.length || (user && approvers.some((a) => a.user === user))) return { allowed: true }
-  return { allowed: false, message: `Only approvers can decide this: ${approvers.map((a) => `<@${a.user}>`).join(', ')}.` }
+  return { allowed: false, message: `Only approvers can decide this: ${approverList(app, approvers)}.` }
 }
 
-/** Replaces the approver list on the agent's saved Slack connection,
- * primary or not. Throws NotifierFileError when there's no Slack
- * connection to add them to. */
-export function setAgentApprovers(config: AgentConfig, approvers: unknown): MessagingApprover[] {
-  const file = savedConnection(config, 'slack')
-  if (!file) throw new NotifierFileError('Save a Slack connection first')
+export function slackClickAllowed(config: AgentConfig, user: string | undefined): { allowed: boolean; message?: string } {
+  return clickAllowed(config, 'slack', user)
+}
+
+/** Whether a person may start a job from a message, or continue one: an
+ * approver, once the app has any; with none, anyone in the agent's own
+ * channel or chat, but nobody by DM. */
+export function jobAllowed(config: AgentConfig, app: TwoWayApp, message: { user: string; conversation: string; direct?: boolean }): { allowed: boolean; message?: string } {
+  const approvers = agentApprovers(config, app)
+  if (approvers.length) {
+    if (approvers.some((a) => a.user === message.user)) return { allowed: true }
+    return { allowed: false, message: `Only approvers can give me jobs here: ${approverList(app, approvers)}.` }
+  }
+  const file = savedConnection(config, app)
+  const home = app === 'slack' ? file?.channelId : file?.chatId
+  if (!message.direct && home && home === message.conversation) return { allowed: true }
+  return { allowed: false, message: `Jobs by direct message need approvers: add yourself in this agent's Messaging tab in LoopEngine (${APP_NAMES[app]} section).` }
+}
+
+/** Replaces the approver list on the agent's saved connection for `app`,
+ * primary or not. Throws NotifierFileError when there's no connection
+ * for that app to add them to. */
+export function setAgentApprovers(config: AgentConfig, approvers: unknown, app: TwoWayApp = 'slack'): MessagingApprover[] {
+  const file = savedConnection(config, app)
+  if (!file) throw new NotifierFileError(`Save a ${APP_NAMES[app]} connection first`)
   return writeNotifierFile(agentDirFor(config), { ...file, approvers: Array.isArray(approvers) ? approvers : [] }).approvers ?? []
+}
+
+/** The bot token behind an agent's Telegram notifier and the secret its
+ * webhook was set up with, like slackCredentialsFor. */
+export function telegramCredentialsFor(config: AgentConfig): { botToken?: string; webhookSecret?: string } {
+  const env = createAgentEnv(config.name, agentDirFor(config))
+  const botToken = config.httpNotifier?.channel === 'telegram' ? config.httpNotifier.config.botToken : env.get(NOTIFIER_SECRET_VARS.telegram)
+  return { botToken, webhookSecret: env.get(NOTIFIER_TELEGRAM_WEBHOOK_SECRET_VAR) }
+}
+
+/** The address remembered for links when the app's connection was saved. */
+export function connectionPublicUrl(config: AgentConfig, app: TwoWayApp): string | undefined {
+  return savedConnection(config, app)?.publicUrl
+}
+
+/** The Telegram chat the agent posts requests in, if any. */
+export function telegramHomeChat(config: AgentConfig): string | undefined {
+  return config.httpNotifier?.channel === 'telegram' ? config.httpNotifier.config.chatId : savedConnection(config, 'telegram')?.chatId
+}
+
+/** People who have written to the agent's Telegram bot, newest first,
+ * for picking approvers: the Bot API can't list a chat's members. */
+export function listAgentTelegramPeople(config: AgentConfig): TelegramPerson[] {
+  return telegramPeople(agentDirFor(config))
+}
+
+/** Points the agent's Telegram bot at POST /hooks/telegram/<agent> on
+ * `baseUrl` (LOOPENGINE_PUBLIC_URL wins), with a secret made once and
+ * kept in the agent's env. From then on requests get buttons and replies
+ * reach the agent. */
+export async function setupAgentTelegramWebhook(config: AgentConfig, baseUrl: string): Promise<{ url: string; botUsername?: string }> {
+  const { botToken, webhookSecret } = telegramCredentialsFor(config)
+  if (!botToken) throw new Error('Save the Telegram bot token first')
+  const base = (process.env.LOOPENGINE_PUBLIC_URL || baseUrl).replace(/\/+$/, '')
+  if (!/^https:\/\//.test(base)) throw new Error('Telegram only sends updates to an https address; set LOOPENGINE_PUBLIC_URL to this server\'s https address')
+  const secret = webhookSecret ?? randomBytes(24).toString('hex')
+  const url = `${base}/hooks/telegram/${encodeURIComponent(config.name)}`
+  const set = await setTelegramWebhook(botToken, url, secret)
+  if (!set.ok) throw new Error(set.error)
+  if (!webhookSecret) await setAgentEnvVar(config.name, NOTIFIER_TELEGRAM_WEBHOOK_SECRET_VAR, secret)
+  return { url, ...(set.botUsername ? { botUsername: set.botUsername } : {}) }
+}
+
+/** Where the agent's Telegram bot sends its updates now. */
+export async function agentTelegramWebhookInfo(config: AgentConfig): Promise<{ url?: string; lastError?: string; pointsHere: boolean; botUsername?: string }> {
+  const { botToken } = telegramCredentialsFor(config)
+  if (!botToken) throw new Error('Save the Telegram bot token first')
+  const info = await telegramWebhookInfo(botToken)
+  if (!info.ok) throw new Error(info.error)
+  const botUsername = await telegramBotUsername(botToken)
+  return {
+    ...(info.url ? { url: info.url } : {}),
+    ...(info.lastError ? { lastError: info.lastError } : {}),
+    pointsHere: Boolean(info.url?.endsWith(`/hooks/telegram/${encodeURIComponent(config.name)}`)),
+    ...(botUsername ? { botUsername } : {}),
+  }
 }
 
 /** The people in the agent's Slack channel, for picking approvers. */

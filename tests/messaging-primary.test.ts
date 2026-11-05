@@ -152,8 +152,11 @@ describe('Telegram', () => {
     expect(notifierConfigFromFile(file, createAgentEnv('primary-agent', dir))).toEqual({ missingSecret: 'LOOPENGINE_NOTIFIER_TELEGRAM_BOT_TOKEN' })
     writeFileSync(join(dir, '.env'), 'LOOPENGINE_NOTIFIER_TELEGRAM_BOT_TOKEN=123:abc\n')
     expect(notifierConfigFromFile(file, createAgentEnv('primary-agent', dir)).config).toEqual({
-      channel: 'telegram', config: { botToken: '123:abc', chatId: '-1001234567890', publicUrl: undefined }, events: ['approval', 'question'],
+      channel: 'telegram', config: { botToken: '123:abc', chatId: '-1001234567890', publicUrl: undefined, buttons: false, replyHint: false }, events: ['approval', 'question'],
     })
+    // Buttons and the reply hint once the bot's webhook points here.
+    writeFileSync(join(dir, '.env'), 'LOOPENGINE_NOTIFIER_TELEGRAM_BOT_TOKEN=123:abc\nLOOPENGINE_NOTIFIER_TELEGRAM_WEBHOOK_SECRET=s\n')
+    expect(notifierConfigFromFile(file, createAgentEnv('primary-agent', dir)).config).toMatchObject({ config: { buttons: true, replyHint: true } })
   })
 
   it('posts a request with its decision link through sendMessage', async () => {
@@ -172,7 +175,9 @@ describe('Telegram', () => {
     expect(sent[0].body.text).toContain('issue_refund')
     // The link carries a signed token for this request (made fresh each time).
     expect(pendingId).toBeTruthy()
-    expect(sent[0].body.text).toMatch(/Approve or deny: https:[/][/]le[.]example[.]com[/]decide[/][A-Za-z0-9_.-]+/)
+    expect(sent[0].body.parse_mode).toBe('HTML')
+    expect(sent[0].body.text).toMatch(/<a href="https:[/][/]le[.]example[.]com[/]decide[/][A-Za-z0-9_.-]+">Open to approve or deny<[/]a>/)
+    expect(sent[0].body).not.toHaveProperty('reply_markup')
   })
 })
 

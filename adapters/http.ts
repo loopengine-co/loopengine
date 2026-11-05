@@ -100,11 +100,16 @@ import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/truste
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
 import { NotifierFileError } from '#core/notifier-file.js'
-import { verifyDecisionToken } from '#core/approval-links.js'
+import { decidePath, verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { agentApprovers, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
+import { agentApprovers, agentTelegramWebhookInfo, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, type TwoWayApp } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
-import { firstSighting, handleInboundMessage, handleMessagingAction, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
+import { firstSighting, handleInboundMessage, handleMessagingAction, outcomeText, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
+import { handleJobMessage, isJobMessage, settleJobThread, type JobDeps, type JobTurn } from '#core/messaging/jobs.js'
+import { findJobThreadBySession, findThread } from '#core/messaging/threads.js'
+import type { InboundMessage, MessagingConnector } from '#core/messaging/connector.js'
+import { formatArgs } from '#core/messaging/format-args.js'
+import { answerTelegramClick, createTelegramConnector, editTelegramMessage, parseTelegramUpdate, readTelegramThread, recordTelegramMessage, telegramBotUsername, telegramEscape, telegramRootOf, verifyTelegramRequest, type TelegramUpdate } from '#core/messaging/connectors/telegram/index.js'
 import { describeChange } from '#core/messaging/decide.js'
 import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
@@ -159,7 +164,7 @@ import { workspaceTimeZone } from '#core/time-zone.js'
 import { scaffoldAgent, AgentNameError, AgentExistsError, AgentModelError, type AgentTemplateOptions } from '#bin/cli.js'
 import { createTrackedApprover, listApprovals, decideApproval, findApproval } from '#web/web-approver.js'
 import { listQuestions, answerQuestion, findQuestion, createAskUserTool, createScheduleTools, type PendingQuestion } from '#core/system-tools/index.js'
-import { WebhookNotifier } from '#core/http-notify-triggers/webhook.js'
+import { WebhookNotifier, publicBaseUrl } from '#core/http-notify-triggers/webhook.js'
 import type { Decision, PendingApproval } from 'actauth'
 import type { LoopEvent } from '#core/loop-events.js'
 import { storageSigners } from '#core/storage-signers/index.js'
@@ -1971,11 +1976,31 @@ async function handleApproversPut(req: IncomingMessage, res: ServerResponse, age
   }
   const body = await readJsonBody(req)
   try {
-    const approvers = setAgentApprovers(entry.config, body.approvers)
+    const approvers = setAgentApprovers(entry.config, body.approvers, body.app === 'telegram' ? 'telegram' : 'slack')
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ approvers }))
   } catch (err) {
     const status = err instanceof NotifierFileError ? 400 : 500
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+// Messaging tab → Telegram: where the bot's updates go (GET), and
+// pointing them at this server (POST), which turns on buttons and
+// replies. Setting it needs the admin login, like saving a secret.
+async function handleTelegramWebhookSetup(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  const entry = getEntry(agentName)
+  if (!entry) return json(404, { error: `unknown agent '${agentName}'` })
+  try {
+    if (req.method === 'GET') return json(200, await agentTelegramWebhookInfo(entry.config))
+    if (!secretsProtected) return json(403, { error: 'Setting up the Telegram webhook needs LOOPENGINE_ADMIN_AUTH set on the server.' })
+    const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0]
+    const base = `${forwardedProto || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http')}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`
+    return json(200, await setupAgentTelegramWebhook(entry.config, base))
+  } catch (err) {
+    return json(400, { error: err instanceof Error ? err.message : String(err) })
   }
 }
 
@@ -3199,6 +3224,7 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
   }
   const environment = process.env.LOOPENGINE_ENV ?? 'production'
   const storageSessionId = `${finalCheckpoint.tenant}:${environment}:${finalCheckpoint.agent}:${finalCheckpoint.sessionId}`
+  const fromJobThread = Boolean(findJobThreadBySession(agentDirFor(entry.config), finalCheckpoint.sessionId))
 
   const responseBody = await sessions.withSession(storageSessionId, async (history) => {
     // Same channel/approver/questionHandler fallback the original
@@ -3226,8 +3252,9 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
       tenant: finalCheckpoint.tenant,
       sessionId: finalCheckpoint.sessionId,
       channel: 'http',
-      approver: defaultHttpWebhookNotifier ?? createTrackedApprover(finalCheckpoint.sessionId),
-      questionHandler: defaultHttpWebhookNotifier,
+      // A job thread's run keeps asking in its thread (runJobTurn).
+      approver: fromJobThread ? threadApprover : defaultHttpWebhookNotifier ?? createTrackedApprover(finalCheckpoint.sessionId),
+      questionHandler: fromJobThread ? threadQuestions : defaultHttpWebhookNotifier,
       onQuestionPending: () => {},
     })
     // The resumed turn can itself hit another durably-pending call/
@@ -3245,6 +3272,7 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
   const resumed = { text: responseBody.text, pendingIds: responseBody.pending?.map((p) => p.pendingId) }
   void scheduler.settleFromResume(finalCheckpoint.sessionId, resumed).catch((err) => console.error('[loopengine] could not settle scheduled run:', err))
   void workflowRunner.settleFromResume(finalCheckpoint.sessionId, resumed).catch((err) => console.error('[loopengine] could not settle workflow run:', err))
+  if (fromJobThread) void settleJobFromResume(finalCheckpoint.agent, finalCheckpoint.sessionId, responseBody.text, responseBody.pending).catch((err) => console.error('[loopengine] could not answer in the job thread:', err))
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({ text: responseBody.text, sessionId: finalCheckpoint.sessionId, ...(responseBody.stopReason ? { stopReason: responseBody.stopReason } : {}), ...(responseBody.pending ? { pending: responseBody.pending } : {}) }),
   )
@@ -3620,24 +3648,217 @@ async function handleSlackEvents(req: IncomingMessage, res: ServerResponse, agen
   }
   // Slack wants an answer within three seconds; the reply is posted after.
   res.writeHead(200).end()
-  if (event.type !== 'message' || !firstSighting(event) || !slackConversationsOn(entry.config)) return
-  await handleInboundMessage(event, slackMessagingDeps(agentName, entry, botToken))
+  if (event.type !== 'message') return
+  await routeInboundMessage(agentName, entry, event, createSlackConnector(botToken))
+}
+
+// Where a person's message goes (core/messaging/): a reply under a
+// request still waiting goes to the request's thread conversation; a DM,
+// a mention, or a message in a job's thread runs the agent
+// (core/messaging/jobs.ts). Anything else is left alone. Checked before
+// the message counts as seen: Slack sends a mention twice (as a message
+// and as an app_mention), and only the app_mention starts a job.
+async function routeInboundMessage(agentName: string, entry: RegistryEntry, message: InboundMessage, connector: MessagingConnector): Promise<void> {
+  const app = connector.app as TwoWayApp
+  const dir = agentDirFor(entry.config)
+  const jobs = jobsOn(entry.config, app) && isJobMessage(dir, message)
+  let target: 'request' | 'job' | undefined = jobs ? 'job' : undefined
+  if (message.threadTs) {
+    const link = findThread(dir, app, message.conversation, message.threadTs)
+    // A request already decided in a job's thread: the job carries on.
+    if (link && (!jobs || (await checkpoints.get(link.pendingId)))) target = conversationsOn(entry.config, app) ? 'request' : undefined
+  }
+  if (!target || !firstSighting(message)) return
+  if (target === 'request') await handleInboundMessage(message, messagingDeps(agentName, entry, connector))
+  else await handleJobMessage(message, jobDeps(agentName, entry, connector))
+}
+
+// A Telegram bot's webhook (core/messaging/connectors/telegram/), set up
+// from the Messaging tab: people's messages (replies to a request, and
+// DMs and mentions that start jobs) and clicks on the agent's buttons.
+// Outside the admin login like Slack's endpoints, and checked against the
+// secret Telegram was given when the webhook was set. Telegram resends an
+// update that isn't answered 200 promptly, so it's answered first.
+async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse, agentName: string): Promise<void> {
+  const rawBody = await readRawBody(req)
+  const entry = getEntry(agentName)
+  const { botToken, webhookSecret } = entry ? telegramCredentialsFor(entry.config) : {}
+  if (!entry || !botToken || !webhookSecret) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('No Telegram webhook is set up for this agent.')
+    return
+  }
+  const header = req.headers['x-telegram-bot-api-secret-token']
+  if (!verifyTelegramRequest(typeof header === 'string' ? header : undefined, webhookSecret)) {
+    res.writeHead(401, { 'content-type': 'text/plain' }).end('Invalid Telegram secret token.')
+    return
+  }
+  res.writeHead(200).end()
+  const dir = agentDirFor(entry.config)
+  const update = parseTelegramUpdate(rawBody, { botUsername: await telegramBotUsername(botToken), rootOf: (chat, id) => telegramRootOf(dir, chat, id) })
+  const connector = createTelegramConnector(botToken, dir)
+  if (update.type === 'message') {
+    // Kept for the thread's context and the approver picker: Telegram
+    // can't be asked for either later.
+    recordTelegramMessage(dir, {
+      chat: update.conversation, id: update.ts, root: update.threadTs ?? update.ts, user: update.user, fromBot: false, text: update.text,
+      ...(update.userName ? { name: update.userName } : {}), ...(update.username ? { username: update.username } : {}),
+    })
+    await routeInboundMessage(agentName, entry, update, connector)
+  } else if (update.type === 'click') {
+    await handleTelegramClick(agentName, entry, botToken, connector, update)
+  }
+}
+
+// A click on one of the agent's Telegram buttons: a request's Approve or
+// Deny, a question's option, or a button under a thread reply (Approve as
+// changed, Keep original, Confirm, Cancel). The message the button was on
+// is edited to say what happened, which also takes its buttons away.
+async function handleTelegramClick(agentName: string, entry: RegistryEntry, botToken: string, connector: MessagingConnector, click: Extract<TelegramUpdate, { type: 'click' }>): Promise<void> {
+  // Once the agent has Telegram approvers, only their clicks count.
+  const gate = clickAllowed(entry.config, 'telegram', click.user)
+  if (!gate.allowed) {
+    await answerTelegramClick(botToken, click.callbackId, gate.message)
+    return
+  }
+  await answerTelegramClick(botToken, click.callbackId)
+  const deps = messagingDeps(agentName, entry, connector)
+  const who = click.username ? `@${click.username}` : click.userName ?? 'someone'
+  if (click.button.type === 'action') {
+    const text = await handleMessagingAction(click.button.action, click.pendingId, click.user, deps)
+    await editTelegramMessage(botToken, click.conversation, click.messageId, text)
+    return
+  }
+  const item = (await checkpoints.get(click.pendingId))?.outstanding[click.pendingId]
+  let decision: MessagingDecision
+  let answer: string | undefined
+  if (click.button.type === 'decide') {
+    decision = { kind: click.button.decision }
+  } else {
+    const options = item?.args.options
+    answer = Array.isArray(options) && typeof options[click.button.index] === 'string' ? (options[click.button.index] as string) : undefined
+    // Gone from the checkpoint: decided already, or an option list that changed.
+    decision = answer === undefined ? { kind: 'deny' } : { kind: 'answer', answer }
+    if (answer === undefined) {
+      await editTelegramMessage(botToken, click.conversation, click.messageId, item ? 'That option is no longer offered.' : 'This was already decided elsewhere.')
+      return
+    }
+  }
+  const outcome = await decideFromMessaging(click.pendingId, decision)
+  const kind = decision.kind === 'answer' ? 'answer' : decision.kind
+  if (!outcome.error && !outcome.alreadyResolved) {
+    const done = kind === 'approve' ? 'Approved' : kind === 'deny' ? 'Denied' : 'Answered'
+    await settleThreadChoice(deps, click.pendingId, `${done} by ${who} with the request's own buttons.`).catch((err) => console.error('[loopengine] Telegram update failed:', err))
+  }
+  // The request as it was, with what happened under it.
+  const settled = !outcome.error && !outcome.alreadyResolved
+  let result = outcomeText(kind, who, outcome, answer === undefined ? undefined : telegramEscape(answer))
+  if (kind === 'approve' && settled) result = `**Approved by ${who}.** ${result}`
+  const request = readTelegramThread(agentDirFor(entry.config), click.conversation, click.messageId).find((m) => m.ts === click.messageId)?.text
+  if (request) result = `${request}\n\n${result}`
+  else if (item && kind === 'approve' && settled) result += `\nRan \`${item.tool}\` with:\n${formatArgs(item.args, telegramEscape, (await resolveAgentTool(entry.config, item.tool))?.input_schema)}`
+  await editTelegramMessage(botToken, click.conversation, click.messageId, result)
+}
+
+// A job someone started by messaging the agent (core/messaging/jobs.ts).
+function jobDeps(agentName: string, entry: RegistryEntry, connector: MessagingConnector): JobDeps {
+  const app = connector.app as TwoWayApp
+  return {
+    agentName,
+    agentDir: agentDirFor(entry.config),
+    connector,
+    plan: process.env.LOOPENGINE_PLAN,
+    allowed: (message) => jobAllowed(entry.config, app, message),
+    runTurn: (sessionId, text) => runJobTurn(agentName, sessionId, text),
+    decideLink: (pendingId, kind) => {
+      const base = publicBaseUrl(connectionPublicUrl(entry.config, app))
+      return base ? `${base}${decidePath(pendingId, kind)}` : undefined
+    },
+  }
+}
+
+// A job thread's approvals and questions wait in the thread itself
+// (core/messaging/jobs.ts posts them), so the run's own approver only
+// hands out an id. The agent's notifier, when it has one, still sends its
+// request too, and wins: run-agent prefers it on the http channel.
+const threadApprover = {
+  requestApproval: async () => false,
+  requestDurableApproval: () => ({ pendingId: randomUUID() }),
+}
+const threadQuestions = {
+  requestQuestion: async () => NO_HUMAN_ANSWER,
+  notifyPendingQuestion: () => ({ pendingId: randomUUID() }),
+}
+
+function jobTurnOf(text: string, pending: PendingSummary[] | undefined): JobTurn {
+  if (!pending?.length) return { kind: 'done', text }
+  return {
+    kind: 'pending',
+    items: pending.map((p) => ({
+      pendingId: p.pendingId,
+      kind: p.kind,
+      tool: p.tool,
+      ...(p.kind === 'question' ? { question: typeof p.args.question === 'string' ? p.args.question : p.reason } : {}),
+    })),
+  }
+}
+
+// One turn of a job thread: the same session for the whole thread.
+async function runJobTurn(agent: string, rawSessionId: string, message: string): Promise<JobTurn> {
+  const entry = getEntry(agent)
+  if (!entry) throw new Error(`no agent named "${agent}" in this project`)
+  const tenant = 'default'
+  const environment = process.env.LOOPENGINE_ENV ?? 'production'
+  const outcome = await sessions.withSession(`${tenant}:${environment}:${agent}:${rawSessionId}`, async (history) => {
+    const result = await runAgent(entry.config, entry.createModelCall(), message, history, {
+      tenant,
+      sessionId: rawSessionId,
+      channel: 'http',
+      approver: threadApprover,
+      questionHandler: threadQuestions,
+    })
+    if (result.pending) await createCheckpointFromPending(agent, tenant, rawSessionId, result.pending)
+    return { newMessages: result.newMessages, result: { text: result.text, pending: pendingSummary(result.pending) } }
+  })
+  return jobTurnOf(outcome.text, outcome.pending)
+}
+
+// A resumed run that came from a job thread answers there.
+async function settleJobFromResume(agent: string, sessionId: string, text: string, pending: PendingSummary[] | undefined): Promise<void> {
+  const entry = getEntry(agent)
+  if (!entry) return
+  const job = findJobThreadBySession(agentDirFor(entry.config), sessionId)
+  if (!job) return
+  let connector: MessagingConnector | undefined
+  if (job.app === 'slack') {
+    const { botToken } = slackCredentialsFor(entry.config)
+    if (botToken) connector = createSlackConnector(botToken)
+  } else if (job.app === 'telegram') {
+    const { botToken } = telegramCredentialsFor(entry.config)
+    if (botToken) connector = createTelegramConnector(botToken, agentDirFor(entry.config))
+  }
+  if (!connector) return
+  await settleJobThread(jobDeps(agent, entry, connector), sessionId, jobTurnOf(text, pending))
 }
 
 // What core/messaging/ needs from this server to answer, decide and
 // change an agent's Slack requests.
 function slackMessagingDeps(agentName: string, entry: RegistryEntry, botToken: string): MessagingDeps {
+  return messagingDeps(agentName, entry, createSlackConnector(botToken))
+}
+
+// The same, for any app's connector.
+function messagingDeps(agentName: string, entry: RegistryEntry, connector: MessagingConnector): MessagingDeps {
   const environment = process.env.LOOPENGINE_ENV ?? 'production'
   return {
     agentName,
     agentDir: agentDirFor(entry.config),
     systemPrompt: entry.config.systemPrompt,
-    connector: createSlackConnector(botToken),
+    connector,
     createModelCall: () => entry.createModelCall(),
     getCheckpoint: (pendingId) => checkpoints.get(pendingId),
     getHistory: (checkpoint) => sessions.getHistory(`${checkpoint.tenant}:${environment}:${checkpoint.agent}:${checkpoint.sessionId}`),
     plan: process.env.LOOPENGINE_PLAN,
-    approvers: () => agentApprovers(entry.config),
+    approvers: () => agentApprovers(entry.config, connector.app as TwoWayApp),
     decide: decideFromMessaging,
     toolSchema: async (toolName) => (await resolveAgentTool(entry.config, toolName))?.input_schema,
     // The same checks the console's approve-with-edits applies, plus the
@@ -3661,6 +3882,10 @@ function slackMessagingDeps(agentName: string, entry: RegistryEntry, botToken: s
 // recorded through the same resolve and answer handlers as the console's
 // buttons.
 async function decideFromMessaging(pendingId: string, decision: MessagingDecision): Promise<DecisionOutcome> {
+  // A run from a job thread posts its own result there once it resumes
+  // (settleJobFromResume), so it isn't quoted here as well.
+  const checkpoint = await checkpoints.get(pendingId)
+  const fromJob = checkpoint ? Boolean(getEntry(checkpoint.agent) && findJobThreadBySession(agentDir(checkpoint.agent), checkpoint.sessionId)) : false
   const capture = captureResponse()
   if (decision.kind === 'answer') await answerPendingQuestion(capture.res, pendingId, { answer: decision.answer })
   else await resolvePendingApproval(capture.res, pendingId, { decision: decision.kind, ...(decision.kind === 'approve' && decision.editedArgs ? { editedArgs: decision.editedArgs } : {}) })
@@ -3669,7 +3894,7 @@ async function decideFromMessaging(pendingId: string, decision: MessagingDecisio
   if (body.alreadyResolved) return { alreadyResolved: true }
   if (body.resolved) return { stillWaiting: true }
   if (Array.isArray(body.pending) && body.pending.length) return { morePending: true }
-  return { text: typeof body.text === 'string' ? body.text : undefined }
+  return { text: typeof body.text === 'string' && !fromJob ? body.text : undefined }
 }
 
 // ---- Webhook triggers (core/workflow-triggers.ts): an outside service
@@ -3799,6 +4024,18 @@ const server = createServer(async (req, res) => {
       await tracked(() => handleSlackInteraction(req, res, decodeURIComponent(slackHookMatch[1])))
     } catch (err) {
       console.error('[loopengine] Slack interaction failed:', err)
+      if (!res.headersSent) res.writeHead(500).end()
+    }
+    return
+  }
+
+  const telegramHookMatch = req.method === 'POST' && (req.url ?? '/').split('?')[0].match(/^\/hooks\/telegram\/([^/]+)$/)
+  if (telegramHookMatch) {
+    try {
+      lastRequestAt = Date.now()
+      await tracked(() => handleTelegramWebhook(req, res, decodeURIComponent(telegramHookMatch[1])))
+    } catch (err) {
+      console.error('[loopengine] Telegram update failed:', err)
       if (!res.headersSent) res.writeHead(500).end()
     }
     return
@@ -4448,6 +4685,18 @@ const server = createServer(async (req, res) => {
     const approversMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)\/notifier\/approvers$/)
     if (approversMatch) {
       await handleApproversPut(req, res, decodeURIComponent(approversMatch[1]))
+      return
+    }
+    const telegramPeopleMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/notifier\/telegram-people$/)
+    if (telegramPeopleMatch) {
+      const entry = getEntry(decodeURIComponent(telegramPeopleMatch[1]))
+      if (!entry) res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unknown agent' }))
+      else res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ people: listAgentTelegramPeople(entry.config) }))
+      return
+    }
+    const telegramWebhookMatch = (req.method === 'GET' || req.method === 'POST') && pathname.match(/^\/agents\/([^/]+)\/notifier\/telegram-webhook$/)
+    if (telegramWebhookMatch) {
+      await handleTelegramWebhookSetup(req, res, decodeURIComponent(telegramWebhookMatch[1]))
       return
     }
     const slackMembersMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/notifier\/slack-members$/)

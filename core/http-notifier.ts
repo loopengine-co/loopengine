@@ -17,6 +17,7 @@ import type { AgentConfig, HttpNotifierConfig, QuestionHandler } from './agent-c
 import { agentDirFor, createAgentEnv } from './agent-env.js'
 import { notifierConfigFromFile, readActiveConnections, readNotifierFile, type NotifierFile, type NotifierFileChannel } from './notifier-file.js'
 import { recordThread } from './messaging/threads.js'
+import { recordTelegramMessage } from './messaging/connectors/telegram/store.js'
 
 interface ResolvedHttpNotifier {
   approver?: Approver
@@ -158,7 +159,7 @@ function combineResolved(list: ResolvedHttpNotifier[]): ResolvedHttpNotifier {
   }
 }
 
-/** `agentDir`: where a Slack request's thread is recorded, so replies in
+/** `agentDir`: where a Slack or Telegram request's thread is recorded, so replies in
  * it reach the agent (core/messaging/). */
 function buildResolved(httpNotifier: HttpNotifierConfig, agentDir: string): ResolvedHttpNotifier {
   const events = new Set(httpNotifier.events)
@@ -208,8 +209,17 @@ function buildResolved(httpNotifier: HttpNotifierConfig, agentDir: string): Reso
       break
     }
     case 'telegram': {
-      const { botToken, chatId, publicUrl } = httpNotifier.config
-      const telegram = new TelegramNotifier({ botToken, chatId, publicUrl })
+      const { botToken, chatId, publicUrl, buttons, replyHint } = httpNotifier.config
+      // Each message starts a thread of its own (Telegram has none, see
+      // core/messaging/connectors/telegram/store.ts); a request's is
+      // linked to it, so replies to it reach the agent.
+      const telegram = new TelegramNotifier({
+        botToken, chatId, publicUrl, buttons, replyHint,
+        onPosted: ({ chat, messageId, text, pendingId, kind }) => {
+          recordTelegramMessage(agentDir, { chat, id: messageId, root: messageId, fromBot: true, text })
+          if (pendingId && kind) recordThread(agentDir, { app: 'telegram', conversation: chat, ts: messageId, pendingId, kind })
+        },
+      })
       return {
         approver: events.has('approval') ? telegram : undefined,
         questionHandler: events.has('question') ? telegram : undefined,

@@ -61,3 +61,53 @@ function readLinks(agentDir: string): ThreadLink[] {
 export function findThread(agentDir: string, app: string, conversation: string, ts: string): ThreadLink | undefined {
   return readLinks(agentDir).filter((link) => link.app === app && link.conversation === conversation && link.ts === ts).at(-1)
 }
+
+// Job threads: a job someone started by messaging the agent (a DM, or a
+// mention), and the session it runs in. Follow-ups in the thread continue
+// that session, and a run that paused for a decision posts its result
+// back here once it resumes. Kept in agents/<name>/.messaging/jobs.jsonl.
+
+export interface JobThread {
+  app: string
+  conversation: string
+  /** The thread's first message id. */
+  ts: string
+  sessionId: string
+}
+
+function jobsFile(agentDir: string): string {
+  return join(agentDir, '.messaging', 'jobs.jsonl')
+}
+
+function readJobs(agentDir: string): JobThread[] {
+  const path = jobsFile(agentDir)
+  if (!existsSync(path)) return []
+  const jobs: JobThread[] = []
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    if (!line) continue
+    try {
+      jobs.push(JSON.parse(line) as JobThread)
+    } catch {}
+  }
+  return jobs
+}
+
+/** Never throws, like recordThread. */
+export function recordJobThread(agentDir: string, job: JobThread): void {
+  try {
+    mkdirSync(join(agentDir, '.messaging'), { recursive: true })
+    const { app, conversation, ts, sessionId } = job
+    appendFileSync(jobsFile(agentDir), JSON.stringify({ app, conversation, ts, sessionId, at: new Date().toISOString() }) + '\n')
+  } catch (err) {
+    console.error('[loopengine] could not record the job thread:', err instanceof Error ? err.message : err)
+  }
+}
+
+export function findJobThread(agentDir: string, app: string, conversation: string, ts: string): JobThread | undefined {
+  return readJobs(agentDir).filter((job) => job.app === app && job.conversation === conversation && job.ts === ts).at(-1)
+}
+
+/** The session's latest job thread: where its last message came from. */
+export function findJobThreadBySession(agentDir: string, sessionId: string): JobThread | undefined {
+  return readJobs(agentDir).filter((job) => job.sessionId === sessionId).at(-1)
+}
