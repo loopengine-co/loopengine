@@ -10,7 +10,7 @@ import { addActauthRule, readActauthConfig } from './actauth-admin.js'
 import { writeSkill } from './skills-admin.js'
 import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
-import { planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
+import { planParameters, planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow } from '../core/workflows.js'
@@ -384,9 +384,12 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   const plan = input.plan as WorkflowPlan | undefined
   if (!plan || typeof plan !== 'object' || !Array.isArray(plan.steps) || !plan.skill || !plan.newAgent) throw new WorkflowError('Plan the workflow first.')
   const target = (input.target ?? plan.target) as { kind?: string; agent?: string }
-  // The plan's skill becomes a workflow: how a run starts, in its front matter.
+  // The plan's skill becomes a workflow: how a run starts, in its front
+  // matter. Its parameters are tidied again, as the plan may have been
+  // edited on the review screen.
+  const { parameters } = planParameters(plan.parameters, { startMessage: plan.startMessage, skillBody: plan.skill.body, scheduled: plan.trigger.kind === 'schedule' })
   const markWorkflow = (agentDir: string) =>
-    setWorkflowFields(agentDir, plan.id, { title: plan.name, startMessage: plan.startMessage, trigger: plan.trigger.description })
+    setWorkflowFields(agentDir, plan.id, { title: plan.name, startMessage: plan.startMessage, trigger: plan.trigger.description, parameters })
   const agents = await deps.agentInfo()
   resolveConnections(plan, agents)
   const keys = input.mcpKeys && typeof input.mcpKeys === 'object' ? Object.fromEntries(Object.entries(input.mcpKeys as Record<string, unknown>).flatMap(([k, v]) => (typeof v === 'string' && v.trim() ? [[k, v.trim()]] : []))) : {}

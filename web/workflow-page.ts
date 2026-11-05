@@ -29,6 +29,10 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-num { width: 24px; color: var(--ink-muted); }
   .wf-target { display: grid; gap: 8px; }
   .wf-target label { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
+  .wf-params { display: grid; gap: 6px; }
+  .wf-param { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+  .wf-param .wf-param-name { width: 160px; font-family: var(--mono, monospace); }
+  .wf-param .wf-param-desc { flex: 1; min-width: 200px; }
   .wf-gaps { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: var(--radius); padding: 10px 14px; }
   .wf-gaps ul, .wf-list { margin: 4px 0 0; padding-left: 18px; }
   .wf-gaps li, .wf-list li { margin: 3px 0; font-size: 13px; }
@@ -175,6 +179,54 @@ ${consoleShellScript}
       '</div>';
   }
 
+  // The $names a plan's start message and steps use: those parameters
+  // can't be removed here (the text needs them), only described.
+  function usedParamNames(p) {
+    var used = {};
+    var pattern = new RegExp('[$]([a-z_][a-z0-9_]*)', 'g');
+    var text = (p.startMessage || '') + ' ' + ((p.skill && p.skill.body) || '');
+    var m;
+    while ((m = pattern.exec(text))) used[m[1]] = true;
+    return used;
+  }
+
+  function paramRowHtml(name, spec, used) {
+    var fixed = name !== null;
+    return '<div class="wf-param"' + (fixed ? ' data-name="' + esc(name) + '"' : '') + '>' +
+      (fixed ? '<code class="wf-param-name">' + esc(name) + '</code>' : '<input class="wf-param-name" aria-label="Parameter name" placeholder="order_number">') +
+      '<input class="wf-param-desc" aria-label="What it is" placeholder="What it is" value="' + esc((spec && spec.description) || '') + '">' +
+      '<label><input type="checkbox" class="wf-param-required"' + (spec && spec.required ? ' checked' : '') + '> Required</label>' +
+      (fixed && used[name] ? '<span class="hint">used in the steps</span>' : '<button type="button" class="wf-btn plain wf-param-remove">Remove</button>') +
+      '</div>';
+  }
+
+  function paramsSectionHtml(p) {
+    var used = usedParamNames(p);
+    var names = Object.keys(p.parameters || {});
+    return '<h3>What each run is given</h3>' +
+      '<p class="hint" style="margin:0"><strong>Each run starts with:</strong> ' + esc(p.startMessage) + '</p>' +
+      '<p class="hint" style="margin:0">' + (names.length
+        ? 'Apps and people fill these in when they start a run; each $name in the start message and steps becomes its value.'
+        : 'Every run is the same. Add a parameter if something changes from run to run, such as an order number.') + '</p>' +
+      '<div class="wf-params" id="wfParams">' + names.map(function (n) { return paramRowHtml(n, p.parameters[n], used); }).join('') + '</div>' +
+      '<div><button type="button" class="wf-btn plain" id="wfAddParam">Add a parameter</button></div>';
+  }
+
+  // The parameters as edited on the plan; an error message for a bad name.
+  function readParams() {
+    var parameters = {};
+    var rows = page.querySelectorAll('#wfParams .wf-param');
+    for (var i = 0; i < rows.length; i++) {
+      var input = rows[i].querySelector('input.wf-param-name');
+      var name = rows[i].dataset.name || (input ? input.value.trim() : '');
+      if (!name) continue;
+      if (!/^[a-z_][a-z0-9_]*$/.test(name)) return { error: 'Parameter "' + name + '": use lowercase letters, digits and _, starting with a letter, e.g. order_number.' };
+      if (parameters[name]) return { error: 'Parameter "' + name + '" is listed twice.' };
+      parameters[name] = { description: rows[i].querySelector('.wf-param-desc').value.trim(), required: rows[i].querySelector('.wf-param-required').checked };
+    }
+    return { parameters: parameters };
+  }
+
   function renderPlan(error) {
     var p = state.planned.plan;
     var suggested = p.target.kind === 'existing' && p.target.agent ? p.target.agent : '';
@@ -183,6 +235,7 @@ ${consoleShellScript}
       '<div class="wf-card">' +
         '<h2>' + esc(p.name) + '</h2><p style="margin:0">' + esc(p.summary) + '</p>' +
         '<p class="hint" style="margin:0"><strong>Starts:</strong> ' + esc(p.trigger.description) + (p.trigger.kind === 'schedule' ? ' (created paused; you turn it on)' : '') + '</p>' +
+        paramsSectionHtml(p) +
         '<h3>Steps</h3>' +
         '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th></th><th>Step</th><th>Becomes</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
         (p.rules.length ? '<h3>Permissions it sets</h3><ul class="wf-list">' + p.rules.map(function (r) { return '<li><code>' + esc(r.tool) + '</code> ' + pill(r.decision) + '</li>'; }).join('') + '</ul>' : '') +
@@ -207,7 +260,18 @@ ${consoleShellScript}
         '<span class="hint" id="wfStatus"></span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '');
     document.getElementById('wfBack').addEventListener('click', function () { renderDescribe(); });
+    var paramsBox = document.getElementById('wfParams');
+    paramsBox.addEventListener('click', function (ev) {
+      if (ev.target.classList.contains('wf-param-remove')) ev.target.closest('.wf-param').remove();
+    });
+    document.getElementById('wfAddParam').addEventListener('click', function () {
+      paramsBox.insertAdjacentHTML('beforeend', paramRowHtml(null, null, {}));
+      paramsBox.lastElementChild.querySelector('input.wf-param-name').focus();
+    });
     document.getElementById('wfCreate').addEventListener('click', function () {
+      var edited = readParams();
+      if (edited.error) { document.getElementById('wfStatus').textContent = edited.error; return; }
+      p.parameters = edited.parameters;
       var chosen = page.querySelector('input[name="wfTarget"]:checked');
       var target = chosen.value === 'new' ? { kind: 'new' } : { kind: 'existing', agent: chosen.value === 'other' ? document.getElementById('wfOther').value : chosen.dataset.agent };
       var btn = document.getElementById('wfCreate');

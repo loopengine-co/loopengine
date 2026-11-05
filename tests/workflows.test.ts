@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
-import { planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
+import { planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
 import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
 import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
@@ -66,6 +66,46 @@ describe('a workflow plan', () => {
     expect(t.setup.rules.map((r) => [r.tool, r.decision])).toEqual([['web_search', 'allow'], ['draft_blog_post', 'ask']])
     expect(t.setup.schedule).toEqual({ every: '7d', at: '09:00', weekday: 1, name: 'Weekly blog post', message: 'Run the weekly blog post workflow.', workflowId: 'weekly-blog-post' })
     expect(t.candidate.agent.name).toBe('blog-writer')
+  })
+})
+
+describe("a plan's parameters", () => {
+  const onRequest = { kind: 'on_request', description: 'When a refund request comes in' }
+
+  it('come from the planner, with names tidied and descriptions kept', () => {
+    const plan = validateWorkflowPlan({
+      ...RAW_PLAN,
+      trigger: onRequest,
+      startMessage: 'Check the refund request for order $order_number.',
+      skill: { description: 'Refund check', body: '1. Look up order $order_number.\n2. Weigh $customer_note.' },
+      parameters: { 'Order Number': { description: 'The order to check', required: true }, customer_note: { description: 'What the customer wrote' }, '123': {} },
+    })!
+    expect(plan.parameters).toEqual({
+      order_number: { description: 'The order to check', required: true },
+      customer_note: { description: 'What the customer wrote', required: false },
+    })
+  })
+
+  it('declare a $name the start message or steps use but the planner left out', () => {
+    const plan = validateWorkflowPlan({ ...RAW_PLAN, trigger: onRequest, startMessage: 'Triage this alert: $alert', skill: { description: 'Triage', body: 'Find what changed in $service.' } })!
+    expect(plan.parameters).toEqual({ alert: { description: '', required: false }, service: { description: '', required: false } })
+  })
+
+  it('are none for a job that is the same every run', () => {
+    expect(validateWorkflowPlan(RAW_PLAN)!.parameters).toEqual({})
+  })
+
+  it('are never required on a scheduled workflow, with a note saying why', () => {
+    const plan = validateWorkflowPlan({ ...RAW_PLAN, startMessage: 'Write the digest for $region.', parameters: { region: { description: 'Which region', required: true } } })!
+    expect(plan.trigger.kind).toBe('schedule')
+    expect(plan.parameters).toEqual({ region: { description: 'Which region', required: false } })
+    expect(plan.gaps.at(-1)).toMatch(/A schedule can't fill in region, so it is optional/)
+  })
+
+  it('are tidied again when an edited plan is created', () => {
+    const { parameters, notes } = planParameters({ order_number: { description: 'Edited', required: true }, 'Bad Name!': {} }, { startMessage: 'Check $order_number.', skillBody: 'Steps.', scheduled: false })
+    expect(parameters).toEqual({ order_number: { description: 'Edited', required: true }, bad_name: { description: '', required: false } })
+    expect(notes).toEqual([])
   })
 })
 
