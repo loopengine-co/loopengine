@@ -61,16 +61,19 @@ export interface NotifierFile {
    * remembered from the console's own address when saving.
    * LOOPENGINE_PUBLIC_URL, when set, wins over it. */
   publicUrl?: string
-  /** slack: answer replies in a request's thread (core/messaging/).
-   * Unset counts as on. */
+  /** slack, telegram: answer replies in a request's thread
+   * (core/messaging/). Unset counts as on. */
   conversations?: boolean
-  /** slack: the people who can decide a request by replying in its
-   * thread, and whose button clicks count once any are listed. */
+  /** slack, telegram: the people who can decide a request by replying in
+   * its thread, and whose button clicks count once any are listed. */
   approvers?: MessagingApprover[]
+  /** slack, telegram: a DM to the bot, or a mention of it, starts a job
+   * (core/messaging/jobs.ts). Unset counts as off. */
+  jobs?: boolean
 }
 
 export interface MessagingApprover {
-  /** The app's id for the person (Slack: U0123ABC). */
+  /** The app's id for the person (Slack: U0123ABC; Telegram: 123456789). */
   user: string
   /** Their name when they were added, for the console. */
   name?: string
@@ -89,6 +92,15 @@ export const NOTIFIER_SECRET_VARS: Record<NotifierFileChannel, string> = {
  * Approve/Deny buttons in Slack, handled by the server itself at
  * POST /hooks/slack/<agent>; unset, messages carry only the decision link. */
 export const NOTIFIER_SLACK_SIGNING_SECRET_VAR = 'LOOPENGINE_NOTIFIER_SLACK_SIGNING_SECRET'
+
+/** A secret LoopEngine makes when it points a Telegram bot's webhook at
+ * POST /hooks/telegram/<agent>; Telegram sends it back with every update.
+ * Set, requests get Approve/Deny buttons and replies reach the agent;
+ * unset, messages carry only the decision link. */
+export const NOTIFIER_TELEGRAM_WEBHOOK_SECRET_VAR = 'LOOPENGINE_NOTIFIER_TELEGRAM_WEBHOOK_SECRET'
+
+/** The apps whose people can talk to the agent there (core/messaging/). */
+const TWO_WAY: NotifierFileChannel[] = ['slack', 'telegram']
 
 /** In the order the Messaging tab lists them: the messaging apps, then
  * the webhook. */
@@ -126,14 +138,22 @@ export function validateNotifierFile(input: unknown): NotifierFile {
   const file: NotifierFile = { channel, events: events as HttpNotifierEvent[] }
   if (raw.conversations !== undefined) {
     if (typeof raw.conversations !== 'boolean') throw new NotifierFileError('conversations must be true or false')
-    if (channel === 'slack') file.conversations = raw.conversations
+    if (TWO_WAY.includes(channel)) file.conversations = raw.conversations
   }
-  if (raw.approvers !== undefined && channel === 'slack') {
+  if (raw.jobs !== undefined) {
+    if (typeof raw.jobs !== 'boolean') throw new NotifierFileError('jobs must be true or false')
+    if (TWO_WAY.includes(channel) && raw.jobs) file.jobs = true
+  }
+  if (raw.approvers !== undefined && TWO_WAY.includes(channel)) {
     if (!Array.isArray(raw.approvers)) throw new NotifierFileError('approvers must be a list')
     const approvers: MessagingApprover[] = []
     for (const a of raw.approvers as unknown[]) {
+      // Telegram ids are numbers; YAML may read one back as a number.
       const entry = a as { user?: unknown; name?: unknown } | null
-      if (!entry || typeof entry.user !== 'string' || !/^[A-Z0-9]{2,32}$/.test(entry.user)) throw new NotifierFileError('each approver needs a Slack user id, like U0123ABC')
+      if (entry && channel === 'telegram' && typeof entry.user === 'number') entry.user = String(entry.user)
+      if (channel === 'slack' && (!entry || typeof entry.user !== 'string' || !/^[A-Z0-9]{2,32}$/.test(entry.user))) throw new NotifierFileError('each approver needs a Slack user id, like U0123ABC')
+      if (channel === 'telegram' && (!entry || typeof entry.user !== 'string' || !/^[0-9]{1,20}$/.test(entry.user))) throw new NotifierFileError('each approver needs a Telegram user id, like 123456789')
+      if (!entry || typeof entry.user !== 'string') continue
       if (approvers.some((x) => x.user === entry.user)) continue
       approvers.push({ user: entry.user, ...(typeof entry.name === 'string' && entry.name.trim() ? { name: entry.name.trim().slice(0, 80) } : {}) })
     }
@@ -321,9 +341,24 @@ export function notifierConfigFromFile(file: NotifierFile, env: AgentEnv, agentN
       // No card buttons: nothing built in handles Lark's card callbacks yet,
       // so a console-configured Lark notifier relies on the decision link.
       return { config: { channel: 'lark', config: { appId: file.appId!, appSecret: secret, chatId: file.chatId!, publicUrl: file.publicUrl, buttons: false }, events: file.events } }
-    case 'telegram':
-      // Links to the decision page, like Lark without buttons.
-      return { config: { channel: 'telegram', config: { botToken: secret, chatId: file.chatId!, publicUrl: file.publicUrl }, events: file.events } }
+    case 'telegram': {
+      // Buttons once the bot's webhook points at /hooks/telegram/<agent>
+      // (the secret is made then); otherwise the decision link does the job.
+      const webhook = Boolean(env.get(NOTIFIER_TELEGRAM_WEBHOOK_SECRET_VAR))
+      return {
+        config: {
+          channel: 'telegram',
+          config: {
+            botToken: secret,
+            chatId: file.chatId!,
+            publicUrl: file.publicUrl,
+            buttons: webhook,
+            replyHint: webhook && file.conversations !== false && process.env.LOOPENGINE_PLAN !== 'free',
+          },
+          events: file.events,
+        },
+      }
+    }
     case 'email':
       // Links to the decision page, like Lark without buttons; the secret
       // is the provider's API key.

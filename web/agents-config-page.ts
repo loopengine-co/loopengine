@@ -1606,17 +1606,34 @@ ${consoleShellScript}
     return '<strong>Nowhere yet.</strong> Set up an app below; the first messaging app you save becomes primary.' + fallback + rule;
   }
 
-  // Slack only: whether replies in a request's thread are answered. On
+  // Slack and Telegram: whether replies to a request are answered. On
   // unless turned off; locked on LoopEngine Cloud's free plan.
-  function renderConversationsField(n, f) {
+  function renderConversationsField(n, f, app) {
     var free = n.plan === 'free';
     var on = !free && f.conversations !== false;
+    var where = app === 'telegram' ? 'Answer replies to a request' : 'Answer replies in a request&#39;s thread';
     return '<div class="body-field" style="margin:4px 0 0">' +
-      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="conversations" id="slackConversations"' + (on ? ' checked' : '') + (free ? ' disabled' : '') + '> ' +
-      'Answer replies in a request&#39;s thread' + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
+      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="conversations" id="' + app + 'Conversations"' + (on ? ' checked' : '') + (free ? ' disabled' : '') + '> ' +
+      where + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
       '<p class="hint" style="margin:2px 0 0">' + (free
-        ? 'Talking a request through in Slack needs LoopEngine Pro. Approve and Deny buttons work on every plan.'
-        : 'People can ask the agent about a request in its thread, and it answers there. Approvers (below) can also decide it there.') + '</p></div>';
+        ? 'Talking a request through in ' + CHANNEL_TITLES[app] + ' needs LoopEngine Pro. Approve and Deny buttons work on every plan.'
+        : (app === 'telegram'
+          ? 'People can reply to a request to ask the agent about it, and it answers there. Approvers (below) can also decide it that way.'
+          : 'People can ask the agent about a request in its thread, and it answers there. Approvers (below) can also decide it there.')) + '</p></div>';
+  }
+
+  // Slack and Telegram: whether a DM to the bot, or a mention of it,
+  // runs the agent. Off unless turned on; locked on the free plan.
+  function renderJobsField(n, f, app) {
+    var free = n.plan === 'free';
+    var on = !free && f.jobs === true;
+    var how = app === 'telegram'
+      ? 'A private chat with the bot, or @mentioning it in a group, runs the agent on that message, and it answers with a reply. Replying to its answer carries the job on. In a group the bot only sees mentions when it&#39;s an admin or its privacy mode is off (@BotFather, /setprivacy); replies to its messages always reach it.'
+      : 'A DM to the bot, or @mentioning it in a channel, runs the agent on that message, and it answers in a thread. Replies in the thread carry the job on.';
+    return '<div class="body-field" style="margin:4px 0 0">' +
+      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="jobs" id="' + app + 'Jobs"' + (on ? ' checked' : '') + (free ? ' disabled' : '') + '> ' +
+      'Start jobs from messages' + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
+      '<p class="hint" style="margin:2px 0 0">' + (free ? 'Starting jobs from ' + CHANNEL_TITLES[app] + ' needs LoopEngine Pro.' : how + ' Only approvers (below) can give it jobs; with none listed, anyone in its ' + (app === 'telegram' ? 'chat' : 'channel') + ' can, but not by direct message. A request it needs approved waits in the same thread.') + '</p></div>';
   }
 
   // A secret's state at a glance: a pill by the label, and a placeholder
@@ -1661,7 +1678,15 @@ ${consoleShellScript}
           '</ol></details>' +
         secretField(n, 'telegram', 'Bot token') +
         '<label>Chat ID <span class="hint">(a group or channel id like -1001234567890, or @channelname)</span><input name="chatId" placeholder="-1001234567890" value="' + escapeHtml(f.chatId || '') + '"></label>' +
-        '<p class="hint" style="margin:0">Each message links to a page where the person approves, denies or answers; there are no buttons in Telegram yet.</p>';
+        '<div class="body-field" style="margin:0">Replies and buttons' +
+          '<p class="hint" style="margin:2px 0 6px">' + (n.telegram && n.telegram.webhookSet
+            ? 'Telegram sends the bot&#39;s messages and button clicks to this server, so requests have Approve and Deny buttons and replies reach the agent.'
+            : 'Each message links to a page where the person approves, denies or answers. Connect the bot to this server (save the bot token first) to add Approve and Deny buttons and let people reply.') + '</p>' +
+          '<span style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" id="telegramWebhookSet"' + (n.secretsSet && n.secretsSet.telegram ? '' : ' disabled') + '>' + (n.telegram && n.telegram.webhookSet ? 'Connect again' : 'Connect the bot') + '</button>' +
+          (n.telegram && n.telegram.webhookSet ? '<button type="button" id="telegramWebhookCheck">Check connection</button>' : '') + '</span>' +
+          '<div class="hint" id="telegramWebhookResult"></div></div>' +
+        renderConversationsField(n, f, 'telegram') +
+        renderJobsField(n, f, 'telegram');
     }
     if (channel === 'slack') {
       return '<details class="slack-step"' + (n.secretsSet && n.secretsSet.slack ? '' : ' open') + '><summary>Create the Slack app (once)</summary>' +
@@ -1682,7 +1707,8 @@ ${consoleShellScript}
           (n.slack && n.slack.signingSecretSet ? 'buttons and replies in Slack are on' : 'needed for buttons and replies in Slack; without it, messages only carry the approval link') + ')</span>' +
           '<input type="password" name="signingSecret" autocomplete="off" placeholder="' + escapeHtml(secretPlaceholder(n.slack && n.slack.signingSecretSet, 'Paste the Signing Secret')) + '"></label>' +
         '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>' +
-        renderConversationsField(n, f) +
+        renderConversationsField(n, f, 'slack') +
+        renderJobsField(n, f, 'slack') +
         '<p class="hint" style="margin:0" id="slackEventsNote"></p>';
     }
     if (channel === 'lark') {
@@ -1787,40 +1813,48 @@ ${consoleShellScript}
     return html;
   }
 
-  // Slack only: the people who can decide by replying in a request's
-  // thread, and whose button clicks count once any are listed. Shown once
-  // a Slack connection is saved; they only act while Slack is primary.
-  function renderApproversHtml(n) {
-    var slack = connectionFor(n, 'slack');
-    if (n.source === 'code' || !slack) return '';
-    var approvers = slack.approvers || [];
+  // Slack and Telegram: the people who can decide by replying to a
+  // request, whose button clicks count once any are listed, and who can
+  // give the agent jobs. Shown once that app's connection is saved.
+  function renderApproversHtml(n, app) {
+    var conn = connectionFor(n, app);
+    if (n.source === 'code' || !conn) return '';
+    var title = CHANNEL_TITLES[app];
+    var approvers = conn.approvers || [];
     var rows = approvers.map(function (a) {
       return '<tr><td>' + escapeHtml(a.name || a.user) + '</td><td><code>' + escapeHtml(a.user) + '</code></td>' +
         '<td><button type="button" class="delete-btn approver-remove" data-user="' + escapeHtml(a.user) + '"' + (n.canSave === false ? ' disabled' : '') + '>Remove</button></td></tr>';
     }).join('');
-    return '<section id="approversSection"><h3>Slack approvers</h3>' +
-      (n.primary !== 'slack' ? '<p class="hint" style="margin:0 0 8px">Slack isn&#39;t primary, so these take effect once it is.</p>' : '') +
-      '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request by replying in its thread, like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A plain &ldquo;yes&rdquo; runs it; a reply that&#39;s less clear (&ldquo;sure, send it&rdquo;, &ldquo;yes but check the amount&rdquo;) shows exactly what will run with a Confirm button first, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count too. Anyone in the channel can still ask about a request.</p>' +
+    var where = app === 'telegram' ? 'by replying to it' : 'by replying in its thread';
+    return '<section class="approvers-section" data-app="' + app + '"><h3>' + title + ' approvers</h3>' +
+      (n.primary !== app ? '<p class="hint" style="margin:0 0 8px">' + title + ' isn&#39;t primary, so requests aren&#39;t sent there until it is. Jobs started there still use this list.</p>' : '') +
+      '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request ' + where + ', like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A plain &ldquo;yes&rdquo; runs it; a reply that&#39;s less clear (&ldquo;sure, send it&rdquo;, &ldquo;yes but check the amount&rdquo;) shows exactly what will run with a Confirm button first, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count, and only approvers can give the agent jobs. Anyone can still ask about a request.</p>' +
       (approvers.length
-        ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>Slack ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
-        : '<p class="hint">No approvers yet. Until you add someone, anyone in the channel can use the buttons, and deciding by reply is off.</p>') +
+        ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>' + title + ' ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<p class="hint">No approvers yet. Until you add someone, anyone can use the buttons, and deciding by reply is off.</p>') +
       (n.canSave === false
         ? '<p class="hint">Changing approvers needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server.</p>'
-        : '<p style="margin:10px 0 0"><button type="button" id="approversLoad">Add people from the channel</button></p>' +
-          '<div id="approversPicker"></div>') +
-      '<div id="approversResult" class="hint"></div></section>';
+        : '<p style="margin:10px 0 0"><button type="button" class="approvers-load">' + (app === 'telegram' ? 'Add people who messaged the bot' : 'Add people from the channel') + '</button></p>' +
+          (app === 'telegram' ? '<p class="hint" style="margin:6px 0 0">Telegram can&#39;t list a chat&#39;s members, so people show up here once they&#39;ve written to the bot (a private message to it is enough), or add someone by their numeric user id:</p>' +
+            '<span style="display:flex;gap:6px;max-width:560px;margin-top:6px"><input class="approver-manual-id" placeholder="User id, like 123456789" style="flex:1;min-width:0"><input class="approver-manual-name" placeholder="Name" style="flex:1;min-width:0"><button type="button" class="approver-manual-add">Add</button></span>' : '') +
+          '<div class="approvers-picker"></div>') +
+      '<div class="hint approvers-result"></div></section>';
   }
 
   function wireApproversHandlers(name, n) {
-    var section = detail.querySelector('#approversSection');
-    if (!section) return;
-    var result = section.querySelector('#approversResult');
-    var slack = connectionFor(n, 'slack');
-    var current = (slack && slack.approvers) || [];
+    var sections = detail.querySelectorAll('.approvers-section');
+    for (var s = 0; s < sections.length; s++) wireApproversSection(name, n, sections[s]);
+  }
+
+  function wireApproversSection(name, n, section) {
+    var app = section.dataset.app;
+    var result = section.querySelector('.approvers-result');
+    var conn = connectionFor(n, app);
+    var current = (conn && conn.approvers) || [];
     function save(list, message) {
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/approvers', {
-        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvers: list }),
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ app: app, approvers: list }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         loadApprovalsSection(name, message);
@@ -1831,31 +1865,46 @@ ${consoleShellScript}
       removes[i].addEventListener('click', function (ev) {
         var btn = ev.currentTarget;
         if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
-        save(current.filter(function (a) { return a.user !== btn.dataset.user; }), 'Approver removed.');
+        save(current.filter(function (a) { return a.user !== btn.dataset.user; }), CHANNEL_TITLES[app] + ' approver removed.');
       });
     }
-    var load = section.querySelector('#approversLoad');
+    var manualAdd = section.querySelector('.approver-manual-add');
+    if (manualAdd) {
+      manualAdd.addEventListener('click', function () {
+        var id = section.querySelector('.approver-manual-id').value.trim();
+        var who = section.querySelector('.approver-manual-name').value.trim();
+        if (!/^[0-9]{1,20}$/.test(id)) { result.textContent = 'A Telegram user id is a number, like 123456789.'; return; }
+        if (current.some(function (a) { return a.user === id; })) { result.textContent = 'They are already an approver.'; return; }
+        save(current.concat([who ? { user: id, name: who } : { user: id }]), 'Added 1 ' + CHANNEL_TITLES[app] + ' approver.');
+      });
+    }
+    var load = section.querySelector('.approvers-load');
     if (!load) return;
     load.addEventListener('click', function () {
       load.disabled = true;
       result.textContent = 'Loading people' + String.fromCharCode(8230);
-      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/slack-members').then(function (r) {
+      var path = app === 'telegram' ? '/notifier/telegram-people' : '/notifier/slack-members';
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + path).then(function (r) {
         load.disabled = false;
         if (!r.ok) { result.textContent = r.body.error || 'Could not load people'; return; }
         var taken = current.map(function (a) { return a.user; });
-        var people = r.body.members.filter(function (m) { return taken.indexOf(m.id) === -1; });
+        var people = (r.body.members || r.body.people || []).filter(function (m) { return taken.indexOf(m.id) === -1; });
         result.textContent = '';
-        var picker = section.querySelector('#approversPicker');
-        if (!people.length) { picker.innerHTML = '<p class="hint">Everyone in the channel is already an approver.</p>'; return; }
+        var picker = section.querySelector('.approvers-picker');
+        if (!people.length) {
+          picker.innerHTML = '<p class="hint">' + (app === 'telegram' ? (taken.length ? 'Everyone who has written to the bot is already an approver.' : 'Nobody has written to the bot yet. Send it a message, then try again.') : 'Everyone in the channel is already an approver.') + '</p>';
+          return;
+        }
         picker.innerHTML = '<div class="tool-picker" style="max-width:560px;margin-top:8px">' + people.map(function (m) {
-          return '<label class="tool-picker-item" style="justify-content:flex-start"><input type="checkbox" value="' + escapeHtml(m.id) + '" data-name="' + escapeHtml(m.name) + '"> ' + escapeHtml(m.name) + ' <span class="hint">' + escapeHtml(m.id) + '</span></label>';
-        }).join('') + '</div><p style="margin:8px 0 0"><button type="button" class="primary" id="approversAdd">Add selected</button></p>';
-        picker.querySelector('#approversAdd').addEventListener('click', function () {
+          var label = m.name + (m.username && m.name !== '@' + m.username ? ' (@' + m.username + ')' : '');
+          return '<label class="tool-picker-item" style="justify-content:flex-start"><input type="checkbox" value="' + escapeHtml(m.id) + '" data-name="' + escapeHtml(m.name) + '"> ' + escapeHtml(label) + ' <span class="hint">' + escapeHtml(m.id) + '</span></label>';
+        }).join('') + '</div><p style="margin:8px 0 0"><button type="button" class="primary approvers-add">Add selected</button></p>';
+        picker.querySelector('.approvers-add').addEventListener('click', function () {
           var picked = picker.querySelectorAll('input:checked');
           if (!picked.length) { result.textContent = 'Pick at least one person.'; return; }
           var list = current.slice();
           for (var k = 0; k < picked.length; k++) list.push({ user: picked[k].value, name: picked[k].dataset.name });
-          save(list, picked.length === 1 ? 'Added 1 approver.' : 'Added ' + picked.length + ' approvers.');
+          save(list, picked.length === 1 ? 'Added 1 ' + CHANNEL_TITLES[app] + ' approver.' : 'Added ' + picked.length + ' ' + CHANNEL_TITLES[app] + ' approvers.');
         });
       });
     });
@@ -1867,7 +1916,8 @@ ${consoleShellScript}
       '<p class="muted" style="margin:0 0 12px">' + renderNotifierStatus(n) + '</p>' +
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
         (n.source === 'code' ? '' : renderConnectionsHtml(n)) + '</section>' +
-      renderApproversHtml(n) +
+      renderApproversHtml(n, 'slack') +
+      renderApproversHtml(n, 'telegram') +
       '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
   }
 
@@ -1931,6 +1981,7 @@ ${consoleShellScript}
       });
     }
     if (channel === 'slack') wireSlackFields(name, form, result);
+    if (channel === 'telegram') wireTelegramFields(name, form);
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -1943,12 +1994,15 @@ ${consoleShellScript}
       if (channel === 'email') { body.to = data.get('emailTo'); body.from = data.get('emailFrom'); body.provider = data.get('emailProvider'); }
       if (data.get('secret')) body.secret = data.get('secret');
       if (channel === 'slack' && data.get('signingSecret')) body.signingSecret = data.get('signingSecret');
-      if (channel === 'slack') {
-        var conversationsBox = form.querySelector('#slackConversations');
-        var savedSlack = lastNotifier && connectionFor(lastNotifier, 'slack');
+      if (channel === 'slack' || channel === 'telegram') {
+        var conversationsBox = form.querySelector('#' + channel + 'Conversations');
+        var jobsBox = form.querySelector('#' + channel + 'Jobs');
+        var savedConn = lastNotifier && connectionFor(lastNotifier, channel);
         // A locked switch (free plan) keeps whatever was saved before.
         if (conversationsBox && !conversationsBox.disabled) body.conversations = conversationsBox.checked;
-        else if (savedSlack && savedSlack.conversations !== undefined) body.conversations = savedSlack.conversations;
+        else if (savedConn && savedConn.conversations !== undefined) body.conversations = savedConn.conversations;
+        if (jobsBox && !jobsBox.disabled) body.jobs = jobsBox.checked;
+        else if (savedConn && savedConn.jobs !== undefined) body.jobs = savedConn.jobs;
       }
       // Ticked "Make this the primary messaging app" (or none is primary yet,
       // which the server treats the same) makes this one primary.
@@ -1983,6 +2037,37 @@ ${consoleShellScript}
         }
         fetchJsonRetryOnce(base + '?channel=' + encodeURIComponent(channel), { method: 'DELETE' }).then(function () {
           loadApprovalsSection(name, CHANNEL_TITLES[channel] + ' removed.');
+        });
+      });
+    }
+  }
+
+  // Telegram's section: Connect the bot points its updates at this
+  // server; Check connection says where they go now.
+  function wireTelegramFields(name, form) {
+    var out = form.querySelector('#telegramWebhookResult');
+    var url = '/agents/' + encodeURIComponent(name) + '/notifier/telegram-webhook';
+    var setBtn = form.querySelector('#telegramWebhookSet');
+    if (setBtn) {
+      setBtn.addEventListener('click', function () {
+        setBtn.disabled = true;
+        out.textContent = 'Connecting' + String.fromCharCode(8230);
+        fetchJsonRetryOnce(url, { method: 'POST' }).then(function (r) {
+          setBtn.disabled = false;
+          if (!r.ok) { out.textContent = r.body.error || 'Could not connect the bot'; return; }
+          loadApprovalsSection(name, 'Telegram connected' + (r.body.botUsername ? ': people can now reply to @' + r.body.botUsername + String.fromCharCode(8217) + 's requests.' : '.'));
+        });
+      });
+    }
+    var checkBtn = form.querySelector('#telegramWebhookCheck');
+    if (checkBtn) {
+      checkBtn.addEventListener('click', function () {
+        out.textContent = 'Checking' + String.fromCharCode(8230);
+        fetchJsonRetryOnce(url).then(function (r) {
+          if (!r.ok) { out.textContent = r.body.error || 'Could not check'; return; }
+          var b = r.body;
+          out.textContent = (b.pointsHere ? 'Connected' + (b.botUsername ? ' (@' + b.botUsername + ')' : '') + '.' : b.url ? 'The bot sends its updates somewhere else: ' + b.url + '. Connect again to point it here.' : 'The bot isn' + String.fromCharCode(8217) + 't sending its updates anywhere. Connect again.') +
+            (b.lastError ? ' Telegram' + String.fromCharCode(8217) + 's last delivery error: ' + b.lastError : '');
         });
       });
     }
@@ -2070,7 +2155,11 @@ ${consoleShellScript}
       }
       showPendingCount(pending.length);
       if (message) {
-        var r = content.querySelector(message.indexOf('pprover') !== -1 ? '#approversResult' : '#notifierResult');
+        var approverApp = message.indexOf('Telegram') !== -1 ? 'telegram' : 'slack';
+        // Otherwise the section that was open, which is the one just saved.
+        var r = message.indexOf('pprover') !== -1
+          ? content.querySelector('.approvers-section[data-app="' + approverApp + '"] .approvers-result')
+          : content.querySelector('details.msg-conn[open] .notifier-result') || content.querySelector('#notifierResult');
         if (r) r.textContent = message;
       }
     }).catch(function (err) {

@@ -91,18 +91,23 @@ function slackSetupError(error: string | undefined): string {
 }
 
 /** A Slack app manifest for one agent's notifier: a bot that can post,
- * read the channel list and read replies in its requests' threads, with
+ * read the channel list, read replies in its requests' threads, and take
+ * DMs and @mentions that start jobs (core/messaging/jobs.ts), with
  * interactivity pointed at this server and events at <that URL>/events
  * (core/messaging/). Paste it into api.slack.com/apps →
  * Create New App → From a manifest. */
 export function slackAppManifest(options: { agentName: string; interactivityUrl: string }): Record<string, unknown> {
   const name = `LoopEngine ${options.agentName}`.slice(0, 35)
   return {
-    display_information: { name, description: `Approval requests and questions from the ${options.agentName} agent` },
-    features: { bot_user: { display_name: name, always_online: true } },
-    oauth_config: { scopes: { bot: ['chat:write', 'channels:read', 'groups:read', 'channels:history', 'groups:history', 'users:read'] } },
+    display_information: { name, description: `Jobs, approval requests and questions from the ${options.agentName} agent` },
+    features: {
+      bot_user: { display_name: name, always_online: true },
+      // A Messages tab, so people can DM the agent a job.
+      app_home: { home_tab_enabled: false, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+    },
+    oauth_config: { scopes: { bot: ['chat:write', 'channels:read', 'groups:read', 'channels:history', 'groups:history', 'users:read', 'app_mentions:read', 'im:history'] } },
     settings: {
-      event_subscriptions: { request_url: `${options.interactivityUrl}/events`, bot_events: ['message.channels', 'message.groups'] },
+      event_subscriptions: { request_url: `${options.interactivityUrl}/events`, bot_events: ['message.channels', 'message.groups', 'message.im', 'app_mention'] },
       interactivity: { is_enabled: true, request_url: options.interactivityUrl },
       org_deploy_enabled: false,
       socket_mode_enabled: false,

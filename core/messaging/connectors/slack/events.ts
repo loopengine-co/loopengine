@@ -10,13 +10,14 @@ export type SlackEvent = { type: 'url_verification'; challenge: string } | ({ ty
 
 /** Reads an Events API body. Only people's new messages come through;
  * edits, deletions, joins and every bot's messages (this agent's own
- * included) are `ignore`. */
+ * included) are `ignore`. A DM is `direct`; an app_mention is
+ * `mentioned`, with the leading @mention of the bot taken off its text. */
 export function parseSlackEvent(rawBody: string): SlackEvent {
   let body: {
     type?: string
     challenge?: string
     event_id?: string
-    event?: { type?: string; subtype?: string; bot_id?: string; user?: string; text?: string; ts?: string; thread_ts?: string; channel?: string }
+    event?: { type?: string; subtype?: string; bot_id?: string; user?: string; text?: string; ts?: string; thread_ts?: string; channel?: string; channel_type?: string }
   }
   try {
     body = JSON.parse(rawBody)
@@ -28,15 +29,18 @@ export function parseSlackEvent(rawBody: string): SlackEvent {
   if (body.type !== 'event_callback' || !event || !body.event_id) return { type: 'ignore' }
   if ((event.type !== 'message' && event.type !== 'app_mention') || event.subtype || event.bot_id) return { type: 'ignore' }
   if (!event.user || !event.channel || !event.ts || typeof event.text !== 'string') return { type: 'ignore' }
+  const mentioned = event.type === 'app_mention'
   return {
     type: 'message',
     app: 'slack',
     eventId: body.event_id,
     conversation: event.channel,
     user: event.user,
-    text: event.text,
+    text: mentioned ? event.text.replace(/^(\s*<@[A-Z0-9]+>)+\s*/, '') : event.text,
     ts: event.ts,
     ...(event.thread_ts && event.thread_ts !== event.ts ? { threadTs: event.thread_ts } : {}),
+    ...(event.channel_type === 'im' ? { direct: true } : {}),
+    ...(mentioned ? { mentioned: true } : {}),
   }
 }
 
