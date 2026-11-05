@@ -11,7 +11,7 @@ import { writeSkill } from './skills-admin.js'
 import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
 import { planParameters, planWebhook, planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
-import { createTrigger, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
+import { createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow } from '../core/workflows.js'
@@ -721,16 +721,23 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
   return readWorkflow(agentDir, id)!
 }
 
-/** Forgets a workflow: its skill stays, as a plain skill, and the
- * schedules that ran it are cancelled. Returns how many were. */
-export async function forgetWorkflow(agentName: string, agentDir: string, id: string): Promise<{ cancelled: number }> {
+/** Removes a workflow: its skill stays, as a plain skill the agent can
+ * still use in chat, and what started it goes: its schedules are
+ * cancelled and its webhooks deleted (their URLs stop working). Returns
+ * how many of each. */
+export async function forgetWorkflow(agentName: string, agentDir: string, id: string): Promise<{ cancelled: number; webhooks: number }> {
   clearWorkflowFields(agentDir, id)
   let cancelled = 0
   for (const task of workflowTasks(id, await listScheduledTasks({ agent: agentName }))) {
     await cancelScheduledTask(task.task_id)
     cancelled++
   }
-  return { cancelled }
+  let webhooks = 0
+  for (const trigger of await listTriggers(agentName, id)) {
+    await getTriggerStore().remove(trigger.trigger_id)
+    webhooks++
+  }
+  return { cancelled, webhooks }
 }
 
 export function agentDirIn(projectDir: string, name: string): string {

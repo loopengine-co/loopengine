@@ -50,6 +50,18 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
   .workflow-card { margin-bottom: 10px; }
+  .workflow-starts { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; background: var(--le-surface, #f6f7f9); }
+  .workflow-starts h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .wf-start { padding: 10px 0; border-top: 1px solid var(--le-line, #e5e7eb); display: grid; gap: 6px; font-size: 13px; }
+  .wf-start:first-of-type { border-top: 0; padding-top: 6px; }
+  .wf-start-head { display: flex; align-items: center; gap: 6px; }
+  .wf-start-head strong { font-size: 13px; }
+  .help-q { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 16px; font-weight: 600; text-align: center; cursor: pointer; }
+  .help-text { margin: 0; }
+  .help-text[hidden] { display: none; }
+  .wf-start .schedule-history { margin: 0; gap: 6px; }
+  .wf-start .workflow-params { margin: 0; }
+  .wf-start pre { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--le-bg, #fff); border: 1px solid var(--le-line, #e5e7eb); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .workflow-steps-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--le-surface, #f6f7f9); }
   .workflow-params { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .workflow-params[hidden] { display: none; }
@@ -693,14 +705,22 @@ ${consoleShellScript}
   function workflowStartsSummary(w) {
     var parts = (w.schedules || []).filter(function (x) { return x.repeating && x.status !== 'paused'; }).map(function (x) { return x.describe; });
     if (w.webhooks) parts.push(w.webhooks === 1 ? 'when its webhook is called' : 'when one of its ' + w.webhooks + ' webhooks is called');
-    if (!parts.length) return 'When asked';
+    if (!parts.length) return 'No schedule or webhook yet';
     var text = parts.join(', and ');
     return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
-  // How it starts: each schedule (pause, resume, remove), its webhooks,
-  // and Run now or the API, which always work.
-  function workflowStartsHtml(w) {
+  // How it starts: four ways, each with a ? that says what it is. A
+  // schedule (pause, resume, remove, add), a webhook, Run now with the
+  // values a run is given, and the API call an app makes.
+  function wfStartSection(key, title, help, body) {
+    return '<div class="wf-start">' +
+      '<div class="wf-start-head"><strong>' + title + '</strong>' +
+        '<button type="button" class="help-q" aria-expanded="false" aria-controls="help-' + key + '" aria-label="What is ' + title.toLowerCase() + '?">?</button></div>' +
+      '<p class="hint help-text" hidden>' + help + '</p>' + body + '</div>';
+  }
+
+  function workflowStartsHtml(w, agentName, paramsHtml) {
     var schedules = (w.schedules || []).map(function (x) {
       var state = x.waiting ? '<span class="le-pill ask">Waiting for a decision</span>'
         : x.status === 'paused' ? '<span class="le-pill">Paused</span>'
@@ -717,15 +737,28 @@ ${consoleShellScript}
           '<button type="button" class="delete-btn workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="cancel">Remove</button>' +
         '</span></li>';
     }).join('');
-    return '<div class="body-field workflow-starts" style="margin:6px 0 0">How it starts' +
-      '<ul class="schedule-history" style="margin:4px 0 0">' + schedules +
-        (w.webhooks ? '<li>' + (w.webhooks === 1 ? 'A webhook' : w.webhooks + ' webhooks') + ' <span class="hint">another app calls it when something happens</span></li>' : '') +
-        '<li class="hint">Run now, below, or an app' + String.fromCharCode(8217) + 's API call, any time</li>' +
-      '</ul>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' +
-        '<button type="button" class="workflow-add-schedule">Add a schedule</button>' +
-        '<button type="button" class="workflow-hooks-btn">' + (w.webhooks ? 'Webhooks' : 'Add a webhook') + '</button>' +
-      '</div></div>';
+    var paramNames = Object.keys(w.parameters || {});
+    var example = paramNames.length
+      ? '{ "params": { ' + paramNames.map(function (p) { return '"' + p + '": "' + String.fromCharCode(8230) + '"'; }).join(', ') + ' } }'
+      : '{}';
+    var apiUrl = location.origin + '/agents/' + encodeURIComponent(agentName) + '/workflows/' + encodeURIComponent(w.id) + '/run';
+    return '<div class="workflow-starts"><h4>How it starts</h4>' +
+      wfStartSection('schedule-' + w.id, 'Schedule',
+        'Runs it on a timer, like every day at 9:00, with the values you give the schedule. Nobody needs to be there: approvals and questions go to the agent' + String.fromCharCode(8217) + 's messaging app.',
+        (schedules ? '<ul class="schedule-history">' + schedules + '</ul>' : '<span class="hint">None yet.</span>') +
+        '<div><button type="button" class="workflow-add-schedule">Add a schedule</button></div>') +
+      wfStartSection('webhook-' + w.id, 'Webhook',
+        'A private web address another app (Stripe, GitHub, Shopify or your own) calls when something happens. Each call starts a run, with values taken from what the app sends.',
+        '<span' + (w.webhooks ? '' : ' class="hint"') + '>' + (w.webhooks ? (w.webhooks === 1 ? '1 webhook is on.' : w.webhooks + ' webhooks are on.') : 'None yet.') + '</span>' +
+        '<div><button type="button" class="workflow-hooks-btn">' + (w.webhooks ? 'Webhooks' : 'Add a webhook') + '</button></div>') +
+      wfStartSection('run-' + w.id, 'Run now',
+        'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
+        (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
+        '<div><button type="button" class="workflow-run primary">Run now</button></div>') +
+      wfStartSection('api-' + w.id, 'API',
+        'Your own app starts a run by calling this address with an API key. Add "wait": true to get the result in the answer, or "callback_url" to have it posted to you when the run ends.',
+        '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>') +
+    '</div>';
   }
 
   function renderWorkflowsHtml(name, workflows) {
@@ -764,15 +797,15 @@ ${consoleShellScript}
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
           '<strong>' + escapeHtml(w.title) + '</strong><span>' + state + '</span></div>' +
         '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(workflowStartsSummary(w)) : '') + '</p>' +
-        '<details><summary class="hint">Instructions <span>(the ' + escapeHtml(w.id) + ' skill)</span></summary><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></details>' +
-        workflowStartsHtml(w) +
-        (params ? '<div class="workflow-params">' + params + '</div>' : '') +
-        (runs ? '<details class="workflow-runs"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="hint">Recent runs (' + w.recentRuns.length + ')</summary><ul class="schedule-history">' + runs + '</ul></details>' : '') +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
-          '<button type="button" class="workflow-run">Run now</button>' +
+        '<details open><summary class="hint">Instructions <span>(the ' + escapeHtml(w.id) + ' skill)</span></summary><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></details>' +
+        workflowStartsHtml(w, name, params) +
+        '<div class="hint workflow-result" style="margin-top:6px"></div><div class="workflow-hooks" hidden></div>' +
+        (runs ? '<details class="workflow-runs" style="margin-top:10px"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="hint">Recent runs (' + w.recentRuns.length + ')</summary><ul class="schedule-history">' + runs + '</ul></details>'
+          : '<p class="hint" style="margin:10px 0 0">No runs yet.</p>') +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
           '<button type="button" class="workflow-edit">Edit</button>' +
-          '<button type="button" class="delete-btn workflow-forget">Forget</button>' +
-        '</div><div class="hint workflow-result"></div><div class="workflow-editor" hidden></div><div class="workflow-hooks" hidden></div></div>';
+          '<button type="button" class="delete-btn workflow-forget">Remove workflow</button>' +
+        '</div><div class="workflow-editor" hidden></div></div>';
     }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
   }
 
@@ -1102,6 +1135,16 @@ ${consoleShellScript}
     var result = card.querySelector('.workflow-result');
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
+    // The ? beside each way it starts shows or hides what it is.
+    var helps = card.querySelectorAll('.help-q');
+    for (var hq = 0; hq < helps.length; hq++) {
+      helps[hq].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var text = btn.closest('.wf-start').querySelector('.help-text');
+        text.hidden = !text.hidden;
+        btn.setAttribute('aria-expanded', String(!text.hidden));
+      });
+    }
     card.querySelector('.workflow-hooks-btn').addEventListener('click', function () { openWorkflowHooks(name, card); });
     // Add a schedule: the Schedules tab's form, with this workflow chosen.
     card.querySelector('.workflow-add-schedule').addEventListener('click', function () {
@@ -1138,7 +1181,7 @@ ${consoleShellScript}
     });
     card.querySelector('.workflow-forget').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
-      if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again (its schedules are cancelled; the skill stays)'; return; }
+      if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again: its schedules and webhooks go; its instructions stay as a skill for Chat'; return; }
       fetchJsonRetryOnce(base, { method: 'DELETE' }).then(function () { loadWorkflowsSection(name); });
     });
   }
@@ -2328,7 +2371,7 @@ ${consoleShellScript}
     var list = tasks.length
       ? '<div class="le-table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Status</th><th>Last run</th><th></th></tr></thead><tbody>' + tasks.map(renderScheduleRow).join('') + '</tbody></table></div>'
       : '<p class="hint">Nothing scheduled yet.</p>';
-    return '<p class="muted" style="margin:0 0 20px">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule starts with the workflow&#39;s start message as it is at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
+    return '<p class="muted" style="margin:0 0 20px">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule runs the workflow&#39;s instructions as they are at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
       '<section><h3>Scheduled (' + active.length + ' active)</h3>' + list + '</section>' +
       '<section><h3>New schedule</h3>' +
         '<form class="add-source" id="scheduleForm" style="max-width:560px">' +

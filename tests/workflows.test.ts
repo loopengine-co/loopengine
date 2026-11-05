@@ -8,6 +8,7 @@ import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, va
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
 import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
 import { FileRunStore, WorkflowRunner, setRunStore } from '#core/workflow-runs.js'
+import { FileTriggerStore, createTrigger, listTriggers, setTriggerStore } from '#core/workflow-triggers.js'
 
 const RAW_PLAN = {
   name: 'Weekly blog post',
@@ -366,9 +367,12 @@ describe("a workflow's runs and schedules", () => {
     expect(readWorkflow(dir, 'refund-check')?.title).toBe('Refund check')
   })
 
-  it('forgetting it cancels its schedules and keeps the skill', async () => {
+  it('removing it cancels its schedules, deletes its webhooks and keeps the skill', async () => {
+    setTriggerStore(new FileTriggerStore(dir))
     await createScheduledTask({ agent: 'cs', workflow_id: 'refund-check', params: { order_number: '3' }, schedule: { every: '1d' } })
-    expect(await forgetWorkflow('cs', dir, 'refund-check')).toEqual({ cancelled: 1 })
+    await createTrigger('cs', readWorkflow(dir, 'refund-check')!, { name: 'From our app' })
+    expect(await forgetWorkflow('cs', dir, 'refund-check')).toEqual({ cancelled: 1, webhooks: 1 })
+    expect(await listTriggers('cs')).toEqual([])
     expect(readWorkflow(dir, 'refund-check')).toBeUndefined()
     expect(existsSync(join(dir, 'skills', 'refund-check', 'SKILL.md'))).toBe(true)
     expect((await listScheduledTasks({ agent: 'cs' })).map((t) => t.status)).toEqual(['cancelled'])

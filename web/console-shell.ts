@@ -60,8 +60,8 @@ export const consoleShellScript: string = `<script>
   // ability on the Apps tab (id 'abilities', so older links still work).
   // ?tab=tools and ?tab=skills still open Advanced.
   var TABS = [
-    ['overview', 'Overview'], ['workflows', 'Workflows'], ['chat', 'Chat'], ['abilities', 'Apps'], ['actauth', 'Permissions'],
-    ['messaging', 'Messaging'], ['schedules', 'Schedules'], ['env', 'Environment'], ['advanced', 'Advanced']
+    ['overview', 'Overview'], ['workflows', 'Workflows'], ['abilities', 'Apps'], ['actauth', 'Permissions'],
+    ['messaging', 'Messaging'], ['schedules', 'Schedules'], ['env', 'Environment'], ['advanced', 'Advanced'], ['chat', 'Chat']
   ];
 
   function esc(s) {
@@ -76,11 +76,13 @@ export const consoleShellScript: string = `<script>
     return '/agents/config?agent=' + enc(name) + (tab && tab !== 'overview' ? '&tab=' + enc(tab) : '');
   }
 
-  // Switching agents keeps you where you are: on a config tab you land on
-  // the same tab for the other agent, anywhere else you land in its Chat.
+  // An agent in the list opens its Overview. Switching agents keeps you
+  // where you are: on a config tab you land on the same tab for the other
+  // agent, and in Chat on its Chat.
   function agentHref(name) {
     if (page === 'agent-config') return tabHref(name, params.get('tab') || 'overview');
-    return tabHref(name, 'chat');
+    if (page === 'chat') return tabHref(name, 'chat');
+    return tabHref(name, 'overview');
   }
 
   function renderList() {
