@@ -54,6 +54,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-params { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .workflow-params[hidden] { display: none; }
   .workflow-editor[hidden] { display: none; }
+  .workflow-hooks[hidden] { display: none; }
+  .hook-custom[hidden] { display: none; }
+  .workflow-hook { border-top: 1px solid var(--le-line, #e5e7eb); padding: 8px 0; }
+  .hook-url { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; margin: 6px 0; border-radius: 6px; background: var(--le-surface, #f6f7f9); font-size: 13px; }
+  .hook-url input { font-family: var(--le-mono, monospace); font-size: 12.5px; }
   .workflow-param-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
   .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .workflow-param-row .wp-name { width: 160px; font-family: var(--le-mono, monospace); }
@@ -726,9 +731,10 @@ ${consoleShellScript}
           '<button type="button" class="workflow-run">Run now</button>' +
           (scheduleCount ? '<a href="?tab=schedules" data-tab="schedules" class="hint" style="align-self:center">' + (scheduleCount > 1 ? 'Schedules (' + scheduleCount + ')' : 'Schedule') + '</a>' : '') +
           '<button type="button" class="workflow-edit">Edit</button>' +
+          '<button type="button" class="workflow-hooks-btn">Webhooks</button>' +
           '<a href="?tab=skills" data-tab="skills" class="hint" style="align-self:center">Edit steps</a>' +
           '<button type="button" class="delete-btn workflow-forget">Forget</button>' +
-        '</div><div class="hint workflow-result"></div><div class="workflow-editor" hidden></div></div>';
+        '</div><div class="hint workflow-result"></div><div class="workflow-editor" hidden></div><div class="workflow-hooks" hidden></div></div>';
     }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
   }
 
@@ -849,11 +855,163 @@ ${consoleShellScript}
     form.title.focus();
   }
 
+  // ---- A workflow's webhook triggers (core/workflow-triggers.ts): secret
+  // URLs an outside service posts its events to, to start a run.
+  var HOOK_OUTCOMES = {
+    started: ['good', 'Started a run'], filtered: ['', 'Skipped by the filter'], duplicate: ['', 'A retry, skipped'],
+    busy: ['', 'Already running'], rejected: ['bad', 'Signature check failed'], invalid: ['bad', 'Couldn' + String.fromCharCode(8217) + 't start'], error: ['bad', 'Failed'],
+  };
+  var HOOK_SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks' };
+
+  function hookRowHtml(t) {
+    var last = (t.deliveries || []).slice(0, 3).map(function (d) {
+      var o = HOOK_OUTCOMES[d.outcome] || ['', d.outcome];
+      return '<li><span class="le-pill ' + o[0] + '">' + escapeHtml(o[1]) + '</span> <span class="hint">' + escapeHtml(new Date(d.at).toLocaleString()) + '</span>' +
+        (d.detail ? '<div class="schedule-result">' + escapeHtml(d.detail) + '</div>' : '') + '</li>';
+    }).join('');
+    var rules = [];
+    if (t.verify) rules.push(t.verify.sender === 'custom'
+      ? 'checks the signature in ' + escapeHtml(t.verify.header) + ' (' + escapeHtml(t.verify.algorithm || 'sha256') + ', ' + escapeHtml(t.verify.encoding || 'hex') + ')'
+      : 'checks the ' + escapeHtml(HOOK_SENDERS[t.verify.sender] || t.verify.sender) + ' signature');
+    if (t.filter) rules.push('only when ' + escapeHtml(t.filter.path) + ' is ' + t.filter.values.map(escapeHtml).join(' or '));
+    if (t.mapping) rules.push(Object.keys(t.mapping).map(function (p) { return escapeHtml(p) + ' ' + String.fromCharCode(8592) + ' ' + escapeHtml(t.mapping[p]); }).join(', '));
+    if (t.payload_param) rules.push('the whole payload goes to ' + escapeHtml(t.payload_param));
+    if (t.notify) rules.push('sends each result to you');
+    if (t.callback_url) rules.push('reports to ' + escapeHtml(t.callback_url));
+    return '<div class="workflow-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><strong>' + escapeHtml(t.name) + '</strong>' +
+        '<code class="hint">/hooks/workflows/' + escapeHtml(t.token_hint) + '</code>' + (t.enabled ? '' : ' <span class="le-pill">Off</span>') + '</div>' +
+      (rules.length ? '<p class="hint" style="margin:2px 0">' + rules.join(' ' + String.fromCharCode(183) + ' ') + '</p>' : '') +
+      (last ? '<ul class="schedule-history">' + last + '</ul>' : '<p class="hint" style="margin:2px 0">No deliveries yet.</p>') +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">' +
+        '<button type="button" class="hook-toggle">' + (t.enabled ? 'Turn off' : 'Turn on') + '</button>' +
+        '<button type="button" class="hook-rotate">New URL</button>' +
+        '<button type="button" class="delete-btn hook-delete">Delete</button></div></div>';
+  }
+
+  function hookFormHtml(w) {
+    var params = Object.keys(w.parameters || {});
+    return '<form class="add-source hook-form" style="margin-top:10px">' +
+      '<h4 style="margin:0">Add a webhook</h4>' +
+      '<label>Name<input name="name" maxlength="80" placeholder="Stripe disputes"></label>' +
+      '<label>Check the sender' + String.fromCharCode(8217) + 's signature <span class="hint">(the URL itself is secret; this also proves who sent it)</span>' +
+        '<select name="sender"><option value="">No, the URL is enough</option><option value="stripe">Stripe</option><option value="github">GitHub</option><option value="shopify">Shopify</option>' +
+          '<option value="standard">Standard Webhooks (Clerk, Resend, OpenAI, Svix)</option><option value="custom">Another service: set it up myself</option></select></label>' +
+      '<div class="hook-custom body-field" hidden>How it signs <span class="hint">(from its webhook docs: an HMAC of the request body, in a header)</span>' +
+        '<div class="workflow-param-row">' +
+          '<input name="sig_header" placeholder="Header, e.g. Linear-Signature" style="flex:1">' +
+          '<select name="sig_algorithm" aria-label="Hash"><option value="sha256">SHA-256</option><option value="sha1">SHA-1</option><option value="sha512">SHA-512</option></select>' +
+          '<select name="sig_encoding" aria-label="Written as"><option value="hex">hex</option><option value="base64">base64</option></select>' +
+          '<input name="sig_prefix" placeholder="Prefix, e.g. sha256= (if any)" style="width:180px">' +
+        '</div></div>' +
+      '<label class="hook-secret" hidden>Signing secret <span class="hint">(from the sender' + String.fromCharCode(8217) + 's webhook settings)</span><input name="secret" autocomplete="off"></label>' +
+      '<label>Run only when <span class="hint">(optional: a field in the payload, and the values that start a run)</span>' +
+        '<div class="workflow-param-row"><input name="filter_path" placeholder="type"><input name="filter_values" placeholder="charge.dispute.created, charge.dispute.updated" style="flex:1"></div></label>' +
+      (params.length
+        ? '<div class="body-field">Parameters from the payload <span class="hint">(a dot path into its JSON, e.g. data.object.id)</span>' +
+            params.map(function (p) { return '<div class="workflow-param-row"><code class="wp-name">' + escapeHtml(p) + '</code><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" style="flex:1"></div>'; }).join('') + '</div>' +
+          '<label>Or give the whole payload to <select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select></label>'
+        : '<p class="hint" style="margin:0">This workflow takes no parameters, so the payload isn' + String.fromCharCode(8217) + 't passed on. Add one in Edit to use it.</p>') +
+      '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send each run' + String.fromCharCode(8217) + 's result to you through the agent' + String.fromCharCode(8217) + 's messaging app</label>' +
+      '<label>Post each run' + String.fromCharCode(8217) + 's result to <span class="hint">(optional, an https URL)</span><input name="callback_url" placeholder="https://example.com/hooks/loopengine"></label>' +
+      '<div style="display:flex;gap:8px"><button type="submit" class="primary">Make the URL</button></div>' +
+      '<div class="hint hook-form-result"></div></form>';
+  }
+
+  function hookUrlHtml(url) {
+    return '<div class="hook-url"><strong>Copy this URL now</strong> <span class="hint">(it' + String.fromCharCode(8217) + 's shown only once; make a new one if it' + String.fromCharCode(8217) + 's lost)</span>' +
+      '<input readonly value="' + escapeHtml(url) + '" onclick="this.select()"></div>';
+  }
+
+  function openWorkflowHooks(name, card) {
+    var w = workflowsById[card.dataset.workflow];
+    var box = card.querySelector('.workflow-hooks');
+    if (!w || !box) return;
+    if (!box.hidden) { box.hidden = true; box.innerHTML = ''; workflowEditing = false; return; }
+    workflowEditing = true;
+    box.hidden = false;
+    var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/triggers';
+    function render(shownUrl) {
+      box.innerHTML = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
+      fetchJsonRetryOnce(base).then(function (r) {
+        if (!r.ok) { box.innerHTML = '<p class="error">' + escapeHtml(r.body.error || 'Could not load webhooks') + '</p>'; return; }
+        var list = r.body.triggers || [];
+        box.innerHTML = '<h4 style="margin:10px 0 4px">Webhooks</h4>' +
+          '<p class="hint" style="margin:0 0 6px">A secret URL an outside service (Stripe, GitHub, a form, monitoring) posts its events to; each one starts a run.</p>' +
+          (shownUrl ? hookUrlHtml(shownUrl) : '') +
+          (list.length ? list.map(hookRowHtml).join('') : '') + hookFormHtml(w);
+        wire();
+      });
+    }
+    function act(id, path, opts) {
+      return fetchJsonRetryOnce(base + '/' + encodeURIComponent(id) + path, opts).then(function (r) {
+        if (!r.ok) { alert(r.body.error || 'That didn' + String.fromCharCode(8217) + 't work'); return; }
+        render(r.body.url);
+      });
+    }
+    function wire() {
+      var rows = box.querySelectorAll('.workflow-hook');
+      for (var i = 0; i < rows.length; i++) {
+        (function (row) {
+          var id = row.dataset.trigger;
+          row.querySelector('.hook-toggle').addEventListener('click', function (ev) {
+            act(id, '', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: ev.currentTarget.textContent === 'Turn on' }) });
+          });
+          row.querySelector('.hook-rotate').addEventListener('click', function (ev) {
+            var btn = ev.currentTarget;
+            if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again: the old URL stops working'; return; }
+            act(id, '/rotate', { method: 'POST' });
+          });
+          row.querySelector('.hook-delete').addEventListener('click', function (ev) {
+            var btn = ev.currentTarget;
+            if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to delete'; return; }
+            act(id, '', { method: 'DELETE' });
+          });
+        })(rows[i]);
+      }
+      var form = box.querySelector('.hook-form');
+      var secretField = form.querySelector('.hook-secret');
+      var customField = form.querySelector('.hook-custom');
+      form.sender.addEventListener('change', function () {
+        secretField.hidden = !form.sender.value;
+        customField.hidden = form.sender.value !== 'custom';
+      });
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var result = form.querySelector('.hook-form-result');
+        var body = { name: form.name.value };
+        if (form.sender.value) body.verify = { sender: form.sender.value, secret: form.secret.value };
+        if (form.sender.value === 'custom') {
+          body.verify.header = form.sig_header.value.trim();
+          body.verify.algorithm = form.sig_algorithm.value;
+          body.verify.encoding = form.sig_encoding.value;
+          if (form.sig_prefix.value.trim()) body.verify.prefix = form.sig_prefix.value.trim();
+        }
+        var values = form.filter_values.value.split(',').map(function (v) { return v.trim(); }).filter(Boolean);
+        if (form.filter_path.value.trim() || values.length) body.filter = { path: form.filter_path.value.trim(), values: values };
+        var mapping = {};
+        var inputs = form.querySelectorAll('input[name^="map:"]');
+        for (var j = 0; j < inputs.length; j++) if (inputs[j].value.trim()) mapping[inputs[j].name.slice(4)] = inputs[j].value.trim();
+        if (Object.keys(mapping).length) body.mapping = mapping;
+        if (form.payload_param && form.payload_param.value) body.payload_param = form.payload_param.value;
+        if (form.notify.checked) body.notify = true;
+        if (form.callback_url.value.trim()) body.callback_url = form.callback_url.value.trim();
+        result.textContent = 'Making it' + String.fromCharCode(8230);
+        fetchJsonRetryOnce(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+          if (!r.ok) { result.textContent = r.body.error || 'Could not make it'; return; }
+          render(r.body.url);
+        });
+      });
+    }
+    render(null);
+  }
+
   function wireWorkflowCard(name, card) {
     var id = card.dataset.workflow;
     var result = card.querySelector('.workflow-result');
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
+    card.querySelector('.workflow-hooks-btn').addEventListener('click', function () { openWorkflowHooks(name, card); });
     card.querySelector('.workflow-run').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
       var params = {};

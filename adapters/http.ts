@@ -92,6 +92,10 @@ import { WorkflowParamsError, readWorkflow, readWorkflows, validateParams, workf
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, checkCallbackUrl, deliverCallback, runCallbackPayload, type RunCallbackEvent } from '#core/run-callbacks.js'
+import {
+  TriggerError, createTrigger, deliveryId, findTriggerByToken, getTriggerStore, listTriggers, paramsFromPayload, parsePayload, passesFilter,
+  publicTrigger, recordDelivery, rotateTrigger, updateTrigger, verifySenderSignature,
+} from '#core/workflow-triggers.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
@@ -245,6 +249,27 @@ function readRawBody(req: IncomingMessage): Promise<string> {
     let data = ''
     req.on('data', (chunk) => (data += chunk))
     req.on('end', () => resolve(data))
+    req.on('error', reject)
+  })
+}
+
+/** The raw request body, refused past `maxBytes` (null then). */
+function readLimitedRawBuffer(req: IncomingMessage, maxBytes: number): Promise<Buffer | null> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    let over = false
+    req.on('data', (chunk: Buffer) => {
+      if (over) return
+      size += chunk.length
+      if (size > maxBytes) {
+        over = true
+        resolve(null)
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks)) })
     req.on('error', reject)
   })
 }
@@ -3647,6 +3672,100 @@ async function decideFromMessaging(pendingId: string, decision: MessagingDecisio
   return { text: typeof body.text === 'string' ? body.text : undefined }
 }
 
+// ---- Webhook triggers (core/workflow-triggers.ts): an outside service
+// posts its own events to a workflow's secret URL. Answered 202 as soon as
+// the run starts (senders retry a slow or failed answer); a retry of a
+// delivery already handled, or an event the filter skips, is answered 202
+// too, so it isn't sent again. ----
+
+const WEBHOOK_MAX_BYTES = 1024 * 1024
+
+async function handleWorkflowHook(req: IncomingMessage, res: ServerResponse, token: string): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  const raw = await readLimitedRawBuffer(req, WEBHOOK_MAX_BYTES)
+  if (!raw) return json(413, { error: 'The payload is larger than 1 MB.' })
+  // Unknown and turned-off triggers read the same, so a URL can't be probed.
+  const trigger = await findTriggerByToken(token)
+  if (!trigger || !trigger.enabled) return json(404, { error: 'not found' })
+  const at = new Date().toISOString()
+  const record = (outcome: Parameters<typeof recordDelivery>[1]['outcome'], extra: { delivery_id?: string; run_id?: string; detail?: string } = {}, seen?: string) =>
+    recordDelivery(trigger.trigger_id, { at, outcome, ...extra }, seen)
+
+  if (trigger.verify && !verifySenderSignature(trigger.verify, req.headers, raw)) {
+    await record('rejected', { detail: `The ${trigger.verify.sender} signature didn't match.` })
+    return json(401, { error: 'signature check failed' })
+  }
+  const payload = parsePayload(raw, req.headers['content-type'])
+  const id = deliveryId(req.headers, payload)
+  if (id && trigger.seen_ids.includes(id)) {
+    await record('duplicate', { delivery_id: id })
+    return json(202, { ignored: 'duplicate' })
+  }
+  if (!passesFilter(trigger.filter, payload)) {
+    await record('filtered', { ...(id ? { delivery_id: id } : {}) }, id)
+    return json(202, { ignored: 'filtered' })
+  }
+  if (!getEntry(trigger.agent)) {
+    await record('error', { detail: `The agent ${trigger.agent} is gone.` })
+    return json(404, { error: 'not found' })
+  }
+  try {
+    const prepared = await prepareWorkflowRun(trigger.agent, agentDir(trigger.agent), trigger.workflow_id, paramsFromPayload(trigger, payload))
+    const run = await workflowRunner.start({
+      agent: trigger.agent, workflow_id: trigger.workflow_id, params: prepared.params, source: 'webhook', trigger_id: trigger.trigger_id, message: prepared.message,
+      ...(trigger.notify ? { notify: true } : {}), ...(trigger.callback_url ? { callback_url: trigger.callback_url } : {}),
+    })
+    await record('started', { run_id: run.run_id, ...(id ? { delivery_id: id } : {}) }, id)
+    return json(202, { runId: run.run_id })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (err instanceof WorkflowError && /already running/.test(message)) {
+      await record('busy', { detail: message, ...(id ? { delivery_id: id } : {}) }, id)
+      return json(202, { ignored: 'already running' })
+    }
+    await record(err instanceof WorkflowError ? 'invalid' : 'error', { detail: message, ...(id ? { delivery_id: id } : {}) })
+    return json(err instanceof WorkflowError ? 422 : 500, { error: message })
+  }
+}
+
+// A workflow's webhook triggers, for the console: list, make (its URL is
+// shown once), change, rotate (a new URL), delete.
+async function handleWorkflowTriggers(req: IncomingMessage, res: ServerResponse, agentName: string, workflowId: string, triggerId: string | undefined, action: string | undefined): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  if (!getEntry(agentName)) return json(404, { error: `unknown agent '${agentName}'` })
+  const workflow = readWorkflow(agentDir(agentName), workflowId)
+  if (!workflow) return json(404, { error: `no workflow ${workflowId} in ${agentName}` })
+  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0]
+  const base = `${forwardedProto || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http')}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`
+  const urlFor = (token: string) => `${base}/hooks/workflows/${token}`
+  try {
+    if (!triggerId && req.method === 'GET') return json(200, { triggers: (await listTriggers(agentName, workflowId)).map(publicTrigger) })
+    if (!triggerId && req.method === 'POST') {
+      const { trigger, token } = await createTrigger(agentName, workflow, await readJsonBody(req))
+      return json(201, { trigger: publicTrigger(trigger), url: urlFor(token) })
+    }
+    const existing = triggerId ? await getTriggerStore().get(triggerId) : undefined
+    if (!existing || existing.agent !== agentName || existing.workflow_id !== workflowId) return json(404, { error: 'no such trigger' })
+    if (action === 'rotate' && req.method === 'POST') {
+      const { trigger, token } = await rotateTrigger(existing.trigger_id)
+      return json(200, { trigger: publicTrigger(trigger), url: urlFor(token) })
+    }
+    if (!action && req.method === 'PUT') return json(200, { trigger: publicTrigger(await updateTrigger(existing.trigger_id, workflow, await readJsonBody(req))) })
+    if (!action && req.method === 'DELETE') {
+      await getTriggerStore().remove(existing.trigger_id)
+      return json(200, { removed: true })
+    }
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return json(err instanceof TriggerError || err instanceof CallbackUrlError ? 400 : 500, { error: message })
+  }
+}
+
 // Set once shutdown() starts, so /healthz turns 503 while the server
 // drains and a router or load balancer stops sending it new requests.
 let shuttingDown = false
@@ -3681,6 +3800,19 @@ const server = createServer(async (req, res) => {
     } catch (err) {
       console.error('[loopengine] Slack interaction failed:', err)
       if (!res.headersSent) res.writeHead(500).end()
+    }
+    return
+  }
+
+  // A workflow's webhook trigger: its token is the credential (no login).
+  const workflowHookMatch = req.method === 'POST' && (req.url ?? '/').split('?')[0].match(/^\/hooks\/workflows\/([A-Za-z0-9_-]+)$/)
+  if (workflowHookMatch) {
+    try {
+      lastRequestAt = Date.now()
+      await tracked(() => handleWorkflowHook(req, res, workflowHookMatch[1]))
+    } catch (err) {
+      console.error('[loopengine] workflow webhook failed:', err)
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Something went wrong.' }))
     }
     return
   }
@@ -3966,6 +4098,11 @@ const server = createServer(async (req, res) => {
       const run = getEntry(agentName) ? await getRun(agentName, agentRunMatch[2]) : undefined
       res.writeHead(run ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' })
         .end(JSON.stringify(run ?? { error: `no run ${agentRunMatch[2]} for ${agentName}` }))
+      return
+    }
+    const triggersMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/triggers(?:\/([A-Za-z0-9_-]+))?(?:\/(rotate))?$/)
+    if (triggersMatch) {
+      await handleWorkflowTriggers(req, res, decodeURIComponent(triggersMatch[1]), triggersMatch[2], triggersMatch[3], triggersMatch[4])
       return
     }
     const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs))?$/)
