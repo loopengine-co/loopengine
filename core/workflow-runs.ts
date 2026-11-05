@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { KeyedMutex } from './session-store.js'
+import type { CallbackDelivery } from './run-callbacks.js'
 
 export type WorkflowRunStatus = 'running' | 'awaiting_approval' | 'done' | 'error'
 
@@ -43,6 +44,13 @@ export interface WorkflowRun {
   error?: string
   /** The approvals or questions it is waiting on. */
   pending_ids?: string[]
+  /** Send its result through the agent's notifier when it ends. */
+  notify?: boolean
+  /** Where its record is posted when it ends or stops for a decision
+   * (core/run-callbacks.ts). */
+  callback_url?: string
+  /** Each callback delivery, oldest first (the latest 10). */
+  callbacks?: CallbackDelivery[]
 }
 
 export type RunOutcome = { kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }
@@ -160,16 +168,29 @@ export interface StartRunInput {
   params?: Record<string, string>
   source: WorkflowRun['source']
   message: string
+  notify?: boolean
+  callback_url?: string
 }
 
 export class WorkflowRunner {
   private readonly execute: ExecuteRun
   private readonly maxFinishedPerAgent: number
+  private readonly onChange?: (run: WorkflowRun) => void | Promise<void>
   private readonly inFlight = new Set<Promise<void>>()
 
-  constructor(options: { execute: ExecuteRun; maxFinishedPerAgent?: number }) {
+  /** `onChange`: called with the run each time it finishes, fails or
+   * stops for a decision (the server sends its notify and callback). */
+  constructor(options: { execute: ExecuteRun; maxFinishedPerAgent?: number; onChange?: (run: WorkflowRun) => void | Promise<void> }) {
     this.execute = options.execute
     this.maxFinishedPerAgent = options.maxFinishedPerAgent ?? MAX_FINISHED_PER_AGENT
+    this.onChange = options.onChange
+  }
+
+  private changed(run: WorkflowRun | undefined): void {
+    if (!run || !this.onChange) return
+    void Promise.resolve()
+      .then(() => this.onChange!(run))
+      .catch((err) => console.error(`[loopengine] reporting run ${run.run_id} failed:`, err))
   }
 
   /** Records a run and starts it; returns at once with the record. */
@@ -181,6 +202,8 @@ export class WorkflowRunner {
       workflow_id: input.workflow_id,
       ...(input.params && Object.keys(input.params).length ? { params: input.params } : {}),
       source: input.source,
+      ...(input.notify ? { notify: true } : {}),
+      ...(input.callback_url ? { callback_url: input.callback_url } : {}),
       status: 'running',
       started_at: new Date().toISOString(),
       message: input.message,
@@ -215,7 +238,7 @@ export class WorkflowRunner {
     await this.prune(input.agent)
     try {
       const outcome = await this.execute(run.agent, run.message, run.session_id)
-      if (outcome.kind === 'pending') await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds })
+      if (outcome.kind === 'pending') this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
       else await this.finish(run.run_id, { status: 'done', result: outcome.text })
       return outcome
     } catch (err) {
@@ -238,7 +261,7 @@ export class WorkflowRunner {
     try {
       const outcome = await this.execute(run.agent, run.message, run.session_id)
       if (outcome.kind === 'pending') {
-        await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds })
+        this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
         return
       }
       await this.finish(run.run_id, { status: 'done', result: outcome.text })
@@ -248,7 +271,7 @@ export class WorkflowRunner {
   }
 
   private async finish(runId: string, end: { status: 'done' | 'error'; result?: string; error?: string }): Promise<void> {
-    await getRunStore().update(runId, (r) => r && { ...r, ...end, pending_ids: undefined, finished_at: new Date().toISOString() })
+    this.changed(await getRunStore().update(runId, (r) => r && { ...r, ...end, pending_ids: undefined, finished_at: new Date().toISOString() }))
   }
 
   /** A paused run resumed after a decision (the server calls this from
@@ -259,7 +282,7 @@ export class WorkflowRunner {
     const run = (await getRunStore().list()).find((r) => r.session_id === sessionId)
     if (!run) return
     if (outcome.pendingIds?.length) {
-      await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds })
+      this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
       return
     }
     await this.finish(run.run_id, { status: 'done', result: outcome.text })

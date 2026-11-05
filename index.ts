@@ -270,6 +270,7 @@ export {
   prepareMcpAbilities,
 } from './web/workflow-admin.js'
 export { WORKFLOW_PLANNER_PROMPT, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep } from './core/system-agents/workflow-planner.js'
+export { checkCallbackUrl, callbackSecret, signCallback, deliverCallback, runCallbackPayload, isPrivateAddress, CallbackUrlError, type CallbackDelivery, type RunCallbackEvent } from './core/run-callbacks.js'
 export { WorkflowRunner, FileRunStore, getRunStore, setRunStore, listRuns, getRun, isUnderWay, RunError, type WorkflowRun, type WorkflowRunStatus, type RunStore, type ExecuteRun, type RunOutcome, type StartRunInput } from './core/workflow-runs.js'
 export { readWorkflows, readWorkflow, setWorkflowFields, clearWorkflowFields, validateParams, workflowRunMessage, migrateWorkflowsFile, WorkflowParamsError, type Workflow, type WorkflowFields, type WorkflowParameter } from './core/workflows.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'

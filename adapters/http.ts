@@ -90,7 +90,8 @@ import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgent
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, validateParams, workflowRunMessage } from '#core/workflows.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
-import { WorkflowRunner, getRun, listRuns } from '#core/workflow-runs.js'
+import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
+import { CallbackUrlError, callbackSecret, checkCallbackUrl, deliverCallback, runCallbackPayload, type RunCallbackEvent } from '#core/run-callbacks.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
@@ -1324,7 +1325,13 @@ const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_0
 // An agent's workflows (its Overview, and apps over the API): list, run
 // now with parameters, edit how runs start (PUT), forget.
 //
-//   POST /agents/:name/workflows/:id/run  { "params": {…}, "wait": true }
+//   POST /agents/:name/workflows/:id/run
+//     { "params": {…}, "wait": true, "notify": true, "callback_url": "https://…" }
+//
+// "notify" sends the result through the agent's messaging connection when
+// the run ends; "callback_url" gets the run's record posted to it when it
+// ends or stops for a decision, signed (core/run-callbacks.ts). Both are
+// optional, and work with or without "wait".
 //
 // starts a one-off run. Without "wait" it answers 202 { runId } straight
 // away. With it, 200 { runId, text } once the run finishes, 202 { runId,
@@ -1343,8 +1350,20 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
     if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
     if (id && action === 'run' && req.method === 'POST') {
       const body = await readJsonBody(req)
+      if (body.notify !== undefined && typeof body.notify !== 'boolean') return json(400, { error: 'notify must be true or false' })
+      let callbackUrl: string | undefined
+      if (body.callback_url !== undefined && body.callback_url !== null && body.callback_url !== '') {
+        try {
+          callbackUrl = checkCallbackUrl(body.callback_url)
+        } catch (err) {
+          return json(400, { error: err instanceof CallbackUrlError ? err.message : String(err) })
+        }
+      }
       const prepared = await prepareWorkflowRun(agentName, dir, id, body.params)
-      const run = await workflowRunner.start({ agent: agentName, workflow_id: id, params: prepared.params, source: body.source === 'console' ? 'console' : 'api', message: prepared.message })
+      const run = await workflowRunner.start({
+        agent: agentName, workflow_id: id, params: prepared.params, source: body.source === 'console' ? 'console' : 'api', message: prepared.message,
+        ...(body.notify === true ? { notify: true } : {}), ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+      })
       if (body.wait !== true) return json(202, { runId: run.run_id })
       const deadline = Date.now() + WORKFLOW_WAIT_MS
       for (;;) {
@@ -1682,8 +1701,25 @@ async function executeUnattendedRun(agent: string, message: string, rawSessionId
   return { kind: 'done', text: outcome.text }
 }
 
+// A run started over the API with "notify" or "callback_url" reports
+// when it ends (and, to its callback, when it stops for a decision): its
+// result through the agent's notifier, and its record to the URL.
+async function reportWorkflowRun(run: WorkflowRun): Promise<void> {
+  const event: RunCallbackEvent | undefined = run.status === 'done' ? 'run.done' : run.status === 'error' ? 'run.failed' : run.status === 'awaiting_approval' ? 'run.awaiting_approval' : undefined
+  if (!event) return
+  const entry = getEntry(run.agent)
+  if (run.notify && entry && event !== 'run.awaiting_approval') {
+    const text = run.status === 'done' ? `Workflow ${run.workflow_id} for ${run.agent} ran:\n${run.result ?? ''}` : `Workflow ${run.workflow_id} for ${run.agent} failed: ${run.error ?? 'unknown error'}`
+    announceToNotifier(entry.config, text, { runId: run.run_id, workflowId: run.workflow_id, status: run.status, result: run.result ?? null, error: run.error ?? null }, defaultWebhook)
+  }
+  if (run.callback_url) {
+    const delivery = await deliverCallback(run.callback_url, event, runCallbackPayload(event, run))
+    await getRunStore().update(run.run_id, (r) => r && { ...r, callbacks: [...(r.callbacks ?? []), delivery].slice(-10) })
+  }
+}
+
 // Workflow runs, whatever starts them, each recorded apart from schedules.
-const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun })
+const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun, onChange: reportWorkflowRun })
 
 // A task that runs a workflow is also recorded as a run of that workflow,
 // so the workflow's Recent runs shows its scheduled runs too.
@@ -3916,6 +3952,11 @@ const server = createServer(async (req, res) => {
     const agentAppMatch = pathname.match(/^\/agents\/([^/]+)\/apps\/([^/]+)$/)
     if (agentAppMatch) {
       await handleAgentApp(req, res, decodeURIComponent(agentAppMatch[1]), decodeURIComponent(agentAppMatch[2]))
+      return
+    }
+    // The secret run callbacks are signed with, for whoever checks them.
+    if (req.method === 'GET' && pathname === '/runs/callback-secret') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ secret: callbackSecret() }))
       return
     }
     // One workflow run, by the runId its POST .../run returned.
