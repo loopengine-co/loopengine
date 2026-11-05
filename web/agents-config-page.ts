@@ -50,6 +50,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source .schedule-when input[type="number"] { width: 80px; }
   form.add-source .schedule-when select, form.add-source .schedule-when input[type="datetime-local"] { width: auto; }
   .workflow-card { margin-bottom: 10px; }
+  tr.schedule-focus td { background: var(--le-accent-soft, #e6f4ef); transition: background 0.3s; }
   .workflow-starts { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; background: var(--le-surface, #f6f7f9); }
   .workflow-starts h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
   .wf-start { padding: 10px 0; border-top: 1px solid var(--le-line, #e5e7eb); display: grid; gap: 6px; font-size: 13px; }
@@ -710,7 +711,7 @@ ${consoleShellScript}
     return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
-  // How it starts: four ways, each with a ? that says what it is. A
+  // Ways to run it: four, each with a ? that says what it is. A
   // schedule (pause, resume, remove, add), a webhook, Run now with the
   // values a run is given, and the API call an app makes.
   function wfStartSection(key, title, help, body) {
@@ -723,14 +724,15 @@ ${consoleShellScript}
   function workflowStartsHtml(w, agentName, paramsHtml) {
     var schedules = (w.schedules || []).map(function (x) {
       var state = x.waiting ? '<span class="le-pill ask">Waiting for a decision</span>'
-        : x.status === 'paused' ? '<span class="le-pill">Paused</span>'
+        : x.status === 'paused' ? '<span class="le-pill warn">Paused</span>'
         : x.status === 'running' ? '<span class="le-pill accent">Running</span>'
         : (x.nextRunAt ? '<span class="hint">next ' + escapeHtml(new Date(x.nextRunAt).toLocaleString()) + '</span>' : '');
       var values = x.params ? Object.keys(x.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(x.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
       return '<li style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
-        '<span>' + escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + (x.name ? ' <span class="hint">(' + escapeHtml(x.name) + ')</span>' : '') + '</span>' + state +
+        '<span><a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=schedules#schedule-' + escapeHtml(x.taskId) + '" class="workflow-schedule-link" data-task="' + escapeHtml(x.taskId) + '" title="See it in the Schedules tab">' +
+          escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + '</a></span>' + state +
         (values ? '<span class="hint">' + values + '</span>' : '') +
-        (x.notify ? '<span class="hint">sends you each result</span>' : '') +
+        (x.notify ? '<span class="hint">results go to your messaging app</span>' : '') +
         '<span style="display:flex;gap:6px;margin-left:auto">' +
           (x.status === 'paused' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="resume">Resume</button>'
             : x.status === 'scheduled' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="pause">Pause</button>' : '') +
@@ -738,11 +740,11 @@ ${consoleShellScript}
         '</span></li>';
     }).join('');
     var paramNames = Object.keys(w.parameters || {});
-    var example = paramNames.length
-      ? '{ "params": { ' + paramNames.map(function (p) { return '"' + p + '": "' + String.fromCharCode(8230) + '"'; }).join(', ') + ' } }'
-      : '{}';
+    // A body that shows what a call can carry: its values, and waiting
+    // for the result.
+    var example = '{ ' + (paramNames.length ? '"params": { ' + paramNames.map(function (p) { return '"' + p + '": "' + String.fromCharCode(8230) + '"'; }).join(', ') + ' }, ' : '') + '"wait": true }';
     var apiUrl = location.origin + '/agents/' + encodeURIComponent(agentName) + '/workflows/' + encodeURIComponent(w.id) + '/run';
-    return '<div class="workflow-starts"><h4>How it starts</h4>' +
+    return '<div class="workflow-starts"><h4>Ways to run it</h4>' +
       wfStartSection('schedule-' + w.id, 'Schedule',
         'Runs it on a timer, like every day at 9:00, with the values you give the schedule. Nobody needs to be there: approvals and questions go to the agent' + String.fromCharCode(8217) + 's messaging app.',
         (schedules ? '<ul class="schedule-history">' + schedules + '</ul>' : '<span class="hint">None yet.</span>') +
@@ -757,7 +759,9 @@ ${consoleShellScript}
         '<div><button type="button" class="workflow-run primary">Run now</button></div>') +
       wfStartSection('api-' + w.id, 'API',
         'Your own app starts a run by calling this address with an API key. Add "wait": true to get the result in the answer, or "callback_url" to have it posted to you when the run ends.',
-        '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>') +
+        '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
+        '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
+          'Optional: <code>"wait": true</code> answers with the result; <code>"notify": true</code> sends it through the agent' + String.fromCharCode(8217) + 's messaging app; <code>"callback_url"</code> posts it to your app when the run ends. Leave them out to get the run' + String.fromCharCode(8217) + 's id back at once.</p>') +
     '</div>';
   }
 
@@ -772,7 +776,7 @@ ${consoleShellScript}
         : s.waiting
           ? '<span class="le-pill ask">Waiting for a decision</span>'
           : s.status === 'paused'
-            ? '<span class="le-pill">Schedule paused</span>'
+            ? '<span class="le-pill warn">Schedule paused</span>'
             : s.status === 'running'
               ? '<span class="le-pill accent">Running</span>'
               : '<span class="le-pill good">On</span>' + (s.nextRunAt ? ' <span class="hint">next ' + escapeHtml(new Date(s.nextRunAt).toLocaleString()) + '</span>' : '');
@@ -834,6 +838,24 @@ ${consoleShellScript}
   var workflowsRefreshTimer = null;
   // Set by a workflow's "Add a schedule", for the Schedules tab's form.
   var pendingScheduleWorkflow = null;
+  // Set by a schedule on a workflow card (or a #schedule-<id> link): the
+  // Schedules tab's row to show.
+  var pendingScheduleFocus = /^#schedule-/.test(location.hash) ? location.hash.slice('#schedule-'.length) : null;
+
+  // Scrolls to that row and marks it for a moment, once the tab has drawn
+  // it (it may still be loading).
+  function focusScheduleRow(tries) {
+    if (!pendingScheduleFocus) return;
+    var row = detail.querySelector('#schedule-' + CSS.escape(pendingScheduleFocus));
+    if (!row) {
+      if ((tries || 0) < 40) setTimeout(function () { focusScheduleRow((tries || 0) + 1); }, 150);
+      return;
+    }
+    pendingScheduleFocus = null;
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('schedule-focus');
+    setTimeout(function () { row.classList.remove('schedule-focus'); }, 2500);
+  }
   var workflowsById = {};
   // Set while a workflow's editor is open, so the running-run refresh
   // doesn't redraw the card under someone typing.
@@ -1135,6 +1157,17 @@ ${consoleShellScript}
     var result = card.querySelector('.workflow-result');
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
+    // A schedule opens its own row in the Schedules tab.
+    var scheduleLinks = card.querySelectorAll('.workflow-schedule-link');
+    for (var sl = 0; sl < scheduleLinks.length; sl++) {
+      scheduleLinks[sl].addEventListener('click', function (ev) {
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+        ev.preventDefault();
+        pendingScheduleFocus = ev.currentTarget.dataset.task;
+        switchTab('schedules');
+        focusScheduleRow();
+      });
+    }
     // The ? beside each way it starts shows or hides what it is.
     var helps = card.querySelectorAll('.help-q');
     for (var hq = 0; hq < helps.length; hq++) {
@@ -2346,7 +2379,7 @@ ${consoleShellScript}
       return '<li><span class="le-pill ' + (h.status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(h.status) + '</span> <span class="hint">' + escapeHtml(fmtScheduleTime(h.ran_at)) + '</span>' +
         '<div class="schedule-result">' + escapeHtml(h.status === 'ok' ? (h.result || '') : (h.error || '')) + '</div></li>';
     }).join('');
-    return '<tr>' +
+    return '<tr id="schedule-' + escapeHtml(t.task_id) + '">' +
       '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' +
         (t.workflow
           ? '<div><span class="le-pill accent">Workflow</span> ' + escapeHtml(t.workflow.title) + '</div><div class="schedule-result hint">' + escapeHtml(t.workflow.start_message) +
@@ -2382,7 +2415,7 @@ ${consoleShellScript}
                     return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.title) + '</option>';
                   }).join('') + '</select></div>' +
                 '<div class="workflow-params" id="scheduleParams" style="margin:0 0 4px 22px"></div>' +
-                '<p class="hint" style="margin:0 0 4px 22px">Each run starts with the workflow&#39;s start message as it is then, so changing the workflow changes what runs.</p>' +
+                '<p class="hint" style="margin:0 0 4px 22px">Each run follows the workflow&#39;s instructions as they are then, so changing the workflow changes what runs.</p>' +
                 '<div class="schedule-when"><input type="radio" name="runs" value="message" id="runsMessage"><label for="runsMessage">A message</label></div>' +
               '</div>'
             : '') +
@@ -2481,6 +2514,7 @@ ${consoleShellScript}
       form.scrollIntoView({ block: 'start' });
     }
     pendingScheduleWorkflow = null;
+    focusScheduleRow();
     renderScheduleParams();
     if (workflowSelect) workflowSelect.addEventListener('change', renderScheduleParams);
     for (var k = 0; k < runsRadios.length; k++) {
@@ -4414,7 +4448,7 @@ ${consoleShellScript}
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +
       // Workflows: the jobs this agent does, each with what starts it.
       '<div class="tab-panel" data-tab-panel="workflows">' +
-        '<p class="muted" style="margin:0 0 20px">The jobs this agent does on its own: what it does, what starts it (schedules, webhooks, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
+        '<p class="muted" style="margin:0 0 20px">The jobs this agent does on its own: what it does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
         '<section id="workflowsSection"><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '</div>' +
       // Advanced: the agent's own tools (and Composio, subagents), then its
