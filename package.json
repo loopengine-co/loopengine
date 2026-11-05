@@ -46,6 +46,8 @@
     "dist/core/trusted-proxy.d.ts",
     "dist/core/usage.js",
     "dist/core/usage.d.ts",
+    "dist/core/run-events.js",
+    "dist/core/run-events.d.ts",
     "dist/core/email-senders.js",
     "dist/core/email-senders.d.ts",
     "dist/core/notifier-file.js",
