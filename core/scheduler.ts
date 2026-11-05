@@ -332,6 +332,12 @@ export async function pauseScheduledTask(taskId: string): Promise<ScheduledTask>
   )
 }
 
+/** Turns sending each run's result through the agent's notifier on or
+ * off, from the next run. */
+export async function setScheduledTaskNotify(taskId: string, notify: boolean): Promise<ScheduledTask> {
+  return mustExist(await getSchedulerStore().update(taskId, (t) => t && { ...t, notify: notify || undefined }), taskId)
+}
+
 export async function resumeScheduledTask(taskId: string, nowMs = Date.now()): Promise<ScheduledTask> {
   return mustExist(
     await getSchedulerStore().update(taskId, (t) => {

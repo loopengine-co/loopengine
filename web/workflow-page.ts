@@ -29,6 +29,8 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-num { width: 24px; color: var(--ink-muted); }
   .wf-target { display: grid; gap: 8px; }
   .wf-target label { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
+  .wf-notify { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
+  .wf-notify input { margin: 0; }
   .wf-params { display: grid; gap: 6px; }
   .wf-param { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
   .wf-param .wf-param-name { width: 160px; font-family: var(--mono, monospace); }
@@ -235,6 +237,10 @@ ${consoleShellScript}
       '<div class="wf-card">' +
         '<h2>' + esc(p.name) + '</h2><p style="margin:0">' + esc(p.summary) + '</p>' +
         '<p class="hint" style="margin:0"><strong>Starts:</strong> ' + esc(p.trigger.description) + (p.trigger.kind === 'schedule' ? ' (created paused; you turn it on)' : '') + '</p>' +
+        (p.trigger.kind === 'schedule'
+          ? '<label class="wf-notify"><input type="checkbox" id="wfNotify"' + (p.notify && p.notify.on ? ' checked' : '') + '> Send each run' + String.fromCharCode(8217) + 's result to you through the agent' + String.fromCharCode(8217) + 's messaging app</label>' +
+            (p.notify && p.notify.reason ? '<p class="hint" style="margin:0 0 0 24px">' + esc(p.notify.reason) + '</p>' : '')
+          : '') +
         paramsSectionHtml(p) +
         '<h3>Steps</h3>' +
         '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th></th><th>Step</th><th>Becomes</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
@@ -272,6 +278,8 @@ ${consoleShellScript}
       var edited = readParams();
       if (edited.error) { document.getElementById('wfStatus').textContent = edited.error; return; }
       p.parameters = edited.parameters;
+      var notifyBox = document.getElementById('wfNotify');
+      if (notifyBox) p.notify = { on: notifyBox.checked, reason: (p.notify && p.notify.reason) || '' };
       var chosen = page.querySelector('input[name="wfTarget"]:checked');
       var target = chosen.value === 'new' ? { kind: 'new' } : { kind: 'existing', agent: chosen.value === 'other' ? document.getElementById('wfOther').value : chosen.dataset.agent };
       var btn = document.getElementById('wfCreate');

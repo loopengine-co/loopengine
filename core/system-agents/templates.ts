@@ -46,6 +46,8 @@ export interface TemplateSchedule {
   /** Set when the template comes from a workflow: the schedule runs that
    * workflow (its start message at run time) rather than `message`. */
   workflowId?: string
+  /** Send each run's result through the agent's notifier. */
+  notify?: boolean
 }
 
 /** An app (core/mcp-apps.ts) a template works through, and the server

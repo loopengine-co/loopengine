@@ -98,7 +98,7 @@ import { NotifierFileError } from '#core/notifier-file.js'
 import { verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
 import { agentApprovers, announceToNotifier, describeAgentNotifier, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, slackClickAllowed, slackConversationsOn, slackCredentialsFor, testAgentNotifier } from '#web/notifier-admin.js'
-import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
+import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
 import { describeChange } from '#core/messaging/decide.js'
 import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
@@ -4240,6 +4240,19 @@ const server = createServer(async (req, res) => {
     }
     if (schedulesMatch && req.method === 'POST') {
       await handleSchedulesPost(req, res, decodeURIComponent(schedulesMatch[1]))
+      return
+    }
+    // POST /schedules/:id/notify { "notify": true|false }: whether each
+    // run's result goes through the agent's notifier.
+    const scheduleNotifyMatch = req.method === 'POST' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)\/notify$/)
+    if (scheduleNotifyMatch) {
+      const body = await readJsonBody(req)
+      if (typeof body.notify !== 'boolean') return scheduleJson(res, 400, { error: 'notify must be true or false' })
+      try {
+        scheduleJson(res, 200, await setScheduledTaskNotify(scheduleNotifyMatch[1], body.notify))
+      } catch (err) {
+        scheduleJson(res, err instanceof ScheduleError ? 404 : 500, { error: err instanceof Error ? err.message : String(err) })
+      }
       return
     }
     const scheduleActionMatch = req.method === 'POST' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)\/(run|pause|resume|cancel)$/)

@@ -17,10 +17,10 @@ import { freeAgentName } from './interview-admin.js'
 import { writeSkill } from './skills-admin.js'
 
 
-/** What a template's schedule runs: its workflow, when it comes from one,
- * or its message. */
-function scheduleRuns(schedule: { message: string; workflowId?: string }): { message?: string; workflow_id?: string } {
-  return schedule.workflowId ? { workflow_id: schedule.workflowId } : { message: schedule.message }
+/** What a template's schedule runs (its workflow, when it comes from one,
+ * or its message), and whether it sends each result. */
+function scheduleRuns(schedule: { message: string; workflowId?: string; notify?: boolean }): { message?: string; workflow_id?: string; notify?: boolean } {
+  return { ...(schedule.workflowId ? { workflow_id: schedule.workflowId } : { message: schedule.message }), ...(schedule.notify ? { notify: true } : {}) }
 }
 
 export class TemplateError extends Error {}

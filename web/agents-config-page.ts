@@ -201,6 +201,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   }
   form.add-source label { font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
   form.add-source label[hidden] { display: none; }
+  .schedule-notify { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; cursor: pointer; }
+  .schedule-notify input { width: auto; margin: 0; }
   form.add-source input, form.add-source select, form.add-source textarea { width: 100%; }
   form.add-source textarea { font-family: ui-monospace, monospace; min-height: 60px; }
   /* Overrides form.add-source's shared max-width/textarea defaults for
@@ -1950,13 +1952,16 @@ ${consoleShellScript}
         '<div class="schedule-result">' + escapeHtml(h.status === 'ok' ? (h.result || '') : (h.error || '')) + '</div></li>';
     }).join('');
     return '<tr>' +
-      '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' + (t.notify ? ' <span class="le-pill accent" title="Each result goes through this agent&#39;s notifier">notifies</span>' : '') +
+      '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' +
         (t.workflow
           ? '<div><span class="le-pill accent">Workflow</span> ' + escapeHtml(t.workflow.title) + '</div><div class="schedule-result hint">' + escapeHtml(t.workflow.start_message) +
               (t.params ? '<br>' + Object.keys(t.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(t.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '') + '</div>'
           : t.workflow_missing
             ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
-            : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') + '</td>' +
+            : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') +
+        (t.status !== 'cancelled' && t.status !== 'done'
+          ? '<label class="schedule-notify hint" title="Send each run&#39;s result through this agent&#39;s messaging connection (Messaging tab)"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send each result to you</label>'
+          : (t.notify ? '<div class="hint">Sent each result to you</div>' : '')) + '</td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
         (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
@@ -2038,6 +2043,19 @@ ${consoleShellScript}
           ? fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
           : fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' });
         request.then(function () { setTimeout(function () { loadSchedulesTab(name); }, action === 'run' ? 800 : 0); });
+      });
+    }
+    var notifyToggles = content.querySelectorAll('.schedule-notify-toggle');
+    for (var n = 0; n < notifyToggles.length; n++) {
+      notifyToggles[n].addEventListener('change', function (ev) {
+        var box = ev.currentTarget;
+        box.disabled = true;
+        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(box.dataset.id) + '/notify', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notify: box.checked }),
+        }).then(function (r) {
+          box.disabled = false;
+          if (!r.ok) { box.checked = !box.checked; alert('Could not change it: ' + (r.body.error || 'unknown error')); }
+        });
       });
     }
     var toApprovals = content.querySelectorAll('.schedule-to-approvals');

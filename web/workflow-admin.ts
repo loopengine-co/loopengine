@@ -499,6 +499,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
       const task = await createScheduledTask({
         agent: agent.name,
         workflow_id: plan.id,
+        ...(plan.notify?.on ? { notify: true } : {}),
         schedule: { every: template.setup.schedule.every, ...(startAt ? { start_at: startAt } : {}) },
         task_name: plan.name,
       })

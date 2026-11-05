@@ -69,6 +69,19 @@ describe('a workflow plan', () => {
   })
 })
 
+describe("a plan's notify choice", () => {
+  it('comes from the planner with its reason, and is off when it gave none', () => {
+    const on = validateWorkflowPlan({ ...RAW_PLAN, notify: { on: true, reason: 'Nothing posts the ideas anywhere, so they are sent to you.' } })!
+    expect(on.notify).toEqual({ on: true, reason: 'Nothing posts the ideas anywhere, so they are sent to you.' })
+    expect(validateWorkflowPlan(RAW_PLAN)!.notify).toEqual({ on: false, reason: '' })
+  })
+
+  it('reaches the schedule a new agent gets', () => {
+    expect(workflowTemplate(validateWorkflowPlan({ ...RAW_PLAN, notify: { on: true, reason: 'x' } })!).setup.schedule?.notify).toBe(true)
+    expect(workflowTemplate(validateWorkflowPlan(RAW_PLAN)!).setup.schedule).not.toHaveProperty('notify')
+  })
+})
+
 describe("a plan's parameters", () => {
   const onRequest = { kind: 'on_request', description: 'When a refund request comes in' }
 

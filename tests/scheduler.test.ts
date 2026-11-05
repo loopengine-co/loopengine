@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   FileSchedulerStore, Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, getScheduledTask, importLegacyScheduledTasks,
-  listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setSchedulerStore, type FireTask,
+  listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, setSchedulerStore, type FireTask,
 } from '#core/scheduler.js'
 
 let dir: string
@@ -52,6 +52,17 @@ describe('creating tasks', () => {
     // Resumed on Nov 3 at 20:00 (UTC+8): next run is Nov 4 at 9:00.
     const resumed = await resumeScheduledTask(task.task_id, Date.parse('2026-11-03T20:00:00+08:00'))
     expect(resumed.next_run_at).toBe('2026-11-04T01:00:00.000Z')
+  })
+})
+
+describe('sending each result', () => {
+  it('turns on and off for an existing task, keeping everything else', async () => {
+    const task = await createScheduledTask({ agent: 'a', message: 'digest', schedule: { every: '1d' } })
+    expect((await setScheduledTaskNotify(task.task_id, true)).notify).toBe(true)
+    const off = await setScheduledTaskNotify(task.task_id, false)
+    expect(off.notify).toBeUndefined()
+    expect(off).toMatchObject({ message: 'digest', status: 'scheduled', next_run_at: task.next_run_at })
+    await expect(setScheduledTaskNotify('no-such-task', true)).rejects.toThrow(/no scheduled task/)
   })
 })
 

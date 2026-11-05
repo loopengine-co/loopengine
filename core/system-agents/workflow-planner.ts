@@ -91,6 +91,9 @@ export interface WorkflowPlan {
   /** Values a run is given, filled into $name in the start message and
    * steps (core/workflows.ts). Empty when every run is the same. */
   parameters: Record<string, WorkflowParameter>
+  /** Whether each scheduled run's result is sent to the person through
+   * the agent's messaging app, and why (shown on the review screen). */
+  notify: { on: boolean; reason: string }
   target: { kind: 'existing' | 'new'; agent?: string; reason: string }
   /** For a new agent. */
   newAgent: { name: string; systemPrompt: string }
@@ -138,9 +141,10 @@ How to plan:
 3. Rules: every tool the workflow uses gets one. Reading and searching: allow. Anything a person should see first (sending, publishing, paying, creating something others see): ask. Never set deny unless asked.
 4. Skill: the steps in order, as numbered instructions the agent follows, naming the tools and saying exactly when to stop and ask. Write it so the agent keeps going after each answer or decision.
 5. Trigger: a schedule ("every Monday at 9" is every "7d", at "09:00", weekday 1) or on_request (started from Chat or a message). startMessage is what the agent receives when it starts.
-6. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
-7. Target: an existing agent only when it already has (or can install) the tools, none of the workflow's rules would change a decision it already has, and the same people would approve. Otherwise a new agent, with a short lowercase-hyphenated name and a system prompt saying who it is and what it's for. Give the reason either way.
-8. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
+6. Notify (scheduled workflows): whether each run's result is sent to the person through the agent's messaging app. true when the result is for them and no step already delivers it ("tell me", "send me", "let me know", a summary or findings that no step posts or emails). false when a step already sends it (posting to a channel, emailing a report): it would arrive twice. false when the work itself is the outcome (answering emails, filing tasks), where a message every run is noise; questions and approvals reach them either way. Say why in one short sentence.
+7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
+8. Target: an existing agent only when it already has (or can install) the tools, none of the workflow's rules would change a decision it already has, and the same people would approve. Otherwise a new agent, with a short lowercase-hyphenated name and a system prompt saying who it is and what it's for. Give the reason either way.
+9. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
 
 Then call save_plan once, with the whole plan. Don't ask the person questions: if something is unclear, plan the most reasonable version and note the assumption in gaps.`
 
@@ -195,6 +199,12 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
           needsApprovals: { type: 'boolean' },
           skill: { type: 'object', properties: { description: { type: 'string' }, body: { type: 'string' } }, required: ['description', 'body'] },
           startMessage: { type: 'string' },
+          notify: {
+            type: 'object',
+            description: 'Scheduled workflows: whether each run\'s result goes to the person through the agent\'s messaging app, and why in one short sentence.',
+            properties: { on: { type: 'boolean' }, reason: { type: 'string' } },
+            required: ['on', 'reason'],
+          },
           parameters: {
             type: 'object',
             description: 'Values each run is given, by snake_case name; use $name in startMessage and the skill. Leave out when every run is the same.',
@@ -301,6 +311,7 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     skill: { description: str(skillRaw.description, 400) ?? summary, body: skillBody },
     startMessage,
     parameters: planned.parameters,
+    notify: planNotify(r.notify),
     target: {
       kind: targetRaw.kind === 'existing' && str(targetRaw.agent, 80) ? 'existing' : 'new',
       ...(targetRaw.kind === 'existing' && str(targetRaw.agent, 80) ? { agent: str(targetRaw.agent, 80) } : {}),
@@ -309,6 +320,12 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     newAgent: { name: slugify(str(agentRaw.name, 60) ?? id, id), systemPrompt },
     gaps: [...gaps, ...planned.notes].slice(0, 12),
   }
+}
+
+/** A plan's notify choice; off when the planner gave none. */
+export function planNotify(raw: unknown): WorkflowPlan['notify'] {
+  const n = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return { on: n.on === true, reason: typeof n.reason === 'string' ? n.reason.trim().slice(0, 200) : '' }
 }
 
 /** A plan's parameters, tidied: names made snake_case (or dropped), a
@@ -448,7 +465,7 @@ export function workflowTemplate(plan: WorkflowPlan): StarterTemplate {
       skills: [{ id: plan.id, description: plan.skill.description, body: plan.skill.body }],
       rules: plan.rules.map((r) => ({ name: slugify(`${plan.id}-${r.tool}`, `${plan.id}-rule`), tool: r.tool, decision: r.decision })),
       ...(plan.trigger.kind === 'schedule' && plan.trigger.every
-        ? { schedule: { every: plan.trigger.every, ...(plan.trigger.at ? { at: plan.trigger.at } : {}), ...(plan.trigger.weekday !== undefined ? { weekday: plan.trigger.weekday } : {}), name: plan.name, message: plan.startMessage, workflowId: plan.id } }
+        ? { schedule: { every: plan.trigger.every, ...(plan.trigger.at ? { at: plan.trigger.at } : {}), ...(plan.trigger.weekday !== undefined ? { weekday: plan.trigger.weekday } : {}), name: plan.name, message: plan.startMessage, workflowId: plan.id, ...(plan.notify?.on ? { notify: true } : {}) } }
         : {}),
       needsApprovals: plan.needsApprovals,
     },
