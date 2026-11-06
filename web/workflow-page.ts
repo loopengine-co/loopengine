@@ -109,8 +109,8 @@ ${consoleShellScript}
         '<span class="hint" id="wfStatus">It looks at your agents and abilities first; this can take a few minutes.</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '') +
       '</div>' +
-      examplesHtml() +
-      '<p class="hint">Not sure what you need? <a href="/interview">Find your first agent</a>: a short interview that suggests one.</p>';
+      '<p class="hint">Rather start from something ready-made? <a href="#examples">Choose a workflow example</a>, or <a href="/interview">find your first agent</a>.</p>' +
+      examplesHtml();
     var text = document.getElementById('wfText');
     var examples = page.querySelectorAll('[data-example]');
     for (var i = 0; i < examples.length; i++) {
