@@ -7,16 +7,21 @@
 //     your first agent" produces), naming the abilities' real tools;
 //   - abilities, installed from npm, which bring their tools, skills and
 //     permission rules;
-//   - its own skill, for the job-specific judgment;
+//   - apps from the Apps page (Firecrawl, GitHub), with the tools it uses;
+//   - its own skills, for the job-specific judgment and for the policies
+//     it works from, which the person fills in; one may be a workflow;
 //   - permission rules, written before the abilities' own so they win
-//     (e.g. a support agent may never refund, even though lp-shopify
+//     (e.g. a support agent may never refund, even though @loopengine-co/shopify
 //     would let it ask), with "ask" for everything else;
 //   - non-secret settings, and the keys it still needs, for its checklist;
 //   - a schedule, created paused: the email-based templates check their
-//     inbox on a timer, since nothing pushes new mail to an agent.
+//     inbox on a timer, since nothing pushes new mail to an agent. One
+//     that reports (a digest) sends each result through the agent's
+//     messaging connection, Slack say, instead of a posting tool.
 //
 // The first three match the use cases on loopengine.co/use-cases.
 import type { AgentCandidate } from './interviewer.js'
+import type { WorkflowParameter } from '../workflows.js'
 import { nextTimeOfDay, parseTimeOfDay, workspaceTimeZone } from '../time-zone.js'
 
 export interface TemplateRule {
@@ -30,6 +35,10 @@ export interface TemplateSkill {
   id: string
   description: string
   body: string
+  /** Makes it a workflow, with `body` as its instructions. `webhook`: its
+   * checklist says to add a webhook that sends each result (the URL and
+   * the sender's signing secret are set up with the sender). */
+  workflow?: { title: string; parameters?: Record<string, WorkflowParameter>; webhook?: boolean }
 }
 
 export interface TemplateSchedule {
@@ -91,9 +100,8 @@ export interface StarterTemplate {
 const GMAIL_KEYS = ['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN']
 const SHOPIFY_KEYS = ['SHOPIFY_STORE_DOMAIN', 'SHOPIFY_ADMIN_TOKEN']
 const GITHUB_APP = 'io.github.github/github-mcp-server'
-const SLACK_KEYS = ['SLACK_BOT_TOKEN', 'SLACK_DEFAULT_CHANNEL']
-const WEB_SEARCH_KEYS = [['TAVILY_API_KEY', 'BRAVE_API_KEY', 'FIRECRAWL_API_KEY']]
-const DOCS_NOTE = 'Put your policies and help articles in the project\'s docs folder, as Markdown or text files (or point DOCS_SEARCH_PATH at another folder)'
+const FIRECRAWL_APP = 'io.github.firecrawl/firecrawl-mcp-server'
+const policiesNote = (what: string, skill: string) => `Write ${what} into its ${skill} skill (Advanced → Skills): the agent answers from it and nothing else`
 
 export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
   {
@@ -108,9 +116,9 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
       risk: 'medium',
       asksFirst: ['sending a reply'],
       needs: [
-        { kind: 'ability', name: 'lp-gmail', description: 'your support inbox' },
-        { kind: 'ability', name: 'lp-shopify', description: 'your store\'s orders' },
-        { kind: 'ability', name: 'lp-docs-search', description: 'your help articles and policies' },
+        { kind: 'ability', name: '@loopengine-co/gmail', description: 'your support inbox' },
+        { kind: 'ability', name: '@loopengine-co/shopify', description: 'your store\'s orders' },
+        { kind: 'other', name: 'Your policies', description: 'shipping, returns and the rest, in its support-policies skill' },
       ],
       agent: {
         name: 'customer-email-replies',
@@ -120,7 +128,7 @@ When asked to handle new emails:
 1. Find them with gmail_search, query "is:unread in:inbox". Skip newsletters, receipts, automatic notifications and "no-reply" senders: mark those read and move on.
 2. For each customer email, read the whole conversation with gmail_get_thread first.
 3. Work out what they want: order status, a product question, a return or refund, a complaint, or something else.
-4. Look up what you need before answering: the order with shopify_find_orders (by the order number they give, or their email) and shopify_get_order, and our policies with search_docs. Never guess an order detail, a date or a policy.
+4. Look up what you need before answering: the order with shopify_find_orders (by the order number they give, or their email) and shopify_get_order, and our policies in the support-policies skill (open it with Skill). Never guess an order detail, a date or a policy.
 5. Reply with gmail_send, passing reply_to_message_id so it stays in the same thread: short, friendly, in the customer's language, using their name, answering the question first and saying what happens next.
 6. Mark the email read with gmail_modify_labels (remove "UNREAD").
 
@@ -134,9 +142,31 @@ Rules:
       },
     },
     setup: {
-      abilities: ['lp-gmail', 'lp-shopify', 'lp-docs-search'],
+      abilities: ['@loopengine-co/gmail', '@loopengine-co/shopify'],
       keys: [...GMAIL_KEYS, ...SHOPIFY_KEYS],
-      env: { DOCS_SEARCH_PATH: 'docs' },
+      skills: [{
+        id: 'support-policies',
+        description: 'Our shipping, returns, refunds and other customer policies. Read it before telling a customer anything about a policy.',
+        body: `# Our customer policies
+
+Edit this: replace each [bracket] with your own policy. The agent answers customers from this and nothing else.
+
+## Shipping
+- Where we ship: [countries]
+- How long it takes: [e.g. 3–5 business days]
+- Tracking: [when and how customers get it]
+
+## Returns and refunds
+- Return window: [e.g. 30 days from delivery]
+- What can't be returned: [e.g. sale items, opened cosmetics]
+- How refunds are paid: [e.g. to the original payment method, in 5–10 business days]
+
+## Other questions
+- [Order changes and cancellations]
+- [Warranty]
+- [Anything customers often ask]
+`,
+      }],
       rules: [
         { name: 'template-read-mail-allowed', tool: 'gmail_search', decision: 'allow' },
         { name: 'template-read-thread-allowed', tool: 'gmail_get_thread', decision: 'allow' },
@@ -147,7 +177,7 @@ Rules:
       ],
       schedule: { every: '10m', name: 'Check the support inbox', message: 'Handle new customer emails in the support inbox.' },
       needsApprovals: true,
-      notes: [DOCS_NOTE],
+      notes: [policiesNote('your policies', 'support-policies')],
     },
   },
   {
@@ -162,9 +192,9 @@ Rules:
       risk: 'high',
       asksFirst: ['issuing a refund', 'sending the reply'],
       needs: [
-        { kind: 'ability', name: 'lp-gmail', description: 'your support inbox' },
-        { kind: 'ability', name: 'lp-shopify', description: 'your store\'s orders and refunds' },
-        { kind: 'ability', name: 'lp-docs-search', description: 'your return policy' },
+        { kind: 'ability', name: '@loopengine-co/gmail', description: 'your support inbox' },
+        { kind: 'ability', name: '@loopengine-co/shopify', description: 'your store\'s orders and refunds' },
+        { kind: 'other', name: 'Your return policy', description: 'in its return-policy skill' },
       ],
       agent: {
         name: 'refund-approvals',
@@ -173,7 +203,7 @@ Rules:
 When asked to handle new refund requests:
 1. Find them with gmail_search, query "is:unread in:inbox (refund OR return OR damaged OR broken OR "money back")". Read each conversation with gmail_get_thread. If an email isn't really a refund or return request, leave it unread for the support team.
 2. Find the order with shopify_find_orders (the order number they give, or their email) and read it with shopify_get_order: what was bought, when, how much, what's already been refunded, whether it was delivered.
-3. Check the request against our return policy with search_docs: the return window, whether the item is eligible, and whether the reason is covered.
+3. Check the request against our return policy in the return-policy skill (open it with Skill): the return window, whether the item is eligible, and whether the reason is covered.
 4. Decide what to propose: a full refund, a partial refund, refunding shipping, or no refund (and which part of the policy says so).
 5. Work out the exact amount with shopify_preview_refund. Never state an amount you haven't previewed.
 6. Issue it with shopify_create_refund, with a note giving the policy rule and the facts from the order. A person approves it first.
@@ -189,9 +219,24 @@ Rules:
       },
     },
     setup: {
-      abilities: ['lp-gmail', 'lp-shopify', 'lp-docs-search'],
+      abilities: ['@loopengine-co/gmail', '@loopengine-co/shopify'],
       keys: [...GMAIL_KEYS, ...SHOPIFY_KEYS],
-      env: { DOCS_SEARCH_PATH: 'docs' },
+      skills: [{
+        id: 'return-policy',
+        description: 'Our return and refund policy: the window, what qualifies, and how much is refunded. Read it before proposing any refund.',
+        body: `# Our return policy
+
+Edit this: replace each [bracket] with your own policy. The agent proposes refunds from this and nothing else.
+
+- Return window: [e.g. 30 days from delivery]
+- Eligible items: [e.g. unused, in the original packaging]
+- Not eligible: [e.g. sale items, gift cards, personalised items]
+- Damaged or wrong items: [e.g. full refund including shipping, no return needed]
+- Change of mind: [e.g. refund of the item price, customer pays return shipping]
+- Shipping costs: [when they're refunded]
+- Partial refunds: [when you offer one, and how much]
+`,
+      }],
       rules: [
         { name: 'template-read-mail-allowed', tool: 'gmail_search', decision: 'allow' },
         { name: 'template-read-thread-allowed', tool: 'gmail_get_thread', decision: 'allow' },
@@ -203,7 +248,7 @@ Rules:
       ],
       schedule: { every: '10m', name: 'Check for refund requests', message: 'Handle new refund and return requests in the support inbox.' },
       needsApprovals: true,
-      notes: [DOCS_NOTE + ' — especially your return policy'],
+      notes: [policiesNote('your return policy', 'return-policy')],
     },
   },
   {
@@ -211,15 +256,15 @@ Rules:
     category: 'Operations',
     candidate: {
       title: 'Triage incidents',
-      summary: 'Takes an alert or a bug report, works out what broke and how bad it is, finds the deploys and changes that likely caused it, and posts a summary to Slack. Opening or commenting on issues waits for approval.',
-      trigger: { kind: 'on_request', description: 'when an alert or report is passed to it in Chat, Slack or over HTTP' },
+      summary: 'Takes an alert or a bug report, works out what broke and how bad it is, finds the deploys and changes that likely caused it, and sends a summary to Slack. Opening or commenting on issues waits for approval.',
+      trigger: { kind: 'event', description: 'when your alerting tool calls its webhook, or someone passes it an alert in Chat or Slack' },
       hoursPerWeek: 3,
       fit: 6,
       risk: 'medium',
       asksFirst: ['opening or commenting on issues'],
       needs: [
         { kind: 'app', name: 'GitHub', description: 'your repository\'s commits, deploys and issues' },
-        { kind: 'ability', name: 'lp-slack-notifier', description: 'posting the summary to Slack' },
+        { kind: 'messaging', name: 'Slack', description: 'where each summary is sent (its Messaging tab)' },
       ],
       agent: {
         name: 'incident-triage',
@@ -227,32 +272,38 @@ Rules:
 
 Our repository on GitHub: [owner/name] (edit this). Pass its owner and repo to every GitHub tool.
 
-When you get an alert, error or bug report:
-1. Summarise it in two sentences: what is failing and who is affected.
-2. Rate the severity: SEV1 (customers can't use the product), SEV2 (a major feature is broken), SEV3 (degraded or a workaround exists), SEV4 (minor).
-3. Find what changed shortly before it started: github_actions_list (method list_workflow_runs) for recent deploys and failed builds, github_list_pull_requests (state closed) for recently merged changes, and github_list_commits (narrowed with since and path) for detail. Match times carefully.
-4. Check whether it's already known with github_search_issues; read a match with github_issue_read (method get).
-5. Post a short summary to Slack with post_to_slack: what's broken, severity, the most likely cause with links, and one next step (who should look, what to check, or whether to roll back).
-6. If an issue already tracks it, add your findings with github_add_issue_comment; otherwise, for SEV1 or SEV2, open one with github_issue_write (method create). Both ask a person first.
+When you get an alert, error or bug report, follow your triage-incident workflow.
 
 Rules:
 - Only read on your own; never roll anything back yourself.
 - Say how sure you are. If the evidence is thin, say what would confirm it instead of guessing.
-- Keep the Slack summary short enough to read on a phone.`,
+- Keep the summary short enough to read on a phone.`,
         exampleMessage: 'Alert: checkout-api error rate 18% (normally under 1%) since 14:05 UTC. Errors: "timeout connecting to payments".',
       },
     },
     setup: {
-      abilities: ['lp-slack-notifier'],
+      abilities: [],
       apps: [{ id: GITHUB_APP, title: 'GitHub', tools: ['list_commits', 'list_pull_requests', 'actions_list', 'search_issues', 'issue_read', 'issue_write', 'add_issue_comment'] }],
-      keys: [...SLACK_KEYS],
+      keys: [],
+      skills: [{
+        id: 'triage-incident',
+        description: 'Triage an alert, error or bug report: what broke, how bad it is, and the change that likely caused it.',
+        workflow: { title: 'Triage an incident', parameters: { alert: { description: 'The alert, error or bug report', required: true } }, webhook: true },
+        body: `Triage the alert you were given.
+
+1. Summarise it in two sentences: what is failing and who is affected.
+2. Rate the severity: SEV1 (customers can't use the product), SEV2 (a major feature is broken), SEV3 (degraded or a workaround exists), SEV4 (minor).
+3. Find what changed shortly before it started: github_actions_list (method list_workflow_runs) for recent deploys and failed builds, github_list_pull_requests (state closed) for recently merged changes, and github_list_commits (narrowed with since and path) for detail. Match times carefully.
+4. Check whether it's already known with github_search_issues; read a match with github_issue_read (method get).
+5. If an issue already tracks it, add your findings with github_add_issue_comment; otherwise, for SEV1 or SEV2, open one with github_issue_write (method create). Both ask a person first.
+6. End with the summary, which is sent to Slack: what's broken, severity, the most likely cause with links, and one next step (who should look, what to check, or whether to roll back).`,
+      }],
       rules: [
-        { name: 'template-slack-summary-allowed', tool: 'post_to_slack', decision: 'allow' },
         { name: 'template-new-issues-need-approval', tool: 'github_issue_write', decision: 'ask' },
         { name: 'template-comments-need-approval', tool: 'github_add_issue_comment', decision: 'ask' },
       ],
       needsApprovals: true,
-      notes: ['Send it alerts: paste one into Chat, have your alerting tool call it over HTTP, or reply to it in Slack'],
+      notes: ['Send it alerts: paste one into Chat, mention it in Slack, or have your alerting tool call its webhook'],
     },
   },
   {
@@ -267,8 +318,8 @@ Rules:
       risk: 'high',
       asksFirst: ['replying to the claimant'],
       needs: [
-        { kind: 'ability', name: 'lp-gmail', description: 'the inbox where claims arrive' },
-        { kind: 'ability', name: 'lp-docs-search', description: 'your expense policy' },
+        { kind: 'ability', name: '@loopengine-co/gmail', description: 'the inbox where claims arrive' },
+        { kind: 'other', name: 'Your expense policy', description: 'in its expense-policy skill' },
       ],
       agent: {
         name: 'expense-approvals',
@@ -277,7 +328,7 @@ Rules:
 When asked to check new claims:
 1. Find them with gmail_search, query "is:unread in:inbox". Read each with gmail_get_thread.
 2. Read the amount, currency, date, merchant, category and who submitted it, from the email and its receipt (the attachment names show whether a receipt is there).
-3. Check it against the expense policy with search_docs: the category is allowed, it's under the limit, the receipt matches the amount and date, and it isn't a duplicate of an earlier claim (search the inbox for the same merchant and amount).
+3. Check it against our expense policy in the expense-policy skill (open it with Skill): the category is allowed, it's under the limit, the receipt matches the amount and date, and it isn't a duplicate of an earlier claim (search the inbox for the same merchant and amount).
 4. Write a one-line verdict: "Within policy" or "Outside policy: <reason>", then the details you checked.
 5. Email the verdict to the approver at the address in the EXPENSE_APPROVER_EMAIL setting with gmail_send, then mark the claim read with gmail_modify_labels.
 
@@ -290,9 +341,30 @@ Rules:
       },
     },
     setup: {
-      abilities: ['lp-gmail', 'lp-docs-search'],
+      abilities: ['@loopengine-co/gmail'],
       keys: [...GMAIL_KEYS],
-      env: { DOCS_SEARCH_PATH: 'docs' },
+      skills: [{
+        id: 'expense-policy',
+        description: 'Our expense policy: what can be claimed, the limits, and what a claim needs. Read it before giving any verdict.',
+        body: `# Our expense policy
+
+Edit this: replace each [bracket] with your own policy. The agent checks claims against this and nothing else.
+
+## What can be claimed, and the limits
+- Travel: [e.g. economy flights and trains; taxis when there's no public transport]
+- Hotels: [e.g. up to 150 per night]
+- Meals: [e.g. up to 50 per day when travelling]
+- Equipment and software: [e.g. up to 200 without pre-approval]
+
+## What can't be claimed
+- [e.g. alcohol, fines, personal entertainment]
+
+## What every claim needs
+- An itemised receipt showing the amount, date and merchant
+- [Pre-approval for anything over a limit]
+- Submitted within [e.g. 60 days]
+`,
+      }],
       rules: [
         { name: 'template-read-mail-allowed', tool: 'gmail_search', decision: 'allow' },
         { name: 'template-read-thread-allowed', tool: 'gmail_get_thread', decision: 'allow' },
@@ -302,7 +374,7 @@ Rules:
       ],
       schedule: { every: '15m', name: 'Check for new claims', message: 'Check the new expense claims in the inbox.' },
       needsApprovals: true,
-      notes: [DOCS_NOTE + ' — especially your expense policy', 'Set EXPENSE_APPROVER_EMAIL (Environment tab) to the approver\'s address'],
+      notes: [policiesNote('your expense policy', 'expense-policy'), 'Set EXPENSE_APPROVER_EMAIL (Environment tab) to the approver\'s address'],
     },
   },
   {
@@ -317,9 +389,9 @@ Rules:
       risk: 'medium',
       asksFirst: ['sending the first email', 'updating the lead'],
       needs: [
-        { kind: 'ability', name: 'lp-hubspot', description: 'your leads in HubSpot' },
-        { kind: 'ability', name: 'lp-web-search', description: 'researching each lead' },
-        { kind: 'ability', name: 'lp-gmail', description: 'the inbox to send from' },
+        { kind: 'ability', name: '@loopengine-co/hubspot', description: 'your leads in HubSpot' },
+        { kind: 'app', name: 'Firecrawl', description: 'researching each lead on the web' },
+        { kind: 'ability', name: '@loopengine-co/gmail', description: 'the inbox to send from' },
       ],
       agent: {
         name: 'lead-follow-up',
@@ -333,7 +405,7 @@ What we sell (edit this):
 When asked to follow up with new leads:
 1. Find them with hubspot_find_contacts: lead_status "NEW", created_in_last_days 2.
 2. For each, read hubspot_get_contact. Skip anyone with an owner, recent notes, or a last-contacted date: someone is already on it.
-3. Research them with web_search and web_fetch: what their company does, its size, and anything recent that matters (funding, hiring, a launch). Note your sources.
+3. Research them with firecrawl_search and firecrawl_scrape: what their company does, its size, and anything recent that matters (funding, hiring, a launch). Note your sources.
 4. Work out what they most likely need from us, in one sentence.
 5. Send a short first email (under 120 words) with gmail_send: a specific opening based on your research, one sentence on how we help with that need, and one easy question to reply to. A person approves it first.
 6. Log what you sent and found with hubspot_add_note, and set the lead to "ATTEMPTED_TO_CONTACT" with hubspot_update_contact.
@@ -347,9 +419,12 @@ Rules:
       },
     },
     setup: {
-      abilities: ['lp-hubspot', 'lp-web-search', 'lp-gmail'],
-      keys: ['HUBSPOT_ACCESS_TOKEN', ...WEB_SEARCH_KEYS, ...GMAIL_KEYS],
+      abilities: ['@loopengine-co/hubspot', '@loopengine-co/gmail'],
+      apps: [{ id: FIRECRAWL_APP, title: 'Firecrawl', tools: ['firecrawl_search', 'firecrawl_scrape'] }],
+      keys: ['HUBSPOT_ACCESS_TOKEN', ...GMAIL_KEYS],
       rules: [
+        { name: 'template-search-allowed', tool: 'firecrawl_search', decision: 'allow' },
+        { name: 'template-read-pages-allowed', tool: 'firecrawl_scrape', decision: 'allow' },
         { name: 'template-notes-allowed', tool: 'hubspot_add_note', decision: 'allow' },
         { name: 'template-lead-updates-need-approval', tool: 'hubspot_update_contact', decision: 'ask' },
         { name: 'template-no-new-contacts', tool: 'hubspot_create_contact', decision: 'deny' },
@@ -372,7 +447,7 @@ Rules:
       risk: 'low',
       asksFirst: ['replying to the sender'],
       needs: [
-        { kind: 'ability', name: 'lp-gmail', description: 'the shared inbox' },
+        { kind: 'ability', name: '@loopengine-co/gmail', description: 'the shared inbox' },
         { kind: 'app', name: 'GitHub', description: 'tasks, as GitHub issues' },
       ],
       agent: {
@@ -402,7 +477,7 @@ Rules:
       },
     },
     setup: {
-      abilities: ['lp-gmail'],
+      abilities: ['@loopengine-co/gmail'],
       apps: [{ id: GITHUB_APP, title: 'GitHub', tools: ['search_issues', 'issue_write', 'add_issue_comment'] }],
       keys: [...GMAIL_KEYS],
       rules: [
@@ -423,19 +498,19 @@ Rules:
     category: 'Research',
     candidate: {
       title: 'Weekly research digest',
-      summary: 'Every Monday morning, searches the web for news on the topics you choose and posts a short digest with links to Slack.',
+      summary: 'Every Monday morning, searches the web for news on the topics you choose and sends a short digest with links to Slack.',
       trigger: { kind: 'schedule', description: 'Mondays at 9:00', every: '7d' },
       hoursPerWeek: 2,
       fit: 6,
       risk: 'low',
       asksFirst: [],
       needs: [
-        { kind: 'ability', name: 'lp-web-search', description: 'web search' },
-        { kind: 'ability', name: 'lp-slack-notifier', description: 'posting the digest to Slack' },
+        { kind: 'app', name: 'Firecrawl', description: 'searching the web and reading pages' },
+        { kind: 'messaging', name: 'Slack', description: 'where each digest is sent (its Messaging tab)' },
       ],
       agent: {
         name: 'weekly-research-digest',
-        systemPrompt: `You write a weekly research digest and post it to Slack.
+        systemPrompt: `You write a weekly research digest. Your answer is the digest: it's sent to Slack as it is.
 
 Topics to follow (edit this list):
 - [Your industry or market]
@@ -443,29 +518,29 @@ Topics to follow (edit this list):
 - [Technologies or regulations you care about]
 
 Each week:
-1. Search the web with web_search for what happened in the last 7 days on each topic.
-2. Open the most relevant pages with web_fetch and read them; don't rely on search snippets.
+1. Search the web with firecrawl_search for what happened in the last 7 days on each topic.
+2. Open the most relevant pages with firecrawl_scrape and read them; don't rely on search snippets.
 3. Write the digest: for each topic, up to three items, each with a one-sentence summary, why it matters to us, and the link.
 4. End with "Worth a closer look": the single most important item, and why.
-5. Post it with post_to_slack.
+5. Answer with the digest alone, nothing before or after it.
 
 Rules:
 - Only include things published in the last 7 days, and give each item's date.
 - Prefer original sources over aggregators. Never invent a link.
 - If a topic had no real news, say so in one line.`,
-        scheduleMessage: 'Write and post this week\'s research digest.',
-        exampleMessage: 'Write and post this week\'s research digest.',
+        scheduleMessage: 'Write this week\'s research digest.',
+        exampleMessage: 'Write this week\'s research digest.',
       },
     },
     setup: {
-      abilities: ['lp-web-search', 'lp-slack-notifier'],
-      keys: [...WEB_SEARCH_KEYS, ...SLACK_KEYS],
+      abilities: [],
+      apps: [{ id: FIRECRAWL_APP, title: 'Firecrawl', tools: ['firecrawl_search', 'firecrawl_scrape'] }],
+      keys: [],
       rules: [
-        { name: 'template-search-allowed', tool: 'web_search', decision: 'allow' },
-        { name: 'template-fetch-allowed', tool: 'web_fetch', decision: 'allow' },
-        { name: 'template-digest-post-allowed', tool: 'post_to_slack', decision: 'allow' },
+        { name: 'template-search-allowed', tool: 'firecrawl_search', decision: 'allow' },
+        { name: 'template-read-pages-allowed', tool: 'firecrawl_scrape', decision: 'allow' },
       ],
-      schedule: { every: '7d', at: '09:00', weekday: 1, name: 'Weekly research digest', message: 'Write and post this week\'s research digest.' },
+      schedule: { every: '7d', at: '09:00', weekday: 1, name: 'Weekly research digest', message: 'Write this week\'s research digest.', notify: true },
       needsApprovals: false,
       notes: ['Edit "Topics to follow" at the top of its instructions (Overview tab)'],
     },

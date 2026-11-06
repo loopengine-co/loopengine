@@ -144,6 +144,7 @@ describe('where an installed ability came from', () => {
   it('labels npm names public, and git, folder and private-scope specs private', () => {
     expect(abilityOrigin('lp-gmail', 'lp-gmail', sources)).toEqual({ kind: 'public', label: 'npm' })
     expect(abilityOrigin(undefined, '@someone/lp-x', sources)).toEqual({ kind: 'public', label: 'npm' })
+    expect(abilityOrigin('@loopengine-co/gmail', '@loopengine-co/gmail', sources)).toEqual({ kind: 'official', label: 'npm' })
     expect(abilityOrigin('@acme/lp-billing', '@acme/lp-billing', sources)).toEqual({ kind: 'private', label: 'npm @acme (npm.acme.dev)' })
     expect(abilityOrigin('github:loopengine-co/lp-em-freescout', 'lp-em-freescout', sources)).toEqual({ kind: 'private', label: 'GitHub loopengine-co/lp-em-freescout' })
     expect(abilityOrigin('git+ssh://git@github.com/acme/lp-orders.git#v1', 'lp-orders', sources)).toEqual({ kind: 'private', label: 'GitHub acme/lp-orders' })

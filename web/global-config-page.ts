@@ -252,7 +252,7 @@ ${consoleShellScript}
   }
 
   // ---- Abilities section ----
-  // How agents reach outside apps. Public abilities (npm) are browsed
+  // How agents reach outside apps. Official abilities (npm) are browsed
   // here and installed from an agent's own Apps tab. A private one
   // (from the sources in Settings) is installed here into the workspace
   // (core/workspace-abilities.ts), then added to any agent from its tab.
@@ -272,9 +272,9 @@ ${consoleShellScript}
   function renderAbilities() {
     var content = document.getElementById('abilitiesContent');
     content.innerHTML = '<section>' +
-      '<h4>Public <span class="hint">npm packages tagged loopengine-ability; add one to an agent from its Apps tab</span></h4>' +
+      '<h4>Official <span class="hint">published by LoopEngine; add one to an agent from its Apps tab</span></h4>' +
       '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
-        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search public abilities" style="flex:1">' +
+        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search official abilities" style="flex:1">' +
         '<button type="submit">Search</button>' +
       '</form>' +
       '<div id="abilitySearchResults"><p class="hint">Loading&hellip;</p></div>' +
@@ -444,7 +444,7 @@ ${consoleShellScript}
   }
 
   // Linked from an agent's Apps tab (/config?section=abilities#private-abilities):
-  // once every list has loaded, so the public results don't push it down.
+  // once every list has loaded, so the official results don't push it down.
   var scrolledToPrivate = false;
   function scrollToPrivateIfLinked() {
     if (scrolledToPrivate || location.hash !== '#private-abilities' || !lastPrivate || !workspaceAbilities || lastSearch.q === null) return;
@@ -806,12 +806,12 @@ ${consoleShellScript}
       rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
-      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to the public ones on npm.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
+      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
   }
 
   // ---- Private ability sources (Settings) ----
-  // Where this project's own abilities come from, next to the public ones
+  // Where this project's own abilities come from, next to the official ones
   // on npm: a GitHub org or user, or a private npm registry
   // (core/ability-sources.ts). There's no folder kind here: this server
   // may run in the cloud, so local files are uploaded on the Abilities

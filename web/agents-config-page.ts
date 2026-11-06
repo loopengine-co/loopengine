@@ -729,7 +729,7 @@ ${consoleShellScript}
         '<span><a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=schedules#schedule-' + escapeHtml(x.taskId) + '" class="workflow-schedule-link" data-task="' + escapeHtml(x.taskId) + '" title="See it in the Schedules tab">' +
           escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + '</a></span>' + state +
         (values ? '<span class="hint">' + values + '</span>' : '') +
-        (x.notify ? '<span class="hint">results go to your messaging app</span>' : '') +
+        (x.notify ? '<span class="hint">messages you the result when it finishes</span>' : '') +
         '<span style="display:flex;gap:6px;margin-left:auto">' +
           (x.status === 'paused' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="resume">Resume</button>'
             : x.status === 'scheduled' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="pause">Pause</button>' : '') +
@@ -1024,7 +1024,7 @@ ${consoleShellScript}
     if (t.filter) rules.push('only when ' + escapeHtml(t.filter.path) + ' is ' + t.filter.values.map(escapeHtml).join(' or '));
     if (t.mapping) rules.push(Object.keys(t.mapping).map(function (p) { return escapeHtml(p) + ' ' + String.fromCharCode(8592) + ' ' + escapeHtml(t.mapping[p]); }).join(', '));
     if (t.payload_param) rules.push('the whole payload goes to ' + escapeHtml(t.payload_param));
-    if (t.notify) rules.push('sends each result to you');
+    if (t.notify) rules.push('messages you the result when it finishes');
     if (t.callback_url) rules.push('reports to ' + escapeHtml(t.callback_url));
     // Made by the workflow planner without its secret: it turns on once
     // the sender's signing secret is added.
@@ -1070,7 +1070,7 @@ ${consoleShellScript}
             params.map(function (p) { return '<div class="workflow-param-row"><code class="wp-name">' + escapeHtml(p) + '</code><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" style="flex:1"></div>'; }).join('') + '</div>' +
           '<label>Or give the whole payload to <select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select></label>'
         : '<p class="hint" style="margin:0">This workflow takes no parameters, so the payload isn' + String.fromCharCode(8217) + 't passed on. Add one in Edit to use it.</p>') +
-      '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send each run' + String.fromCharCode(8217) + 's result to you through the agent' + String.fromCharCode(8217) + 's messaging app</label>' +
+      '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Message me the result when it finishes <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
       '<label>Post each run' + String.fromCharCode(8217) + 's result to <span class="hint">(optional, an https URL)</span><input name="callback_url" placeholder="https://example.com/hooks/loopengine"></label>' +
       '<div style="display:flex;gap:8px"><button type="submit" class="primary">Make the URL</button></div>' +
       '<div class="hint hook-form-result"></div></form>';
@@ -2432,8 +2432,8 @@ ${consoleShellScript}
             ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
             : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') +
         (t.status !== 'cancelled' && t.status !== 'done'
-          ? '<label class="schedule-notify hint" title="Send each run&#39;s result through this agent&#39;s messaging connection (Messaging tab)"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send each result to you</label>'
-          : (t.notify ? '<div class="hint">Sent each result to you</div>' : '')) + '</td>' +
+          ? '<label class="schedule-notify hint" title="Sent through its Messaging tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Message me the result when it finishes</label>'
+          : (t.notify ? '<div class="hint">Messaged you the result when it finished</div>' : '')) + '</td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
         (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
@@ -2475,7 +2475,7 @@ ${consoleShellScript}
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
           '<label>Name <span class="hint">(optional)</span><input name="task_name" placeholder="Daily ticket summary"></label>' +
-          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send each result through this agent&#39;s messaging connection (set in the Messaging tab)</label>' +
+          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Message me the result when it finishes <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
           '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
           '<div id="scheduleResult" class="hint"></div>' +
         '</form></section>';
@@ -3041,7 +3041,7 @@ ${consoleShellScript}
   }
 
   // ---- Apps tab: what's already installed for this agent, a
-  // search box over public (npm, tagged loopengine-ability) packages,
+  // search box over official (@loopengine-co on npm) abilities,
   // and a plain spec field for a private ability (a git URL, a local
   // file:../path, or a private registry name) — both installs go
   // through the same POST .../abilities, since installAbility itself
@@ -3086,7 +3086,7 @@ ${consoleShellScript}
       '</tr>';
   }
 
-  // A public (npm) or private ability not installed here yet: its
+  // An official or private ability not installed here yet: its
   // details show the permissions it ships with.
   function renderAbilitySearchResultRow(pkg, installedNames, spec) {
     var installSpec = spec || pkg.name;
@@ -3109,15 +3109,15 @@ ${consoleShellScript}
       : '<p class="hint">Nothing added to this agent yet.</p>';
 
     // What this agent has first; then the workspace's connected apps (each
-    // with the tools this agent gets), then public and private abilities.
+    // with the tools this agent gets), then official and private abilities.
     return '<h3 style="justify-content:flex-start;align-items:baseline;gap:8px">Installed <span class="hint" style="font-weight:400">the apps and abilities this agent has</span></h3>' + installedHtml +
       // Installing by name or spec is on the console's Abilities page.
       '<p id="abilityInstallStatus" class="hint"></p>' +
       '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Apps <span class="hint" style="font-weight:400">connected in this workspace; choose which of their tools this agent gets, and each one' + String.fromCharCode(8217) + 's permission</span></h3>' +
       '<div id="agentApps" style="margin-bottom:32px"><p class="hint">Loading&hellip;</p></div>' +
-      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Public abilities <span class="hint" style="font-weight:400">npm packages tagged loopengine-ability</span></h3>' +
+      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Official abilities <span class="hint" style="font-weight:400">published by LoopEngine</span></h3>' +
       '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
-        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search public abilities" style="flex:1">' +
+        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search official abilities" style="flex:1">' +
         '<button type="submit">Search</button>' +
       '</form>' +
       '<div id="abilitySearchResults" style="margin-bottom:32px"></div>' +
@@ -3335,7 +3335,7 @@ ${consoleShellScript}
         var results = result.body.results || [];
         resultsEl.innerHTML = results.length
           ? '<table><thead><tr><th>Package</th><th>Description</th><th></th></tr></thead><tbody>' + results.map(function (pkg) { return renderAbilitySearchResultRow(pkg, installedNames); }).join('') + '</tbody></table>'
-          : '<p class="hint">No public abilities found.</p>';
+          : '<p class="hint">No official abilities found.</p>';
         var installBtns = resultsEl.querySelectorAll('.ability-install-btn');
         for (var i = 0; i < installBtns.length; i++) {
           installBtns[i].addEventListener('click', function (ev2) {

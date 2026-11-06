@@ -264,7 +264,7 @@ ${consoleShellScript}
         '<p class="hint" style="margin:0"><strong>Starts:</strong> ' + esc(p.trigger.description) + (p.trigger.kind === 'schedule' ? ' (created paused; you turn it on)' : '') + '</p>' +
         webhookPlanHtml(p) +
         (p.trigger.kind === 'schedule' || p.trigger.kind === 'webhook'
-          ? '<label class="wf-notify"><input type="checkbox" id="wfNotify"' + (p.notify && p.notify.on ? ' checked' : '') + '> Send each run' + String.fromCharCode(8217) + 's result to you through the agent' + String.fromCharCode(8217) + 's messaging app</label>' +
+          ? '<label class="wf-notify"><input type="checkbox" id="wfNotify"' + (p.notify && p.notify.on ? ' checked' : '') + '> Message me the result when it finishes <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
             (p.notify && p.notify.reason ? '<p class="hint" style="margin:0 0 0 24px">' + esc(p.notify.reason) + '</p>' : '')
           : '') +
         paramsSectionHtml(p) +

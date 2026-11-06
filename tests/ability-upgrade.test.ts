@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { installAbility, upgradeAbility } from '../bin/ability-manager.js'
 import { readActauthConfig } from '../web/actauth-admin.js'
 
+// These install made-up packages; the official-ability check has its
+// own tests (tests/official-abilities.test.ts).
+process.env.LOOPENGINE_ALLOW_UNOFFICIAL_ABILITIES = '1'
+
 // Same real-fixture-agent-dir-under-the-repo's-own-agents/ approach as
 // tests/ability-install.test.ts — a plain constant is fine, no registry
 // interaction here at all (installAbility/upgradeAbility are pure

@@ -2192,7 +2192,7 @@ async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promi
       // checked against npm for a newer version: a private ability could
       // share its name with an unrelated public package.
       const origin = abilityOrigin(a.spec, a.name, sources)
-      const latestVersion = origin.kind === 'public' ? await fetchLatestAbilityVersion(a.name) : null
+      const latestVersion = origin.kind !== 'private' ? await fetchLatestAbilityVersion(a.name) : null
       const missingDependencies = dependencies.filter((dep) => !hasNodeModule(dep))
       return { ...a, origin, dependencies, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version, missingDependencies }
     }),

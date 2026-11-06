@@ -15,7 +15,7 @@
 //   leShell.wireModelPicker(form)  model dropdown for a provider select
 //   leShell.loadProviderKeys()     Promise of {provider: key saved?}, or null
 //   leShell.applyProviderKeys(form, keys, keep)  only providers with a key
-//   leShell.abilityOriginBadge(origin)    Public/Private badge for an ability
+//   leShell.abilityOriginBadge(origin)    Official/Public/Private badge for an ability
 //   leShell.toggleAbilityDetails(btn)     an ability's tools, skills and settings
 // Same embedded-string conventions as the pages themselves: plain
 // string concatenation and no backslashes inside the script, so nothing
@@ -364,11 +364,12 @@ export const consoleShellScript: string = `<script>
     return decision ? '<span class="le-pill ' + decision + '">' + DECISION_LABELS[decision] + '</span>' : '<span class="hint">No rule</span>';
   }
 
-  // Public (npm) or Private, with where it came from on hover.
+  // Official (@loopengine-co), Public (other npm) or Private, with where
+  // it came from on hover.
   function abilityOriginBadge(origin) {
     if (!origin) return '';
     return '<span class="le-pill ' + (origin.kind === 'private' ? 'accent' : '') + '" title="' + esc(origin.label) + '">' +
-      (origin.kind === 'private' ? 'Private' : 'Public') + '</span> <span class="hint">' + esc(origin.label) + '</span>';
+      (origin.kind === 'private' ? 'Private' : origin.kind === 'official' ? 'Official' : 'Public') + '</span> <span class="hint">' + esc(origin.label) + '</span>';
   }
 
 

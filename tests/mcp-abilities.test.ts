@@ -14,6 +14,10 @@ import type { ToolContext } from '../core/agent-config.js'
 // @ts-expect-error — a plain .mjs test fixture, no type declarations
 import { createFakeMcpServer } from './fixtures/fake-mcp-server.mjs'
 
+// These install made-up packages; the official-ability check has its
+// own tests (tests/official-abilities.test.ts).
+process.env.LOOPENGINE_ALLOW_UNOFFICIAL_ABILITIES = '1'
+
 const AGENT_NAME = 'mcp-ability-fixture-agent'
 const AGENT_DIR = join(process.cwd(), 'agents', AGENT_NAME)
 const FAKE_SERVER = join(process.cwd(), 'tests', 'fixtures', 'fake-mcp-server.mjs')

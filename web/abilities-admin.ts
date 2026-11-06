@@ -1,13 +1,13 @@
-// Backs the Admin UI's Apps tab search box — "public" here means
-// any npm package tagged with the loopengine-ability keyword every
-// lp-* ability in this ecosystem already carries in its own
-// package.json (see ABILITIES.md's "Publishing an ability"), not a
-// curated/private registry loopengine itself runs. A fresh call on
+// Backs the Admin UI's official abilities search box: the npm packages
+// under LoopEngine's @loopengine-co scope, tagged with the
+// loopengine-ability keyword (core/official-abilities.ts). A fresh call on
 // every search, no caching: this is an on-demand lookup the operator
 // explicitly asked for, not data the tab needs hot the way
 // gateway-tools.ts's own live-reconnect data is — same "only pay the
 // live cost when actually asked for" split, just with nothing worth
 // remembering afterward here.
+import { isOfficialScope, unofficialAbilitiesAllowed } from '../core/official-abilities.js'
+
 export interface PublicAbilitySearchResult {
   name: string
   description: string
@@ -15,7 +15,9 @@ export interface PublicAbilitySearchResult {
 }
 
 const NPM_SEARCH_TIMEOUT_MS = 10000
-const NPM_SEARCH_SIZE = 20
+// npm's most per page: the official ones are filtered out of everything
+// tagged with the keyword, so ask for all of it.
+const NPM_SEARCH_SIZE = 250
 
 interface NpmSearchResponse {
   objects?: { package: { name: string; description?: string; version: string } }[]
@@ -38,7 +40,12 @@ export async function searchPublicAbilities(query?: string): Promise<PublicAbili
   if (!res.ok) throw new Error(`npm registry search failed (HTTP ${res.status})`)
 
   const data = (await res.json()) as NpmSearchResponse
-  const results = (data.objects ?? []).map((o) => ({
+  // Only LoopEngine's own scope, unless unofficial abilities are turned
+  // on: anyone can publish with the keyword. (npm's scope: qualifier
+  // only ranks, it doesn't filter.)
+  const all = unofficialAbilitiesAllowed()
+  const official = (data.objects ?? []).filter((o) => all || isOfficialScope(o.package.name))
+  const results = official.map((o) => ({
     name: o.package.name,
     description: o.package.description ?? '',
     version: o.package.version,

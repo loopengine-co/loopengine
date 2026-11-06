@@ -26,6 +26,7 @@ import { parse as parseYaml } from 'yaml'
 import semver from 'semver'
 import { agentDir } from '../core/gateway-tools.js'
 import { abilityFetchAuth } from '../core/ability-sources.js'
+import { assertOfficialAbility } from '../core/official-abilities.js'
 import type { EnvScope } from '../core/agent-env.js'
 import { clearMcpSchemaCache, resolveMcpManifest, McpManifestError, type InstalledMcpRecord } from '../core/mcp-abilities.js'
 import { appRuleName } from '../core/mcp-ability-generator.js'
@@ -535,6 +536,8 @@ export interface McpToolChoice {
 }
 
 export async function installAbility(agentName: string, spec: string, options: FetchOptions & McpToolChoice = {}): Promise<{ installed: string[]; dependencies: string[] }> {
+  // A public ability only if LoopEngine publishes it (core/official-abilities.ts).
+  assertOfficialAbility(spec)
   const fetch = options.fetchAbilityDir ?? fetchAbilityDir
   const abilityDir = fetch(spec)
   const manifest = readManifest(abilityDir)
@@ -825,6 +828,8 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     throw new AbilityNotInstalledError(`Ability '${abilityName}' isn't installed for '${agentName}'.`)
   }
   const spec = options.spec ?? abilityName
+  // New code is fetched: the same check as an install.
+  assertOfficialAbility(spec)
 
   const oldDir = fetch(oldContentSpec(record.spec, abilityName, record.version))
   const newDir = fetch(spec)

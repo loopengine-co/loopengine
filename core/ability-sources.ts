@@ -43,7 +43,9 @@ export interface SourceAbility {
 }
 
 export interface AbilityOrigin {
-  kind: 'public' | 'private'
+  /** official: under LoopEngine's @loopengine-co scope; public: any
+   * other npm package (an older lp-* one, say). */
+  kind: 'official' | 'public' | 'private'
   /** Where it came from, for the console's badge: "npm", "GitHub
    * loopengine-co/lp-github", "Folder ../loopengine-abilities", ... */
   label: string
@@ -273,7 +275,7 @@ export function abilityOrigin(spec: string | undefined, name: string, sources: A
   const scope = target.match(/^(@[^/]+)\//)?.[1]
   const npmSource = scope ? sources.find((s) => s.type === 'npm' && s.scope === scope) : undefined
   if (npmSource) return { kind: 'private', label: describeSource(npmSource) }
-  return { kind: 'public', label: 'npm' }
+  return { kind: target.toLowerCase().startsWith('@loopengine-co/') ? 'official' : 'public', label: 'npm' }
 }
 
 function safeReadSources(): AbilitySource[] {

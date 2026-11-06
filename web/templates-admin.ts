@@ -15,6 +15,8 @@ import { ActauthRuleExistsError, addActauthRule, applyPlannedRules, setDefaultDe
 import { setAgentEnvVar } from './env-admin.js'
 import { freeAgentName } from './interview-admin.js'
 import { writeSkill } from './skills-admin.js'
+import { agentDir } from '../core/gateway-tools.js'
+import { setWorkflowFields } from '../core/workflows.js'
 
 
 /** What a template's schedule runs (its workflow, when it comes from one,
@@ -160,7 +162,7 @@ export function previewTemplate(id: string, deps: Pick<TemplateCreateDeps, 'agen
     // A key set for the whole project already counts for a new agent.
     keys: keyGroups(template).map((names) => ({ names, set: names.some((n) => Boolean(envValue(name, n))) })),
     settings: setup.env ?? {},
-    schedule: setup.schedule ? `${describeTemplateSchedule(setup.schedule)} (created paused)` : null,
+    schedule: setup.schedule ? `${describeTemplateSchedule(setup.schedule)} (created paused)${setup.schedule.notify ? '; it messages you the result when it finishes, through its Messaging tab: Slack, email, Lark or a webhook' : ''}` : null,
     needsApprovals: setup.needsApprovals,
     notes: setup.notes ?? [],
   }
@@ -180,8 +182,19 @@ export function templateChecklist(template: StarterTemplate, name: string, deps:
     items.push({ label: `Add one of ${group.slice(0, -1).join(', ')} or ${group.at(-1)}`, href: tab('env') })
   }
 
-  if (template.setup.needsApprovals && !deps.messagingConfigured(name)) {
-    items.push({ label: 'Choose where approval requests go: Slack, email, Lark or a webhook', href: tab('messaging') })
+  // A schedule or webhook that sends each result needs the same connection.
+  const webhookWorkflows = (template.setup.skills ?? []).filter((s) => s.workflow?.webhook)
+  const sendsResults = Boolean(template.setup.schedule?.notify) || webhookWorkflows.length > 0
+  if ((template.setup.needsApprovals || sendsResults) && !deps.messagingConfigured(name)) {
+    items.push({
+      label: template.setup.needsApprovals
+        ? `Choose where approval requests${sendsResults ? ' and results' : ''} go: Slack, email, Lark or a webhook`
+        : 'Choose where its results go: Slack, email, Lark or a webhook',
+      href: tab('messaging'),
+    })
+  }
+  for (const skill of webhookWorkflows) {
+    items.push({ label: `Add a webhook to the "${skill.workflow!.title}" workflow with "Message me the result when it finishes" on, then paste its URL into the app that sends the alerts`, href: tab('workflows') })
   }
   for (const note of template.setup.notes ?? []) items.push({ label: note })
   if (template.setup.schedule) {
@@ -257,7 +270,10 @@ export async function createFromTemplateObject(template: StarterTemplate, deps: 
   applyPlannedRules(name, setup.rules.map((r) => ({ name: r.name, tool: r.tool, decision: r.decision })))
 
   // 3. Its own skills and non-secret settings.
-  for (const skill of setup.skills ?? []) writeSkill(name, skill.id, { description: skill.description, body: skill.body })
+  for (const skill of setup.skills ?? []) {
+    writeSkill(name, skill.id, { description: skill.description, body: skill.body })
+    if (skill.workflow) setWorkflowFields(agentDir(name), skill.id, { title: skill.workflow.title, instructions: skill.body, ...(skill.workflow.parameters ? { parameters: skill.workflow.parameters } : {}) })
+  }
   for (const [variable, value] of Object.entries(setup.env ?? {})) await setAgentEnvVar(name, variable, value)
 
   // 4. Load it, now that everything is in place.

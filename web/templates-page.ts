@@ -76,7 +76,7 @@ ${consoleShellScript}
       '<div class="meta">' +
         '<div><strong>Runs:</strong> ' + esc(t.trigger) + '</div>' +
         (t.asksFirst.length ? '<div><strong>Asks you first:</strong> ' + esc(t.asksFirst.join(', ')) + '</div>' : '') +
-        '<div><strong>Installs:</strong> ' + t.abilities.map(function (a) { return '<code>' + esc(a) + '</code>'; }).join(' ') + '</div>' +
+        (t.abilities.length || (t.apps || []).length ? '<div><strong>Uses:</strong> ' + t.abilities.map(function (a) { return '<code>' + esc(a) + '</code>'; }).concat((t.apps || []).map(function (a) { return esc(a); })).join(' ') + '</div>' : '') +
       '</div>' +
       '<div class="row"><button type="button" class="primary tp-use">Use this template</button></div>' +
       '<div class="tp-slot"></div></div>';
@@ -109,17 +109,18 @@ ${consoleShellScript}
       slot.innerHTML = '<div class="tp-preview">' +
         '<div><strong>Agent:</strong> <code>' + esc(p.name) + '</code></div>' +
         '<div><strong>Instructions</strong> <span class="hint">(edit them later in its Overview tab)</span><pre>' + esc(p.systemPrompt) + '</pre></div>' +
-        '<div><strong>Installs</strong> <span class="hint">(abilities: their tools, skills and permission rules)</span>' +
+        (p.abilities.length ? '<div><strong>Installs</strong> <span class="hint">(abilities: their tools, skills and permission rules)</span>' +
           listHtml(p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; })) +
-          (canInstall ? '' : '<p class="error" style="margin:4px 0 0">Installing abilities needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server. Without it, the agent is created and its abilities head the checklist.</p>') + '</div>' +
+          (canInstall ? '' : '<p class="error" style="margin:4px 0 0">Installing abilities needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server. Without it, the agent is created and its abilities head the checklist.</p>') + '</div>' : '') +
         (p.apps && p.apps.length ? '<div><strong>Apps it uses</strong> <span class="hint">(connected on the <a href="/config?section=apps">Apps</a> page; one that isn' + String.fromCharCode(8217) + 't connected yet heads the checklist)</span>' + listHtml(p.apps.map(function (a) { return '<li>' + esc(a) + '</li>'; })) + '</div>' : '') +
         '<div><strong>Permissions</strong> <span class="hint">(anything not listed asks you first)</span>' +
           listHtml(p.rules.map(function (rule) { return '<li><code>' + esc(rule.tool) + '</code>: ' + esc(DECISIONS[rule.decision] || rule.decision) + '</li>'; })) + '</div>' +
-        '<div><strong>Keys it needs</strong>' +
+        (p.skills && p.skills.length ? '<div><strong>Skills it starts with</strong> <span class="hint">(edit them later in Advanced ' + String.fromCharCode(8594) + ' Skills)</span>' + listHtml(p.skills.map(function (sk) { return '<li><code>' + esc(sk) + '</code></li>'; })) + '</div>' : '') +
+        (p.keys.length ? '<div><strong>Keys it needs</strong>' +
           listHtml(p.keys.map(function (k) {
             var names = k.names.length > 1 ? 'one of ' + k.names.join(', ') : k.names[0];
             return '<li>' + esc(names) + (k.set ? ' <span class="hint">' + CHECK + ' already set</span>' : '') + '</li>';
-          })) + '</div>' +
+          })) + '</div>' : '') +
         (settings.length ? '<div><strong>Settings filled in:</strong> ' + settings.map(function (s) { return '<code>' + esc(s) + '=' + esc(p.settings[s]) + '</code>'; }).join(', ') + '</div>' : '') +
         (p.schedule ? '<div><strong>Schedule:</strong> ' + esc(p.schedule) + '</div>' : '') +
         (p.needsApprovals ? '<div><strong>Approvals:</strong> requests reach you wherever its Messaging tab sends them (Slack, email, Lark or a webhook).</div>' : '') +

@@ -22,6 +22,10 @@ vi.mock('#web/actauth-admin.js', () => {
 })
 vi.mock('#web/env-admin.js', () => ({ setAgentEnvVar: vi.fn(async (name: string, variable: string, value: string) => void steps.push(`env ${variable}=${value}`)) }))
 vi.mock('#web/skills-admin.js', () => ({ writeSkill: vi.fn((name: string, id: string) => void steps.push(`skill ${id}`)) }))
+vi.mock('#core/workflows.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#core/workflows.js')>()),
+  setWorkflowFields: vi.fn((agentDir: string, id: string, fields: { title?: string; parameters?: Record<string, unknown> }) => void steps.push(`workflow ${id} "${fields.title}" (${Object.keys(fields.parameters ?? {}).join(',')})`)),
+}))
 
 const admin = await import('#web/templates-admin.js')
 const { validateWorkflowPlan, workflowTemplate } = await import('#core/system-agents/workflow-planner.js')
@@ -53,14 +57,18 @@ describe('templates', () => {
       expect(t.id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
       // Hand-written, so validation must leave them exactly as they are.
       expect(validateCandidate(t.candidate)).toEqual(t.candidate)
-      expect(t.setup.abilities.length).toBeGreaterThan(0)
-      expect(t.setup.keys.length).toBeGreaterThan(0)
+      expect(t.setup.abilities.length + (t.setup.apps ?? []).length).toBeGreaterThan(0)
+      // Official abilities only: anything else can't be installed.
+      for (const spec of t.setup.abilities) expect(spec).toMatch(/^@loopengine-co\//)
       expect(new Set(t.setup.rules.map((r) => r.name)).size).toBe(t.setup.rules.length)
       // A timed template's runs say exactly what its instructions expect.
       if (t.setup.schedule) expect(t.setup.schedule.message).toBe(t.candidate.agent.scheduleMessage)
-      // Instructions name the tools they're allowed to use (a "never"
-      // rule needn't be mentioned).
-      for (const rule of t.setup.rules.filter((r) => r.decision !== 'deny')) expect(t.candidate.agent.systemPrompt).toContain(rule.tool)
+      // Instructions (or its workflow's) name the tools they're allowed to
+      // use (a "never" rule needn't be mentioned).
+      const instructions = [t.candidate.agent.systemPrompt, ...(t.setup.skills ?? []).map((sk) => sk.body)].join('\n')
+      for (const rule of t.setup.rules.filter((r) => r.decision !== 'deny')) expect(instructions).toContain(rule.tool)
+      // A skill the instructions rely on is named in them.
+      for (const skill of t.setup.skills ?? []) expect(t.candidate.agent.systemPrompt).toContain(skill.id)
     }
     expect(new Set(STARTER_TEMPLATES.map((t) => t.id)).size).toBe(STARTER_TEMPLATES.length)
     expect(new Set(STARTER_TEMPLATES.map((t) => t.candidate.agent.name)).size).toBe(STARTER_TEMPLATES.length)
@@ -71,26 +79,28 @@ describe('templates', () => {
     expect(list.map((t) => t.id)).toEqual(STARTER_TEMPLATES.map((t) => t.id))
     expect(list.find((t) => t.id === 'customer-email-replies')).toMatchObject({
       category: 'Customer service',
-      abilities: ['lp-gmail', 'lp-shopify', 'lp-docs-search'],
+      abilities: ['@loopengine-co/gmail', '@loopengine-co/shopify'],
       schedule: 'every 10 minutes',
       trigger: 'every 10 minutes',
     })
     expect(list.find((t) => t.id === 'weekly-research-digest')?.schedule).toBe('Mondays at 09:00')
     expect(list.find((t) => t.id === 'incident-triage')?.schedule).toBeNull()
+    expect(list.find((t) => t.id === 'lead-follow-up')).toMatchObject({ abilities: ['@loopengine-co/hubspot', '@loopengine-co/gmail'], apps: ['Firecrawl'] })
   })
 
   it('previews the whole setup under the first free name, marking keys already set', () => {
-    const preview = admin.previewTemplate('weekly-research-digest', { agentExists: (n) => n === 'weekly-research-digest', envValue: (_n, v) => (v === 'BRAVE_API_KEY' ? 'set' : undefined) })
+    const preview = admin.previewTemplate('weekly-research-digest', { agentExists: (n) => n === 'weekly-research-digest' })
     expect(preview.name).toBe('weekly-research-digest-2')
-    expect(preview.abilities).toEqual(['lp-web-search', 'lp-slack-notifier'])
-    expect(preview.rules).toContainEqual({ tool: 'post_to_slack', decision: 'allow' })
-    expect(preview.keys).toEqual([
-      { names: ['TAVILY_API_KEY', 'BRAVE_API_KEY', 'FIRECRAWL_API_KEY'], set: true },
-      { names: ['SLACK_BOT_TOKEN'], set: false },
-      { names: ['SLACK_DEFAULT_CHANNEL'], set: false },
-    ])
-    expect(preview.schedule).toBe('Mondays at 09:00 (created paused)')
+    expect(preview.abilities).toEqual([])
+    expect(preview.apps).toEqual(['Firecrawl'])
+    expect(preview.rules).toEqual([{ tool: 'firecrawl_search', decision: 'allow' }, { tool: 'firecrawl_scrape', decision: 'allow' }])
+    expect(preview.keys).toEqual([])
+    expect(preview.schedule).toBe('Mondays at 09:00 (created paused); it messages you the result when it finishes, through its Messaging tab: Slack, email, Lark or a webhook')
     expect(preview.needsApprovals).toBe(false)
+
+    const lead = admin.previewTemplate('lead-follow-up', { agentExists: () => false, envValue: (_n, v) => (v === 'HUBSPOT_ACCESS_TOKEN' ? 'set' : undefined) })
+    expect(lead.keys[0]).toEqual({ names: ['HUBSPOT_ACCESS_TOKEN'], set: true })
+    expect(admin.previewTemplate('customer-email-replies', { agentExists: () => false }).skills).toEqual(['support-policies'])
   })
 
   it('creates the agent with its whole setup: abilities, then the rules they leave to set, loaded last, schedule paused', async () => {
@@ -98,19 +108,18 @@ describe('templates', () => {
     expect(steps).toEqual([
       'scaffold customer-email-replies You answer customer emails for our business, from our support inbox.',
       'default customer-email-replies ask',
-      'install lp-gmail',
-      'install lp-shopify',
-      'install lp-docs-search',
+      'install @loopengine-co/gmail',
+      'install @loopengine-co/shopify',
       'rule gmail_search allow */*',
       'rule gmail_get_thread allow */*',
       'rule gmail_create_draft allow */*',
       'rule gmail_modify_labels allow */*',
       'rule gmail_send ask */*',
       'rule shopify_create_refund deny */*',
-      'env DOCS_SEARCH_PATH=docs',
+      'skill support-policies',
       'register customer-email-replies',
     ])
-    expect(created.abilities).toEqual({ installed: ['lp-gmail', 'lp-shopify', 'lp-docs-search'], failed: [] })
+    expect(created.abilities).toEqual({ installed: ['@loopengine-co/gmail', '@loopengine-co/shopify'], failed: [] })
     const tasks = await listScheduledTasks({ agent: 'customer-email-replies' })
     expect(tasks.map((t) => [t.status, t.task_name, t.message, (t.schedule as { every: string }).every])).toEqual([
       ['paused', 'Check the support inbox', 'Handle new customer emails in the support inbox.', '10m'],
@@ -120,34 +129,51 @@ describe('templates', () => {
     expect(created.checklist).toEqual([
       { label: 'Add its keys: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, SHOPIFY_STORE_DOMAIN, SHOPIFY_ADMIN_TOKEN', href: tab('env') },
       { label: 'Choose where approval requests go: Slack, email, Lark or a webhook', href: tab('messaging') },
-      { label: expect.stringMatching(/^Put your policies and help articles in the project's docs folder/) },
+      { label: 'Write your policies into its support-policies skill (Advanced → Skills): the agent answers from it and nothing else' },
       { label: 'Turn on its schedule (every 10 minutes) once it works in Chat', href: tab('schedules') },
     ])
     expect(created.exampleMessage).toBe('Handle new customer emails in the support inbox.')
   })
 
   it('leaves out what is already done: keys set, approvals connected', async () => {
-    const env = { GMAIL_CLIENT_ID: 'x', GMAIL_CLIENT_SECRET: 'x', GMAIL_REFRESH_TOKEN: 'x', GITHUB_TOKEN: 'x', GITHUB_DEFAULT_REPO: 'a/b', SLACK_BOT_TOKEN: 'x' }
-    const created = await admin.createFromTemplate('incident-triage', deps({ messagingConfigured: () => true }, env))
+    const created = await admin.createFromTemplate('incident-triage', deps({ messagingConfigured: () => true }))
     expect(created.checklist.map((c) => c.label)).toEqual([
       'Connect GitHub on the Apps page, then add it to incident-triage from its Apps tab',
-      'Add its key: SLACK_DEFAULT_CHANNEL',
-      'Send it alerts: paste one into Chat, have your alerting tool call it over HTTP, or reply to it in Slack',
+      'Add a webhook to the "Triage an incident" workflow with "Message me the result when it finishes" on, then paste its URL into the app that sends the alerts',
+      'Send it alerts: paste one into Chat, mention it in Slack, or have your alerting tool call its webhook',
     ])
     expect(created.schedule).toBeUndefined()
   })
 
+  it('makes a template\'s workflow skill a workflow, and asks where its results go', async () => {
+    const created = await admin.createFromTemplate('incident-triage', deps())
+    expect(steps).toContain('skill triage-incident')
+    expect(steps).toContain('workflow triage-incident "Triage an incident" (alert)')
+    expect(steps.indexOf('workflow triage-incident "Triage an incident" (alert)')).toBeLessThan(steps.indexOf('register incident-triage'))
+    expect(created.checklist).toContainEqual({ label: 'Choose where approval requests and results go: Slack, email, Lark or a webhook', href: '/agents/config?agent=incident-triage&tab=messaging' })
+    expect(created.checklist).toContainEqual({ label: expect.stringMatching(/^Add a webhook to the "Triage an incident" workflow/), href: '/agents/config?agent=incident-triage&tab=workflows' })
+  })
+
+  it('sends a digest\'s each result through messaging, and asks where they go', async () => {
+    const created = await admin.createFromTemplate('weekly-research-digest', deps())
+    const [task] = await listScheduledTasks({ agent: 'weekly-research-digest' })
+    expect(task.notify).toBe(true)
+    expect(created.checklist).toContainEqual({ label: 'Choose where its results go: Slack, email, Lark or a webhook', href: '/agents/config?agent=weekly-research-digest&tab=messaging' })
+    const connected = await admin.createFromTemplate('weekly-research-digest', deps({ agentExists: (n) => n === 'weekly-research-digest', messagingConfigured: () => true }))
+    expect(connected.checklist.map((c) => c.label).some((l) => l.startsWith('Choose where'))).toBe(false)
+  })
+
   it('keeps going when an ability fails to install, and says so first', async () => {
-    const created = await admin.createFromTemplate('weekly-research-digest', deps({
+    const created = await admin.createFromTemplate('lead-follow-up', deps({
       installAbility: async (_name, spec) => {
-        if (spec === 'lp-slack-notifier') throw new Error('npm pack failed: 404 Not Found')
+        if (spec === '@loopengine-co/hubspot') throw new Error('npm pack failed: 404 Not Found')
         steps.push(`install ${spec}`)
       },
     }))
-    expect(created.abilities).toEqual({ installed: ['lp-web-search'], failed: [{ name: 'lp-slack-notifier', error: "it isn't published on npm yet" }] })
-    expect(created.checklist[0]).toEqual({ label: "Install the lp-slack-notifier ability (it couldn't be installed: it isn't published on npm yet)", href: '/agents/config?agent=weekly-research-digest&tab=abilities' })
-    expect(created.checklist.map((c) => c.label)).toContain('Add one of TAVILY_API_KEY, BRAVE_API_KEY or FIRECRAWL_API_KEY')
-    expect(steps.at(-1)).toBe('register weekly-research-digest')
+    expect(created.abilities).toEqual({ installed: ['@loopengine-co/gmail'], failed: [{ name: '@loopengine-co/hubspot', error: "it isn't published on npm yet" }] })
+    expect(created.checklist[0]).toEqual({ label: 'Connect Firecrawl on the Apps page, then add it to lead-follow-up from its Apps tab', href: '/config?section=apps' })
+    expect(created.checklist[1]).toEqual({ label: "Install the @loopengine-co/hubspot ability (it couldn't be installed: it isn't published on npm yet)", href: '/agents/config?agent=lead-follow-up&tab=abilities' })
+    expect(steps.at(-1)).toBe('register lead-follow-up')
   })
 
   it('turns npm\'s install output into one plain line', () => {
@@ -159,11 +185,15 @@ describe('templates', () => {
 
   it('creates the agent without installing anything where installs need the admin login', async () => {
     const { installAbility: _skip, ...noInstall } = deps()
-    const created = await admin.createFromTemplate('incident-triage', noInstall)
+    const created = await admin.createFromTemplate('lead-follow-up', { ...noInstall, prepareApp: async () => 'file:/ws/mcp-firecrawl' })
     expect(created.abilities.installed).toEqual([])
-    expect(created.abilities.failed.map((f) => f.error)).toEqual(['installing abilities needs LOOPENGINE_ADMIN_AUTH set on the server'])
+    expect(created.abilities.failed.map((f) => f.error)).toEqual([
+      'installing abilities needs LOOPENGINE_ADMIN_AUTH set on the server',
+      'installing abilities needs LOOPENGINE_ADMIN_AUTH set on the server',
+      'adding apps needs LOOPENGINE_ADMIN_AUTH set on the server',
+    ])
     expect(steps.some((s) => s.startsWith('install'))).toBe(false)
-    expect(steps).toContain('register incident-triage')
+    expect(steps).toContain('register lead-follow-up')
   })
 
   it('adds a connected app with the tools the template relies on, and asks to connect one that isn\'t', async () => {
@@ -176,7 +206,7 @@ describe('templates', () => {
     }))
     expect(prepared).toEqual(['io.github.github/github-mcp-server'])
     expect(steps).toContain('install file:/ws/mcp-github [list_commits,list_pull_requests,actions_list,search_issues,issue_read,issue_write,add_issue_comment]')
-    expect(connected.abilities.installed).toEqual(['lp-slack-notifier', 'GitHub'])
+    expect(connected.abilities.installed).toEqual(['GitHub'])
     expect(connected.checklist.map((c) => c.label)).not.toContain('Connect GitHub on the Apps page, then add it to incident-triage from its Apps tab')
 
     const notConnected = await admin.createFromTemplate('incident-triage', deps({ agentExists: (n) => n === 'incident-triage', prepareApp: async () => undefined }))
@@ -238,7 +268,7 @@ describe('an older project adapter', () => {
     expect(steps[0]).toBe('create refund-approvals')
     expect(steps).toContain('rule shopify_create_refund ask */*')
     expect(created.abilities.installed).toEqual([])
-    expect(created.checklist[0].label).toMatch(/^Install the lp-gmail ability .*update it from Settings → Upgrade/)
+    expect(created.checklist[0].label).toMatch(/^Install the @loopengine-co\/gmail ability .*update it from Settings → Upgrade/)
     expect((await listScheduledTasks({ agent: 'refund-approvals' }))[0].status).toBe('paused')
     // Its preview call passes no envValue either.
     expect(admin.previewTemplate('refund-approvals', { agentExists: () => false }).keys.every((k) => !k.set)).toBe(true)

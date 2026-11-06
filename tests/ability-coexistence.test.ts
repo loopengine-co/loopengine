@@ -16,6 +16,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { installAbility, removeAbility, upgradeAbility } from '../bin/ability-manager.js'
 import { listDeclaredEnvVars } from '../web/env-admin.js'
 
+// These install made-up packages; the official-ability check has its
+// own tests (tests/official-abilities.test.ts).
+process.env.LOOPENGINE_ALLOW_UNOFFICIAL_ABILITIES = '1'
+
 const AGENT_NAME = 'ability-coexistence-fixture-agent'
 const AGENT_DIR = join(process.cwd(), 'agents', AGENT_NAME)
 
