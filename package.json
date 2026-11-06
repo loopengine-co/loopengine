@@ -3,7 +3,7 @@
   "version": "0.3.12",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "homepage": "https://loopengine.co",
   "repository": {
     "type": "git",
@@ -137,7 +137,8 @@
     "dist/web",
     "protocol/loop-event.schema.json",
     "PROTOCOL.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build": "tsc; s=$?; chmod +x dist/bin/cli.js; rm -rf dist/core/system-skills; cp -r core/system-skills dist/core/system-skills; tsx scripts/write-dist-package-json.ts; exit $s",
