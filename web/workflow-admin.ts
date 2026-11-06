@@ -6,7 +6,7 @@
 // one without changing anything that agent already does.
 import { join } from 'node:path'
 import { addGatewayTool, readGatewayToolsFromDir } from '../core/gateway-tools.js'
-import { addActauthRule, readActauthConfig } from './actauth-admin.js'
+import { applyPlannedRules } from './actauth-admin.js'
 import { writeSkill } from './skills-admin.js'
 import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
@@ -460,17 +460,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   if (!agent) throw new WorkflowError(`There's no agent named ${target.agent ?? '(none)'}.`)
   const check = checkWorkflowForAgent(plan, agent)
 
-  // 1. Rules: only for tools the agent has no rule for.
-  const { rules: current } = readActauthConfig(agent.name)
-  for (const rule of plan.rules) {
-    if (current.some((r) => r.tool === rule.tool)) continue
-    let name = slugify(`${plan.id}-${rule.tool}`, `${plan.id}-rule`)
-    for (let i = 2; current.some((r) => r.name === name); i++) name = `${slugify(`${plan.id}-${rule.tool}`)}-${i}`
-    addActauthRule(agent.name, { name, scope: '*/*', tool: rule.tool, decision: rule.decision })
-    current.push({ name, scope: '*/*', tool: rule.tool, decision: rule.decision })
-  }
-
-  // 2. Abilities it doesn't have yet.
+  // 1. Abilities it doesn't have yet (their rules come with them).
   const installed: string[] = []
   const failed: { name: string; error: string }[] = [...mcp.failed]
   for (const spec of check.toInstall) {
@@ -522,6 +512,11 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   installed.push(...connected.copied)
   failed.push(...connected.failed)
 
+  // 2. Rules, now that what was installed has added its own: none twice,
+  //    a stricter one (ask where an ability allows) placed so it counts,
+  //    and a decision the agent already has never loosened.
+  const ruled = applyPlannedRules(agent.name, plan.rules)
+
   // 3. Its steps, as a skill; then load the agent again with all of it.
   writeSkill(agent.name, plan.id, { description: plan.skill.description, body: plan.skill.body })
   let loadError: string | undefined
@@ -558,7 +553,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
     newAgent: false,
     workflow: plan.name,
     abilities: { installed, failed },
-    keptDecisions: check.conflicts,
+    keptDecisions: ruled.kept,
     checklist: [...withMissingSteps(plan, agent.name, templateChecklist(template, agent.name, deps, failed, appsToConnect)), ...hook.checklist],
     ...(hook.webhook ? { webhook: hook.webhook } : {}),
     ...(hook.webhookError ? { webhookError: hook.webhookError } : {}),

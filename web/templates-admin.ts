@@ -11,7 +11,7 @@
 import { createScheduledTask, pauseScheduledTask } from '../core/scheduler.js'
 import { workspaceTimeZone } from '../core/time-zone.js'
 import { STARTER_TEMPLATES, starterTemplate, templateScheduleStart, type StarterTemplate, type TemplateSchedule } from '../core/system-agents/templates.js'
-import { ActauthRuleExistsError, addActauthRule, setDefaultDecision } from './actauth-admin.js'
+import { ActauthRuleExistsError, addActauthRule, applyPlannedRules, setDefaultDecision } from './actauth-admin.js'
 import { setAgentEnvVar } from './env-admin.js'
 import { freeAgentName } from './interview-admin.js'
 import { writeSkill } from './skills-admin.js'
@@ -203,17 +203,9 @@ export async function createFromTemplateObject(template: StarterTemplate, deps: 
   const { candidate, setup } = template
   const name = freeAgentName(candidate.agent.name, deps.agentExists)
 
-  // 1. The agent, and its permissions: everything asks unless a rule says
-  //    otherwise, and the template's rules come first.
+  // 1. The agent: everything asks unless a rule says otherwise.
   await deps.scaffoldAgent(name, candidate.agent.systemPrompt)
   setDefaultDecision(name, 'ask')
-  for (const rule of setup.rules) {
-    try {
-      addActauthRule(name, { name: rule.name, scope: '*/*', tool: rule.tool, decision: rule.decision })
-    } catch (err) {
-      if (!(err instanceof ActauthRuleExistsError)) throw err
-    }
-  }
 
   // 2. Abilities: their tools, skills and rules. One failing doesn't stop
   //    the rest; it heads the checklist.
@@ -259,6 +251,10 @@ export async function createFromTemplateObject(template: StarterTemplate, deps: 
       failed.push({ name: app.title, error: installFailureReason(err) })
     }
   }
+
+  // The template's rules, now that abilities and apps have added theirs:
+  // none twice, a stricter one placed so it counts, none loosened.
+  applyPlannedRules(name, setup.rules.map((r) => ({ name: r.name, tool: r.tool, decision: r.decision })))
 
   // 3. Its own skills and non-secret settings.
   for (const skill of setup.skills ?? []) writeSkill(name, skill.id, { description: skill.description, body: skill.body })

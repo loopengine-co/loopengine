@@ -562,7 +562,8 @@ export function workflowTemplate(plan: WorkflowPlan): StarterTemplate {
       ...(plan.apps?.length ? { apps: plan.apps } : {}),
       keys: plan.keys,
       skills: [{ id: plan.id, description: plan.skill.description, body: plan.skill.body }],
-      rules: plan.rules.map((r) => ({ name: slugify(`${plan.id}-${r.tool}`, `${plan.id}-rule`), tool: r.tool, decision: r.decision })),
+      // Named after the tool: readable, and made unique if taken.
+      rules: plan.rules.map((r) => ({ name: r.tool, tool: r.tool, decision: r.decision })),
       ...(plan.trigger.kind === 'schedule' && plan.trigger.every
         ? { schedule: { every: plan.trigger.every, ...(plan.trigger.at ? { at: plan.trigger.at } : {}), ...(plan.trigger.weekday !== undefined ? { weekday: plan.trigger.weekday } : {}), name: plan.name, message: plan.startMessage, workflowId: plan.id, ...(plan.notify?.on ? { notify: true } : {}) } }
         : {}),

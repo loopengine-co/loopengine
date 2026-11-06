@@ -14,6 +14,10 @@ vi.mock('#web/actauth-admin.js', () => {
     ActauthRuleExistsError,
     setDefaultDecision: vi.fn((name: string, decision: string) => void steps.push(`default ${name} ${decision}`)),
     addActauthRule: vi.fn((name: string, rule: { tool: string; decision: string; scope: string }) => void steps.push(`rule ${rule.tool} ${rule.decision} ${rule.scope}`)),
+    applyPlannedRules: vi.fn((name: string, rules: { tool: string; decision: string }[]) => {
+      for (const rule of rules) steps.push(`rule ${rule.tool} ${rule.decision} */*`)
+      return { added: rules.map((r) => r.tool), unchanged: [], kept: [] }
+    }),
   }
 })
 vi.mock('#web/env-admin.js', () => ({ setAgentEnvVar: vi.fn(async (name: string, variable: string, value: string) => void steps.push(`env ${variable}=${value}`)) }))
@@ -89,20 +93,20 @@ describe('templates', () => {
     expect(preview.needsApprovals).toBe(false)
   })
 
-  it('creates the agent with its whole setup: rules before abilities, loaded last, schedule paused', async () => {
+  it('creates the agent with its whole setup: abilities, then the rules they leave to set, loaded last, schedule paused', async () => {
     const created = await admin.createFromTemplate('customer-email-replies', deps())
     expect(steps).toEqual([
       'scaffold customer-email-replies You answer customer emails for our business, from our support inbox.',
       'default customer-email-replies ask',
+      'install lp-gmail',
+      'install lp-shopify',
+      'install lp-docs-search',
       'rule gmail_search allow */*',
       'rule gmail_get_thread allow */*',
       'rule gmail_create_draft allow */*',
       'rule gmail_modify_labels allow */*',
       'rule gmail_send ask */*',
       'rule shopify_create_refund deny */*',
-      'install lp-gmail',
-      'install lp-shopify',
-      'install lp-docs-search',
       'env DOCS_SEARCH_PATH=docs',
       'register customer-email-replies',
     ])

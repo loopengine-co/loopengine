@@ -86,7 +86,10 @@ function findRuleIndex(rules: RulesSeq, ruleName: string): number {
 /** Appends a new rule. `rule.name` must be unique among this agent's
  * existing rules — it's the only handle update/removeActauthRule below
  * have to find it again, so a duplicate would make those ambiguous. */
-export function addActauthRule(agentName: string, rule: ActauthRuleInput): void {
+/** Adds a rule at the end, or, with `before`, just above that named rule
+ * (the first rule that matches a call decides it, so above is what makes
+ * it count). */
+export function addActauthRule(agentName: string, rule: ActauthRuleInput, options: { before?: string } = {}): void {
   const dir = agentDir(agentName)
   const { path, doc } = loadDoc(dir)
   const rules = doc.get('rules') as unknown as RulesSeq
@@ -95,8 +98,58 @@ export function addActauthRule(agentName: string, rule: ActauthRuleInput): void 
     throw new ActauthRuleExistsError(`A rule named '${rule.name}' already exists for '${agentName}' — pick a different name or remove it first.`)
   }
 
-  rules.add(doc.createNode({ name: rule.name, scope: rule.scope, tool: rule.tool, decision: rule.decision }))
+  const node = doc.createNode({ name: rule.name, scope: rule.scope, tool: rule.tool, decision: rule.decision })
+  const at = options.before ? findRuleIndex(rules, options.before) : -1
+  if (at === -1) rules.add(node)
+  else rules.items.splice(at, 0, node as unknown as RuleNode)
   saveDoc(dir, path, doc)
+}
+
+type RuleDecision = 'allow' | 'ask' | 'deny'
+const STRICTNESS: Record<RuleDecision, number> = { allow: 0, ask: 1, deny: 2 }
+
+export interface PlannedRule {
+  tool: string
+  decision: RuleDecision
+  /** Its name in actauth.yml; the tool's name (made unique) by default. */
+  name?: string
+}
+
+export interface PlannedRulesResult {
+  added: string[]
+  /** Tools that already had a rule with the same decision. */
+  unchanged: string[]
+  /** Tools whose first rule is stricter or looser than planned and was
+   * kept as it is: the plan never loosens a decision the agent has. */
+  kept: { tool: string; has: RuleDecision; wants: RuleDecision }[]
+}
+
+/** Gives the planned tools their decisions, once the agent's abilities and
+ * apps are installed (their own rules in place), so nothing is added twice:
+ * a tool with no rule gets one; one whose first matching rule already says
+ * the same is left alone; one a plan wants stricter (ask where an ability
+ * allows) gets its rule just above, so it counts; one a plan wants looser
+ * keeps what it has, and is reported. */
+export function applyPlannedRules(agentName: string, planned: PlannedRule[]): PlannedRulesResult {
+  const result: PlannedRulesResult = { added: [], unchanged: [], kept: [] }
+  for (const rule of planned) {
+    const current = readActauthConfig(agentName).rules
+    const first = current.find((r) => r.tool === rule.tool)
+    if (first && first.decision === rule.decision) {
+      result.unchanged.push(rule.tool)
+      continue
+    }
+    if (first && STRICTNESS[rule.decision] < STRICTNESS[first.decision as RuleDecision]) {
+      result.kept.push({ tool: rule.tool, has: first.decision as RuleDecision, wants: rule.decision })
+      continue
+    }
+    const base = rule.name ?? rule.tool
+    let name = base
+    for (let i = 2; current.some((r) => r.name === name); i++) name = `${base}-${i}`
+    addActauthRule(agentName, { name, scope: '*/*', tool: rule.tool, decision: rule.decision }, first ? { before: first.name } : {})
+    result.added.push(name)
+  }
+  return result
 }
 
 /** Mutates an existing rule's scope/tool/decision in place (via the
