@@ -439,10 +439,6 @@ ${consoleShellScript}
     return attempt().catch(function () { return attempt(); });
   }
 
-  function badge(label) {
-    return '<span class="badge ' + (label === 'custom' ? 'badge-custom' : 'badge-default') + '">' + escapeHtml(label) + '</span>';
-  }
-
   // A small, deliberately non-CommonMark markdown-to-HTML renderer for
   // the skill Body field's Preview toggle (see wireSkillsHandlers) — this
   // page stays a self-contained string, no build step, no CDN (same
@@ -1317,7 +1313,10 @@ ${consoleShellScript}
           '<dt>Provider</dt><dd>' + escapeHtml(cfg.model.provider) + '</dd>' +
           '<dt>Model</dt><dd>' + escapeHtml(cfg.model.model || '(provider default)') + '</dd>' +
           '<dt>Max tokens</dt><dd>' + escapeHtml(cfg.model.maxTokens != null ? cfg.model.maxTokens : '(default)') + '</dd>' +
-          '<dt>Reasoning effort</dt><dd>' + escapeHtml(cfg.model.reasoningEffort || (REASONING_PROVIDERS.indexOf(cfg.model.provider) !== -1 ? '(model default)' : 'n/a')) + '</dd>' +
+          // Unset is low for OpenAI's reasoning models (core/model-calls/openai-model-call.ts).
+          '<dt>Reasoning effort</dt><dd>' + escapeHtml(cfg.model.reasoningEffort ||
+            (cfg.model.provider === 'openai' && /^(gpt-[5-9]|o[0-9])/i.test(cfg.model.model || '') ? 'low (default)'
+              : REASONING_PROVIDERS.indexOf(cfg.model.provider) !== -1 ? '(model default)' : 'n/a')) + '</dd>' +
         '</dl>' +
         '<form class="add-source" id="modelForm" style="display:none">' +
           '<label>Provider' +
@@ -1333,7 +1332,7 @@ ${consoleShellScript}
           '<label>Max tokens <span class="hint">(blank for provider default)</span>' +
             '<input type="number" name="maxTokens" min="1" step="1" value="' + (cfg.model.maxTokens != null ? escapeHtml(cfg.model.maxTokens) : '') + '">' +
           '</label>' +
-          '<label id="reasoningEffortField">Reasoning effort <span class="hint">(how much the model thinks before answering: none turns it off, unset uses the model\\\'s default)</span>' +
+          '<label id="reasoningEffortField">Reasoning effort <span class="hint">(how much the model thinks before answering: none turns it off, unset uses the model\\\'s default, and low for OpenAI\\\'s reasoning models)</span>' +
             '<select name="reasoningEffort">' +
               ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(function (v) {
                 return '<option value="' + v + '"' + (v === (cfg.model.reasoningEffort || '') ? ' selected' : '') + '>' + (v || '(unset)') + '</option>';
@@ -1349,11 +1348,6 @@ ${consoleShellScript}
     return renderOverviewCards(cfg) +
       '<section>' + systemPromptSection + '</section>' +
       '<section>' + modelSection + '</section>' +
-      '<section><h3>Hooks</h3><dl class="kv">' +
-        '<dt>sessionIdFor</dt><dd>' + badge(cfg.sessionIdFor.indexOf('custom') === 0 ? 'custom' : 'default') + ' <span class="muted">' + escapeHtml(cfg.sessionIdFor) + '</span></dd>' +
-        '<dt>tenantFor</dt><dd>' + badge(cfg.tenantFor.indexOf('custom') === 0 ? 'custom' : 'default') + ' <span class="muted">' + escapeHtml(cfg.tenantFor) + '</span></dd>' +
-        '<dt>isSafeTool</dt><dd>' + badge(cfg.isSafeTool === 'custom' ? 'custom' : 'default') + ' <span class="muted">' + escapeHtml(cfg.isSafeTool) + '</span></dd>' +
-        '</dl></section>' +
       '<section><h3>Limits &amp; budgets <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
         '<dl class="kv" id="limitsDisplay">' +
           '<dt>maxTurns</dt><dd>' + escapeHtml(cfg.maxTurns) + '</dd>' +
@@ -1374,7 +1368,6 @@ ${consoleShellScript}
           '<button type="button" id="cancelLimitsBtn">Cancel</button>' +
           '<div class="error" id="limitsError"></div>' +
         '</form>' +
-        '<dl class="kv"><dt>skillsDirs</dt><dd>' + escapeHtml(cfg.skillsDirs.join(', ') || '(none)') + '</dd></dl>' +
       '</section>';
   }
 
@@ -3627,11 +3620,7 @@ ${consoleShellScript}
 
   function renderSkillsTabHtml(cfg) {
     var listHtml = cfg.skills.length ? cfg.skills.map(renderSkillCard).join('') : '<p class="hint">No skills yet.</p>';
-    return '<section><h3>Skills dirs</h3><dl class="kv">' +
-        '<dt>skillsDirs</dt><dd>' + escapeHtml(cfg.skillsDirs.join(', ') || '(none)') + '</dd>' +
-        '<dt>skillIndexBudgetTokens</dt><dd>' + escapeHtml(cfg.skillIndexBudgetTokens) + '</dd>' +
-        '</dl></section>' +
-      '<section><h3>Skills (' + cfg.skills.length + ')</h3><div id="skillList">' + listHtml + '</div></section>' +
+    return '<section><h3>Skills (' + cfg.skills.length + ')</h3><div id="skillList">' + listHtml + '</div></section>' +
       '<section><h3 id="skillFormHeading">Add a skill</h3>' +
         '<form class="add-source" id="skillForm">' +
           '<label>Id <span class="hint">(lowercase, hyphen-separated — becomes the SKILL.md folder name; nested skills aren\\'t editable here)</span>' +

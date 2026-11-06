@@ -77,6 +77,20 @@ describe('createOpenAIModelCall', () => {
     expect(requests[1]).toMatchObject({ max_output_tokens: 16000 })
   })
 
+  it('gives a reasoning model with no effort set low, with room to act; an older model none', async () => {
+    const { client, requests } = stubClient([response([message('hi')]), response([message('hi')]), response([message('hi')]), response([message('hi')])])
+    const ask = (model: string, effort?: 'high') => createOpenAIModelCall({ model, client, ...(effort ? { reasoningEffort: effort } : {}) })([{ role: 'user', content: 'hi' }], 'sys', [])
+    await ask('gpt-5.4')
+    await ask('o4-mini')
+    await ask('gpt-4o')
+    await ask('gpt-5.4', 'high')
+    expect(requests[0]).toMatchObject({ reasoning: { effort: 'low' }, max_output_tokens: 16000 })
+    expect(requests[1]).toMatchObject({ reasoning: { effort: 'low' } })
+    expect(requests[2]).not.toHaveProperty('reasoning')
+    expect(requests[2]).toMatchObject({ max_output_tokens: 4096 })
+    expect(requests[3]).toMatchObject({ reasoning: { effort: 'high' } })
+  })
+
   it('stops with tool_use for a function call, and max_tokens when cut off', async () => {
     const { client } = stubClient([
       response([{ type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'echo', arguments: '{}', status: 'completed' }]),

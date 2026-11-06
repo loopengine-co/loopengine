@@ -249,10 +249,21 @@ export function fromResponse(response: OpenAI.Responses.Response): ModelResponse
   return { stop_reason, content, ...(usage ? { usage } : {}) }
 }
 
+/** OpenAI's reasoning models (GPT-5 on, the o-series), which reason by
+ * default and take a reasoning effort; older ones (gpt-4o, gpt-4.1)
+ * reject one. */
+export function isOpenAIReasoningModel(model: string): boolean {
+  return /^(gpt-(5|6|7|8|9)|o\d)/i.test(model)
+}
+
 export function createOpenAIModelCall(options: OpenAIModelCallOptions): ModelCall {
   const client = options.client ?? new OpenAI({ apiKey: options.apiKey })
+  // A reasoning model with no effort set reasons at OpenAI's default
+  // anyway (medium), which used to spend the 4096-token cap before it
+  // got to a tool call. Unset is low for those: quick, and room to act.
+  const reasoningEffort = options.reasoningEffort ?? (isOpenAIReasoningModel(options.model) ? 'low' : undefined)
   // Reasoning counts toward max_output_tokens.
-  const maxTokens = options.maxTokens ?? (options.reasoningEffort && options.reasoningEffort !== 'none' ? 16000 : 4096)
+  const maxTokens = options.maxTokens ?? (reasoningEffort && reasoningEffort !== 'none' ? 16000 : 4096)
 
   return async (messages: Message[], system: string, tools: ToolSchema[]): Promise<ModelResponse> => {
     const response = await client.responses.create({
@@ -263,7 +274,7 @@ export function createOpenAIModelCall(options: OpenAIModelCallOptions): ModelCal
       tools: tools.length
         ? tools.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.input_schema, strict: false }))
         : undefined,
-      ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
+      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
       store: false,
       include: ['reasoning.encrypted_content'],
     })
