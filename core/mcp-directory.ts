@@ -11,12 +11,15 @@
 //       url: https://mcp.acme.internal/mcp
 //       auth: { header: X-Api-Key }     # optional; default Authorization: Bearer
 //
+// The console's Apps page adds to the same file ("Add your own server"):
+// a company's own server, connected like any app.
+//
 // A registry server counts as verified when its URL is on the domain its
 // registry name was verified for (com.stripe/mcp at mcp.stripe.com); the
 // rest are shown as unverified.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { parse as parseYaml } from 'yaml'
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 
 export interface McpDirectoryServer {
   /** The registry name (com.stripe/mcp) or a saved server's id. */
@@ -51,9 +54,13 @@ function registryBase(): string | undefined {
   return (value || DEFAULT_REGISTRY).replace(/\/+$/, '')
 }
 
+function savedServersPath(): string {
+  return resolve(process.cwd(), process.env[MCP_SERVERS_FILE_ENV]?.trim() || 'mcp-servers.yml')
+}
+
 /** The workspace's saved servers. A malformed entry is skipped. */
 export function savedMcpServers(): McpDirectoryServer[] {
-  const path = resolve(process.cwd(), process.env[MCP_SERVERS_FILE_ENV]?.trim() || 'mcp-servers.yml')
+  const path = savedServersPath()
   if (!existsSync(path)) return []
   let raw: unknown
   try {
@@ -91,6 +98,88 @@ function isRemoteUrl(url: string): boolean {
   } catch {
     return false
   }
+}
+
+export class McpServerInputError extends Error {}
+
+const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/
+
+/** A server the workspace adds by its address, checked and given an id
+ * from its name (the same id again for an address already saved). Not
+ * saved yet: saveMcpServer, once it has connected. */
+export function ownMcpServer(input: { title?: unknown; url?: unknown; description?: unknown; header?: unknown }, saved: McpDirectoryServer[] = savedMcpServers()): McpDirectoryServer {
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+  const title = text(input.title)
+  const url = text(input.url)
+  const description = text(input.description)
+  const header = text(input.header)
+  if (!title) throw new McpServerInputError('Give the server a name, e.g. "Acme CRM".')
+  if (title.length > 60) throw new McpServerInputError('Keep the name under 60 characters.')
+  if (description.length > 200) throw new McpServerInputError('Keep the description under 200 characters.')
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new McpServerInputError('Enter the server\'s full address, e.g. https://mcp.yourcompany.com/mcp.')
+  }
+  if (!isRemoteUrl(parsed.href)) {
+    throw new McpServerInputError(parsed.protocol === 'http:'
+      ? 'Use the server\'s https address: its key would otherwise be sent unencrypted.'
+      : 'Enter the server\'s full https address, with nothing left to fill in, e.g. https://mcp.yourcompany.com/mcp.')
+  }
+  if (header && !HEADER_NAME.test(header)) throw new McpServerInputError('A header name is letters, digits and dashes, e.g. X-Api-Key.')
+  const same = saved.find((s) => s.url === url)
+  let id = same?.id
+  if (!id) {
+    const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'server'
+    id = base
+    for (let n = 2; saved.some((s) => s.id === id); n++) id = `${base}-${n}`
+  }
+  return {
+    id,
+    title,
+    description,
+    url,
+    transport: 'streamable-http',
+    source: 'saved',
+    verified: true,
+    ...(header && header.toLowerCase() !== 'authorization' ? { auth: { header } } : {}),
+  }
+}
+
+/** Adds a server to the saved servers, or replaces the one with its id.
+ * The file's other entries are kept as they are. */
+export function saveMcpServer(server: McpDirectoryServer): void {
+  const path = savedServersPath()
+  let doc: { servers?: unknown[] } & Record<string, unknown> = {}
+  if (existsSync(path)) {
+    try {
+      doc = (parseYaml(readFileSync(path, 'utf8')) as typeof doc | null) ?? {}
+    } catch (err) {
+      throw new McpServerInputError(`${path} couldn't be read, so the server wasn't saved: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  const servers = Array.isArray(doc.servers) ? doc.servers.filter((e) => (e as { id?: unknown } | null)?.id !== server.id) : []
+  servers.push({
+    id: server.id,
+    title: server.title,
+    ...(server.description ? { description: server.description } : {}),
+    url: server.url,
+    ...(server.auth?.header ? { auth: { header: server.auth.header } } : {}),
+  })
+  writeFileSync(path, stringifyYaml({ ...doc, servers }))
+}
+
+/** Removes a saved server; false when there's none with that id. */
+export function removeSavedMcpServer(id: string): boolean {
+  const path = savedServersPath()
+  if (!existsSync(path)) return false
+  const doc = (parseYaml(readFileSync(path, 'utf8')) as ({ servers?: unknown[] } & Record<string, unknown>) | null) ?? {}
+  const servers = Array.isArray(doc.servers) ? doc.servers : []
+  const kept = servers.filter((e) => (e as { id?: unknown } | null)?.id !== id)
+  if (kept.length === servers.length) return false
+  writeFileSync(path, stringifyYaml({ ...doc, servers: kept }))
+  return true
 }
 
 /** io.github.firecrawl/… → firecrawl: the GitHub organisation the

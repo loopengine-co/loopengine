@@ -120,7 +120,7 @@ import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWor
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
-import { getMcpServer, searchMcpServers } from '#core/mcp-directory.js'
+import { McpServerInputError, getMcpServer, ownMcpServer, removeSavedMcpServer, saveMcpServer, savedMcpServers, searchMcpServers, type McpDirectoryServer } from '#core/mcp-directory.js'
 import { isMcpAuthError, listMcpServerTools, resolveMcpManifest } from '#core/mcp-abilities.js'
 import { McpAbilityGenerationError, generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
 import { readAbilityDetails } from '#core/ability-details.js'
@@ -1088,7 +1088,10 @@ async function prepareWorkspaceApp(id: string): Promise<string | undefined> {
   return describeApps().connected.find((c) => c.id === id || (server && c.url === server.url))?.spec
 }
 
-function describeApps(): { apps: ReturnType<typeof appCatalog>; connected: ReturnType<typeof connectedApps>; canConnect: boolean } {
+/** The workspace's own servers (mcp-servers.yml), for the Apps page. */
+type SavedServerView = { id: string; title: string; description: string; url: string; header?: string }
+
+function describeApps(): { apps: ReturnType<typeof appCatalog>; connected: ReturnType<typeof connectedApps>; saved: SavedServerView[]; canConnect: boolean } {
   const agentAbilities: Record<string, string[]> = {}
   for (const name of listAgents()) {
     try {
@@ -1096,7 +1099,32 @@ function describeApps(): { apps: ReturnType<typeof appCatalog>; connected: Retur
     } catch {}
   }
   const connected = connectedApps(listWorkspaceAbilities(), agentAbilities, (name) => process.env[name])
-  return { apps: appCatalog(connected), connected, canConnect: secretsProtected }
+  const saved = savedMcpServers().map((s) => ({ id: s.id, title: s.title, description: s.description, url: s.url, ...(s.auth?.header ? { header: s.auth.header } : {}) }))
+  return { apps: appCatalog(connected), connected, saved, canConnect: secretsProtected }
+}
+
+/** Connects a server: makes a workspace ability from it, with its key
+ * saved in the workspace's settings. Returns the ability's name. */
+async function connectAppServer(server: McpDirectoryServer, key: string): Promise<string> {
+  let picked: ReturnType<typeof pickInterviewModel>
+  try {
+    picked = pickInterviewModel(interviewAgents())
+  } catch {
+    picked = undefined
+  }
+  const generated = await generateMcpAbility({
+    server,
+    ...(key ? { key } : {}),
+    workflow: { name: `${server.title} for this workspace`, summary: `Everyday work with ${server.title}`, steps: [] },
+    ...(picked ? { modelCall: picked.modelCall } : {}),
+  })
+  try {
+    addWorkspaceAbility(generated.dir, `mcp:${server.url}`)
+  } finally {
+    rmSync(generated.dir, { recursive: true, force: true })
+  }
+  if (key && generated.keyEnv) await setEnvVar(generated.keyEnv, key)
+  return generated.name
 }
 
 async function handleAgentApp(req: IncomingMessage, res: ServerResponse, agent: string, ability: string): Promise<void> {
@@ -1164,25 +1192,29 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
       const key = typeof body.key === 'string' ? body.key.trim() : ''
       const server = id ? await appServer(id) : undefined
       if (!server) return json(400, { error: 'No such app.' })
-      let picked: ReturnType<typeof pickInterviewModel>
-      try {
-        picked = pickInterviewModel(interviewAgents())
-      } catch {
-        picked = undefined
-      }
-      const generated = await generateMcpAbility({
-        server,
-        ...(key ? { key } : {}),
-        workflow: { name: `${server.title} for this workspace`, summary: `Everyday work with ${server.title}`, steps: [] },
-        ...(picked ? { modelCall: picked.modelCall } : {}),
-      })
-      try {
-        addWorkspaceAbility(generated.dir, `mcp:${server.url}`)
-      } finally {
-        rmSync(generated.dir, { recursive: true, force: true })
-      }
-      if (key && generated.keyEnv) await setEnvVar(generated.keyEnv, key)
-      return json(200, { ...describeApps(), connectedAbility: generated.name })
+      const connectedAbility = await connectAppServer(server, key)
+      return json(200, { ...describeApps(), connectedAbility })
+    }
+    // Your own server, by its address: saved once it connects, so a
+    // mistyped address or a refused key leaves nothing behind.
+    if (pathname === '/config/apps/servers' && req.method === 'POST') {
+      if (!secretsProtected) return json(403, { error: 'Connecting an app saves its key on this server, so it needs LOOPENGINE_ADMIN_AUTH set first.' })
+      const body = await readJsonBody(req)
+      const server = ownMcpServer(body)
+      if (describeApps().connected.some((c) => c.url === server.url)) return json(400, { error: `${server.url} is already connected.` })
+      const key = typeof body.key === 'string' ? body.key.trim() : ''
+      const connectedAbility = await connectAppServer(server, key)
+      saveMcpServer(server)
+      return json(200, { ...describeApps(), connectedAbility })
+    }
+    if (pathname === '/config/apps/servers' && req.method === 'DELETE') {
+      if (!secretsProtected) return json(403, { error: 'Removing a server needs LOOPENGINE_ADMIN_AUTH set first.' })
+      const id = new URL(req.url ?? '/', 'http://localhost').searchParams.get('id') ?? ''
+      const server = savedMcpServers().find((s) => s.id === id)
+      if (!server) return json(400, { error: 'There\'s no saved server with that id.' })
+      if (describeApps().connected.some((c) => c.url === server.url)) return json(400, { error: `Disconnect ${server.title} first.` })
+      removeSavedMcpServer(id)
+      return json(200, describeApps())
     }
     // A connected app's tools: everything its server offers, each with
     // its default permission and the agents that use it. Defaults only
@@ -1219,7 +1251,7 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
     return json(404, { error: 'not found' })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (err instanceof McpAbilityGenerationError || err instanceof WorkspaceAbilityError || err instanceof AppToolsError) return json(400, { error: message })
+    if (err instanceof McpAbilityGenerationError || err instanceof WorkspaceAbilityError || err instanceof AppToolsError || err instanceof McpServerInputError) return json(400, { error: message })
     if (isMcpAuthError(err)) return json(400, { error: 'The app turned down its saved key; reconnect it with a new one.' })
     console.error('[loopengine] apps failed:', err)
     return json(502, { error: message })

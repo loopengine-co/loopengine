@@ -344,7 +344,7 @@ export { AbilitySourceError, abilityOrigin, readAbilitySources, saveAbilitySourc
 export { describeAbilitySources, listPrivateAbilities, saveAbilitySourceFromConsole, removeAbilitySourceFromConsole } from './web/ability-sources-admin.js'
 export { readAbilityDetails, readToolDefinitions, type AbilityDetails } from './core/ability-details.js'
 export { loadMcpAbilityTools, mcpAbilityLoadError, closeMcpConnections, resolveMcpManifest, listMcpServerTools, isMcpAuthError, type McpServerManifest, type McpAuth, type InstalledMcpRecord, type McpToolInfo } from './core/mcp-abilities.js'
-export { searchMcpServers, getMcpServer, savedMcpServers, type McpDirectoryServer } from './core/mcp-directory.js'
+export { searchMcpServers, getMcpServer, savedMcpServers, ownMcpServer, saveMcpServer, removeSavedMcpServer, McpServerInputError, type McpDirectoryServer } from './core/mcp-directory.js'
 export { generateMcpAbility, mcpAbilityNames, McpAbilityGenerationError, type GeneratedMcpAbility, type McpAbilityRequest } from './core/mcp-ability-generator.js'
 export { abilityDetails } from './web/ability-details-admin.js'
 export { WorkspaceAbilityError, listWorkspaceAbilities, addWorkspaceAbility, removeWorkspaceAbility, workspaceAbilitiesDir, type WorkspaceAbility } from './core/workspace-abilities.js'

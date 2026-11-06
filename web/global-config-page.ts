@@ -548,6 +548,8 @@ ${consoleShellScript}
   // Open tool panels, by ability: { tools, filter, error, busy }.
   var openTools = {};
   var appSearch = { q: '', servers: null, error: '' };
+  // The "Add your own server" form: open, and what's typed in it.
+  var ownForm = { open: false };
 
   function appLetter(title) {
     return '<span class="app-letter" aria-hidden="true">' + escapeHtml((title || '?').charAt(0).toUpperCase()) + '</span>';
@@ -572,6 +574,37 @@ ${consoleShellScript}
       '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="app-cancel">Cancel</button></div>' +
       '<p class="hint app-msg" style="margin:0"></p></form>';
   }
+
+  // Your company's own servers (mcp-servers.yml): each connects like any
+  // app; a saved one not connected can be connected again or removed.
+  function renderOwnServers() {
+    var saved = apps.saved || [];
+    var rows = saved.map(function (s) {
+      var connected = apps.connected.some(function (c) { return c.url === s.url; });
+      return '<div class="app-row" data-app="' + escapeHtml(s.id) + '"><div class="app-head">' + appLetter(s.title) + '</div>' +
+        '<div class="app-row-main"><div><strong>' + escapeHtml(s.title) + '</strong> <span class="badge badge-default">Private</span></div>' +
+          '<div class="hint">' + escapeHtml(s.url) + (s.description ? ' &middot; ' + escapeHtml(s.description) : '') + (s.header ? ' &middot; key sent in ' + escapeHtml(s.header) : '') + '</div></div>' +
+        '<div class="app-slot">' + (connected
+          ? '<span class="badge badge-custom">Connected</span>'
+          : '<button type="button" class="app-connect" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button> <button type="button" class="delete-btn app-forget" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Remove</button>') + '</div></div>';
+    }).join('');
+    var form = ownForm.open
+      ? '<form id="ownServerForm" class="app-form" style="max-width:560px">' +
+          '<label>Name<input name="title" required maxlength="60" placeholder="Acme CRM"></label>' +
+          '<label>Address<input name="url" type="url" required placeholder="https://mcp.yourcompany.com/mcp"></label>' +
+          '<label>What it does <span class="hint">(optional)</span><input name="description" maxlength="200" placeholder="Our customers, orders and support tickets"></label>' +
+          '<label>API key <span class="hint">(if it needs one; saved in this workspace' + String.fromCharCode(8217) + 's settings)</span><input name="key" type="password" autocomplete="off"></label>' +
+          '<label>Header for the key <span class="hint">(optional; empty sends it as Authorization: Bearer ' + String.fromCharCode(8230) + ')</span><input name="header" placeholder="X-Api-Key" pattern="[A-Za-z0-9-]+"></label>' +
+          '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="own-cancel">Cancel</button></div>' +
+          '<p class="hint app-msg" style="margin:0"></p></form>'
+      : '<button type="button" class="own-add"' + (apps.canConnect ? '' : ' disabled') + '>Add your own server</button>';
+    return '<section id="own-servers"><h3>Your own servers</h3>' +
+      '<p class="hint">Your company' + String.fromCharCode(8217) + 's own MCP server, by its address: it connects like any app, and only this workspace sees it. Servers that only offer a sign-in (OAuth) can' + String.fromCharCode(8217) + 't be connected yet.</p>' +
+      (rows ? '<div class="app-list" style="margin-bottom:10px">' + rows + '</div>' : '') + form + '</section>';
+  }
+
+  // By name: form.title is the form's own title attribute.
+  function ownField(form, name) { return form.querySelector('[name=' + name + ']').value; }
 
   function renderApps() {
     var el = document.getElementById('appsContent');
@@ -602,6 +635,7 @@ ${consoleShellScript}
         }).join('') + '</div>' +
         '<p class="hint">Each is the app' + String.fromCharCode(8217) + 's own MCP server. Apps that only offer a sign-in (OAuth) can' + String.fromCharCode(8217) + 't be connected yet; their Connect says so.</p>' +
       '</section>' +
+      renderOwnServers() +
       '<section><h3>More apps</h3>' +
         '<form id="appSearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px"><input type="search" name="q" placeholder="Search the MCP Registry, e.g. calendly" aria-label="Search apps" style="flex:1" value="' + escapeHtml(appSearch.q) + '"><button type="submit">Search</button></form>' +
         '<div id="appSearchResults">' + renderAppSearch() + '</div>' +
@@ -717,6 +751,26 @@ ${consoleShellScript}
       return;
     }
     if (t.classList.contains('app-cancel')) { renderApps(); return; }
+    if (t.classList.contains('own-add')) {
+      ownForm.open = true;
+      renderApps();
+      document.querySelector('#ownServerForm input[name=title]').focus();
+      return;
+    }
+    if (t.classList.contains('own-cancel')) { ownForm.open = false; renderApps(); return; }
+    if (t.classList.contains('app-forget')) {
+      if (t.dataset.confirming !== '1') { t.dataset.confirming = '1'; t.textContent = 'Click again to remove'; return; }
+      t.disabled = true;
+      fetch('/config/apps/servers?id=' + encodeURIComponent(t.dataset.id), { method: 'DELETE' })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.body.error || 'request failed');
+          apps = r.body;
+          renderApps();
+        })
+        .catch(function (err) { t.disabled = false; t.textContent = 'Could not remove: ' + err.message; });
+      return;
+    }
     if (t.classList.contains('app-disconnect')) {
       if (t.dataset.confirming !== '1') { t.dataset.confirming = '1'; t.textContent = 'Click again to disconnect'; return; }
       t.disabled = true;
@@ -759,6 +813,28 @@ ${consoleShellScript}
           document.getElementById('appSearchResults').innerHTML = renderAppSearch();
         })
         .catch(function (err) { appSearch.error = 'Could not search: ' + err.message; document.getElementById('appSearchResults').innerHTML = renderAppSearch(); });
+      return;
+    }
+    if (form.id === 'ownServerForm') {
+      var ownBtn = form.querySelector('button[type=submit]');
+      var ownMsg = form.querySelector('.app-msg');
+      ownBtn.disabled = true;
+      ownMsg.className = 'hint app-msg';
+      ownMsg.textContent = 'Connecting' + String.fromCharCode(8230) + ' it asks the server for its tools and sets their permissions, which can take a minute.';
+      fetch('/config/apps/servers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: ownField(form, 'title'), url: ownField(form, 'url'), description: ownField(form, 'description'), key: ownField(form, 'key'), header: ownField(form, 'header') }) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.body.error || 'request failed');
+          apps = r.body;
+          ownForm.open = false;
+          if (r.body.connectedAbility) loadTools(r.body.connectedAbility, false);
+          else renderApps();
+        })
+        .catch(function (err) {
+          ownBtn.disabled = false;
+          ownMsg.className = 'error app-msg';
+          ownMsg.textContent = err.message;
+        });
       return;
     }
     if (!form.dataset.connect) return;
