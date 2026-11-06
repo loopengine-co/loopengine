@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileSchedulerStore, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
 import { validateCandidate } from '#core/system-agents/interviewer.js'
 import { STARTER_TEMPLATES, templateScheduleStart } from '#core/system-agents/templates.js'
+import { WORKFLOW_EXAMPLES } from '#core/system-agents/workflow-examples.js'
 
 // Every step is recorded in one list, so the tests can check the order.
 const steps: string[] = []
@@ -52,26 +53,16 @@ function deps(over: Partial<Deps> = {}, env: Record<string, string> = {}): Deps 
 }
 
 describe('templates', () => {
-  it('are each a valid candidate with a complete setup', () => {
+  it('are the workflow examples, each as the new agent it creates', () => {
+    expect(STARTER_TEMPLATES.map((t) => t.id)).toEqual(WORKFLOW_EXAMPLES.map((e) => e.id))
     for (const t of STARTER_TEMPLATES) {
-      expect(t.id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
-      // Hand-written, so validation must leave them exactly as they are.
-      expect(validateCandidate(t.candidate)).toEqual(t.candidate)
-      expect(t.setup.abilities.length + (t.setup.apps ?? []).length).toBeGreaterThan(0)
-      // Official abilities only: anything else can't be installed.
-      for (const spec of t.setup.abilities) expect(spec).toMatch(/^@loopengine-co\//)
-      expect(new Set(t.setup.rules.map((r) => r.name)).size).toBe(t.setup.rules.length)
-      // A timed template's runs say exactly what its instructions expect.
-      if (t.setup.schedule) expect(t.setup.schedule.message).toBe(t.candidate.agent.scheduleMessage)
-      // Instructions (or its workflow's) name the tools they're allowed to
-      // use (a "never" rule needn't be mentioned).
-      const instructions = [t.candidate.agent.systemPrompt, ...(t.setup.skills ?? []).map((sk) => sk.body)].join('\n')
-      for (const rule of t.setup.rules.filter((r) => r.decision !== 'deny')) expect(instructions).toContain(rule.tool)
-      // A skill the instructions rely on is named in them.
-      for (const skill of t.setup.skills ?? []) expect(t.candidate.agent.systemPrompt).toContain(skill.id)
+      const example = WORKFLOW_EXAMPLES.find((e) => e.id === t.id)!
+      expect(t.category).toBe(example.category)
+      expect(t.candidate.agent.systemPrompt).toBe(example.plan.newAgent.systemPrompt)
+      // Its own skill is the workflow its schedule runs.
+      expect(t.setup.skills![0]).toMatchObject({ id: example.plan.id, workflow: { title: example.plan.name } })
+      if (t.setup.schedule) expect(t.setup.schedule.workflowId).toBe(example.plan.id)
     }
-    expect(new Set(STARTER_TEMPLATES.map((t) => t.id)).size).toBe(STARTER_TEMPLATES.length)
-    expect(new Set(STARTER_TEMPLATES.map((t) => t.candidate.agent.name)).size).toBe(STARTER_TEMPLATES.length)
   })
 
   it('lists what each card shows', () => {
@@ -100,7 +91,7 @@ describe('templates', () => {
 
     const lead = admin.previewTemplate('lead-follow-up', { agentExists: () => false, envValue: (_n, v) => (v === 'HUBSPOT_ACCESS_TOKEN' ? 'set' : undefined) })
     expect(lead.keys[0]).toEqual({ names: ['HUBSPOT_ACCESS_TOKEN'], set: true })
-    expect(admin.previewTemplate('customer-email-replies', { agentExists: () => false }).skills).toEqual(['support-policies'])
+    expect(admin.previewTemplate('customer-email-replies', { agentExists: () => false }).skills).toEqual(['answer-customer-emails', 'support-policies'])
   })
 
   it('creates the agent with its whole setup: abilities, then the rules they leave to set, loaded last, schedule paused', async () => {
@@ -116,13 +107,15 @@ describe('templates', () => {
       'rule gmail_modify_labels allow */*',
       'rule gmail_send ask */*',
       'rule shopify_create_refund deny */*',
+      'skill answer-customer-emails',
+      'workflow answer-customer-emails "Answer customer emails" ()',
       'skill support-policies',
       'register customer-email-replies',
     ])
     expect(created.abilities).toEqual({ installed: ['@loopengine-co/gmail', '@loopengine-co/shopify'], failed: [] })
     const tasks = await listScheduledTasks({ agent: 'customer-email-replies' })
-    expect(tasks.map((t) => [t.status, t.task_name, t.message, (t.schedule as { every: string }).every])).toEqual([
-      ['paused', 'Check the support inbox', 'Handle new customer emails in the support inbox.', '10m'],
+    expect(tasks.map((t) => [t.status, t.task_name, t.workflow_id, (t.schedule as { every: string }).every])).toEqual([
+      ['paused', 'Answer customer emails', 'answer-customer-emails', '10m'],
     ])
     expect(created.schedule).toEqual({ description: 'every 10 minutes', timeZone: expect.any(String) })
     const tab = (t: string) => `/agents/config?agent=customer-email-replies&tab=${t}`
@@ -139,8 +132,7 @@ describe('templates', () => {
     const created = await admin.createFromTemplate('incident-triage', deps({ messagingConfigured: () => true }))
     expect(created.checklist.map((c) => c.label)).toEqual([
       'Connect GitHub on the Apps page, then add it to incident-triage from its Apps tab',
-      'Add a webhook to the "Triage an incident" workflow with "Message me the result when it finishes" on, then paste its URL into the app that sends the alerts',
-      'Send it alerts: paste one into Chat, mention it in Slack, or have your alerting tool call its webhook',
+      expect.stringMatching(/^Send it alerts: add a webhook to this workflow/),
     ])
     expect(created.schedule).toBeUndefined()
   })
@@ -150,8 +142,7 @@ describe('templates', () => {
     expect(steps).toContain('skill triage-incident')
     expect(steps).toContain('workflow triage-incident "Triage an incident" (alert)')
     expect(steps.indexOf('workflow triage-incident "Triage an incident" (alert)')).toBeLessThan(steps.indexOf('register incident-triage'))
-    expect(created.checklist).toContainEqual({ label: 'Choose where approval requests and results go: Slack, email, Lark or a webhook', href: '/agents/config?agent=incident-triage&tab=messaging' })
-    expect(created.checklist).toContainEqual({ label: expect.stringMatching(/^Add a webhook to the "Triage an incident" workflow/), href: '/agents/config?agent=incident-triage&tab=workflows' })
+    expect(created.checklist).toContainEqual({ label: 'Choose where approval requests go: Slack, email, Lark or a webhook', href: '/agents/config?agent=incident-triage&tab=messaging' })
   })
 
   it('sends a digest\'s each result through messaging, and asks where they go', async () => {

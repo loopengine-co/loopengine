@@ -31,8 +31,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <div class="le-nav-label"><span>Agents</span><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
-  <a class="le-find" href="/templates" data-le-nav="templates">Start from a template</a>
-  <a class="le-find" href="/workflows/new" data-le-nav="workflows">Describe a workflow</a>
+  <a class="le-find" href="/workflows/new" data-le-nav="workflows">New workflow</a>
   <nav class="le-foot" aria-label="Settings">
     <a href="/config?section=models" data-le-nav="models">Models</a>
     <a href="/config?section=apps" data-le-nav="apps">Apps</a>
@@ -178,7 +177,7 @@ export const consoleShellScript: string = `<script>
   }
 
   var section = params.get('section');
-  var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' ? 'abilities' : section === 'apps' ? 'apps' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'templates' ? page : '';
+  var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' ? 'abilities' : section === 'apps' ? 'apps' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'workflows' ? page : '';
   var footLinks = document.querySelectorAll('[data-le-nav]');
   for (var i = 0; i < footLinks.length; i++) {
     if (footLinks[i].getAttribute('data-le-nav') === foot) footLinks[i].setAttribute('aria-current', 'page');

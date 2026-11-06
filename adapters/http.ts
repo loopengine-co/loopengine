@@ -67,8 +67,6 @@ import {
   setInterviewProject,
   type InterviewAgentSource,
 } from '../web/interview-admin.js'
-import { templatesPageHtml } from '../web/templates-page.js'
-import { TemplateError, createFromTemplate, listTemplates, previewTemplate } from '../web/templates-admin.js'
 import { globalConfigPageHtml } from '../web/global-config-page.js'
 import {
   addGatewayTool,
@@ -120,6 +118,7 @@ import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWor
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
+import { WORKFLOW_EXAMPLES } from '#core/system-agents/workflow-examples.js'
 import { McpServerInputError, getMcpServer, ownMcpServer, removeSavedMcpServer, saveMcpServer, savedMcpServers, searchMcpServers, type McpDirectoryServer } from '#core/mcp-directory.js'
 import { isMcpAuthError, listMcpServerTools, resolveMcpManifest } from '#core/mcp-abilities.js'
 import { McpAbilityGenerationError, generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
@@ -1273,7 +1272,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
     } catch {
       picked = undefined
     }
-    if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents() })
+    if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents(), examples: WORKFLOW_EXAMPLES })
     // A planning job's progress (the page checks every few seconds).
     if (action === 'plan' && jobId && req.method === 'GET') {
       const job = getPlanJob(jobId)
@@ -1459,59 +1458,6 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return json(err instanceof WorkflowError || err instanceof WorkflowParamsError ? 400 : 500, { error: message })
-  }
-}
-
-// Templates (web/templates-admin.ts): ready-made agents, created through
-// the same scaffold and registration as Agents → + New. A template agent
-// takes the model of an agent that already works here, as an interview's
-// does; with none, it starts on the scaffold's default.
-async function handleStarterTemplates(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
-  const json = (status: number, body: unknown): void => {
-    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
-  }
-  const [id, action] = pathname.split('/').slice(2).map(decodeURIComponent) // after /starter-templates
-  const dirOf = (name: string) => join(projectDir(), 'agents', name)
-  const exists = (name: string) => Boolean(getEntry(name)) || existsSync(dirOf(name))
-  const envValue = (name: string, variable: string) => createAgentEnv(name, dirOf(name)).get(variable)
-  try {
-    if (!id) {
-      if (req.method === 'GET') return json(200, { templates: listTemplates(), canInstallAbilities: secretsProtected })
-      return json(405, { error: 'method not allowed' })
-    }
-    if (action === 'preview' && req.method === 'GET') return json(200, previewTemplate(id, { agentExists: exists, envValue }))
-    if (action === 'create' && req.method === 'POST') {
-      const model = pickAgentModel(interviewAgents())
-      const created = await createFromTemplate(id, {
-        agentExists: exists,
-        scaffoldAgent: async (name, systemPrompt) => {
-          const parsed = parseAgentTemplateOptions({ systemPrompt, ...(model ? { model } : {}) })
-          if (!parsed.ok) throw new TemplateError(parsed.error)
-          await scaffoldAgent(projectDir(), name, parsed.value)
-        },
-        registerAgent: async (name) => {
-          const indexPath = join(dirOf(name), 'index.ts')
-          registerAgent(await loadAgentModule(indexPath, indexPath))
-        },
-        // Same rule as the Apps tab: installing runs third-party code,
-        // so only behind the admin login. The agent isn't loaded yet, so
-        // nothing needs a restart.
-        ...(secretsProtected ? { installAbility: async (name: string, spec: string, options?: { mcpTools?: string[] }) => void (await installAbility(name, spec, options ?? {})) } : {}),
-        prepareApp: prepareWorkspaceApp,
-        envValue,
-        messagingConfigured: (name) => {
-          const entry = getEntry(name)
-          return entry ? describeAgentNotifier(entry.config, defaultWebhook).source !== 'none' : false
-        },
-      })
-      return json(200, created)
-    }
-    return json(404, { error: 'not found' })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    if (err instanceof TemplateError) return json(message === 'No such template' ? 404 : 400, { error: message })
-    console.error('[loopengine] template failed:', err)
-    return json(500, { error: `Couldn't create it: ${message}` })
   }
 }
 
@@ -4420,13 +4366,9 @@ const server = createServer(async (req, res) => {
       await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3])
       return
     }
-    // Templates: the page, and its routes.
+    // Templates are now workflow examples, on the new-workflow page.
     if (req.method === 'GET' && pathname === '/templates') {
-      res.writeHead(200, { 'content-type': 'text/html' }).end(templatesPageHtml)
-      return
-    }
-    if (pathname === '/starter-templates' || pathname.startsWith('/starter-templates/')) {
-      await handleStarterTemplates(req, res, pathname)
+      res.writeHead(302, { location: '/workflows/new#examples' }).end()
       return
     }
     const editAgentMatch = req.method === 'PUT' && pathname.match(/^\/agents\/([^/]+)$/)

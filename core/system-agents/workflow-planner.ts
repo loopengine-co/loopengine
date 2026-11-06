@@ -16,7 +16,7 @@ import type { ToolSchema } from '#core/agent-config.js'
 import type { WorkflowParameter } from '#core/workflows.js'
 import type { TriggerSender } from '#core/workflow-triggers.js'
 import type { Message, ModelCall, ModelContentBlock } from '#core/run-agent.js'
-import type { StarterTemplate, TemplateApp } from './templates.js'
+import type { StarterTemplate, TemplateApp, TemplateSkill } from './templates.js'
 
 export type Decision = 'allow' | 'ask' | 'deny'
 
@@ -112,6 +112,14 @@ export interface WorkflowPlan {
   /** Connected apps it adds to the agent, with just the tools its steps
    * use (filled in on Create, from mcpServers). */
   apps?: TemplateApp[]
+  /** Skills it adds besides its own, such as a policy the person fills
+   * in (the examples, core/system-agents/workflow-examples.ts). One the
+   * agent already has is kept as it is. */
+  skills?: TemplateSkill[]
+  /** Non-secret settings it fills in; one the agent already has is kept. */
+  env?: Record<string, string>
+  /** Setup steps for its checklist, in plain words. */
+  notes?: string[]
 }
 
 export interface PlannedWebhook {
@@ -179,8 +187,9 @@ How to plan:
    Every required parameter should come from the payload through mapping; parameters are the only way event details reach the run.
 6. Notify (scheduled and webhook workflows): whether each run's result is sent to the person through the agent's messaging app. true when the result is for them and no step already delivers it ("tell me", "send me", "let me know", a summary or findings that no step posts or emails). false when a step already sends it (posting to a channel, emailing a report): it would arrive twice. false when the work itself is the outcome (answering emails, filing tasks), where a message every run is noise; questions and approvals reach them either way. Say why in one short sentence.
 7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
-8. Target: an existing agent only when it already has (or can install) the tools, none of the workflow's rules would change a decision it already has, and the same people would approve. Otherwise a new agent, with a short lowercase-hyphenated name and a system prompt saying who it is and what it's for. Give the reason either way.
-9. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
+8. Target: an existing agent only when it already has (or can install) the tools, none of the workflow's rules would change a decision it already has, and the same people would approve. Otherwise a new agent, with a short lowercase-hyphenated name and its system prompt (rule 9). Give the reason either way.
+9. newAgent.systemPrompt: the new agent's standing instructions, read on every run of every workflow it will ever have, so write what's true whatever it's doing: who it works for and its role, in one or two sentences ("You help the on-call engineer triage incidents."); facts every job needs that the person must fill in, as "[...] (edit this)" ("Our repository on GitHub: [owner/name] (edit this)."); and rules that always hold ("Never roll anything back yourself."). Don't repeat the steps, the tools or the schedule: they're the skill's. Under 15 lines.
+10. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
 
 Then call save_plan once, with the whole plan. Don't ask the person questions: if something is unclear, plan the most reasonable version and note the assumption in gaps.`
 
@@ -561,7 +570,9 @@ export function workflowTemplate(plan: WorkflowPlan): StarterTemplate {
       abilities: plan.abilities,
       ...(plan.apps?.length ? { apps: plan.apps } : {}),
       keys: plan.keys,
-      skills: [{ id: plan.id, description: plan.skill.description, body: plan.skill.body }],
+      skills: [{ id: plan.id, description: plan.skill.description, body: plan.skill.body }, ...(plan.skills ?? []).filter((s) => s.id !== plan.id)],
+      ...(plan.env && Object.keys(plan.env).length ? { env: plan.env } : {}),
+      ...(plan.notes?.length ? { notes: plan.notes } : {}),
       // Named after the tool: readable, and made unique if taken.
       rules: plan.rules.map((r) => ({ name: r.tool, tool: r.tool, decision: r.decision })),
       ...(plan.trigger.kind === 'schedule' && plan.trigger.every

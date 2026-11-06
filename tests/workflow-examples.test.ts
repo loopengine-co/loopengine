@@ -1,0 +1,125 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { FileSchedulerStore, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
+import { WORKFLOW_EXAMPLES, workflowExample } from '#core/system-agents/workflow-examples.js'
+import { WORKFLOW_PLANNER_PROMPT, validateWorkflowPlan, workflowTemplate, type WorkflowPlan } from '#core/system-agents/workflow-planner.js'
+import { readWorkflow, writeSkillFile } from '#core/workflows.js'
+
+// Agents live in a scratch folder; the steps that touch the rest of the
+// project are recorded instead.
+const scratch = vi.hoisted(() => ({ root: '', steps: [] as string[] }))
+vi.mock('#web/actauth-admin.js', () => {
+  class ActauthRuleExistsError extends Error {}
+  return {
+    ActauthRuleExistsError,
+    setDefaultDecision: vi.fn(),
+    addActauthRule: vi.fn(),
+    applyPlannedRules: vi.fn((_name: string, rules: { tool: string }[]) => ({ added: rules.map((r) => r.tool), unchanged: [], kept: [] })),
+  }
+})
+vi.mock('#web/env-admin.js', () => ({ setAgentEnvVar: vi.fn(async (name: string, variable: string, value: string) => void scratch.steps.push(`env ${name} ${variable}=${value}`)) }))
+vi.mock('#web/skills-admin.js', () => ({
+  writeSkill: vi.fn((name: string, id: string, content: { description: string; body: string }) => {
+    scratch.steps.push(`skill ${name} ${id}`)
+    const dir = join(scratch.root, name, 'skills', id)
+    mkdirSync(dir, { recursive: true })
+    writeSkillFile(join(dir, 'SKILL.md'), { name: id, description: content.description }, content.body)
+  }),
+}))
+
+const { createWorkflow } = await import('#web/workflow-admin.js')
+type Deps = Parameters<typeof createWorkflow>[1]
+
+beforeEach(() => {
+  scratch.root = mkdtempSync(join(tmpdir(), 'workflow-examples-'))
+  scratch.steps.length = 0
+  setSchedulerStore(new FileSchedulerStore(join(scratch.root, '.scheduler')))
+})
+afterEach(() => rmSync(scratch.root, { recursive: true, force: true }))
+
+function deps(over: Partial<Deps> = {}, env: Record<string, string> = {}): Deps {
+  return {
+    agentExists: (name) => existsSync(join(scratch.root, name)),
+    scaffoldAgent: async (name, systemPrompt) => {
+      mkdirSync(join(scratch.root, name), { recursive: true })
+      writeFileSync(join(scratch.root, name, 'instructions.txt'), systemPrompt)
+    },
+    registerAgent: async () => {},
+    reloadAgent: async () => {},
+    installAbility: async (name, spec) => void scratch.steps.push(`install ${name} ${spec}`),
+    envValue: (_name, variable) => env[variable],
+    messagingConfigured: () => false,
+    agentDir: (name) => join(scratch.root, name),
+    agentInfo: async () => [],
+    ...over,
+  }
+}
+
+describe('workflow examples', () => {
+  it('are complete plans the console can create as they are', () => {
+    expect(new Set(WORKFLOW_EXAMPLES.map((e) => e.id)).size).toBe(WORKFLOW_EXAMPLES.length)
+    expect(new Set(WORKFLOW_EXAMPLES.map((e) => e.plan.newAgent.name)).size).toBe(WORKFLOW_EXAMPLES.length)
+    for (const { id, plan } of WORKFLOW_EXAMPLES) {
+      expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      expect(plan.id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      // Accepted as a plan, as one the planner made would be.
+      expect(validateWorkflowPlan(plan), id).toBeDefined()
+      // Official abilities only: anything else can't be installed.
+      for (const spec of plan.abilities) expect(spec).toMatch(/^@loopengine-co\//)
+      if (plan.trigger.kind === 'schedule') expect(plan.trigger.every, id).toBeTruthy()
+      // The steps name every tool they're allowed to use (a "never" rule
+      // needn't be mentioned), and every input they're given.
+      for (const rule of plan.rules.filter((r) => r.decision !== 'deny')) expect(plan.skill.body, `${id}: ${rule.tool}`).toContain(rule.tool)
+      for (const name of Object.keys(plan.parameters)) expect(plan.skill.body).toContain(`$${name}`)
+      // A skill it comes with is named where the agent would look for it.
+      for (const skill of plan.skills ?? []) expect(`${plan.newAgent.systemPrompt}\n${plan.skill.body}`).toContain(skill.id)
+      // The agent's instructions are its role, not the steps.
+      expect(plan.newAgent.systemPrompt).not.toMatch(/^1\. /m)
+    }
+  })
+
+  it('split a plan the way the planner is told to', () => {
+    // The planner writes a new agent's instructions the same way: the
+    // role and standing rules, not the steps.
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/newAgent\.systemPrompt: the new agent's standing instructions/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Don't repeat the steps, the tools or the schedule/)
+  })
+
+  it('becomes a template with its skills, settings and notes', () => {
+    const plan = { ...workflowExample('expense-approvals')!.plan, env: { EXPENSE_APPROVER_EMAIL: 'boss@example.com' } }
+    const template = workflowTemplate(plan)
+    expect(template.setup.skills!.map((s) => s.id)).toEqual(['check-expense-claims', 'expense-policy'])
+    expect(template.setup.env).toEqual({ EXPENSE_APPROVER_EMAIL: 'boss@example.com' })
+    expect(template.setup.notes).toEqual(plan.notes)
+  })
+
+  it('creates a new agent: its instructions, the workflow, the skills it comes with, and a paused schedule that runs the workflow', async () => {
+    const plan = structuredClone(workflowExample('customer-email-replies')!.plan) as WorkflowPlan
+    plan.newAgent.systemPrompt += '\n\nSign every reply "The Acme team".'
+    const created = await createWorkflow({ plan, target: { kind: 'new' } }, deps())
+    expect(created).toMatchObject({ agent: 'customer-email-replies', newAgent: true, workflow: 'Answer customer emails' })
+    expect(readFileSync(join(scratch.root, 'customer-email-replies', 'instructions.txt'), 'utf8')).toContain('Sign every reply "The Acme team".')
+    expect(scratch.steps).toEqual(expect.arrayContaining(['install customer-email-replies @loopengine-co/gmail', 'skill customer-email-replies support-policies']))
+    expect(readWorkflow(join(scratch.root, 'customer-email-replies'), 'answer-customer-emails')).toMatchObject({ title: 'Answer customer emails' })
+    const [task] = await listScheduledTasks({ agent: 'customer-email-replies' })
+    expect([task.status, task.workflow_id]).toEqual(['paused', 'answer-customer-emails'])
+    expect(created.checklist.map((c) => c.label)).toContain('Write your policies into its support-policies skill (Advanced → Skills): the agent answers from it and nothing else')
+  })
+
+  it('adds to an agent you have without replacing its own skills or settings', async () => {
+    const own = join(scratch.root, 'support', 'skills', 'return-policy')
+    mkdirSync(own, { recursive: true })
+    writeSkillFile(join(own, 'SKILL.md'), { name: 'return-policy', description: 'Ours' }, 'Our real policy.')
+    const plan = { ...structuredClone(workflowExample('refund-approvals')!.plan), env: { REFUND_LIMIT: '100', REFUND_CURRENCY: 'EUR' } } as WorkflowPlan
+    const agent = { name: 'support', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack' }
+    const created = await createWorkflow({ plan, target: { kind: 'existing', agent: 'support' } }, deps({ agentInfo: async () => [agent] }, { REFUND_LIMIT: '250' }))
+    expect(created).toMatchObject({ agent: 'support', newAgent: false })
+    expect(readFileSync(join(own, 'SKILL.md'), 'utf8')).toContain('Our real policy.')
+    expect(scratch.steps).not.toContain('skill support return-policy')
+    expect(scratch.steps).toContain('env support REFUND_CURRENCY=EUR')
+    expect(scratch.steps.some((s) => s.startsWith('env support REFUND_LIMIT'))).toBe(false)
+    expect(readWorkflow(join(scratch.root, 'support'), 'refund-approvals')).toMatchObject({ title: 'Refund approvals' })
+  })
+})

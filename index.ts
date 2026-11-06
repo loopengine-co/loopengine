@@ -278,6 +278,7 @@ export {
   prepareMcpAbilities,
 } from './web/workflow-admin.js'
 export { WORKFLOW_PLANNER_PROMPT, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep } from './core/system-agents/workflow-planner.js'
+export { WORKFLOW_EXAMPLES, workflowExample, type WorkflowExample } from './core/system-agents/workflow-examples.js'
 export { createTrigger, updateTrigger, rotateTrigger, listTriggers, findTriggerByToken, publicTrigger, checkTriggerSettings, verifySenderSignature, parsePayload, valueAt, deliveryId, passesFilter, paramsFromPayload, recordDelivery as recordTriggerDelivery, FileTriggerStore, getTriggerStore, setTriggerStore, TriggerError, type WorkflowTrigger, type PublicTrigger, type TriggerSettings, type TriggerVerify, type TriggerFilter, type TriggerSender, type SignatureAlgorithm, type TriggerDelivery, type TriggerOutcome, type TriggerStore } from './core/workflow-triggers.js'
 export { checkCallbackUrl, callbackSecret, signCallback, deliverCallback, runCallbackPayload, isPrivateAddress, CallbackUrlError, type CallbackDelivery, type RunCallbackEvent } from './core/run-callbacks.js'
 export { WorkflowRunner, FileRunStore, getRunStore, setRunStore, listRuns, getRun, isUnderWay, RunError, type WorkflowRun, type WorkflowRunStatus, type RunStore, type ExecuteRun, type RunOutcome, type StartRunInput } from './core/workflow-runs.js'

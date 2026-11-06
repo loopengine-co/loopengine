@@ -1,6 +1,7 @@
-// The console's "Describe a workflow" page (/workflows/new): a person
-// describes a workflow they already have in mind, sees the plan the
-// planner makes of it (web/workflow-admin.ts behind /workflows/*): each
+// The console's "New workflow" page (/workflows/new): a person starts
+// from a ready-made example (core/system-agents/workflow-examples.ts,
+// which replace the old templates) or describes a workflow they already
+// have in mind, and sees the plan (web/workflow-admin.ts behind /workflows/*): each
 // step matched to a tool, the checkpoints where it asks them, the
 // permissions, the abilities it needs and the agent it goes into, and
 // creates it with one click. Same shell and styles as the other console
@@ -14,12 +15,18 @@ export const workflowPageHtml: string = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Describe a workflow</title>
+<title>New workflow</title>
 <style>${devUiCss}
   .wf { max-width: 860px; display: grid; gap: 18px; }
   .wf textarea { width: 100%; min-height: 130px; box-sizing: border-box; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
-  .wf-examples { display: flex; flex-wrap: wrap; gap: 6px; }
-  .wf-examples button { font-size: 12.5px; }
+  .wf-ex-group { display: grid; gap: 8px; }
+  .wf-ex-group h3 { margin: 4px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .wf-ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .wf-ex { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 6px; align-content: start; background: var(--bg); }
+  .wf-ex strong { font-size: 14px; }
+  .wf-ex p { margin: 0; font-size: 13px; color: var(--ink-muted); }
+  .wf-ex .wf-btn { justify-self: start; }
+  .wf-instructions textarea { min-height: 180px; font-family: var(--font-mono); font-size: 12px; }
   .wf-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; background: var(--bg); }
   .wf-card h2 { margin: 0; font-size: 18px; }
   .wf-card h3 { margin: 6px 0 0; font-size: 14px; }
@@ -62,7 +69,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Describe a workflow</h1><p>Say what you want done, step by step, and where you want to decide. You get a plan to check before anything is created.</p></div>
+        <div><h1>New workflow</h1><p>Describe what you want done, or start from an example. You get a plan to check before anything is created.</p></div>
       </div>
     </div>
   </div>
@@ -76,14 +83,8 @@ ${consoleShellScript}
   var ELLIPSIS = String.fromCharCode(8230);
   var DASH = String.fromCharCode(8212);
   var LABELS = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
-  var EXAMPLES = [
-    ['Blog post', 'Every Monday morning, browse the web for timely blog post ideas about our product area. Ask me on Slack to pick one of the ideas. Then draft the post and let me review it before it is created.'],
-    ['Weekly digest', 'Every Friday afternoon, search the web for news about our competitors and summarise the important changes. Send me the summary for review before it goes to the team channel.'],
-    ['Refund requests', 'When asked, look up the customer' + String.fromCharCode(8217) + 's order and check our refund policy. If a refund fits the policy, prepare it and ask me to approve it before it is issued.'],
-    ['Stripe disputes', 'When a Stripe dispute comes in, look up the order and its delivery, write the evidence for Stripe, and ask me before submitting it.']
-  ];
   var SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'your app' };
-  var state = { description: '', planned: null, agents: [], ready: false, canInstall: false };
+  var state = { description: '', planned: null, agents: [], examples: [], ready: false, canInstall: false };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -104,16 +105,20 @@ ${consoleShellScript}
       (state.ready ? '' : '<p class="error">Planning needs a model: set one on an agent (Overview ' + String.fromCharCode(8594) + ' Model) and add its key under <a href="/config?section=models">Models</a>.</p>') +
       '<div class="wf-card"><label for="wfText"><strong>Your workflow</strong> <span class="hint">what starts it, the steps in order, and where you want to choose or approve</span></label>' +
       '<textarea id="wfText" placeholder="Every Monday, find blog ideas on the web, ask me on Slack to pick one, draft it, and let me review it before it goes up.">' + esc(state.description) + '</textarea>' +
-      '<div class="wf-examples"><span class="hint">Examples:</span>' + EXAMPLES.map(function (e, i) { return '<button type="button" class="wf-btn plain" data-example="' + i + '">' + esc(e[0]) + '</button>'; }).join('') + '</div>' +
       '<div class="wf-actions"><button type="button" class="wf-btn" id="wfPlan"' + (state.ready ? '' : ' disabled') + '>Plan it</button>' +
         '<span class="hint" id="wfStatus">It looks at your agents and abilities first; this can take a few minutes.</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '') +
       '</div>' +
-      '<p class="hint">Rather start from something ready-made? <a href="/templates">Start from a template</a>, or <a href="/interview">find your first agent</a>.</p>';
+      examplesHtml() +
+      '<p class="hint">Not sure what you need? <a href="/interview">Find your first agent</a>: a short interview that suggests one.</p>';
     var text = document.getElementById('wfText');
     var examples = page.querySelectorAll('[data-example]');
     for (var i = 0; i < examples.length; i++) {
-      examples[i].addEventListener('click', function (ev) { text.value = EXAMPLES[Number(ev.currentTarget.dataset.example)][1]; text.focus(); });
+      examples[i].addEventListener('click', function (ev) { openExample(ev.currentTarget.dataset.example); });
+    }
+    if (location.hash === '#examples') {
+      var box = document.getElementById('examples');
+      if (box) box.scrollIntoView();
     }
     document.getElementById('wfPlan').addEventListener('click', function () {
       state.description = text.value.trim();
@@ -126,6 +131,37 @@ ${consoleShellScript}
         waitForPlan(r.body.id, started);
       }).catch(function (err) { renderDescribe(err.message); });
     });
+  }
+
+  // Ready-made plans, by category: opening one goes straight to the
+  // review, with nothing planned by a model.
+  function examplesHtml() {
+    if (!state.examples.length) return '';
+    var groups = [];
+    state.examples.forEach(function (e) {
+      var g = groups.filter(function (x) { return x.name === e.category; })[0];
+      if (!g) { g = { name: e.category, items: [] }; groups.push(g); }
+      g.items.push(e);
+    });
+    return '<div class="wf-card" id="examples"><h2>Start from an example</h2>' +
+      '<p class="hint" style="margin:0">Ready-made and tested. You see the whole plan, and can change it, before anything is created.</p>' +
+      groups.map(function (g) {
+        return '<div class="wf-ex-group"><h3>' + esc(g.name) + '</h3><div class="wf-ex-grid">' + g.items.map(function (e) {
+          return '<div class="wf-ex"><strong>' + esc(e.plan.name) + '</strong><p>' + esc(e.plan.summary) + '</p>' +
+            '<p><strong>Starts:</strong> ' + esc(e.plan.trigger.description) + '</p>' +
+            '<button type="button" class="wf-btn plain" data-example="' + esc(e.id) + '">Use this</button></div>';
+        }).join('') + '</div></div>';
+      }).join('') +
+      '</div>';
+  }
+
+  function openExample(id) {
+    var e = state.examples.filter(function (x) { return x.id === id; })[0];
+    if (!e) return;
+    // A copy: the review screen edits the plan it shows.
+    state.planned = { plan: JSON.parse(JSON.stringify(e.plan)), example: e.id };
+    renderPlan();
+    window.scrollTo(0, 0);
   }
 
   // Planning runs on the server as a job; check on it every few seconds.
@@ -273,10 +309,13 @@ ${consoleShellScript}
         (p.rules.length ? '<h3>Permissions it sets</h3><ul class="wf-list">' + p.rules.map(function (r) { return '<li><code>' + esc(r.tool) + '</code> ' + pill(r.decision) + '</li>'; }).join('') + '</ul>' : '') +
         (p.abilities.length ? '<h3>Abilities it uses</h3><ul class="wf-list">' + p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; }).join('') + '</ul>' + (state.canInstall ? '' : '<p class="hint">Installing abilities needs LOOPENGINE_ADMIN_AUTH set; otherwise they head the checklist.</p>') : '') +
         (p.mcpServers && p.mcpServers.length ? '<h3>Apps it connects to</h3><div class="wf-mcp">' + p.mcpServers.map(mcpRow).join('') + '</div>' : '') +
+        (p.apps && p.apps.length ? '<h3>Apps it uses</h3><ul class="wf-list">' + p.apps.map(function (a) { return '<li>' + esc(a.title) + ' <span class="hint">' + a.tools.length + ' tool' + (a.tools.length === 1 ? '' : 's') + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">Connected on the <a href="/config?section=apps">Apps</a> page; one that isn' + String.fromCharCode(8217) + 't connected yet heads the checklist.</p>' : '') +
+        (p.skills && p.skills.length ? '<h3>Skills it comes with</h3><ul class="wf-list">' + p.skills.map(function (sk) { return '<li><code>' + esc(sk.id) + '</code> <span class="hint">' + esc(sk.description) + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">An agent that already has one keeps its own.</p>' : '') +
         (p.keys.length ? '<h3>Keys it needs</h3><p class="hint" style="margin:0">' + p.keys.map(esc).join(', ') + ' ' + DASH + ' you add them after, from the checklist.</p>' : '') +
         (p.needsApprovals ? '<p class="hint" style="margin:0">It asks you through the agent' + String.fromCharCode(8217) + 's primary messaging app (Messaging tab) when nobody is in Chat.</p>' : '') +
       '</div>' +
       (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
+      (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
       '<div class="wf-card"><h3 style="margin:0">Where it goes</h3>' +
         '<div class="wf-target">' +
           '<label><input type="radio" name="wfTarget" value="new"' + (suggested ? '' : ' checked') + '> A new agent, <code>' + esc(p.newAgent.name) + '</code></label>' +
@@ -284,14 +323,29 @@ ${consoleShellScript}
           (others.length ? '<label><input type="radio" name="wfTarget" value="other"> Add to <select id="wfOther">' + others.map(function (a) { return '<option>' + esc(a) + '</option>'; }).join('') + '</select></label>' : '') +
         '</div>' +
         (p.target.reason ? '<p class="hint" style="margin:0">' + esc(p.target.reason) + '</p>' : '') +
+        '<div class="wf-instructions" id="wfNewAgentBox"' + (suggested ? ' hidden' : '') + '><label for="wfInstructions"><strong>Its instructions</strong> <span class="hint">read on every run of every workflow it has: who it is, rules it always follows, and anything marked (edit this). The steps are the workflow' + String.fromCharCode(8217) + 's.</span></label>' +
+          '<textarea id="wfInstructions">' + esc(p.newAgent.systemPrompt) + '</textarea></div>' +
+        '<p class="hint" style="margin:0" id="wfExistingNote"' + (suggested ? '' : ' hidden') + '>An agent you have keeps its own instructions; only the workflow, its abilities and permissions are added.</p>' +
         (state.planned.note ? '<p class="hint" style="margin:0"><strong>Note:</strong> ' + esc(state.planned.note) + '</p>' : '') +
         '<p class="hint" style="margin:0">Added to an existing agent, it keeps every decision that agent already has; any it would change are listed afterwards.</p>' +
       '</div>' +
       '<details class="wf-card"><summary><strong>The steps the agent follows</strong> <span class="hint">(saved as its skill <code>' + esc(p.id) + '</code>)</span></summary><div class="wf-skill">' + esc(p.skill.body) + '</div></details>' +
-      '<div class="wf-actions"><button type="button" class="wf-btn" id="wfCreate">Create it</button><button type="button" class="wf-btn plain" id="wfBack">Change the description</button>' +
+      '<div class="wf-actions"><button type="button" class="wf-btn" id="wfCreate">Create it</button><button type="button" class="wf-btn plain" id="wfBack">' + (state.planned.example ? 'Back to the examples' : 'Change the description') + '</button>' +
         '<span class="hint" id="wfStatus"></span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '');
-    document.getElementById('wfBack').addEventListener('click', function () { renderDescribe(); });
+    document.getElementById('wfBack').addEventListener('click', function () {
+      var fromExample = state.planned.example;
+      renderDescribe();
+      if (fromExample) document.getElementById('examples').scrollIntoView();
+    });
+    var targets = page.querySelectorAll('input[name="wfTarget"]');
+    for (var t = 0; t < targets.length; t++) {
+      targets[t].addEventListener('change', function () {
+        var isNew = page.querySelector('input[name="wfTarget"]:checked').value === 'new';
+        document.getElementById('wfNewAgentBox').hidden = !isNew;
+        document.getElementById('wfExistingNote').hidden = isNew;
+      });
+    }
     var paramsBox = document.getElementById('wfParams');
     paramsBox.addEventListener('click', function (ev) {
       if (ev.target.classList.contains('wf-param-remove')) ev.target.closest('.wf-param').remove();
@@ -311,6 +365,7 @@ ${consoleShellScript}
         delete p.webhook;
         if (p.trigger.kind === 'webhook') p.trigger.kind = 'on_request';
       }
+      p.newAgent.systemPrompt = document.getElementById('wfInstructions').value.trim() || p.newAgent.systemPrompt;
       var chosen = page.querySelector('input[name="wfTarget"]:checked');
       var target = chosen.value === 'new' ? { kind: 'new' } : { kind: 'existing', agent: chosen.value === 'other' ? document.getElementById('wfOther').value : chosen.dataset.agent };
       var btn = document.getElementById('wfCreate');
@@ -341,7 +396,7 @@ ${consoleShellScript}
       (c.keptDecisions.length ? '<p class="hint" style="margin:0"><strong>Kept as they were:</strong> ' + c.keptDecisions.map(function (k) { return '<code>' + esc(k.tool) + '</code> stays ' + esc(LABELS[k.has]) + ' (the workflow wanted ' + esc(LABELS[k.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
       (items.length ? '<h3>Left to do</h3><ul class="wf-list">' + items.map(function (it) { return '<li>' + (it.href ? '<a href="' + esc(it.href) + '">' + esc(it.label) + '</a>' : esc(it.label)) + '</li>'; }).join('') + '</ul>' : '<p class="hint" style="margin:0">Nothing left to set up.</p>') +
       '<div class="wf-actions"><a class="wf-btn" href="' + agentHref + '">Open ' + esc(c.agent) + '</a><a class="wf-btn plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a>' +
-        '<button type="button" class="wf-btn plain" id="wfAnother">Describe another</button></div>' +
+        '<button type="button" class="wf-btn plain" id="wfAnother">New workflow</button></div>' +
       '</div>';
     document.getElementById('wfAnother').addEventListener('click', function () { state.description = ''; state.planned = null; renderDescribe(); });
     wireWebhookDone(c);
@@ -411,6 +466,7 @@ ${consoleShellScript}
       state.ready = Boolean(d.ready);
       state.canInstall = Boolean(d.canInstallAbilities);
       state.agents = d.agents || [];
+      state.examples = d.examples || [];
       renderDescribe();
     })
     .catch(function (err) { page.innerHTML = '<p class="error">Could not load: ' + esc(err.message) + '</p>'; });

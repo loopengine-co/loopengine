@@ -4,10 +4,12 @@
 // agent it would go into, and creates it: as a new agent through the same
 // path as a template (web/templates-admin.ts), or added to an existing
 // one without changing anything that agent already does.
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { addGatewayTool, readGatewayToolsFromDir } from '../core/gateway-tools.js'
 import { applyPlannedRules } from './actauth-admin.js'
 import { writeSkill } from './skills-admin.js'
+import { setAgentEnvVar } from './env-admin.js'
 import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
 import { planParameters, planWebhook, planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
@@ -519,6 +521,15 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
 
   // 3. Its steps, as a skill; then load the agent again with all of it.
   writeSkill(agent.name, plan.id, { description: plan.skill.description, body: plan.skill.body })
+  // The skills and settings it comes with, where the agent has none:
+  // its own policies and values stay as they are.
+  for (const skill of plan.skills ?? []) {
+    if (skill.id === plan.id || existsSync(join(deps.agentDir(agent.name), 'skills', skill.id, 'SKILL.md'))) continue
+    writeSkill(agent.name, skill.id, { description: skill.description, body: skill.body })
+  }
+  for (const [variable, value] of Object.entries(plan.env ?? {})) {
+    if (!deps.envValue(agent.name, variable)) await setAgentEnvVar(agent.name, variable, value)
+  }
   let loadError: string | undefined
   try {
     await deps.reloadAgent(agent.name)
