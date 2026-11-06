@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileSchedulerStore, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
 import { WORKFLOW_EXAMPLES, workflowExample } from '#core/system-agents/workflow-examples.js'
+import { WORKFLOW_EXAMPLE_MESSAGES } from '#core/system-agents/workflow-example-messages.js'
 import { WORKFLOW_PLANNER_PROMPT, validateWorkflowPlan, workflowTemplate, type WorkflowPlan } from '#core/system-agents/workflow-planner.js'
 import { readWorkflow, writeSkillFile } from '#core/workflows.js'
 
@@ -78,6 +79,21 @@ describe('workflow examples', () => {
       // The agent's instructions are its role, not the steps.
       expect(plan.newAgent.systemPrompt).not.toMatch(/^1\. /m)
     }
+  })
+
+  it('have a card each, as do the examples that are only messages', () => {
+    const all = [...WORKFLOW_EXAMPLES, ...WORKFLOW_EXAMPLE_MESSAGES]
+    // One list on the page: ids never clash.
+    expect(new Set(all.map((e) => e.id)).size).toBe(all.length)
+    expect(WORKFLOW_EXAMPLE_MESSAGES.length).toBeGreaterThanOrEqual(100)
+    for (const e of all) {
+      expect(e.id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      expect(e.category, e.id).toBeTruthy()
+      expect(e.message.length, e.id).toBeGreaterThan(40)
+      expect(Array.isArray(e.apps) && Array.isArray(e.asksFirst), e.id).toBe(true)
+    }
+    // Several areas, as the page's filter shows them.
+    expect(new Set(all.map((e) => e.category)).size).toBeGreaterThanOrEqual(15)
   })
 
   it('split a plan the way the planner is told to', () => {

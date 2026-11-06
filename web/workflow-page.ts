@@ -19,13 +19,26 @@ export const workflowPageHtml: string = `<!doctype html>
 <style>${devUiCss}
   .wf { max-width: 860px; display: grid; gap: 18px; }
   .wf textarea { width: 100%; min-height: 130px; box-sizing: border-box; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
-  .wf-ex-group { display: grid; gap: 8px; }
-  .wf-ex-group h3 { margin: 4px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .wf-ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
-  .wf-ex { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 6px; align-content: start; background: var(--bg); }
+  .wf-ex-search { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+  .wf-ex-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+  .wf-ex-cats button { font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+  .wf-ex-cats button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .wf-ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .wf-ex { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+  .wf-ex:hover { border-color: var(--accent); }
+  .wf-ex-head { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .wf-ex-cat { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
   .wf-ex strong { font-size: 14px; }
   .wf-ex p { margin: 0; font-size: 13px; color: var(--ink-muted); }
-  .wf-ex .wf-btn { justify-self: start; }
+  .wf-ex-apps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 4px; }
+  .wf-ex-apps span { font-size: 11.5px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
+  .wf-ex-asks strong { font-size: 12px; color: var(--warn); }
+  .wf-ex .wf-btn { align-self: flex-start; margin-top: 4px; }
+  .wf-ex-pager { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; }
+  .wf-ex-pager button { font: inherit; font-size: 13px; font-weight: 600; min-width: 34px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+  .wf-ex-pager button:not(:disabled):not([aria-current]):hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-ex-pager button[aria-current] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .wf-ex-pager button:disabled { opacity: 0.4; cursor: default; }
   .wf-instructions textarea { min-height: 180px; font-family: var(--font-mono); font-size: 12px; }
   .wf-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; background: var(--bg); }
   .wf-card h2 { margin: 0; font-size: 18px; }
@@ -84,7 +97,8 @@ ${consoleShellScript}
   var DASH = String.fromCharCode(8212);
   var LABELS = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
   var SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'your app' };
-  var state = { description: '', planned: null, agents: [], examples: [], ready: false, canInstall: false };
+  var state = { description: '', planned: null, agents: [], examples: [], messages: [], ready: false, canInstall: false, exQuery: '', exCat: 'All', exPage: 1 };
+  var EX_PAGE = 6;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -112,10 +126,7 @@ ${consoleShellScript}
       '<p class="hint">Rather start from something ready-made? <a href="#examples">Choose a workflow example</a>, or <a href="/interview">find your first agent</a>.</p>' +
       examplesHtml();
     var text = document.getElementById('wfText');
-    var examples = page.querySelectorAll('[data-example]');
-    for (var i = 0; i < examples.length; i++) {
-      examples[i].addEventListener('click', function (ev) { openExample(ev.currentTarget.dataset.example); });
-    }
+    wireExamples();
     if (location.hash === '#examples') {
       var box = document.getElementById('examples');
       if (box) box.scrollIntoView();
@@ -133,26 +144,111 @@ ${consoleShellScript}
     });
   }
 
-  // Ready-made plans, by category: opening one goes straight to the
-  // review, with nothing planned by a model.
+  // Examples: the ready-made ones (a plan, no model call) and the rest as
+  // messages (they fill in the description, for the planner), searched,
+  // filtered by area and paged.
+  function allExamples() {
+    return state.examples.map(function (e) {
+      return { id: e.id, category: e.category, title: e.plan.name, message: e.message, apps: e.apps || [], asksFirst: e.asksFirst || [], ready: true };
+    }).concat(state.messages.map(function (m) {
+      return { id: m.id, category: m.category, title: m.title, message: m.message, apps: m.apps || [], asksFirst: m.asksFirst || [], ready: false };
+    }));
+  }
+
   function examplesHtml() {
-    if (!state.examples.length) return '';
-    var groups = [];
-    state.examples.forEach(function (e) {
-      var g = groups.filter(function (x) { return x.name === e.category; })[0];
-      if (!g) { g = { name: e.category, items: [] }; groups.push(g); }
-      g.items.push(e);
-    });
+    if (!state.examples.length && !state.messages.length) return '';
     return '<div class="wf-card" id="examples"><h2>Start from an example</h2>' +
-      '<p class="hint" style="margin:0">Ready-made and tested. You see the whole plan, and can change it, before anything is created.</p>' +
-      groups.map(function (g) {
-        return '<div class="wf-ex-group"><h3>' + esc(g.name) + '</h3><div class="wf-ex-grid">' + g.items.map(function (e) {
-          return '<div class="wf-ex"><strong>' + esc(e.plan.name) + '</strong><p>' + esc(e.plan.summary) + '</p>' +
-            '<p><strong>Starts:</strong> ' + esc(e.plan.trigger.description) + '</p>' +
-            '<button type="button" class="wf-btn plain" data-example="' + esc(e.id) + '">Use this</button></div>';
-        }).join('') + '</div></div>';
-      }).join('') +
+      '<p class="hint" style="margin:0">Ready-made ones open the plan straight away. The rest fill in the description above, for you to change and plan.</p>' +
+      '<input type="search" class="wf-ex-search" id="wfExSearch" placeholder="Search examples, e.g. invoices, GitHub, Shopify" aria-label="Search examples" value="' + esc(state.exQuery) + '">' +
+      '<div class="wf-ex-cats" id="wfExCats" role="group" aria-label="Filter examples"></div>' +
+      '<div class="wf-ex-grid" id="wfExList"></div>' +
+      '<nav class="wf-ex-pager" id="wfExPager" aria-label="Example pages"></nav>' +
       '</div>';
+  }
+
+  function exampleMatches(e) {
+    if (state.exCat !== 'All' && e.category !== state.exCat) return false;
+    var q = state.exQuery.trim().toLowerCase();
+    if (!q) return true;
+    var text = (e.title + ' ' + e.message + ' ' + e.category + ' ' + e.apps.join(' ')).toLowerCase();
+    return q.split(' ').every(function (word) { return !word || text.indexOf(word) !== -1; });
+  }
+
+  // The page numbers to show: first, last and around the current one.
+  function pageNumbers(current, count) {
+    var out = [];
+    for (var n = 1; n <= count; n++) {
+      if (n === 1 || n === count || Math.abs(n - current) <= 1) out.push(n);
+      else if (out[out.length - 1] !== null) out.push(null);
+    }
+    return out;
+  }
+
+  function renderExampleList() {
+    var list = document.getElementById('wfExList');
+    if (!list) return;
+    var all = allExamples();
+    var cats = ['All'];
+    all.forEach(function (e) { if (cats.indexOf(e.category) === -1) cats.push(e.category); });
+    document.getElementById('wfExCats').innerHTML = cats.map(function (c) {
+      return '<button type="button" data-ex-cat="' + esc(c) + '" aria-pressed="' + (c === state.exCat) + '">' + esc(c) + '</button>';
+    }).join('');
+    var matching = all.filter(exampleMatches);
+    var pages = Math.max(1, Math.ceil(matching.length / EX_PAGE));
+    if (state.exPage > pages) state.exPage = pages;
+    var shown = matching.slice((state.exPage - 1) * EX_PAGE, state.exPage * EX_PAGE);
+    list.innerHTML = shown.length ? shown.map(function (e) {
+      return '<div class="wf-ex">' +
+        '<div class="wf-ex-head"><span class="wf-ex-cat">' + esc(e.category) + '</span>' + (e.ready ? '<span class="le-pill good">Ready-made</span>' : '') + '</div>' +
+        '<strong>' + esc(e.title) + '</strong>' +
+        '<p>' + String.fromCharCode(8220) + esc(e.message) + String.fromCharCode(8221) + '</p>' +
+        (e.apps.length ? '<div class="wf-ex-apps">' + e.apps.map(function (a) { return '<span>' + esc(a) + '</span>'; }).join('') + '</div>' : '') +
+        (e.asksFirst.length ? '<p class="wf-ex-asks"><strong>Asks you before:</strong> ' + esc(e.asksFirst.join('; ')) + '</p>' : '') +
+        '<button type="button" class="wf-btn plain" data-example="' + esc(e.id) + '">' + (e.ready ? 'Use this plan' : 'Use this') + '</button>' +
+        '</div>';
+    }).join('') : '<p class="hint">No examples match ' + String.fromCharCode(8220) + esc(state.exQuery.trim()) + String.fromCharCode(8221) + (state.exCat === 'All' ? '' : ' in ' + esc(state.exCat)) + '. Describe it in your own words above instead.</p>';
+    var pager = document.getElementById('wfExPager');
+    pager.innerHTML = pages > 1
+      ? '<button type="button" data-ex-page="' + (state.exPage - 1) + '"' + (state.exPage === 1 ? ' disabled' : '') + '>' + String.fromCharCode(8249) + ' Previous</button>' +
+        pageNumbers(state.exPage, pages).map(function (n) {
+          return n === null ? '<span class="hint" aria-hidden="true">' + ELLIPSIS + '</span>'
+            : '<button type="button" data-ex-page="' + n + '" aria-label="Page ' + n + '"' + (n === state.exPage ? ' aria-current="page"' : '') + '>' + n + '</button>';
+        }).join('') +
+        '<button type="button" data-ex-page="' + (state.exPage + 1) + '"' + (state.exPage === pages ? ' disabled' : '') + '>Next ' + String.fromCharCode(8250) + '</button>'
+      : '';
+  }
+
+  function wireExamples() {
+    var box = document.getElementById('examples');
+    if (!box) return;
+    renderExampleList();
+    document.getElementById('wfExSearch').addEventListener('input', function (ev) {
+      state.exQuery = ev.target.value;
+      state.exPage = 1;
+      renderExampleList();
+    });
+    box.addEventListener('click', function (ev) {
+      var t = ev.target.closest('button');
+      if (!t) return;
+      if (t.dataset.exCat) { state.exCat = t.dataset.exCat; state.exPage = 1; renderExampleList(); return; }
+      if (t.dataset.exPage) { state.exPage = Number(t.dataset.exPage); renderExampleList(); box.scrollIntoView({ block: 'start' }); return; }
+      if (t.dataset.example) useExample(t.dataset.example);
+    });
+  }
+
+  // A ready-made example opens its plan; any other fills in the
+  // description, to change and plan.
+  function useExample(id) {
+    if (state.examples.some(function (e) { return e.id === id; })) { openExample(id); return; }
+    var m = state.messages.filter(function (x) { return x.id === id; })[0];
+    if (!m) return;
+    state.description = m.message;
+    renderDescribe();
+    window.scrollTo(0, 0);
+    var text = document.getElementById('wfText');
+    text.focus();
+    var status = document.getElementById('wfStatus');
+    if (status) status.textContent = 'Change it to fit what you need, then plan it.';
   }
 
   function openExample(id) {
@@ -467,6 +563,7 @@ ${consoleShellScript}
       state.canInstall = Boolean(d.canInstallAbilities);
       state.agents = d.agents || [];
       state.examples = d.examples || [];
+      state.messages = d.messages || [];
       renderDescribe();
     })
     .catch(function (err) { page.innerHTML = '<p class="error">Could not load: ' + esc(err.message) + '</p>'; });

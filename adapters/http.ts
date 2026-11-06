@@ -119,6 +119,7 @@ import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
 import { WORKFLOW_EXAMPLES } from '#core/system-agents/workflow-examples.js'
+import { WORKFLOW_EXAMPLE_MESSAGES } from '#core/system-agents/workflow-example-messages.js'
 import { McpServerInputError, getMcpServer, ownMcpServer, removeSavedMcpServer, saveMcpServer, savedMcpServers, searchMcpServers, type McpDirectoryServer } from '#core/mcp-directory.js'
 import { isMcpAuthError, listMcpServerTools, resolveMcpManifest } from '#core/mcp-abilities.js'
 import { McpAbilityGenerationError, generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
@@ -1272,7 +1273,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
     } catch {
       picked = undefined
     }
-    if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents(), examples: WORKFLOW_EXAMPLES })
+    if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents(), examples: WORKFLOW_EXAMPLES, messages: WORKFLOW_EXAMPLE_MESSAGES })
     // A planning job's progress (the page checks every few seconds).
     if (action === 'plan' && jobId && req.method === 'GET') {
       const job = getPlanJob(jobId)

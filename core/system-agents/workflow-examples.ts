@@ -18,6 +18,12 @@ export interface WorkflowExample {
   id: string
   /** Groups examples on the page: "Customer service", "Operations"… */
   category: string
+  /** Its card: what a person would type to describe it, the apps it
+   * works with, and what it asks before doing (the same as
+   * ./workflow-example-messages.ts and loopengine.co/workflows). */
+  message: string
+  apps: string[]
+  asksFirst: string[]
   plan: WorkflowPlan
 }
 
@@ -97,10 +103,11 @@ Edit this: replace each [bracket] with your own policy. The agent checks claims 
 }
 
 /** The parts every example's plan shares. */
-function example(id: string, category: string, plan: Omit<WorkflowPlan, 'parameters' | 'gaps' | 'target' | 'notify'> & Partial<Pick<WorkflowPlan, 'parameters' | 'notify'>>): WorkflowExample {
+function example(id: string, category: string, card: Pick<WorkflowExample, 'message' | 'apps' | 'asksFirst'>, plan: Omit<WorkflowPlan, 'parameters' | 'gaps' | 'target' | 'notify'> & Partial<Pick<WorkflowPlan, 'parameters' | 'notify'>>): WorkflowExample {
   return {
     id,
     category,
+    ...card,
     plan: {
       parameters: {},
       notify: { on: false, reason: '' },
@@ -112,7 +119,7 @@ function example(id: string, category: string, plan: Omit<WorkflowPlan, 'paramet
 }
 
 export const WORKFLOW_EXAMPLES: readonly WorkflowExample[] = [
-  example('customer-email-replies', 'Customer service', {
+  example('customer-email-replies', 'Customer service', { message: "Every 10 minutes, check our support inbox. For each customer email, look up their order in Shopify and our policies, and reply in the thread. Let me approve every reply, and leave refund requests for the team.", apps: ["Gmail", "Shopify"], asksFirst: ["sending a reply"] }, {
     name: 'Answer customer emails',
     id: 'answer-customer-emails',
     summary: 'Checks the support inbox every 10 minutes, looks up each customer\'s order and your policies, and replies. Every reply waits for your approval until you trust it; refund requests are left for a person.',
@@ -164,7 +171,7 @@ Rules:
     notes: [policiesNote('your policies', 'support-policies')],
   }),
 
-  example('refund-approvals', 'Customer service', {
+  example('refund-approvals', 'Customer service', { message: "Every 10 minutes, find refund and return requests in our inbox. Check each against the Shopify order and our return policy, work out the amount, and refund it. Ask me before any refund or reply goes out.", apps: ["Gmail", "Shopify"], asksFirst: ["issuing a refund", "sending the reply"] }, {
     name: 'Refund approvals',
     id: 'refund-approvals',
     summary: 'Checks the inbox for refund and return requests, checks each against the order and your return policy, and proposes the refund and the reply. Both wait for your approval.',
@@ -217,7 +224,7 @@ Rules:
     notes: [policiesNote('your return policy', 'return-policy')],
   }),
 
-  example('incident-triage', 'Operations', {
+  example('incident-triage', 'Operations', { message: "When our alerting tool sends an alert, rate how bad it is, check GitHub for the deploys and merged changes that likely caused it, and send me a short summary in Slack. Ask me before opening or commenting on an issue.", apps: ["GitHub", "Slack"], asksFirst: ["opening or commenting on issues"] }, {
     name: 'Triage an incident',
     id: 'triage-incident',
     summary: 'Takes an alert or a bug report, works out what broke and how bad it is, finds the deploys and changes that likely caused it, and sends you a summary. Opening or commenting on issues waits for approval.',
@@ -264,7 +271,7 @@ Rules:
     notes: ['Send it alerts: add a webhook to this workflow (Workflows tab) with "Message me the result when it finishes" on, and paste its URL into your alerting tool; or mention it in Slack, or paste an alert into Chat'],
   }),
 
-  example('expense-approvals', 'Finance', {
+  example('expense-approvals', 'Finance', { message: "Every 15 minutes, read new claims in the claims inbox with their receipts, check each against our expense policy, and email the approver a one-line verdict. Never approve or pay anything yourself.", apps: ["Gmail"], asksFirst: ["replying to the claimant"] }, {
     name: 'Check expense claims',
     id: 'check-expense-claims',
     summary: 'Checks the claims inbox, reads each claim and its receipt, checks it against your expense policy, and sends the approver a one-line verdict. Replies to claimants wait for your approval.',
@@ -310,7 +317,7 @@ Rules:
     notes: [policiesNote('your expense policy', 'expense-policy'), 'Set EXPENSE_APPROVER_EMAIL (Environment tab) to the approver\'s address'],
   }),
 
-  example('lead-follow-up', 'Sales', {
+  example('lead-follow-up', 'Sales', { message: "Every hour, pick up new leads in HubSpot, research each company on the web, and send a short, personal first email. Ask me before sending, and before updating the lead.", apps: ["HubSpot", "Firecrawl", "Gmail"], asksFirst: ["sending the first email", "updating the lead"] }, {
     name: 'Lead follow-up',
     id: 'lead-follow-up',
     summary: 'Every hour, picks up new leads in HubSpot, researches each on the web, and sends a short, personal first email. Sending and updating the CRM wait for your approval.',
@@ -363,7 +370,7 @@ Rules:
     notes: ['Edit "What we sell" at the top of its instructions (Overview tab)'],
   }),
 
-  example('inbox-to-tasks', 'Operations', {
+  example('inbox-to-tasks', 'Operations', { message: "Every 10 minutes, turn each request in our shared inbox into a GitHub issue with an owner and a due date, then tell the sender who is handling it. Let me approve the reply.", apps: ["Gmail", "GitHub"], asksFirst: ["replying to the sender"] }, {
     name: 'Inbox to tasks',
     id: 'inbox-to-tasks',
     summary: 'Checks a shared inbox every 10 minutes and turns each request into a task (a GitHub issue) with an owner and a due date, then tells the sender who is handling it.',
@@ -417,7 +424,7 @@ Rules:
     notes: ['Edit "Who handles what" and the repository at the top of its instructions (Overview tab)'],
   }),
 
-  example('weekly-research-digest', 'Research', {
+  example('weekly-research-digest', 'Research', { message: "Every Monday at 9, search the web for last week's news on our topics and competitors, and send me a short digest with links.", apps: ["Firecrawl", "Slack"], asksFirst: [] }, {
     name: 'Weekly research digest',
     id: 'weekly-research-digest',
     summary: 'Every Monday morning, searches the web for news on the topics you choose and sends you a short digest with links.',
