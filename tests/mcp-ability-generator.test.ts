@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { generateMcpAbility, mcpAbilityNames, McpAbilityGenerationError } from '../core/mcp-ability-generator.js'
-import { getMcpServer, searchMcpServers, MCP_REGISTRY_URL_ENV, MCP_SERVERS_FILE_ENV, type McpDirectoryServer } from '../core/mcp-directory.js'
+import { getMcpServer, registryTitle, searchMcpServers, MCP_REGISTRY_URL_ENV, MCP_SERVERS_FILE_ENV, type McpDirectoryServer } from '../core/mcp-directory.js'
 import { closeMcpConnections, loadMcpAbilityTools } from '../core/mcp-abilities.js'
 import { installAbility } from '../bin/ability-manager.js'
 import { createAgentEnv } from '../core/agent-env.js'
@@ -146,6 +146,22 @@ describe('the MCP directory', () => {
     registryBody = { servers: [{ server: { name: 'app.vercel.checkup/stripe', remotes: [{ type: 'streamable-http', url: 'https://checkup.vercel.app/mcp' }] } }, ...(registryBody as { servers: unknown[] }).servers] }
     const found = await searchMcpServers('stripe')
     expect(found.map((s) => [s.id, s.verified, s.official])).toEqual([['com.stripe/mcp', true, true], ['app.vercel.checkup/stripe', true, false], ['io.github.someone/stripe', false, false]])
+  })
+
+  it('names a server with no title after its app, not "mcp"', async () => {
+    expect(registryTitle('com.stripe/mcp')).toBe('Stripe')
+    expect(registryTitle('com.paypal.mcp/mcp')).toBe('Paypal')
+    expect(registryTitle('com.notion/mcp-server')).toBe('Notion')
+    expect(registryTitle('io.github.getsentry/sentry-mcp')).toBe('Sentry')
+    expect(registryTitle('io.github.acme/mcp')).toBe('Acme')
+    expect(registryTitle('app.linear/linear')).toBe('Linear')
+    expect(registryTitle('ai.exa/web-search')).toBe('Web Search')
+
+    process.env[MCP_REGISTRY_URL_ENV] = base
+    registryBody = { servers: [{ server: { name: 'com.stripe/mcp', description: 'Stripe', remotes: [{ type: 'streamable-http', url: 'https://mcp.stripe.com' }] } }] }
+    const [stripe] = await searchMcpServers('stripe')
+    expect(stripe.title).toBe('Stripe')
+    expect(mcpAbilityNames(stripe)).toMatchObject({ name: 'mcp-stripe', keyEnv: 'STRIPE_MCP_KEY' })
   })
 
   it('treats a server published under a GitHub organisation as the app\'s own when its URL is on a domain named like it', async () => {

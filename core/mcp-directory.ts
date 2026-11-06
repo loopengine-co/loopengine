@@ -231,6 +231,25 @@ interface RegistryEntry {
   }
 }
 
+// Words that say nothing about which app a server is for.
+const GENERIC_WORDS = new Set(['mcp', 'server', 'remote', 'official', 'api'])
+// The first labels of a reverse-domain name: com.stripe → stripe.
+const DOMAIN_ENDINGS = new Set(['com', 'io', 'ai', 'app', 'net', 'org', 'co', 'dev', 'so', 'sh', 'us', 'uk', 'de', 'github'])
+
+const capitalise = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
+
+/** A name for people when a registry entry has none: the words of its own
+ * name (io.github.getsentry/sentry-mcp → "Sentry"), or, when those only
+ * say "MCP server" (com.stripe/mcp), its publisher's ("Stripe"). The
+ * ability made from it is named after this (mcp-stripe, not mcp-mcp). */
+export function registryTitle(name: string): string {
+  const [ns = '', last = ''] = name.split('/')
+  const words = last.split(/[-_.\s]+/).filter((w) => w && !GENERIC_WORDS.has(w.toLowerCase()))
+  if (words.length) return words.map(capitalise).join(' ')
+  const publisher = githubOrg(name) ?? ns.split('.').find((label) => label && !DOMAIN_ENDINGS.has(label.toLowerCase()) && !GENERIC_WORDS.has(label.toLowerCase()))
+  return publisher ? capitalise(publisher) : name
+}
+
 function fromRegistry(entry: RegistryEntry): McpDirectoryServer | undefined {
   const s = entry.server
   if (!s?.name) return undefined
@@ -243,7 +262,7 @@ function fromRegistry(entry: RegistryEntry): McpDirectoryServer | undefined {
   const icon = (icons.find((i) => i.mimeType === 'image/svg+xml') ?? icons[0])?.src
   return {
     id: s.name,
-    title: s.title || s.name.split('/').pop() || s.name,
+    title: s.title?.trim() || registryTitle(s.name),
     description: (s.description ?? '').slice(0, 300),
     url: remote.url!,
     transport: remote.type === 'sse' ? 'sse' : 'streamable-http',
