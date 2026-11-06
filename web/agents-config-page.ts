@@ -900,6 +900,7 @@ ${consoleShellScript}
       if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
       var workflows = r.body.workflows || [];
       fillWorkflowsCard(workflows);
+      leShell.setCount('workflows', workflows.length);
       workflowsById = {};
       workflows.forEach(function (w) { workflowsById[w.id] = w; });
       el.innerHTML = renderWorkflowsHtml(name, workflows);
@@ -1225,7 +1226,11 @@ ${consoleShellScript}
         var action = btn.dataset.action;
         if (action === 'cancel' && btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
         btn.disabled = true;
-        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' }).then(function () { loadWorkflowsSection(name); });
+        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' }).then(function () {
+          loadWorkflowsSection(name);
+          // The Schedules tab's count, and the Overview's tile.
+          fillOverviewCards(name);
+        });
       });
     }
     card.querySelector('.workflow-run').addEventListener('click', function (ev) {
@@ -1278,6 +1283,7 @@ ${consoleShellScript}
       var waiting = active.filter(function (t) { return t.status === 'awaiting_approval'; }).length;
       var next = active.map(function (t) { return t.next_run_at; }).filter(Boolean).sort()[0];
       set('ovSchedulesValue', String(active.length));
+      leShell.setCount('schedules', active.length);
       var schedulesDetail = [];
       if (waiting) schedulesDetail.push(waiting + ' waiting for approval');
       if (next) schedulesDetail.push('Next run ' + escapeHtml(new Date(next).toLocaleString()));
@@ -1957,7 +1963,10 @@ ${consoleShellScript}
           (saved ? '<button type="button" class="delete-btn notifier-remove"' + (locked ? ' disabled' : '') + '>Remove</button>' : '') + '</div>' +
         (isWebhook ? '<p class="hint" style="margin:0">A webhook always sends once saved, alongside the primary messaging app.</p>' : '') +
         '<div class="hint notifier-result"></div>' +
-      '</form></details>';
+      '</form>' +
+      // Who can decide and give jobs here: part of this app's settings.
+      (channel === 'slack' || channel === 'telegram' ? renderApproversHtml(n, channel) : '') +
+      '</details>';
   }
 
   function renderConnectionsHtml(n) {
@@ -2012,7 +2021,7 @@ ${consoleShellScript}
         '<td><button type="button" class="delete-btn approver-remove" data-user="' + escapeHtml(a.user) + '"' + (n.canSave === false ? ' disabled' : '') + '>Remove</button></td></tr>';
     }).join('');
     var where = app === 'telegram' ? 'by replying to it' : 'by replying in its thread';
-    return '<section class="approvers-section" data-app="' + app + '"><h3>' + title + ' approvers</h3>' +
+    return '<section class="approvers-section" data-app="' + app + '" style="max-width:560px;margin-top:18px;padding-top:14px;border-top:1px solid var(--le-line, #e5e7eb)"><h4 style="margin:0 0 6px">Approvers</h4>' +
       (n.primary !== app ? '<p class="hint" style="margin:0 0 8px">' + title + ' isn&#39;t primary, so requests aren&#39;t sent there until it is. Jobs started there still use this list.</p>' : '') +
       '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request ' + where + ', like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A plain &ldquo;yes&rdquo; runs it; a reply that&#39;s less clear (&ldquo;sure, send it&rdquo;, &ldquo;yes but check the amount&rdquo;) shows exactly what will run with a Confirm button first, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count, and only approvers can give the agent jobs. Anyone can still ask about a request.</p>' +
       (approvers.length
@@ -2102,8 +2111,7 @@ ${consoleShellScript}
       '<p class="muted" style="margin:0 0 12px">' + renderNotifierStatus(n) + '</p>' +
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
         (n.source === 'code' ? '' : renderConnectionsHtml(n)) + '</section>' +
-      renderApproversHtml(n, 'slack') +
-      renderApproversHtml(n, 'telegram') +
+
       '<section><h3>Recent deliveries</h3>' + renderDeliveries(n.deliveries || []) + '</section>';
   }
 
@@ -2252,8 +2260,16 @@ ${consoleShellScript}
         fetchJsonRetryOnce(url).then(function (r) {
           if (!r.ok) { out.textContent = r.body.error || 'Could not check'; return; }
           var b = r.body;
+          // Telegram keeps its last error until a newer one, so it says when.
+          var when = '';
+          if (b.lastErrorAt) {
+            var mins = Math.max(0, Math.round((Date.now() - Date.parse(b.lastErrorAt)) / 60000));
+            when = mins < 2 ? 'just now' : mins < 120 ? mins + ' minutes ago' : mins < 2880 ? Math.round(mins / 60) + ' hours ago' : Math.round(mins / 1440) + ' days ago';
+            when = ' (' + when + ', ' + new Date(b.lastErrorAt).toLocaleString() + ')';
+          }
           out.textContent = (b.pointsHere ? 'Connected' + (b.botUsername ? ' (@' + b.botUsername + ')' : '') + '.' : b.url ? 'The bot sends its updates somewhere else: ' + b.url + '. Connect again to point it here.' : 'The bot isn' + String.fromCharCode(8217) + 't sending its updates anywhere. Connect again.') +
-            (b.lastError ? ' Telegram' + String.fromCharCode(8217) + 's last delivery error: ' + b.lastError : '');
+            (b.pending ? ' ' + b.pending + ' update' + (b.pending === 1 ? '' : 's') + ' waiting to be delivered.' : '') +
+            (b.lastError ? ' Telegram' + String.fromCharCode(8217) + 's last delivery error' + when + ': ' + b.lastError + (b.pointsHere && !b.pending ? ' Nothing is waiting, so it' + String.fromCharCode(8217) + 's likely from before and since fixed.' : '') : '');
         });
       });
     }
@@ -4502,7 +4518,7 @@ ${consoleShellScript}
         prompt: cfg.systemPrompt,
         chips: [modelChip(cfg), { text: 'unmatched calls: ' + cfg.permissions.defaultDecision }],
         tab: currentTab,
-        counts: { tools: cfg.tools.length, skills: cfg.skills.length, abilities: cfg.abilityCount, actauth: cfg.permissions.rules.length },
+        counts: { tools: cfg.tools.length, skills: cfg.skills.length, abilities: cfg.abilityCount, workflows: cfg.skills.filter(function (s) { return s.workflow; }).length },
       }) +
       '<div class="le-scroll"><div class="le-page" style="display:block">' +
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +

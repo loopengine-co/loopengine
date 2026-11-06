@@ -141,10 +141,19 @@ export async function setTelegramWebhook(botToken: string, url: string, secret: 
 }
 
 /** Where the bot's updates go now, and the last delivery error Telegram saw. */
-export async function telegramWebhookInfo(botToken: string): Promise<{ ok: boolean; url?: string; lastError?: string; error?: string }> {
-  const info = await callTelegram<{ url?: string; last_error_message?: string }>(botToken, 'getWebhookInfo', {})
+/** Where the bot's updates go now; the last delivery error Telegram saw
+ * and when (it keeps it until a newer one); and how many are waiting. */
+export async function telegramWebhookInfo(botToken: string): Promise<{ ok: boolean; url?: string; lastError?: string; lastErrorAt?: string; pending?: number; error?: string }> {
+  const info = await callTelegram<{ url?: string; last_error_message?: string; last_error_date?: number; pending_update_count?: number }>(botToken, 'getWebhookInfo', {})
   if (!info.ok) return { ok: false, error: telegramSetupError(info.description) }
-  return { ok: true, url: info.result?.url || undefined, ...(info.result?.last_error_message ? { lastError: info.result.last_error_message } : {}) }
+  const r = info.result
+  return {
+    ok: true,
+    url: r?.url || undefined,
+    ...(r?.last_error_message ? { lastError: r.last_error_message } : {}),
+    ...(r?.last_error_date ? { lastErrorAt: new Date(r.last_error_date * 1000).toISOString() } : {}),
+    ...(r?.pending_update_count ? { pending: r.pending_update_count } : {}),
+  }
 }
 
 function telegramSetupError(description: string | undefined): string {

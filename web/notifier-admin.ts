@@ -181,7 +181,7 @@ export function jobAllowed(config: AgentConfig, app: TwoWayApp, message: { user:
   const file = savedConnection(config, app)
   const home = app === 'slack' ? file?.channelId : file?.chatId
   if (!message.direct && home && home === message.conversation) return { allowed: true }
-  return { allowed: false, message: `Jobs by direct message need approvers: add yourself in this agent's Messaging tab in LoopEngine (${APP_NAMES[app]} section).` }
+  return { allowed: false, message: `Jobs by direct message need approvers: in LoopEngine, open this agent's Messaging tab, then ${APP_NAMES[app]} → Approvers, and add yourself.` }
 }
 
 /** Replaces the approver list on the agent's saved connection for `app`,
@@ -235,7 +235,7 @@ export async function setupAgentTelegramWebhook(config: AgentConfig, baseUrl: st
 }
 
 /** Where the agent's Telegram bot sends its updates now. */
-export async function agentTelegramWebhookInfo(config: AgentConfig): Promise<{ url?: string; lastError?: string; pointsHere: boolean; botUsername?: string }> {
+export async function agentTelegramWebhookInfo(config: AgentConfig): Promise<{ url?: string; lastError?: string; lastErrorAt?: string; pending?: number; pointsHere: boolean; botUsername?: string }> {
   const { botToken } = telegramCredentialsFor(config)
   if (!botToken) throw new Error('Save the Telegram bot token first')
   const info = await telegramWebhookInfo(botToken)
@@ -244,6 +244,8 @@ export async function agentTelegramWebhookInfo(config: AgentConfig): Promise<{ u
   return {
     ...(info.url ? { url: info.url } : {}),
     ...(info.lastError ? { lastError: info.lastError } : {}),
+    ...(info.lastErrorAt ? { lastErrorAt: info.lastErrorAt } : {}),
+    ...(info.pending ? { pending: info.pending } : {}),
     pointsHere: Boolean(info.url?.endsWith(`/hooks/telegram/${encodeURIComponent(config.name)}`)),
     ...(botUsername ? { botUsername } : {}),
   }
