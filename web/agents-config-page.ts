@@ -43,6 +43,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   #empty { color: var(--ink-muted); font-size: 13px; padding: 24px; }
   .env-cell { display: grid; gap: 6px; }
   .schedule-result { max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; }
+  .schedule-result-full { max-width: 900px; max-height: 70vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 var(--le-mono, ui-monospace, monospace); margin: 6px 0 0; padding: 10px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 6px; background: var(--le-surface, #f6f7f9); }
+  .schedule-result-details { margin-top: 5px; }
+  .schedule-result-details summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; }
   .schedule-history { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
   form.add-source .schedule-when { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
   form.add-source .schedule-when label { display: inline; font-size: 13px; }
@@ -54,6 +57,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   tr.schedule-focus td { background: var(--le-accent-soft, #e6f4ef); transition: background 0.3s; }
   .workflow-starts { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; background: var(--le-surface, #f6f7f9); }
   .workflow-starts h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .workflow-run-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .workflow-run-notify { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+  .workflow-run-notify input { width: auto; margin: 0; }
   .wf-start { padding: 10px 0; border-top: 1px solid var(--le-line, #e5e7eb); display: grid; gap: 6px; font-size: 13px; }
   .wf-start:first-of-type { border-top: 0; padding-top: 6px; }
   .wf-start-head { display: flex; align-items: center; gap: 6px; }
@@ -753,7 +759,8 @@ ${consoleShellScript}
       wfStartSection('run-' + w.id, 'Run now',
         'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
         (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
-        '<div><button type="button" class="workflow-run primary">Run now</button></div>') +
+        '<div class="workflow-run-controls"><button type="button" class="workflow-run primary">Run now</button>' +
+          '<label class="workflow-run-notify" title="Sends the completed result through this agent' + String.fromCharCode(8217) + 's configured notifier"><input type="checkbox" class="workflow-run-notify-toggle"> Send result to messaging app</label></div>') +
       wfStartSection('api-' + w.id, 'API',
         'Your own app starts a run by calling this address with an API key. Add "wait": true to get the result in the answer, or "callback_url" to have it posted to you when the run ends.',
         '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
@@ -792,7 +799,7 @@ ${consoleShellScript}
         var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
         return '<li>' + pill + ' <span class="hint">' + escapeHtml(new Date(r.started_at).toLocaleString()) + (r.source === 'api' ? ' ' + String.fromCharCode(183) + ' from an app' : r.source === 'schedule' ? ' ' + String.fromCharCode(183) + ' scheduled' + (r.task_name ? ' (' + escapeHtml(r.task_name) + ')' : '') : '') + '</span>' +
           (values ? '<div class="hint">' + values + '</div>' : '') +
-          (outcome ? '<div class="schedule-result">' + escapeHtml(outcome) + '</div>' : '') + '</li>';
+          (outcome ? '<div class="schedule-result">' + escapeHtml(outcome) + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><pre class="schedule-result-full">' + escapeHtml(outcome) + '</pre></details>' : '') + '</li>';
       }).join('');
       return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
@@ -1238,12 +1245,16 @@ ${consoleShellScript}
         if (!value && inputs[i].required) { result.textContent = 'Fill in ' + inputs[i].name + ' first.'; inputs[i].focus(); return; }
         if (value) params[inputs[i].name] = value;
       }
+      var notifyToggle = card.querySelector('.workflow-run-notify-toggle');
+      var notifyResult = notifyToggle.checked;
+      notifyToggle.disabled = true;
       btn.disabled = true;
       result.textContent = 'Starting' + String.fromCharCode(8230);
-      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params, source: 'console' }) }).then(function (r) {
+      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params, source: 'console', notify: notifyResult }) }).then(function (r) {
         btn.disabled = false;
+        notifyToggle.disabled = false;
         if (!r.ok) { result.textContent = r.body.error || 'Could not start it.'; return; }
-        result.textContent = 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; the result shows under Recent runs.';
+        result.textContent = 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; the result shows under Recent runs.' + (notifyResult ? ' The result will also be sent to the messaging app when it finishes.' : '');
         setTimeout(function () { loadWorkflowsSection(name); }, 800);
       });
     });
