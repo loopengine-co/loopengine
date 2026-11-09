@@ -47,6 +47,22 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .schedule-result-details { margin-top: 5px; }
   .schedule-result-details summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; }
   .schedule-history { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+  .workflow-section { margin: 10px 0 0; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; overflow: hidden; background: var(--le-surface, #f6f7f9); }
+  .workflow-section-title { display: flex; align-items: center; gap: 8px; padding: 9px 12px; color: var(--le-accent, #0f766e); background: var(--le-accent-soft, #e6f4ef); font-size: 13px; font-weight: 650; cursor: pointer; list-style: none; }
+  .workflow-section-title::-webkit-details-marker { display: none; }
+  .workflow-section-title::before { content: '▸'; font-size: 12px; }
+  .workflow-section[open] > .workflow-section-title::before { content: '▾'; }
+  .workflow-section-content { padding: 0 12px 10px; }
+  .workflow-section-meta { margin-left: auto; color: var(--ink-muted); font-size: 11px; font-weight: 500; }
+  .workflow-run-entry { padding: 10px 12px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; background: var(--le-bg, #fff); display: grid; gap: 8px; }
+  .workflow-run-entry-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .workflow-run-time { font-size: 12px; }
+  .workflow-run-source { margin-left: auto; font-size: 11px; }
+  .workflow-run-entry-label { color: var(--ink-muted); font-size: 10px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 4px; }
+  .workflow-run-params { display: flex; flex-wrap: wrap; gap: 5px; }
+  .workflow-run-params span { padding: 3px 7px; border-radius: 5px; background: var(--le-surface, #f6f7f9); font-size: 11px; overflow-wrap: anywhere; }
+  .workflow-option-value { display: inline-flex; align-items: center; padding: 3px 7px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 6px; background: var(--le-bg, #fff); color: var(--ink, #1f2937); font-size: 11px; line-height: 1.3; }
+  .workflow-run-entry .schedule-result { max-width: none; }
   form.add-source .schedule-when { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
   form.add-source .schedule-when label { display: inline; font-size: 13px; }
   form.add-source .schedule-when input[type="radio"] { width: auto; margin: 0; }
@@ -55,8 +71,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-card { margin-bottom: 10px; }
   .workflow-card.workflow-focus { box-shadow: 0 0 0 2px var(--le-accent, #0f766e); transition: box-shadow 0.3s; }
   tr.schedule-focus td { background: var(--le-accent-soft, #e6f4ef); transition: background 0.3s; }
-  .workflow-starts { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; background: var(--le-surface, #f6f7f9); }
-  .workflow-starts h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .workflow-starts { margin-top: 10px; }
   .workflow-run-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .workflow-run-notify { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
   .workflow-run-notify input { width: auto; margin: 0; }
@@ -735,7 +750,7 @@ ${consoleShellScript}
         '<span><a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=schedules#schedule-' + escapeHtml(x.taskId) + '" class="workflow-schedule-link" data-task="' + escapeHtml(x.taskId) + '" title="See it in the Schedules tab">' +
           escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + '</a></span>' + state +
         (values ? '<span class="hint">' + values + '</span>' : '') +
-        (x.notify ? '<span class="hint">messages you the result when it finishes</span>' : '') +
+        (x.notify ? '<span class="workflow-option-value">Send result to messaging app</span>' : '') +
         '<span style="display:flex;gap:6px;margin-left:auto">' +
           (x.status === 'paused' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="resume">Resume</button>'
             : x.status === 'scheduled' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="pause">Pause</button>' : '') +
@@ -747,7 +762,7 @@ ${consoleShellScript}
     // for the result.
     var example = '{ ' + (paramNames.length ? '"params": { ' + paramNames.map(function (p) { return '"' + p + '": "' + String.fromCharCode(8230) + '"'; }).join(', ') + ' }, ' : '') + '"wait": true }';
     var apiUrl = location.origin + '/agents/' + encodeURIComponent(agentName) + '/workflows/' + encodeURIComponent(w.id) + '/run';
-    return '<div class="workflow-starts"><h4>Ways to run it</h4>' +
+    return '<details class="workflow-section workflow-starts"><summary class="workflow-section-title">Run options</summary><div class="workflow-section-content">' +
       wfStartSection('schedule-' + w.id, 'Schedule',
         'Runs it on a timer, like every day at 9:00, with the values you give the schedule. Nobody needs to be there: approvals and questions go to the agent' + String.fromCharCode(8217) + 's messaging app.',
         (schedules ? '<ul class="schedule-history">' + schedules + '</ul>' : '<span class="hint">None yet.</span>') +
@@ -765,8 +780,8 @@ ${consoleShellScript}
         'Your own app starts a run by calling this address with an API key. Add "wait": true to get the result in the answer, or "callback_url" to have it posted to you when the run ends.',
         '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
         '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
-          'Optional: <code>"wait": true</code> answers with the result; <code>"notify": true</code> sends it through the agent' + String.fromCharCode(8217) + 's messaging app; <code>"callback_url"</code> posts it to your app when the run ends. Leave them out to get the run' + String.fromCharCode(8217) + 's id back at once.</p>') +
-    '</div>';
+          'Optional: <code>"wait": true</code> answers with the result; <code>"notify": true</code> sends the result to the messaging app; <code>"callback_url"</code> posts it to your app when the run ends. Leave them out to get the run' + String.fromCharCode(8217) + 's id back at once.</p>') +
+    '</div></details>';
   }
 
   function renderWorkflowsHtml(name, workflows) {
@@ -795,20 +810,23 @@ ${consoleShellScript}
           : r.status === 'error' ? '<span class="le-pill bad">Failed</span>'
           : r.status === 'awaiting_approval' ? '<span class="le-pill ask">Waiting for a decision</span>'
           : '<span class="le-pill accent">Running</span>';
-        var values = r.params ? Object.keys(r.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(r.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
+        var values = r.params ? Object.keys(r.params).map(function (k) { return '<span><strong>' + escapeHtml(k) + '</strong>: ' + escapeHtml(r.params[k]) + '</span>'; }).join('') : '';
+        var source = r.source === 'console' ? 'Manual run' : r.source === 'api' ? 'App / API' : r.source === 'schedule' ? 'Scheduled' + (r.task_name ? ' · ' + r.task_name : '') : 'Webhook';
         var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
-        return '<li>' + pill + ' <span class="hint">' + escapeHtml(new Date(r.started_at).toLocaleString()) + (r.source === 'api' ? ' ' + String.fromCharCode(183) + ' from an app' : r.source === 'schedule' ? ' ' + String.fromCharCode(183) + ' scheduled' + (r.task_name ? ' (' + escapeHtml(r.task_name) + ')' : '') : '') + '</span>' +
-          (values ? '<div class="hint">' + values + '</div>' : '') +
-          (outcome ? '<div class="schedule-result">' + escapeHtml(outcome) + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><pre class="schedule-result-full">' + escapeHtml(outcome) + '</pre></details>' : '') + '</li>';
+        return '<li class="workflow-run-entry"><div class="workflow-run-entry-head">' + pill +
+          '<span class="workflow-run-time">' + escapeHtml(new Date(r.started_at).toLocaleString()) + '</span>' +
+          '<span class="workflow-run-source hint">' + escapeHtml(source) + '</span></div>' +
+          (values ? '<div><div class="workflow-run-entry-label">Parameters</div><div class="workflow-run-params">' + values + '</div></div>' : '') +
+          (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result">' + escapeHtml(outcome) + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><pre class="schedule-result-full">' + escapeHtml(outcome) + '</pre></details></div>' : '') + '</li>';
       }).join('');
       return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
           '<strong>' + escapeHtml(w.title) + '</strong><span>' + state + '</span></div>' +
         '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(workflowStartsSummary(w)) : '') + '</p>' +
-        '<details open><summary class="hint">Instructions <span>(the ' + escapeHtml(w.id) + ' skill)</span></summary><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></details>' +
+        '<details class="workflow-section" open><summary class="workflow-section-title">Instructions <span class="workflow-section-meta">' + escapeHtml(w.id) + ' skill</span></summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></div></details>' +
         workflowStartsHtml(w, name, params) +
         '<div class="hint workflow-result" style="margin-top:6px"></div><div class="workflow-hooks" hidden></div>' +
-        (runs ? '<details class="workflow-runs" style="margin-top:10px"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="hint">Recent runs (' + w.recentRuns.length + ')</summary><ul class="schedule-history">' + runs + '</ul></details>'
+        (runs ? '<details class="workflow-section workflow-runs"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="workflow-section-title">Recent runs<span class="workflow-section-meta">' + w.recentRuns.length + '</span></summary><div class="workflow-section-content"><ul class="schedule-history">' + runs + '</ul></div></details>'
           : '<p class="hint" style="margin:10px 0 0">No runs yet.</p>') +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
           '<button type="button" class="workflow-edit">Edit</button>' +
@@ -1031,7 +1049,7 @@ ${consoleShellScript}
     if (t.filter) rules.push('only when ' + escapeHtml(t.filter.path) + ' is ' + t.filter.values.map(escapeHtml).join(' or '));
     if (t.mapping) rules.push(Object.keys(t.mapping).map(function (p) { return escapeHtml(p) + ' ' + String.fromCharCode(8592) + ' ' + escapeHtml(t.mapping[p]); }).join(', '));
     if (t.payload_param) rules.push('the whole payload goes to ' + escapeHtml(t.payload_param));
-    if (t.notify) rules.push('messages you the result when it finishes');
+    if (t.notify) rules.push('<span class="workflow-option-value">Send result to messaging app</span>');
     if (t.callback_url) rules.push('reports to ' + escapeHtml(t.callback_url));
     // Made by the workflow planner without its secret: it turns on once
     // the sender's signing secret is added.
@@ -1077,7 +1095,7 @@ ${consoleShellScript}
             params.map(function (p) { return '<div class="workflow-param-row"><code class="wp-name">' + escapeHtml(p) + '</code><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" style="flex:1"></div>'; }).join('') + '</div>' +
           '<label>Or give the whole payload to <select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select></label>'
         : '<p class="hint" style="margin:0">This workflow takes no parameters, so the payload isn' + String.fromCharCode(8217) + 't passed on. Add one in Edit to use it.</p>') +
-      '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Message me the result when it finishes <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
+      '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
       '<label>Post each run' + String.fromCharCode(8217) + 's result to <span class="hint">(optional, an https URL)</span><input name="callback_url" placeholder="https://example.com/hooks/loopengine"></label>' +
       '<div style="display:flex;gap:8px"><button type="submit" class="primary">Make the URL</button></div>' +
       '<div class="hint hook-form-result"></div></form>';
@@ -2443,8 +2461,8 @@ ${consoleShellScript}
             ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
             : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') +
         (t.status !== 'cancelled' && t.status !== 'done'
-          ? '<label class="schedule-notify hint" title="Sent through its Messaging tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Message me the result when it finishes</label>'
-          : (t.notify ? '<div class="hint">Messaged you the result when it finished</div>' : '')) + '</td>' +
+          ? '<label class="schedule-notify hint" title="Sent through its Messaging tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send result to messaging app</label>'
+          : (t.notify ? '<div><span class="workflow-option-value">Send result to messaging app</span></div>' : '')) + '</td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
         (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
@@ -2486,7 +2504,7 @@ ${consoleShellScript}
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
           '<label>Name <span class="hint">(optional)</span><input name="task_name" placeholder="Daily ticket summary"></label>' +
-          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Message me the result when it finishes <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
+          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
           '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
           '<div id="scheduleResult" class="hint"></div>' +
         '</form></section>';
