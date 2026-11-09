@@ -48,6 +48,8 @@ export interface Workflow {
   /** A name for people, e.g. "Refund check". */
   title: string
   description: string
+  /** The request that was used to create the workflow, when available. */
+  originalRequest?: string
   /** A workflow saved before instructions: what its runs began with. Empty
    * for one saved since. */
   startMessage: string
@@ -70,6 +72,7 @@ export interface WorkflowFields {
   /** The skill's one-line description: what the job is, which chat
    * matches requests against. Kept as it is when not given. */
   description?: string
+  originalRequest?: string
   instructions?: string
   startMessage?: string
   trigger?: string
@@ -79,7 +82,7 @@ export interface WorkflowFields {
 export class WorkflowParamsError extends Error {}
 
 const PARAMETER_NAME = /^[a-z_][a-z0-9_]*$/
-const WORKFLOW_KEYS = ['workflow', 'title', 'start_message', 'trigger', 'parameters'] as const
+const WORKFLOW_KEYS = ['workflow', 'title', 'start_message', 'trigger', 'parameters', 'original_request'] as const
 
 function skillsDir(agentDir: string): string {
   return join(agentDir, 'skills')
@@ -141,6 +144,7 @@ function workflowFrom(id: string, frontmatter: Record<string, unknown>, body: st
     // A title that's just the id (a plan once saved it that way) reads as words.
     title: typeof frontmatter.title === 'string' && frontmatter.title.trim() && frontmatter.title.trim() !== id ? frontmatter.title.trim() : titleFromId(id),
     description: typeof frontmatter.description === 'string' ? frontmatter.description : '',
+    ...(typeof frontmatter.original_request === 'string' ? { originalRequest: frontmatter.original_request } : {}),
     startMessage,
     trigger: typeof frontmatter.trigger === 'string' && frontmatter.trigger.trim() ? frontmatter.trigger.trim() : 'When asked',
     parameters: parametersFrom(frontmatter.parameters),
@@ -180,8 +184,10 @@ export function setWorkflowFields(agentDir: string, id: string, fields: Workflow
     if (!PARAMETER_NAME.test(name)) throw new Error(`Parameter "${name}": use lowercase letters, digits and _, starting with a letter, e.g. "order_number".`)
   }
   const frontmatter = { ...skill.frontmatter }
+  const originalRequest = fields.originalRequest ?? (typeof frontmatter.original_request === 'string' ? frontmatter.original_request : undefined)
   for (const key of WORKFLOW_KEYS) delete frontmatter[key]
   if (fields.description) frontmatter.description = fields.description
+  if (originalRequest) frontmatter.original_request = originalRequest
   const parameters = fields.parameters && Object.keys(fields.parameters).length ? { parameters: fields.parameters } : {}
   if (fields.instructions !== undefined) {
     writeSkillFile(path, { ...frontmatter, workflow: true, ...(fields.title ? { title: fields.title } : {}), ...parameters }, fields.instructions)

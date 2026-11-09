@@ -874,6 +874,7 @@ ${consoleShellScript}
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
           '<strong>' + escapeHtml(w.title) + '</strong><span>' + state + '</span></div>' +
         '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(workflowStartsSummary(w)) : '') + '</p>' +
+        (w.originalRequest ? '<details class="workflow-section" open><summary class="workflow-section-title">Original message</summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></div></details>' : '') +
         '<details class="workflow-section" open><summary class="workflow-section-title">Instructions <span class="workflow-section-meta">' + escapeHtml(w.id) + ' skill</span></summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></div></details>' +
         workflowStartsHtml(w, name, params) +
         '<div class="hint workflow-result" style="margin-top:6px"></div><div class="workflow-hooks" hidden></div>' +

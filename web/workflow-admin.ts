@@ -429,7 +429,13 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   const { parameters } = planParameters(plan.parameters, { startMessage: plan.startMessage, skillBody: plan.skill.body, scheduled: plan.trigger.kind === 'schedule' })
   // One text, as the editor shows it: the start message, then the steps.
   const instructions = plan.skill.body.trim().startsWith(plan.startMessage.trim()) ? plan.skill.body : `${plan.startMessage.trim()}\n\n${plan.skill.body.trim()}`
-  const markWorkflow = (agentDir: string) => setWorkflowFields(agentDir, plan.id, { title: plan.name, instructions, parameters })
+  const originalRequest = typeof input.description === 'string' ? input.description.trim() : ''
+  const markWorkflow = (agentDir: string) => setWorkflowFields(agentDir, plan.id, {
+    title: plan.name,
+    instructions,
+    parameters,
+    ...(originalRequest ? { originalRequest } : {}),
+  })
   const agents = await deps.agentInfo()
   resolveConnections(plan, agents)
   const keys = input.mcpKeys && typeof input.mcpKeys === 'object' ? Object.fromEntries(Object.entries(input.mcpKeys as Record<string, unknown>).flatMap(([k, v]) => (typeof v === 'string' && v.trim() ? [[k, v.trim()]] : []))) : {}
