@@ -43,9 +43,25 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   #empty { color: var(--ink-muted); font-size: 13px; padding: 24px; }
   .env-cell { display: grid; gap: 6px; }
   .schedule-result { max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; }
-  .schedule-result-full { max-width: 900px; max-height: 70vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 var(--le-mono, ui-monospace, monospace); margin: 6px 0 0; padding: 10px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 6px; background: var(--le-surface, #f6f7f9); }
+  .schedule-result-full { max-width: 900px; max-height: 70vh; overflow: auto; margin: 6px 0 0; padding: 10px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 6px; background: var(--le-surface, #f6f7f9); }
   .schedule-result-details { margin-top: 5px; }
   .schedule-result-details summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; }
+  .workflow-markdown { display: block; max-width: 420px; max-height: 6.2em; overflow: hidden; white-space: normal; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.5; }
+  .workflow-markdown p { margin: 0 0 .45em; }
+  .workflow-markdown p:last-child { margin-bottom: 0; }
+  .workflow-markdown h1, .workflow-markdown h2, .workflow-markdown h3, .workflow-markdown h4, .workflow-markdown h5, .workflow-markdown h6 { margin: .35em 0 .25em; font-size: 1.05em; line-height: 1.3; }
+  .workflow-markdown ul, .workflow-markdown ol { margin: .2em 0 .45em; padding-left: 1.5em; }
+  .workflow-markdown li { margin: .1em 0; }
+  .workflow-markdown pre { margin: .35em 0; padding: 8px 10px; overflow-x: auto; border-radius: 5px; background: var(--le-surface, #f6f7f9); }
+  .workflow-markdown code { padding: 1px 4px; border-radius: 4px; background: var(--le-surface, #f6f7f9); font: 11.5px/1.4 var(--le-mono, ui-monospace, monospace); }
+  .workflow-markdown pre code { padding: 0; background: transparent; }
+  .workflow-markdown a { color: var(--le-accent, #0f766e); }
+  .workflow-markdown-table { max-width: 100%; overflow-x: auto; margin: .35em 0 .6em; }
+  .workflow-markdown table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 12px; }
+  .workflow-markdown th, .workflow-markdown td { padding: 5px 8px; border: 1px solid var(--le-line, #e5e7eb); text-align: left; vertical-align: top; }
+  .workflow-markdown th { background: var(--le-surface, #f6f7f9); font-weight: 650; }
+  .workflow-markdown-full { max-width: 900px; max-height: 70vh; overflow: auto; }
+  .workflow-run-entry .workflow-markdown { max-width: none; }
   .schedule-history { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
   .workflow-section { margin: 10px 0 0; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; overflow: hidden; background: var(--le-surface, #f6f7f9); }
   .workflow-section-title { display: flex; align-items: center; gap: 8px; padding: 9px 12px; color: var(--le-accent, #0f766e); background: var(--le-accent-soft, #e6f4ef); font-size: 13px; font-weight: 650; cursor: pointer; list-style: none; }
@@ -509,7 +525,11 @@ ${consoleShellScript}
         .replace(inlineCodePattern, '<code>$1</code>')
         .replace(boldPattern, '<strong>$1</strong>')
         .replace(italicPattern, '<em>$1</em>')
-        .replace(linkPattern, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        .replace(linkPattern, function (_, label, href) {
+          var lowerHref = href.toLowerCase();
+          var safeHref = lowerHref.indexOf('https://') === 0 || lowerHref.indexOf('http://') === 0 || lowerHref.indexOf('mailto:') === 0;
+          return safeHref ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a>' : label;
+        });
     }
     function flushParagraph() {
       if (paragraph.length) {
@@ -522,6 +542,20 @@ ${consoleShellScript}
         html += '</' + listType + '>';
         listType = null;
       }
+    }
+    function tableCells(line) {
+      var value = line.trim();
+      if (value.charAt(0) === '|') value = value.slice(1);
+      if (value.charAt(value.length - 1) === '|') value = value.slice(0, -1);
+      return value.split('|').map(function (cell) { return cell.trim(); });
+    }
+    function isTableDivider(line) {
+      if (line.indexOf('|') < 0) return false;
+      var cells = tableCells(line);
+      return cells.length > 0 && cells.every(function (cell) {
+        var value = cell.replace(/:/g, '').replace(/-/g, '').trim();
+        return cell.indexOf('-') >= 0 && value === '';
+      });
     }
 
     for (var i = 0; i < lines.length; i++) {
@@ -540,6 +574,22 @@ ${consoleShellScript}
       }
       if (inCode) {
         codeBuffer += line + '\\n';
+        continue;
+      }
+
+      if (line.indexOf('|') >= 0 && i + 1 < lines.length && isTableDivider(lines[i + 1])) {
+        flushParagraph();
+        closeList();
+        var headers = tableCells(line);
+        html += '<div class="workflow-markdown-table"><table><thead><tr>' + headers.map(function (cell) { return '<th>' + inlineFormat(cell) + '</th>'; }).join('') + '</tr></thead><tbody>';
+        i += 2;
+        while (i < lines.length && lines[i].indexOf('|') >= 0 && lines[i].trim() !== '') {
+          var cells = tableCells(lines[i]);
+          html += '<tr>' + headers.map(function (_, index) { return '<td>' + inlineFormat(cells[index] || '') + '</td>'; }).join('') + '</tr>';
+          i++;
+        }
+        html += '</tbody></table></div>';
+        i--;
         continue;
       }
 
@@ -813,11 +863,12 @@ ${consoleShellScript}
         var values = r.params ? Object.keys(r.params).map(function (k) { return '<span><strong>' + escapeHtml(k) + '</strong>: ' + escapeHtml(r.params[k]) + '</span>'; }).join('') : '';
         var source = r.source === 'console' ? 'Manual run' : r.source === 'api' ? 'App / API' : r.source === 'schedule' ? 'Scheduled' + (r.task_name ? ' · ' + r.task_name : '') : 'Webhook';
         var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
+        var formattedOutcome = outcome ? renderMarkdownPreview(outcome) : '';
         return '<li class="workflow-run-entry"><div class="workflow-run-entry-head">' + pill +
           '<span class="workflow-run-time">' + escapeHtml(new Date(r.started_at).toLocaleString()) + '</span>' +
           '<span class="workflow-run-source hint">' + escapeHtml(source) + '</span></div>' +
           (values ? '<div><div class="workflow-run-entry-label">Parameters</div><div class="workflow-run-params">' + values + '</div></div>' : '') +
-          (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result">' + escapeHtml(outcome) + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><pre class="schedule-result-full">' + escapeHtml(outcome) + '</pre></details></div>' : '') + '</li>';
+          (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result workflow-markdown">' + formattedOutcome + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><div class="schedule-result-full workflow-markdown workflow-markdown-full">' + formattedOutcome + '</div></details></div>' : '') + '</li>';
       }).join('');
       return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
@@ -2442,14 +2493,16 @@ ${consoleShellScript}
     if (t.status === 'paused') actions.push(['resume', 'Resume']);
     if (t.status !== 'cancelled' && t.status !== 'done') actions.push(['cancel', 'Cancel']);
     if (t.status === 'cancelled' || t.status === 'done') actions.push(['delete', 'Delete']);
+    var lastOutcome = t.last_status === 'ok' ? (t.last_result || '') : (t.last_error || '');
     var last = t.last_run_at
       ? '<span class="le-pill ' + (t.last_status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(t.last_status) + '</span> ' +
         '<span class="hint">' + escapeHtml(fmtScheduleTime(t.last_run_at)) + '</span>' +
-        '<div class="schedule-result">' + escapeHtml(t.last_status === 'ok' ? (t.last_result || '') : (t.last_error || '')) + '</div>'
+        (lastOutcome ? '<div class="schedule-result workflow-markdown">' + renderMarkdownPreview(lastOutcome) + '</div>' : '')
       : '<span class="hint">not run yet</span>';
     var history = (t.history || []).slice().reverse().map(function (h) {
+      var outcome = h.status === 'ok' ? (h.result || '') : (h.error || '');
       return '<li><span class="le-pill ' + (h.status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(h.status) + '</span> <span class="hint">' + escapeHtml(fmtScheduleTime(h.ran_at)) + '</span>' +
-        '<div class="schedule-result">' + escapeHtml(h.status === 'ok' ? (h.result || '') : (h.error || '')) + '</div></li>';
+        (outcome ? '<div class="schedule-result workflow-markdown">' + renderMarkdownPreview(outcome) + '</div>' : '') + '</li>';
     }).join('');
     return '<tr id="schedule-' + escapeHtml(t.task_id) + '">' +
       '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' +
