@@ -427,7 +427,8 @@ ${consoleShellScript}
         (p.target.reason ? '<p class="hint" style="margin:0">' + esc(p.target.reason) + '</p>' : '') +
         '<div class="wf-instructions" id="wfNewAgentBox"' + (suggested ? ' hidden' : '') + '><label for="wfInstructions"><strong>Its instructions</strong> <span class="hint">read on every run of every workflow it has: who it is, rules it always follows, and anything marked (edit this). The steps are the workflow' + String.fromCharCode(8217) + 's.</span></label>' +
           '<textarea id="wfInstructions">' + esc(p.newAgent.systemPrompt) + '</textarea></div>' +
-        '<p class="hint" style="margin:0" id="wfExistingNote"' + (suggested ? '' : ' hidden') + '>An agent you have keeps its own instructions; only the workflow, its abilities and permissions are added.</p>' +
+        '<div class="wf-instructions" id="wfExistingBox"' + (suggested ? '' : ' hidden') + '><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">The agent keeps its own instructions. These go at the top of this workflow' + String.fromCharCode(8217) + 's instructions, read on every run of it. Edit them, or clear them if the agent already knows.</span></label>' +
+          '<textarea id="wfContext">' + esc(workflowContextFrom(p.newAgent.systemPrompt)) + '</textarea></div>' +
         (state.planned.note ? '<p class="hint" style="margin:0"><strong>Note:</strong> ' + esc(state.planned.note) + '</p>' : '') +
         '<p class="hint" style="margin:0">Added to an existing agent, it keeps every decision that agent already has; any it would change are listed afterwards.</p>' +
       '</div>' +
@@ -445,7 +446,7 @@ ${consoleShellScript}
       targets[t].addEventListener('change', function () {
         var isNew = page.querySelector('input[name="wfTarget"]:checked').value === 'new';
         document.getElementById('wfNewAgentBox').hidden = !isNew;
-        document.getElementById('wfExistingNote').hidden = isNew;
+        document.getElementById('wfExistingBox').hidden = isNew;
       });
     }
     var paramsBox = document.getElementById('wfParams');
@@ -476,11 +477,23 @@ ${consoleShellScript}
       var keyInputs = page.querySelectorAll('[data-mcp-key]');
       for (var k = 0; k < keyInputs.length; k++) if (keyInputs[k].value.trim()) mcpKeys[keyInputs[k].dataset.mcpKey] = keyInputs[k].value.trim();
       document.getElementById('wfStatus').textContent = 'Creating' + ELLIPSIS + (p.mcpServers && p.mcpServers.length ? ' connecting to its apps and installing abilities can take a minute or two.' : ' installing abilities can take a minute.');
-      post('/workflows/create', { plan: p, target: target, description: state.description, mcpKeys: mcpKeys }).then(function (r) {
+      var body = { plan: p, target: target, description: state.description, mcpKeys: mcpKeys };
+      if (target.kind === 'existing') body.workflowContext = document.getElementById('wfContext').value;
+      post('/workflows/create', body).then(function (r) {
         if (!r.ok) { renderPlan(r.body.error || 'Could not create it.'); return; }
         renderDone(r.body);
       }).catch(function (err) { renderPlan(err.message); });
     });
+  }
+
+  // A new agent's instructions, for a workflow added to an existing agent:
+  // its rules and facts, without the opening paragraph that says who the
+  // agent is ("You help ..."), since the existing agent has its own.
+  function workflowContextFrom(systemPrompt) {
+    var NL = String.fromCharCode(10);
+    var parts = String(systemPrompt || '').trim().split(NL + NL);
+    if (parts.length && /^You /.test(parts[0])) parts.shift();
+    return parts.join(NL + NL).trim();
   }
 
   // ---- 3. Done ----

@@ -419,7 +419,24 @@ function withMissingSteps(plan: WorkflowPlan, agent: string, checklist: Template
 /** Creates the workflow: in a new agent (as a template would), or in an
  * existing one. An existing agent keeps every decision it already has: a
  * conflicting rule is left alone and reported, not changed. */
-export async function createWorkflow(input: { plan?: unknown; target?: unknown; description?: unknown; mcpKeys?: unknown }, deps: WorkflowCreateDeps): Promise<CreatedWorkflow> {
+/** Rules and facts carried into a workflow added to an existing agent,
+ * which keeps its own instructions: between the start line and the steps,
+ * so every run of this workflow reads them. */
+export function withWorkflowContext(instructions: string, startMessage: string, context: string): string {
+  const text = context.trim()
+  if (!text) return instructions
+  const start = startMessage.trim()
+  const steps = instructions.trim().startsWith(start) ? instructions.trim().slice(start.length).trim() : instructions.trim()
+  return `${start}\n\nRules and facts for this workflow:\n${text}\n\n${steps}`
+}
+
+/** A checklist note pointing at a new agent's instructions, pointed at the
+ * workflow's own instead, for a workflow added to an existing agent. */
+function noteForExistingAgent(note: string): string {
+  return note.replace(/(at the top of )?its instructions \(Overview tab\)/, "in the workflow's instructions (its Edit, on the Workflows tab)")
+}
+
+export async function createWorkflow(input: { plan?: unknown; target?: unknown; description?: unknown; mcpKeys?: unknown; workflowContext?: unknown }, deps: WorkflowCreateDeps): Promise<CreatedWorkflow> {
   const plan = input.plan as WorkflowPlan | undefined
   if (!plan || typeof plan !== 'object' || !Array.isArray(plan.steps) || !plan.skill || !plan.newAgent) throw new WorkflowError('Plan the workflow first.')
   const target = (input.target ?? plan.target) as { kind?: string; agent?: string }
@@ -430,9 +447,9 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   // One text, as the editor shows it: the start message, then the steps.
   const instructions = plan.skill.body.trim().startsWith(plan.startMessage.trim()) ? plan.skill.body : `${plan.startMessage.trim()}\n\n${plan.skill.body.trim()}`
   const originalRequest = typeof input.description === 'string' ? input.description.trim() : ''
-  const markWorkflow = (agentDir: string) => setWorkflowFields(agentDir, plan.id, {
+  const markWorkflow = (agentDir: string, context = '') => setWorkflowFields(agentDir, plan.id, {
     title: plan.name,
-    instructions,
+    instructions: withWorkflowContext(instructions, plan.startMessage, context),
     parameters,
     ...(originalRequest ? { originalRequest } : {}),
   })
@@ -563,7 +580,7 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
     }
   }
 
-  markWorkflow(deps.agentDir(agent.name))
+  markWorkflow(deps.agentDir(agent.name), typeof input.workflowContext === 'string' ? input.workflowContext.slice(0, 6000) : '')
   const hook = await makePlannedWebhook(plan, agent.name, deps.agentDir(agent.name))
   return {
     agent: agent.name,
@@ -571,7 +588,9 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
     workflow: plan.name,
     abilities: { installed, failed },
     keptDecisions: ruled.kept,
-    checklist: [...withMissingSteps(plan, agent.name, templateChecklist(template, agent.name, deps, failed, appsToConnect)), ...hook.checklist],
+    // Its notes point at the workflow's instructions, where the rules and
+    // facts went, not the agent's own.
+    checklist: [...withMissingSteps(plan, agent.name, templateChecklist({ ...template, setup: { ...template.setup, ...(template.setup.notes ? { notes: template.setup.notes.map(noteForExistingAgent) } : {}) } }, agent.name, deps, failed, appsToConnect)), ...hook.checklist],
     ...(hook.webhook ? { webhook: hook.webhook } : {}),
     ...(hook.webhookError ? { webhookError: hook.webhookError } : {}),
     ...(schedule ? { schedule } : {}),

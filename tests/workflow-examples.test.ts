@@ -138,4 +138,15 @@ describe('workflow examples', () => {
     expect(scratch.steps.some((s) => s.startsWith('env support REFUND_LIMIT'))).toBe(false)
     expect(readWorkflow(join(scratch.root, 'support'), 'refund-approvals')).toMatchObject({ title: 'Refund approvals' })
   })
+
+  it("carries its rules and facts into the workflow's own instructions on an agent you have", async () => {
+    const plan = structuredClone(workflowExample('inbox-to-tasks')!.plan) as WorkflowPlan
+    const context = 'Tasks live in this GitHub repository: acme/ops.\n\nRules:\n- Never promise a fix.'
+    const agent = { name: 'ops', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack' }
+    const created = await createWorkflow({ plan, target: { kind: 'existing', agent: 'ops' }, workflowContext: context }, deps({ agentInfo: async () => [agent] }))
+    const instructions = readWorkflow(join(scratch.root, 'ops'), 'inbox-to-tasks')!.instructions
+    // The start line, then the rules and facts, then the steps.
+    expect(instructions.startsWith(`${plan.startMessage}\n\nRules and facts for this workflow:\n${context}\n\n1. `)).toBe(true)
+    expect(created.checklist.map((c) => c.label)).toContain(`Edit "Who handles what" and the repository in the workflow's instructions (its Edit, on the Workflows tab)`)
+  })
 })
