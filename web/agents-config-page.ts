@@ -106,10 +106,13 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-params[hidden] { display: none; }
   .workflow-editor[hidden] { display: none; }
   .workflow-hooks[hidden] { display: none; }
+  .hook-form-box[hidden] { display: none; }
   .hook-custom[hidden] { display: none; }
   .workflow-hook { border-top: 1px solid var(--le-line, #e5e7eb); padding: 8px 0; }
   .hook-url { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; margin: 6px 0; border-radius: 6px; background: var(--le-surface, #f6f7f9); font-size: 13px; }
   .hook-url input { font-family: var(--le-mono, monospace); font-size: 12.5px; }
+  .hook-steps { margin: 6px 0; padding-left: 20px; display: grid; gap: 8px; font-size: 13px; }
+  .hook-steps .hook-url { margin: 4px 0 0; }
   .workflow-param-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
   .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .workflow-param-row .wp-name { width: 160px; font-family: var(--le-mono, monospace); }
@@ -819,8 +822,9 @@ ${consoleShellScript}
         '<div><button type="button" class="workflow-add-schedule">Add a schedule</button></div>') +
       wfStartSection('webhook-' + w.id, 'Webhook',
         'A private web address another app (Stripe, GitHub, Shopify or your own) calls when something happens. Each call starts a run, with values taken from what the app sends.',
-        '<span' + (w.webhooks ? '' : ' class="hint"') + '>' + (w.webhooks ? (w.webhooks === 1 ? '1 webhook is on.' : w.webhooks + ' webhooks are on.') : 'None yet.') + '</span>' +
-        '<div><button type="button" class="workflow-hooks-btn">' + (w.webhooks ? 'Webhooks' : 'Add a webhook') + '</button></div>') +
+        webhookSummaryHtml(w) +
+        '<div><button type="button" class="workflow-hooks-btn">' + (w.webhooks || w.webhooksWaiting || w.webhooksOff ? 'Webhooks' : 'Add a webhook') + '</button></div>' +
+        '<div class="workflow-hooks" hidden></div>') +
       wfStartSection('run-' + w.id, 'Run now',
         'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
         (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
@@ -877,7 +881,7 @@ ${consoleShellScript}
         (w.originalRequest ? '<details class="workflow-section" open><summary class="workflow-section-title">Original message</summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></div></details>' : '') +
         '<details class="workflow-section" open><summary class="workflow-section-title">Instructions <span class="workflow-section-meta">' + escapeHtml(w.id) + ' skill</span></summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></div></details>' +
         workflowStartsHtml(w, name, params) +
-        '<div class="hint workflow-result" style="margin-top:6px"></div><div class="workflow-hooks" hidden></div>' +
+        '<div class="hint workflow-result" style="margin-top:6px"></div>' +
         (runs ? '<details class="workflow-section workflow-runs"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="workflow-section-title">Recent runs<span class="workflow-section-meta">' + w.recentRuns.length + '</span></summary><div class="workflow-section-content"><ul class="schedule-history">' + runs + '</ul></div></details>'
           : '<p class="hint" style="margin:10px 0 0">No runs yet.</p>') +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
@@ -1086,6 +1090,17 @@ ${consoleShellScript}
     form.title.focus();
   }
 
+  // What a workflow's webhooks are doing: on, waiting for the sender's
+  // signing secret, or off.
+  function webhookSummaryHtml(w) {
+    var parts = [];
+    var n = function (count, one, many) { return count === 1 ? one : count + ' ' + many; };
+    if (w.webhooks) parts.push('<span>' + n(w.webhooks, '1 webhook is on', 'webhooks are on') + '.</span>');
+    if (w.webhooksWaiting) parts.push('<span class="le-pill warn">' + n(w.webhooksWaiting, '1 webhook needs its signing secret', 'webhooks need their signing secrets') + '</span>');
+    if (w.webhooksOff) parts.push('<span class="hint">' + n(w.webhooksOff, '1 webhook is off', 'webhooks are off') + '.</span>');
+    return parts.length ? '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + parts.join(' ') + '</div>' : '<span class="hint">None yet.</span>';
+  }
+
   // ---- A workflow's webhook triggers (core/workflow-triggers.ts): secret
   // URLs an outside service posts its events to, to start a run.
   var HOOK_OUTCOMES = {
@@ -1093,8 +1108,21 @@ ${consoleShellScript}
     busy: ['', 'Already running'], rejected: ['bad', 'Signature check failed'], invalid: ['bad', 'Couldn' + String.fromCharCode(8217) + 't start'], error: ['bad', 'Failed'],
   };
   var HOOK_SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'your app' };
+  var ARROW = String.fromCharCode(8594);
+  // Where each sender takes the URL, and what it calls the secret.
+  function hookSetupSteps(t) {
+    var events = t.filter && t.filter.path === 'type' ? t.filter.values : (t.filter && t.filter.path === 'topic' ? t.filter.values : []);
+    var pick = events.length ? ' and choose ' + (events.length === 1 ? 'the event ' : 'the events ') + events.map(function (e) { return '<code>' + escapeHtml(e) + '</code>'; }).join(', ') : '';
+    switch (t.verify && t.verify.sender) {
+      case 'stripe': return { where: 'In Stripe, open Developers ' + ARROW + ' Webhooks ' + ARROW + ' Add endpoint. Paste the URL' + pick + '.', secret: 'Stripe then shows a signing secret starting with <code>whsec_</code>. Paste it here:' };
+      case 'github': return { where: 'In GitHub, open the repository' + String.fromCharCode(8217) + 's Settings ' + ARROW + ' Webhooks ' + ARROW + ' Add webhook. Paste the URL, set Content type to <code>application/json</code>, and make up a secret' + pick + '.', secret: 'Paste the same secret you gave GitHub:' };
+      case 'shopify': return { where: 'In Shopify, open Settings ' + ARROW + ' Notifications ' + ARROW + ' Webhooks ' + ARROW + ' Create webhook. Paste the URL' + pick + '.', secret: 'Shopify shows the key its webhooks are signed with under the list of webhooks. Paste it here:' };
+      case 'standard': return { where: 'In the sender' + String.fromCharCode(8217) + 's webhook settings, add an endpoint with the URL' + pick + '.', secret: 'It then shows a signing secret (often starting with <code>whsec_</code>). Paste it here:' };
+      default: return { where: 'In your app' + String.fromCharCode(8217) + 's webhook settings, paste the URL' + pick + '.', secret: 'Paste the secret your app signs requests with:' };
+    }
+  }
 
-  function hookRowHtml(t) {
+  function hookRowHtml(t, shownUrl) {
     var last = (t.deliveries || []).slice(0, 3).map(function (d) {
       var o = HOOK_OUTCOMES[d.outcome] || ['', d.outcome];
       return '<li><span class="le-pill ' + o[0] + '">' + escapeHtml(o[1]) + '</span> <span class="hint">' + escapeHtml(new Date(d.at).toLocaleString()) + '</span>' +
@@ -1112,17 +1140,25 @@ ${consoleShellScript}
     // Made by the workflow planner without its secret: it turns on once
     // the sender's signing secret is added.
     var needsSecret = t.verify && !t.verify.secret_set;
+    var setup = needsSecret ? hookSetupSteps(t) : null;
     return '<div class="workflow-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">' +
       '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><strong>' + escapeHtml(t.name) + '</strong>' +
         '<code class="hint">/hooks/workflows/' + escapeHtml(t.token_hint) + '</code>' + (needsSecret ? ' <span class="le-pill warn">Needs its signing secret</span>' : t.enabled ? '' : ' <span class="le-pill">Off</span>') + '</div>' +
       (rules.length ? '<p class="hint" style="margin:2px 0">' + rules.join(' ' + String.fromCharCode(183) + ' ') + '</p>' : '') +
       (needsSecret
-        ? '<div class="workflow-param-row" style="margin:4px 0">' +
-            (t.verify.sender === 'custom' && !t.verify.header ? '<input class="hook-secret-header" placeholder="Signature header, e.g. X-Signature">' : '') +
-            '<input class="hook-secret-input" type="password" autocomplete="off" placeholder="' + escapeHtml(t.verify.sender === 'custom' ? 'The secret your app signs with' : 'The signing secret ' + (HOOK_SENDERS[t.verify.sender] || 'the sender') + ' shows') + '" style="flex:1">' +
-            '<button type="button" class="primary hook-secret-save">Add and turn on</button></div>' +
-          '<p class="hint" style="margin:0">Paste the URL into the sender first. Lost it? New URL makes another.</p>'
-        : '') +
+        // Set up and waiting: the steps that turn it on, in order.
+        ? '<ol class="hook-steps">' +
+            '<li><strong>Copy its URL.</strong> ' + (shownUrl
+              ? hookUrlHtml(shownUrl)
+              : '<span class="hint">It was shown once, when it was made. Lost it? <em>New URL</em> below makes another.</span>') + '</li>' +
+            '<li>' + setup.where + '</li>' +
+            '<li>' + setup.secret +
+              '<div class="workflow-param-row" style="margin:4px 0">' +
+                (t.verify.sender === 'custom' && !t.verify.header ? '<input class="hook-secret-header" placeholder="Signature header, e.g. X-Signature">' : '') +
+                '<input class="hook-secret-input" type="password" autocomplete="off" placeholder="' + escapeHtml(t.verify.sender === 'custom' ? 'The secret your app signs with' : 'The signing secret ' + (HOOK_SENDERS[t.verify.sender] || 'the sender') + ' shows') + '" style="flex:1">' +
+                '<button type="button" class="primary hook-secret-save">Add and turn on</button></div></li>' +
+          '</ol>'
+        : (shownUrl ? hookUrlHtml(shownUrl) : '')) +
       (last ? '<ul class="schedule-history">' + last + '</ul>' : '<p class="hint" style="margin:2px 0">No deliveries yet.</p>') +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">' +
         (needsSecret ? '' : '<button type="button" class="hook-toggle">' + (t.enabled ? 'Turn off' : 'Turn on') + '</button>') +
@@ -1160,7 +1196,7 @@ ${consoleShellScript}
   }
 
   function hookUrlHtml(url) {
-    return '<div class="hook-url"><strong>Copy this URL now</strong> <span class="hint">(it' + String.fromCharCode(8217) + 's shown only once; make a new one if it' + String.fromCharCode(8217) + 's lost)</span>' +
+    return '<div class="hook-url"><span class="hint">Shown only this once; make a new one if it' + String.fromCharCode(8217) + 's lost.</span>' +
       '<input readonly value="' + escapeHtml(url) + '" onclick="this.select()"></div>';
   }
 
@@ -1173,24 +1209,30 @@ ${consoleShellScript}
     box.hidden = false;
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/triggers';
     var hooksById = {};
-    function render(shownUrl) {
+    function render(shownUrl, shownId) {
       box.innerHTML = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
       fetchJsonRetryOnce(base).then(function (r) {
         if (!r.ok) { box.innerHTML = '<p class="error">' + escapeHtml(r.body.error || 'Could not load webhooks') + '</p>'; return; }
         var list = r.body.triggers || [];
         hooksById = {};
         list.forEach(function (t) { hooksById[t.trigger_id] = t; });
+        var setupPending = list.some(function (t) { return t.verify && !t.verify.secret_set; });
         box.innerHTML = '<h4 style="margin:10px 0 4px">Webhooks</h4>' +
           '<p class="hint" style="margin:0 0 6px">A secret URL an outside service (Stripe, GitHub, a form, monitoring) posts its events to; each one starts a run.</p>' +
-          (shownUrl ? hookUrlHtml(shownUrl) : '') +
-          (list.length ? list.map(hookRowHtml).join('') : '') + hookFormHtml(w);
+          (list.length ? list.map(function (t) { return hookRowHtml(t, t.trigger_id === shownId ? shownUrl : null); }).join('') : '') +
+          // Finish a planned webhook's setup before offering a second one.
+          (list.length
+            ? (setupPending
+              ? '<p class="hint" style="margin:8px 0 0">Finish setting up the webhook above before adding another.</p>'
+              : '<div style="margin-top:10px"><button type="button" class="hook-add-another">Add another webhook</button></div>' + '<div class="hook-form-box" hidden>' + hookFormHtml(w) + '</div>')
+            : hookFormHtml(w));
         wire();
       });
     }
     function act(id, path, opts) {
       return fetchJsonRetryOnce(base + '/' + encodeURIComponent(id) + path, opts).then(function (r) {
         if (!r.ok) { alert(r.body.error || 'That didn' + String.fromCharCode(8217) + 't work'); return; }
-        render(r.body.url);
+        render(r.body.url, id);
       });
     }
     function wire() {
@@ -1229,6 +1271,12 @@ ${consoleShellScript}
           });
         })(rows[i]);
       }
+      var addAnother = box.querySelector('.hook-add-another');
+      if (addAnother) addAnother.addEventListener('click', function () {
+        addAnother.parentNode.hidden = true;
+        box.querySelector('.hook-form-box').hidden = false;
+        box.querySelector('.hook-form input[name="name"]').focus();
+      });
       var form = box.querySelector('.hook-form');
       var secretField = form.querySelector('.hook-secret');
       var customField = form.querySelector('.hook-custom');
@@ -1259,7 +1307,7 @@ ${consoleShellScript}
         result.textContent = 'Making it' + String.fromCharCode(8230);
         fetchJsonRetryOnce(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
           if (!r.ok) { result.textContent = r.body.error || 'Could not make it'; return; }
-          render(r.body.url);
+          render(r.body.url, r.body.trigger && r.body.trigger.trigger_id);
         });
       });
     }

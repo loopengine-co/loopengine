@@ -591,6 +591,10 @@ export interface AgentWorkflowView extends Workflow {
   recentRuns: WorkflowRun[]
   /** Its webhook triggers that are on. */
   webhooks: number
+  /** Its webhooks waiting for the sender's signing secret before they turn on. */
+  webhooksWaiting: number
+  /** Its webhooks turned off. */
+  webhooksOff: number
 }
 
 const RECENT_RUNS = 5
@@ -670,8 +674,11 @@ export async function listAgentWorkflows(agentName: string, agentDir: string): P
   return workflows.map((w) => {
     const schedules = workflowTasks(w.id, tasks).map(scheduleView)
     const recentRuns = runs.filter((r) => r.workflow_id === w.id).slice(0, RECENT_RUNS)
-    const webhooks = triggers.filter((t) => t.workflow_id === w.id && t.enabled).length
-    return { ...w, schedules, recentRuns, webhooks, ...(schedules[0] ? { schedule: schedules[0] } : {}) }
+    const own = triggers.filter((t) => t.workflow_id === w.id)
+    const webhooks = own.filter((t) => t.enabled).length
+    // Made by the planner, waiting for the sender's signing secret.
+    const webhooksWaiting = own.filter((t) => !t.enabled && t.verify && !t.verify.secret).length
+    return { ...w, schedules, recentRuns, webhooks, webhooksWaiting, webhooksOff: own.length - webhooks - webhooksWaiting, ...(schedules[0] ? { schedule: schedules[0] } : {}) }
   })
 }
 
