@@ -99,7 +99,7 @@ import type { AgentConfig } from '../../agent-config.js'
 export const config: AgentConfig = {
   name: 'weather-agent',
   systemPrompt: 'You answer questions about the weather.',
-  model: { provider: 'anthropic', model: 'claude-sonnet-5' }, // reads ANTHROPIC_API_KEY
+  model: { provider: 'anthropic', model: 'claude-sonnet-5-5' }, // reads ANTHROPIC_API_KEY
 }
 ```
 
@@ -396,7 +396,7 @@ you, using the matching API key from the environment:
 
 | `provider` | env var | `model` required? |
 | --- | --- | --- |
-| `'anthropic'` | `ANTHROPIC_API_KEY` | no — defaults to `claude-sonnet-5` |
+| `'anthropic'` | `ANTHROPIC_API_KEY` | no — defaults to `claude-sonnet-5-5` |
 | `'openai'` | `OPENAI_API_KEY` | yes |
 | `'deepseek'` | `DEEPSEEK_API_KEY` | yes |
 | `'kimi'` | `MOONSHOT_API_KEY` | yes |

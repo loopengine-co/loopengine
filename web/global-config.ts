@@ -9,6 +9,7 @@
 // AgentConfig.
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { parse as parseYaml } from 'yaml'
@@ -184,18 +185,6 @@ const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<ModelProviderInfo['provider'],
 // OpenAI and Gemini also list models a chat agent can't use.
 const NON_CHAT_MODEL = /embed|tts|whisper|dall-e|davinci|babbage|moderation|transcribe|image|audio|realtime|search|aqa|imagen|veo|sora/i
 
-// Offered when the provider's own list isn't available (no key saved
-// yet, or the provider refused) and models.yaml doesn't list it. Only
-// names checked against the provider's docs (2026-10-31); other
-// providers need a key to list theirs. Meta's "-contributor" variants are
-// left out, since choosing one lets Meta train on the requests; type one
-// under "Other" to use it.
-const KNOWN_MODELS: Partial<Record<ModelProviderInfo['provider'], string[]>> = {
-  anthropic: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-sonnet-5'],
-  deepseek: ['deepseek-v4-pro', 'deepseek-flash'],
-  meta: ['muse-spark-1.3', 'muse-wonder-1.0', 'muse-spark-1.2', 'muse-spark-1.1'],
-}
-
 const MODEL_LIST_TTL_MS = 10 * 60 * 1000
 const modelListCache = new Map<string, { key: string; at: number; models: string[] }>()
 
@@ -207,9 +196,19 @@ export function modelsFilePath(): string {
   return resolve(process.cwd(), process.env[MODELS_FILE_ENV]?.trim() || 'models.yaml')
 }
 
+/** The models.yaml LoopEngine ships: the models for agents, per
+ * provider (the package root's, next to dist/ once built). */
+let defaultModelsFile: string | null = fileURLToPath(new URL('../models.yaml', import.meta.url))
+
+/** Points at another shipped list, or none (null): for tests. */
+export function setDefaultModelsFile(path: string | null): void {
+  defaultModelsFile = path
+}
+
 /**
- * The hand-edited model lists in models.yaml: provider name to the models
- * its dropdown offers, in order.
+ * The model lists the dropdowns offer: provider name to its models, in
+ * order. The workspace's own models.yaml replaces the shipped one's list
+ * for each provider it names.
  *
  *   anthropic:
  *     - claude-opus-5-5
@@ -221,9 +220,15 @@ export function modelsFilePath(): string {
  * provider's models while the rest still load.
  */
 export function readModelsFile(): { models: Partial<Record<ModelProviderInfo['provider'], string[]>>; error?: string } {
+  const shipped = defaultModelsFile ? parseModelsFile(defaultModelsFile, 'models.yaml (shipped)') : { models: {} }
   const path = modelsFilePath()
+  const own = path === defaultModelsFile ? { models: {} } : parseModelsFile(path, process.env[MODELS_FILE_ENV]?.trim() || 'models.yaml')
+  const error = [shipped.error, own.error].filter(Boolean).join(' ')
+  return { models: { ...shipped.models, ...own.models }, ...(error ? { error } : {}) }
+}
+
+function parseModelsFile(path: string, name: string): { models: Partial<Record<ModelProviderInfo['provider'], string[]>>; error?: string } {
   if (!existsSync(path)) return { models: {} }
-  const name = process.env[MODELS_FILE_ENV]?.trim() || 'models.yaml'
   let data: unknown
   try {
     data = parseYaml(readFileSync(path, 'utf8'))
@@ -250,8 +255,9 @@ export function readModelsFile(): { models: Partial<Record<ModelProviderInfo['pr
 
 /**
  * The models a provider offers, for the model dropdown in the New agent
- * and Model forms. A provider listed in models.yaml (readModelsFile)
- * offers exactly that list, with no key needed. Otherwise this asks the
+ * and Model forms. A provider listed in models.yaml, the workspace's or
+ * the shipped one (readModelsFile), offers exactly that list, with no key
+ * needed. Otherwise this asks the
  * provider itself with the saved key (cached for ten minutes per key),
  * so new models show up without a release. Never throws for a provider
  * problem: the view carries an `error` instead, and the form lets the
@@ -263,7 +269,7 @@ export async function listProviderModels(provider: string, options: { fetch?: ty
 
   const file = readModelsFile()
   const fromFile = file.models[provider as ModelProviderInfo['provider']]
-  if (fromFile) return { provider, models: fromFile }
+  if (fromFile) return { provider, models: fromFile, ...(file.error ? { error: file.error } : {}) }
   const view = await listProviderModelsLive(provider, envVar, options)
   return file.error ? { ...view, error: view.error ? `${file.error} ${view.error}` : file.error } : view
 }
@@ -271,14 +277,7 @@ export async function listProviderModels(provider: string, options: { fetch?: ty
 async function listProviderModelsLive(provider: string, envVar: string, options: { fetch?: typeof fetch }): Promise<ProviderModelsView> {
   const key = process.env[envVar]
   if (!key) {
-    const known = KNOWN_MODELS[provider as ModelProviderInfo['provider']] ?? []
-    return {
-      provider,
-      models: known,
-      error: known.length
-        ? `Showing common ${provider} models. Save ${envVar} on the Models page to list all of them.`
-        : `No ${envVar} saved. Save it on the Models page to list ${provider}'s models, or choose Other.`,
-    }
+    return { provider, models: [], error: `No ${envVar} saved. Save it on the Models page to list ${provider}'s models, or choose Other.` }
   }
 
   const cached = modelListCache.get(provider)
@@ -308,8 +307,6 @@ async function listProviderModelsLive(provider: string, envVar: string, options:
     modelListCache.set(provider, { key, at: Date.now(), models })
     return { provider, models }
   } catch (err) {
-    const known = KNOWN_MODELS[provider as ModelProviderInfo['provider']]
-    if (known) return { provider, models: known }
     return { provider, models: [], error: `Couldn't list ${provider}'s models: ${err instanceof Error ? err.message : String(err)}` }
   }
 }

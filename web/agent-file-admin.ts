@@ -213,9 +213,9 @@ export function editAgentFile(agentName: string, fields: AgentEditableFields): A
       throw new AgentEditNotSupportedError('model in this file is not a plain inline object — it may use a custom createModelCall; edit it directly.')
     }
     const provider = fields.model.provider
-    const modelName = fields.model.model?.trim() || (provider === 'anthropic' ? 'claude-sonnet-5' : '')
+    const modelName = fields.model.model?.trim() || (provider === 'anthropic' ? 'claude-sonnet-5-5' : '')
     if (provider !== 'anthropic' && !modelName) {
-      throw new AgentModelError(`A model name is required for provider '${provider}' — only anthropic has a default (claude-sonnet-5).`)
+      throw new AgentModelError(`A model name is required for provider '${provider}' — only anthropic has a default (claude-sonnet-5-5).`)
     }
     const maxTokens = fields.model.maxTokens
     if (maxTokens !== undefined && (!Number.isInteger(maxTokens) || maxTokens < 1)) {

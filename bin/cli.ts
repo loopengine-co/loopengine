@@ -76,17 +76,16 @@ async function configImportSpecifier(baseDir: string): Promise<string> {
 }
 
 /** Generates agents/<name>/index.ts's real content. `options` is
- * entirely optional and defaults to exactly what this template always
- * wrote before it existed ('You are ...', anthropic/claude-sonnet-5) —
- * `loopengine add-agent <name>` (which never passes it) produces
- * byte-identical output to before this existed. openai/deepseek have no
+ * entirely optional and defaults to 'You are ...' on
+ * anthropic/claude-sonnet-5-5, which is what `loopengine add-agent
+ * <name>` (which never passes it) writes. openai/deepseek have no
  * default model (only anthropic's is optional — see AgentModelConfig's
  * own doc comment), so scaffoldAgent validates a model name was given
  * for those rather than this function silently writing a wrong one. */
 export function agentIndexTemplate(name: string, options: AgentTemplateOptions = {}, importSpecifier = 'loopengine'): string {
   const systemPrompt = options.systemPrompt?.trim() || 'You are ...'
   const provider = options.model?.provider ?? 'anthropic'
-  const modelName = options.model?.model?.trim() || (provider === 'anthropic' ? 'claude-sonnet-5' : '')
+  const modelName = options.model?.model?.trim() || (provider === 'anthropic' ? 'claude-sonnet-5-5' : '')
   return `import type { AgentConfig } from '${importSpecifier}'
 
 export const config: AgentConfig = {
@@ -110,7 +109,7 @@ export const config: AgentConfig = {
   name: '${name}',
   systemPrompt: 'You are ...',
   toolDescription: 'Call this when ...',
-  model: { provider: 'anthropic', model: 'claude-sonnet-5' }, // reads ANTHROPIC_API_KEY
+  model: { provider: 'anthropic', model: 'claude-sonnet-5-5' }, // reads ANTHROPIC_API_KEY
 }
 `
 }
@@ -127,7 +126,7 @@ export async function scaffoldAgent(baseDir: string, name: string, options: Agen
   }
   const provider = options.model?.provider ?? 'anthropic'
   if (provider !== 'anthropic' && !options.model?.model?.trim()) {
-    throw new AgentModelError(`A model name is required for provider '${provider}' — only anthropic has a default (claude-sonnet-5).`)
+    throw new AgentModelError(`A model name is required for provider '${provider}' — only anthropic has a default (claude-sonnet-5-5).`)
   }
 
   const dir = path.join(baseDir, 'agents', name)

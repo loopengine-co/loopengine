@@ -80,8 +80,8 @@ describe('editAgentFile', () => {
 
     const result = editAgentFile(AGENT_NAME, { model: { provider: 'anthropic', reasoningEffort: 'medium' } })
 
-    expect(result).toEqual({ model: { provider: 'anthropic', model: 'claude-sonnet-5', maxTokens: undefined, reasoningEffort: 'medium' } })
-    expect(readFileSync(INDEX_PATH, 'utf8')).toContain("model: { provider: 'anthropic', model: 'claude-sonnet-5', reasoningEffort: 'medium' }")
+    expect(result).toEqual({ model: { provider: 'anthropic', model: 'claude-sonnet-5-5', maxTokens: undefined, reasoningEffort: 'medium' } })
+    expect(readFileSync(INDEX_PATH, 'utf8')).toContain("model: { provider: 'anthropic', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }")
   })
 
   it('rejects reasoningEffort for a provider without it, leaving the file untouched', () => {
@@ -107,12 +107,12 @@ describe('editAgentFile', () => {
     expect(contents).toContain("model: { provider: 'deepseek', model: 'deepseek-chat' }, // custom note, do not touch")
   })
 
-  it('anthropic with no model name defaults to claude-sonnet-5', () => {
+  it('anthropic with no model name defaults to claude-sonnet-5-5', () => {
     writeFixture(TEMPLATE)
 
     const result = editAgentFile(AGENT_NAME, { model: { provider: 'anthropic' } })
 
-    expect(result).toEqual({ model: { provider: 'anthropic', model: 'claude-sonnet-5' } })
+    expect(result).toEqual({ model: { provider: 'anthropic', model: 'claude-sonnet-5-5' } })
   })
 
   it('rejects openai/deepseek with no model name, leaving the file untouched', () => {

@@ -229,7 +229,7 @@ export type HttpNotifierConfig =
  * provider this doesn't list). `model` is required for `openai`/
  * `deepseek`/`kimi`/`glm`/`gemini`/`xai`/`meta` (no safe hardcoded default — a
  * flagship model name changes too often to bake one in) but optional for
- * `anthropic` (defaults to `'claude-sonnet-5'`), mirroring each factory's
+ * `anthropic` (defaults to `'claude-sonnet-5-5'`), mirroring each factory's
  * own options exactly. */
 export type AgentModelConfig =
   | {

@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MODELS_FILE_ENV, ModelKeyError, listProviderModels, readModelsFile } from '#web/global-config.js'
+import { fileURLToPath } from 'node:url'
+import { MODELS_FILE_ENV, ModelKeyError, listProviderModels, readModelsFile, setDefaultModelsFile } from '#web/global-config.js'
 
 const ENV_VARS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'DEEPSEEK_API_KEY', 'XAI_API_KEY', 'META_API_KEY']
 let keyCount = 0
@@ -23,14 +24,18 @@ function fakeFetch(body: unknown, seen: Request[] = [], status = 200): typeof fe
 
 let dir: string
 
-// Every test reads its own models file (none, unless it writes one), not
-// the repo's models.yaml.
+const SHIPPED = fileURLToPath(new URL('../models.yaml', import.meta.url))
+
+// Every test reads its own models file (none, unless it writes one), and
+// no shipped list unless it asks for one.
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'le-models-'))
   process.env[MODELS_FILE_ENV] = join(dir, 'models.yaml')
+  setDefaultModelsFile(null)
 })
 
 afterEach(() => {
+  setDefaultModelsFile(SHIPPED)
   for (const envVar of ENV_VARS) delete process.env[envVar]
   delete process.env[MODELS_FILE_ENV]
   rmSync(dir, { recursive: true, force: true })
@@ -90,9 +95,32 @@ describe('models.yaml', () => {
     }
 
     writeModelsFile('acme:\n  - x\n')
+    setDefaultModelsFile(SHIPPED)
     const view = await listProviderModels('anthropic')
-    expect(view.models).toContain('claude-sonnet-5')
+    expect(view.models).toContain('claude-sonnet-5-5')
     expect(view.error).toMatch(/unknown provider 'acme'/)
+  })
+})
+
+describe('the shipped models.yaml', () => {
+  beforeEach(() => setDefaultModelsFile(SHIPPED))
+
+  it('offers the models for agents for every provider, with no key or API call', async () => {
+    const seen: Request[] = []
+    for (const provider of ['openai', 'anthropic', 'gemini', 'meta', 'xai', 'deepseek', 'kimi', 'glm']) {
+      const view = await listProviderModels(provider, { fetch: fakeFetch({}, seen) })
+      expect(view.models.length, provider).toBeGreaterThan(0)
+      expect(view.error, provider).toBeUndefined()
+    }
+    expect(seen).toHaveLength(0)
+    // Agents' models, not every model the provider has.
+    expect((await listProviderModels('openai')).models).not.toContain('gpt-5.4-mini')
+  })
+
+  it("gives way to the workspace's own list for each provider it names", async () => {
+    writeModelsFile('openai:\n  - gpt-5.5\n')
+    expect((await listProviderModels('openai')).models).toEqual(['gpt-5.5'])
+    expect((await listProviderModels('anthropic')).models).toContain('claude-opus-5-5')
   })
 })
 
@@ -162,14 +190,15 @@ describe('listProviderModels', () => {
     expect(seen[0].url).toBe('https://api.x.ai/v1/models')
   })
 
-  it("offers Meta's known Muse models when the Model API refuses to list them", async () => {
+  it("says why when Meta's Model API refuses to list its models", async () => {
     setKey('META_API_KEY')
     const seen: Request[] = []
 
     const view = await listProviderModels('meta', { fetch: fakeFetch({ error: { message: 'Not found' } }, seen, 404) })
 
     expect(seen[0].url).toBe('https://api.meta.ai/v1/models')
-    expect(view).toEqual({ provider: 'meta', models: ['muse-spark-1.3', 'muse-wonder-1.0', 'muse-spark-1.2', 'muse-spark-1.1'] })
+    expect(view.models).toEqual([])
+    expect(view.error).toMatch(/Couldn't list meta's models/)
   })
 
   it('caches the list per key', async () => {
@@ -194,16 +223,6 @@ describe('listProviderModels', () => {
 
     expect(view.models).toEqual([])
     expect(view.error).toContain('OPENAI_API_KEY')
-    expect(seen).toHaveLength(0)
-  })
-
-  it('offers the common models without a key, saying the key lists them all', async () => {
-    const seen: Request[] = []
-
-    const view = await listProviderModels('anthropic', { fetch: fakeFetch({}, seen) })
-
-    expect(view.models).toContain('claude-sonnet-5')
-    expect(view.error).toContain('ANTHROPIC_API_KEY')
     expect(seen).toHaveLength(0)
   })
 

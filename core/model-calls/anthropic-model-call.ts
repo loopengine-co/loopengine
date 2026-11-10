@@ -85,7 +85,7 @@ function toMessageParam(message: Message): Anthropic.Messages.MessageParam {
 
 export function createAnthropicModelCall(options: AnthropicModelCallOptions = {}): ModelCall {
   const client = options.client ?? new Anthropic({ apiKey: options.apiKey })
-  const model = options.model ?? 'claude-sonnet-5'
+  const model = options.model ?? 'claude-sonnet-5-5'
   const maxTokens = options.maxTokens ?? (options.reasoningEffort ? 16000 : 4096)
   const effort = options.reasoningEffort === 'minimal' ? 'low' : options.reasoningEffort
   const reasoning: Pick<Anthropic.Messages.MessageCreateParamsNonStreaming, 'thinking' | 'output_config'> =
