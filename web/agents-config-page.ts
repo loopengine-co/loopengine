@@ -106,8 +106,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-params[hidden] { display: none; }
   .workflow-editor[hidden] { display: none; }
   .workflow-hooks[hidden] { display: none; }
-  .hook-form-box[hidden] { display: none; }
   .hook-custom[hidden] { display: none; }
+  dialog.hook-dialog { width: min(640px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgba(0,0,0,.28); }
+  dialog.hook-dialog::backdrop { background: rgba(15, 23, 42, .48); }
+  .hook-dialog-inner { padding: 20px; }
+  .hook-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .hook-dialog-head h3 { margin: 0; font-size: 18px; }
+  .hook-dialog-close { width: 32px; height: 32px; padding: 0; font-size: 20px; line-height: 1; }
+  form.add-source.hook-form { max-width: none; }
+  .hook-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
   .workflow-hook { border-top: 1px solid var(--le-line, #e5e7eb); padding: 8px 0; }
   .hook-url { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; margin: 6px 0; border-radius: 6px; background: var(--le-surface, #f6f7f9); font-size: 13px; }
   .hook-url input { font-family: var(--le-mono, monospace); font-size: 12.5px; }
@@ -1168,8 +1175,7 @@ ${consoleShellScript}
 
   function hookFormHtml(w) {
     var params = Object.keys(w.parameters || {});
-    return '<form class="add-source hook-form" style="margin-top:10px">' +
-      '<h4 style="margin:0">Add a webhook</h4>' +
+    return '<form class="add-source hook-form">' +
       '<label>Name<input name="name" maxlength="80" placeholder="Stripe disputes"></label>' +
       '<label>Check the sender' + String.fromCharCode(8217) + 's signature <span class="hint">(the URL itself is secret; this also proves who sent it)</span>' +
         '<select name="sender"><option value="">No, the URL is enough</option><option value="stripe">Stripe</option><option value="github">GitHub</option><option value="shopify">Shopify</option>' +
@@ -1191,8 +1197,61 @@ ${consoleShellScript}
         : '<p class="hint" style="margin:0">This workflow takes no parameters, so the payload isn' + String.fromCharCode(8217) + 't passed on. Add one in Edit to use it.</p>') +
       '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
       '<label>Post each run' + String.fromCharCode(8217) + 's result to <span class="hint">(optional, an https URL)</span><input name="callback_url" placeholder="https://example.com/hooks/loopengine"></label>' +
-      '<div style="display:flex;gap:8px"><button type="submit" class="primary">Make the URL</button></div>' +
+      '<div class="hook-dialog-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">Make the URL</button></div>' +
       '<div class="hint hook-form-result"></div></form>';
+  }
+
+  function openHookFormDialog(w, base, onCreated) {
+    var dialog = document.createElement('dialog');
+    dialog.className = 'hook-dialog';
+    dialog.innerHTML = '<div class="hook-dialog-inner"><div class="hook-dialog-head"><h3>Add a webhook</h3><button type="button" class="hook-dialog-close" aria-label="Close">&times;</button></div>' + hookFormHtml(w) + '</div>';
+    document.body.appendChild(dialog);
+    dialog.addEventListener('close', function () { dialog.remove(); });
+    dialog.addEventListener('click', function (ev) { if (ev.target === dialog) dialog.close(); });
+    dialog.querySelector('.hook-dialog-close').addEventListener('click', function () { dialog.close(); });
+    dialog.querySelector('.hook-dialog-cancel').addEventListener('click', function () { dialog.close(); });
+
+    var form = dialog.querySelector('.hook-form');
+    var secretField = form.querySelector('.hook-secret');
+    var customField = form.querySelector('.hook-custom');
+    form.sender.addEventListener('change', function () {
+      secretField.hidden = !form.sender.value;
+      customField.hidden = form.sender.value !== 'custom';
+    });
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var result = form.querySelector('.hook-form-result');
+      var body = { name: form.name.value };
+      if (form.sender.value) body.verify = { sender: form.sender.value, secret: form.secret.value };
+      if (form.sender.value === 'custom') {
+        body.verify.header = form.sig_header.value.trim();
+        body.verify.algorithm = form.sig_algorithm.value;
+        body.verify.encoding = form.sig_encoding.value;
+        if (form.sig_prefix.value.trim()) body.verify.prefix = form.sig_prefix.value.trim();
+      }
+      var values = form.filter_values.value.split(',').map(function (v) { return v.trim(); }).filter(Boolean);
+      if (form.filter_path.value.trim() || values.length) body.filter = { path: form.filter_path.value.trim(), values: values };
+      var mapping = {};
+      var inputs = form.querySelectorAll('input[name^="map:"]');
+      for (var j = 0; j < inputs.length; j++) if (inputs[j].value.trim()) mapping[inputs[j].name.slice(4)] = inputs[j].value.trim();
+      if (Object.keys(mapping).length) body.mapping = mapping;
+      if (form.payload_param && form.payload_param.value) body.payload_param = form.payload_param.value;
+      if (form.notify.checked) body.notify = true;
+      if (form.callback_url.value.trim()) body.callback_url = form.callback_url.value.trim();
+      result.textContent = 'Making it' + String.fromCharCode(8230);
+      var submit = form.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      fetchJsonRetryOnce(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+        if (!r.ok) { result.textContent = r.body.error || 'Could not make it'; submit.disabled = false; return; }
+        dialog.close();
+        onCreated(r.body.url, r.body.trigger && r.body.trigger.trigger_id);
+      }).catch(function (err) {
+        result.textContent = err && err.message ? err.message : 'Could not make it';
+        submit.disabled = false;
+      });
+    });
+    dialog.showModal();
+    form.name.focus();
   }
 
   function hookUrlHtml(url) {
@@ -1224,8 +1283,8 @@ ${consoleShellScript}
           (list.length
             ? (setupPending
               ? '<p class="hint" style="margin:8px 0 0">Finish setting up the webhook above before adding another.</p>'
-              : '<div style="margin-top:10px"><button type="button" class="hook-add-another">Add another webhook</button></div>' + '<div class="hook-form-box" hidden>' + hookFormHtml(w) + '</div>')
-            : hookFormHtml(w));
+              : '<div style="margin-top:10px"><button type="button" class="hook-add-another">Add another webhook</button></div>')
+            : '<div style="margin-top:10px"><button type="button" class="hook-add-first">Add a webhook</button></div>');
         wire();
       });
     }
@@ -1271,44 +1330,9 @@ ${consoleShellScript}
           });
         })(rows[i]);
       }
-      var addAnother = box.querySelector('.hook-add-another');
-      if (addAnother) addAnother.addEventListener('click', function () {
-        addAnother.parentNode.hidden = true;
-        box.querySelector('.hook-form-box').hidden = false;
-        box.querySelector('.hook-form input[name="name"]').focus();
-      });
-      var form = box.querySelector('.hook-form');
-      var secretField = form.querySelector('.hook-secret');
-      var customField = form.querySelector('.hook-custom');
-      form.sender.addEventListener('change', function () {
-        secretField.hidden = !form.sender.value;
-        customField.hidden = form.sender.value !== 'custom';
-      });
-      form.addEventListener('submit', function (ev) {
-        ev.preventDefault();
-        var result = form.querySelector('.hook-form-result');
-        var body = { name: form.name.value };
-        if (form.sender.value) body.verify = { sender: form.sender.value, secret: form.secret.value };
-        if (form.sender.value === 'custom') {
-          body.verify.header = form.sig_header.value.trim();
-          body.verify.algorithm = form.sig_algorithm.value;
-          body.verify.encoding = form.sig_encoding.value;
-          if (form.sig_prefix.value.trim()) body.verify.prefix = form.sig_prefix.value.trim();
-        }
-        var values = form.filter_values.value.split(',').map(function (v) { return v.trim(); }).filter(Boolean);
-        if (form.filter_path.value.trim() || values.length) body.filter = { path: form.filter_path.value.trim(), values: values };
-        var mapping = {};
-        var inputs = form.querySelectorAll('input[name^="map:"]');
-        for (var j = 0; j < inputs.length; j++) if (inputs[j].value.trim()) mapping[inputs[j].name.slice(4)] = inputs[j].value.trim();
-        if (Object.keys(mapping).length) body.mapping = mapping;
-        if (form.payload_param && form.payload_param.value) body.payload_param = form.payload_param.value;
-        if (form.notify.checked) body.notify = true;
-        if (form.callback_url.value.trim()) body.callback_url = form.callback_url.value.trim();
-        result.textContent = 'Making it' + String.fromCharCode(8230);
-        fetchJsonRetryOnce(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
-          if (!r.ok) { result.textContent = r.body.error || 'Could not make it'; return; }
-          render(r.body.url, r.body.trigger && r.body.trigger.trigger_id);
-        });
+      var addButton = box.querySelector('.hook-add-another, .hook-add-first');
+      if (addButton) addButton.addEventListener('click', function () {
+        openHookFormDialog(w, base, function (url, id) { render(url, id); });
       });
     }
     render(null);
