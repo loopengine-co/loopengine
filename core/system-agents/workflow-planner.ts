@@ -172,7 +172,7 @@ How to plan:
    - the agent's own work (writing, summarising, choosing): kind "other".
    - nothing found can do it: set "missing" to what's needed, and add it to gaps.
 3. Rules: every tool the workflow uses gets one. Reading and searching: allow. Anything a person should see first (sending, publishing, paying, creating something others see): ask. Never set deny unless asked.
-4. Skill: the steps in order, as numbered instructions. Each step says what to get done, naming the tool to use. It doesn't say how to call it: no argument values, query strings or field names unless the step goes wrong without them (the filter that picks the right items, the field that keeps a reply in its thread). Leave judgment to the agent: what to look up, how to word things, how to handle an ordinary odd case. Spell out only the hard edges: when to stop and ask, what never to do, and what to do when something is missing or fails. Write it so the agent keeps going after each answer or decision.
+4. Skill: the steps in order, as numbered instructions. Each step says what to get done, naming the tool to use. It doesn't say how to call it: no argument values, query strings or field names unless the step goes wrong without them (the filter that picks the right items, the field that keeps a reply in its thread). Leave judgment to the agent: what to look up, how to word things, how to handle an ordinary odd case. Spell out only the hard edges: when to stop and ask, what never to do, and what to do when something is missing or fails. Parameters are not argument values: write $name wherever its value is used. Write it so the agent keeps going after each answer or decision.
 5. Trigger: how a run starts. startMessage is what the agent receives when it starts.
    - schedule: a time or interval ("every Monday at 9" is every "7d", at "09:00", weekday 1).
    - webhook: when something happens in another service that can call a URL ("when a Stripe dispute comes in", "when a GitHub issue is opened", "when a Shopify order is paid", "when our app sends a new signup"). Fill in "webhook" (below). Prefer it over polling on a schedule whenever the service sends webhooks.
@@ -423,9 +423,13 @@ export function planWebhook(raw: unknown, parameters: Record<string, WorkflowPar
   }
 }
 
+/** Parameters are the only way an event's details reach a run. */
+export const WEBHOOK_WITHOUT_PARAMETERS = "This workflow takes no parameters, so a webhook call can't tell a run which event it's about (which dispute, order or issue). Add a parameter for it, use it in the instructions, and map it from the payload on the workflow's Webhooks."
+
 /** What the person should know about a planned webhook: required
  * parameters nothing in the payload fills. */
 export function webhookNotes(webhook: PlannedWebhook, parameters: Record<string, WorkflowParameter>): string[] {
+  if (!Object.keys(parameters).length) return [WEBHOOK_WITHOUT_PARAMETERS]
   const unfilled = Object.entries(parameters).filter(([name, p]) => p.required && !webhook.mapping?.[name]).map(([name]) => name)
   return unfilled.length ? [`Nothing in the webhook's payload fills ${unfilled.join(', ')}, so those runs would fail; map ${unfilled.length > 1 ? 'them' : 'it'} on the workflow's Webhooks after it's created.`] : []
 }
@@ -474,6 +478,7 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
   const messages: Message[] = [{ role: 'user', content: `Plan this workflow:\n\n${description}` }]
   let nudges = 0
   let retries = 0
+  let sentBackWebhook = false
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     let response
     try {
@@ -534,6 +539,15 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
             break
           case 'save_plan':
             plan = validateWorkflowPlan(input)
+            // Sent back once: a webhook with no parameters starts runs
+            // that don't know which event they're about. Saved as it is
+            // the second time, with a note saying so.
+            if (plan?.webhook && !Object.keys(plan.parameters).length && !sentBackWebhook) {
+              sentBackWebhook = true
+              plan = undefined
+              output = 'not saved: the webhook fills no parameters, so a run would not know which event it is about. Declare a parameter for what each event is about (e.g. dispute_id), write $name in startMessage and the skill where it is used, map it in webhook.mapping, and call save_plan again.'
+              break
+            }
             output = plan ? 'saved' : 'that plan needs a name, summary, at least one step, a skill body and newAgent.systemPrompt; fix and call again'
             break
           default:

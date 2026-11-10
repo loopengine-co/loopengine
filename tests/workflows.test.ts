@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
-import { planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
+import { WEBHOOK_WITHOUT_PARAMETERS, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
 import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
 import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
@@ -470,6 +470,32 @@ describe('the planner and webhooks', () => {
   it('says when nothing in the payload fills a required parameter', () => {
     const plan = validateWorkflowPlan({ ...base, trigger: { kind: 'webhook', description: 'x' }, webhook: { sender: 'github', name: 'Issues' } })!
     expect(plan.gaps.join(' ')).toContain("Nothing in the webhook's payload fills dispute_id")
+  })
+
+  it('warns when a webhook fills no parameters: a run would not know which event it is about', () => {
+    const plan = validateWorkflowPlan({ ...base, parameters: {}, skill: { description: 'd', body: 'Handle the new dispute.' }, startMessage: 'A dispute came in.', trigger: { kind: 'webhook', description: 'x' }, webhook: { sender: 'stripe', name: 'Disputes' } })!
+    expect(plan.gaps).toContain(WEBHOOK_WITHOUT_PARAMETERS)
+  })
+
+  it('sends a webhook plan with no parameters back to the planner once, then saves what it sends', async () => {
+    const bare = { ...base, parameters: {}, skill: { description: 'd', body: 'Handle the new dispute.' }, startMessage: 'A dispute came in.', trigger: { kind: 'webhook', description: 'x' }, webhook: { sender: 'stripe', name: 'Disputes' } }
+    const fixed = { ...base, trigger: { kind: 'webhook', description: 'x' }, webhook: { sender: 'stripe', name: 'Disputes', mapping: { dispute_id: 'data.object.id' } } }
+    const replies: string[] = []
+    const model = (saves: unknown[]): ModelCall => {
+      let turn = 0
+      return (async (messages: { content: unknown }[]) => {
+        const last = messages[messages.length - 1].content
+        if (Array.isArray(last)) for (const b of last as { content?: string }[]) if (b.content) replies.push(b.content)
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: `s${turn}`, name: 'save_plan', input: saves[Math.min(turn++, saves.length - 1)] }] }
+      }) as unknown as ModelCall
+    }
+    const result = await planWorkflowWithModel(model([bare, fixed]), 'when a dispute comes in, draft evidence', tools([], []))
+    expect(replies[0]).toMatch(/^not saved: the webhook fills no parameters/)
+    expect(result.plan?.webhook?.mapping).toEqual({ dispute_id: 'data.object.id' })
+
+    replies.length = 0
+    const stubborn = await planWorkflowWithModel(model([bare, bare]), 'when a dispute comes in, draft evidence', tools([], []))
+    expect(stubborn.plan?.gaps).toContain(WEBHOOK_WITHOUT_PARAMETERS)
   })
 
   it('treats a described webhook as the start, and a webhook start with none as started by hand', () => {
