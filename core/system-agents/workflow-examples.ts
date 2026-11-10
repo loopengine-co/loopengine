@@ -145,16 +145,16 @@ export const WORKFLOW_EXAMPLES: readonly WorkflowExample[] = [
     needsApprovals: true,
     skill: {
       description: 'Handle new customer emails in the support inbox: look up each order and our policies, and reply in the thread.',
-      body: `1. Find new emails with gmail_search, query "is:unread in:inbox". Skip newsletters, receipts, automatic notifications and "no-reply" senders: mark those read and move on.
-2. For each customer email, read the whole conversation with gmail_get_thread first.
-3. Work out what they want: order status, a product question, a return or refund, a complaint, or something else.
-4. Look up what you need before answering: the order with shopify_find_orders (by the order number they give, or their email) and shopify_get_order, and our policies in the support-policies skill (open it with Skill).
-5. Reply with gmail_send, passing reply_to_message_id so it stays in the same thread: short, friendly, in the customer's language, using their name, answering the question first and saying what happens next.
-6. Mark the email read with gmail_modify_labels (remove "UNREAD").
+      body: `1. Find the unread emails in the inbox with gmail_search. Newsletters, receipts, automatic notifications and no-reply senders aren't customers: mark them read and move on.
+2. For each customer email, read the whole conversation with gmail_get_thread before anything else.
+3. Work out what they want.
+4. Look up what you need to answer it: their order with shopify_find_orders and shopify_get_order, and our policies in the support-policies skill (open it with Skill).
+5. Reply with gmail_send, in the same thread (set reply_to_message_id): answer their question first and say what happens next. A person approves it first.
+6. Mark the email read with gmail_modify_labels, so the next run doesn't answer it again.
 
-- A refund, return or replacement request: reply that it has been passed to the team, then star the email (add "STARRED") instead of acting on it.
+- A refund, return or replacement request: reply that it has been passed to the team, and star the email instead of acting on it.
 - An angry customer, or one who mentions a lawyer, a chargeback or a safety problem: save a calm reply with gmail_create_draft and star the email for a person.
-- If you can't find the order or the answer, say so and ask for the order number.`,
+- If you can't find the order or the answer, say so and ask for what you need. Never guess.`,
     },
     startMessage: 'Handle new customer emails in the support inbox.',
     newAgent: {
@@ -199,15 +199,15 @@ Rules:
     needsApprovals: true,
     skill: {
       description: 'Handle new refund and return requests: check each against the order and our return policy, propose the refund, and reply.',
-      body: `1. Find requests with gmail_search, query "is:unread in:inbox (refund OR return OR damaged OR broken OR "money back")". Read each conversation with gmail_get_thread. If an email isn't really a refund or return request, leave it unread for the support team.
-2. Find the order with shopify_find_orders (the order number they give, or their email) and read it with shopify_get_order: what was bought, when, how much, what's already been refunded, whether it was delivered.
-3. Check the request against our return policy in the return-policy skill (open it with Skill): the return window, whether the item is eligible, and whether the reason is covered.
-4. Decide what to propose: a full refund, a partial refund, refunding shipping, or no refund (and which part of the policy says so).
+      body: `1. Find unread emails asking for a refund or return with gmail_search, and read each conversation with gmail_get_thread. If one isn't really a refund or return request, leave it unread for the support team.
+2. Find the order with shopify_find_orders and read it with shopify_get_order: what was bought and paid, what's already been refunded, and whether it was delivered.
+3. Check the request against our return policy in the return-policy skill (open it with Skill).
+4. Decide what to propose: a full or partial refund, refunding shipping, or no refund, and which part of the policy says so.
 5. Work out the exact amount with shopify_preview_refund. Never state an amount you haven't previewed.
 6. Issue it with shopify_create_refund, with a note giving the policy rule and the facts from the order. A person approves it first.
-7. Once the refund is done, reply with gmail_send (reply_to_message_id set): what was refunded, to which payment method, and that it takes 5–10 business days to arrive. Then mark the email read with gmail_modify_labels.
+7. Once the refund is done, reply with gmail_send in the same thread (set reply_to_message_id): what was refunded, where it goes, and how long it takes to arrive. Then mark the email read with gmail_modify_labels.
 
-- If the refund is denied, don't try again; save a reply with gmail_create_draft explaining what you'd suggest instead, and star the email for a person.
+- If the refund is denied, don't try again: save a reply with gmail_create_draft saying what you'd suggest instead, and star the email for a person.
 - If the order can't be found, ask the customer for the order number.`,
     },
     startMessage: 'Handle new refund and return requests in the support inbox.',
@@ -251,11 +251,13 @@ Rules:
       body: `Triage this alert: $alert
 
 1. Summarise it in two sentences: what is failing and who is affected.
-2. Rate the severity: SEV1 (customers can't use the product), SEV2 (a major feature is broken), SEV3 (degraded or a workaround exists), SEV4 (minor).
-3. Find what changed shortly before it started: github_actions_list (method list_workflow_runs) for recent deploys and failed builds, github_list_pull_requests (state closed) for recently merged changes, and github_list_commits (narrowed with since and path) for detail. Match times carefully.
-4. Check whether it's already known with github_search_issues; read a match with github_issue_read (method get).
-5. If an issue already tracks it, add your findings with github_add_issue_comment; otherwise, for SEV1 or SEV2, open one with github_issue_write (method create). Both ask a person first.
-6. End with the summary: what's broken, severity, the most likely cause with links, and one next step (who should look, what to check, or whether to roll back). Keep it short enough to read on a phone.`,
+2. Rate the severity: SEV1 (customers can't use the product), SEV2 (a major feature is broken), SEV3 (degraded, or a workaround exists), SEV4 (minor).
+3. Find what changed shortly before it started: recent deploys and failed builds with github_actions_list, recently merged changes with github_list_pull_requests, and github_list_commits for detail. Match the times carefully.
+4. Check whether it's already known with github_search_issues, and read a match with github_issue_read.
+5. If an issue already tracks it, add your findings with github_add_issue_comment. Otherwise, for SEV1 or SEV2, open one with github_issue_write. Both ask a person first.
+6. End with the summary: what's broken, the severity, the most likely cause with links, and one next step. Keep it short enough to read on a phone.
+
+- If the evidence is thin or GitHub can't be reached, say so and what would confirm it, rather than naming a cause.`,
     },
     startMessage: 'Triage this alert: $alert',
     newAgent: {
@@ -295,13 +297,13 @@ Rules:
     needsApprovals: true,
     skill: {
       description: 'Check new expense claims in the inbox against our expense policy and send the approver a verdict.',
-      body: `1. Find new claims with gmail_search, query "is:unread in:inbox". Read each with gmail_get_thread.
-2. Read the amount, currency, date, merchant, category and who submitted it, from the email and its receipt (the attachment names show whether a receipt is there).
-3. Check it against our expense policy in the expense-policy skill (open it with Skill): the category is allowed, it's under the limit, the receipt matches the amount and date, and it isn't a duplicate of an earlier claim (search the inbox for the same merchant and amount).
-4. Write a one-line verdict: "Within policy" or "Outside policy: <reason>", then the details you checked.
-5. Email the verdict to the approver at the address in the EXPENSE_APPROVER_EMAIL setting with gmail_send, then mark the claim read with gmail_modify_labels.
+      body: `1. Find the unread claims in the inbox with gmail_search, and read each with gmail_get_thread.
+2. Read the amount, currency, date, merchant, category and who submitted it, from the email and its receipt.
+3. Check it against our expense policy in the expense-policy skill (open it with Skill): the category is allowed, it's under the limit, the receipt matches, and it isn't a duplicate of an earlier claim (search the inbox for one).
+4. Write a one-line verdict, "Within policy" or "Outside policy: <reason>", then the details you checked.
+5. Email the verdict with gmail_send to the approver in the EXPENSE_APPROVER_EMAIL setting. A person approves it first. Then mark the claim read with gmail_modify_labels.
 
-- If the receipt is missing or unreadable, draft a reply to the claimant asking for it with gmail_create_draft; don't fill in values.
+- If the receipt is missing or unreadable, draft a reply asking the claimant for it with gmail_create_draft. Never fill in a value you can't read.
 - If the policy doesn't cover the case, say which part is unclear rather than deciding.`,
     },
     startMessage: 'Check the new expense claims in the inbox.',
@@ -344,12 +346,12 @@ Rules:
     needsApprovals: true,
     skill: {
       description: 'Follow up with new leads in HubSpot: research each one and send a short, personal first email.',
-      body: `1. Find new leads with hubspot_find_contacts: lead_status "NEW", created_in_last_days 2.
-2. For each, read hubspot_get_contact. Skip anyone with an owner, recent notes, or a last-contacted date: someone is already on it.
-3. Research them with firecrawl_search and firecrawl_scrape: what their company does, its size, and anything recent that matters (funding, hiring, a launch). Note your sources.
-4. Work out what they most likely need from us, in one sentence.
-5. Send a short first email (under 120 words) with gmail_send: a specific opening based on your research, one sentence on how we help with that need, and one easy question to reply to. A person approves it first.
-6. Log what you sent and found with hubspot_add_note, and set the lead to "ATTEMPTED_TO_CONTACT" with hubspot_update_contact.
+      body: `1. Find the leads created in the last two days that are still marked new, with hubspot_find_contacts.
+2. Read each with hubspot_get_contact. Skip anyone someone is already on: they have an owner, recent notes or a last-contacted date.
+3. Research them with firecrawl_search and firecrawl_scrape: what their company does, its size, and anything recent that matters. Note your sources.
+4. Work out, in one sentence, what they most likely need from us.
+5. Send a short first email with gmail_send: an opening specific to them, how we help with that need, and one easy question to reply to. Keep it under 120 words. A person approves it first.
+6. Log what you sent and found with hubspot_add_note, and mark the lead as contacted with hubspot_update_contact.
 
 - If the lead looks like a competitor, a student or spam, add a note saying so and don't email them.`,
     },
@@ -397,12 +399,12 @@ Rules:
     needsApprovals: true,
     skill: {
       description: 'Turn new emails in the shared inbox into tasks (GitHub issues) with an owner and a due date, and tell each sender.',
-      body: `1. Find new emails with gmail_search, query "is:unread in:inbox". Read each with gmail_get_thread.
-2. Decide whether it's a request someone needs to act on. Newsletters, receipts, out-of-office replies and spam are not: mark them read and move on.
-3. Check whether a task already exists with github_search_issues (the sender and subject). If so, add the new details with github_add_issue_comment instead.
-4. Otherwise open one with github_issue_write (method create): a short title starting with a verb, a two-line summary, the sender, the due date (the date they asked for, or 2 working days if they didn't say), and the owner from "Who handles what" as the assignee.
-5. Reply to the sender with gmail_send (reply_to_message_id set): who is handling it and by when. A person approves it first.
-6. Mark the email read with gmail_modify_labels.
+      body: `1. Find the unread emails in the inbox with gmail_search, and read each with gmail_get_thread.
+2. Decide whether it's a request someone needs to act on. Newsletters, receipts, out-of-office replies and spam aren't: mark them read and move on.
+3. Check for an existing task about it with github_search_issues. If there is one, add the new details with github_add_issue_comment instead.
+4. Otherwise open one with github_issue_write: a short title starting with a verb, a two-line summary, the sender, the due date (the date they asked for, or 2 working days if they didn't say), and the owner from "Who handles what" as the assignee.
+5. Reply to the sender with gmail_send in the same thread (set reply_to_message_id): who is handling it and by when. A person approves it first.
+6. Mark the email read with gmail_modify_labels, so the next run doesn't make it a task again.
 
 - If an email holds several requests, make one task for each.`,
     },
@@ -445,11 +447,13 @@ Rules:
     notify: { on: true, reason: 'The digest is the result, and no step posts it.' },
     skill: {
       description: 'Write this week\'s research digest on the topics to follow.',
-      body: `1. Search the web with firecrawl_search for what happened in the last 7 days on each topic you follow.
+      body: `1. Find what happened in the last 7 days on each topic you follow with firecrawl_search.
 2. Open the most relevant pages with firecrawl_scrape and read them; don't rely on search snippets.
 3. Write the digest: for each topic, up to three items, each with a one-sentence summary, why it matters to us, and the link.
 4. End with "Worth a closer look": the single most important item, and why.
-5. Answer with the digest alone, nothing before or after it: it's sent as it is.`,
+5. Answer with the digest alone, nothing before or after it: it's sent as it is.
+
+- If a search fails or a topic had no real news, say so in one line for that topic.`,
     },
     startMessage: 'Write this week\'s research digest.',
     newAgent: {

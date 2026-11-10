@@ -172,7 +172,7 @@ How to plan:
    - the agent's own work (writing, summarising, choosing): kind "other".
    - nothing found can do it: set "missing" to what's needed, and add it to gaps.
 3. Rules: every tool the workflow uses gets one. Reading and searching: allow. Anything a person should see first (sending, publishing, paying, creating something others see): ask. Never set deny unless asked.
-4. Skill: the steps in order, as numbered instructions the agent follows, naming the tools and saying exactly when to stop and ask. Write it so the agent keeps going after each answer or decision.
+4. Skill: the steps in order, as numbered instructions. Each step says what to get done, naming the tool to use. It doesn't say how to call it: no argument values, query strings or field names unless the step goes wrong without them (the filter that picks the right items, the field that keeps a reply in its thread). Leave judgment to the agent: what to look up, how to word things, how to handle an ordinary odd case. Spell out only the hard edges: when to stop and ask, what never to do, and what to do when something is missing or fails. Write it so the agent keeps going after each answer or decision.
 5. Trigger: how a run starts. startMessage is what the agent receives when it starts.
    - schedule: a time or interval ("every Monday at 9" is every "7d", at "09:00", weekday 1).
    - webhook: when something happens in another service that can call a URL ("when a Stripe dispute comes in", "when a GitHub issue is opened", "when a Shopify order is paid", "when our app sends a new signup"). Fill in "webhook" (below). Prefer it over polling on a schedule whenever the service sends webhooks.
