@@ -129,7 +129,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-card { margin-bottom: 10px; }
   .workflow-card.workflow-focus { box-shadow: 0 0 0 2px var(--le-accent, #0f766e); transition: box-shadow 0.3s; }
   tr.schedule-focus td { background: var(--le-accent-soft, #e6f4ef); transition: background 0.3s; }
-  .workflow-starts { margin-top: 10px; }
   .workflow-run-controls { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
   .workflow-run-notify { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
   .workflow-run-notify input { width: auto; margin: 0; }
