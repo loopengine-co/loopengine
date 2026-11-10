@@ -68,6 +68,10 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-btn { display: inline-block; padding: 7px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; background: var(--accent); color: var(--on-accent); border: 0; cursor: pointer; }
   .wf-btn.plain { background: none; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
   .wf-btn:disabled { opacity: 0.6; cursor: progress; }
+  /* The console's own button hover turns any button grey; these keep their
+     colours and just brighten (or, plain ones, get a soft fill). */
+  .wf-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: brightness(1.08); }
+  .wf-btn.plain:hover:not(:disabled) { background: var(--surface); color: var(--ink); filter: none; }
   .wf-mcp { display: grid; gap: 10px; }
   .wf-mcp-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; background: var(--surface); }
   .wf-mcp-row input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; max-width: 360px; box-sizing: border-box; }

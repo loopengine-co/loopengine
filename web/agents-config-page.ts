@@ -98,13 +98,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-section-title::-webkit-details-marker { display: none; }
   .workflow-section-title::before { content: ''; width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
   .workflow-section[open] > .workflow-section-title::before { transform: rotate(45deg); }
-  .workflow-section-content { padding: 0 20px 16px; }
+  .workflow-section-content { padding: 4px 20px 24px; }
   .workflow-section-meta { margin-left: auto; color: var(--ink-muted); font-size: 12px; font-weight: 500; }
   .wf-card .workflow-steps-text { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); font-size: 13px; line-height: 1.6; max-height: 320px; overflow: auto; }
-  .workflow-starts > .workflow-section-content { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .workflow-starts > .workflow-section-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .workflow-starts.wf-starts-compact > .workflow-section-content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .workflow-starts.wf-starts-compact .wf-start-api { grid-column: 1 / -1; }
+  @media (max-width: 900px) { .workflow-starts.wf-starts-compact > .workflow-section-content { grid-template-columns: minmax(0, 1fr); } }
   .workflow-starts .wf-start { align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
   .workflow-starts .wf-start:first-of-type { padding-top: 14px; border-top: 1px solid var(--line); }
-  .workflow-starts .wf-start:has(.workflow-hook), .workflow-starts .wf-start:has(pre) { grid-column: 1 / -1; }
   .workflow-starts .workflow-hooks:empty { display: none; }
   @media (max-width: 640px) {
     .wf-tab-head, .wf-card-head { flex-direction: column; }
@@ -886,11 +888,17 @@ ${consoleShellScript}
     return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
-  // Ways to run it: four, each with a ? that says what it is. A
-  // schedule (pause, resume, remove, add), a webhook, Run now with the
-  // values a run is given, and the API call an app makes.
+  // With no schedule and no webhook, Run now, Schedule and Webhook are
+  // small: one row; once either has something to list, one per row.
+  function startsCompact(w) {
+    return !(w.schedules || []).length && !(w.webhooks || w.webhooksWaiting || w.webhooksOff);
+  }
+
+  // Ways to run it: four, each with a ? that says what it is. Run now
+  // with the values a run is given, a schedule (pause, resume, remove,
+  // add), a webhook, and the API call an app makes.
   function wfStartSection(key, title, help, body) {
-    return '<div class="wf-start">' +
+    return '<div class="wf-start wf-start-' + key.split('-')[0] + '">' +
       '<div class="wf-start-head"><strong>' + title + '</strong>' +
         '<button type="button" class="help-q" aria-expanded="false" aria-controls="help-' + key + '" aria-label="What is ' + title.toLowerCase() + '?">?</button></div>' +
       '<p class="hint help-text" hidden>' + help + '</p>' + body + '</div>';
@@ -919,7 +927,13 @@ ${consoleShellScript}
     // for the result.
     var example = '{ ' + (paramNames.length ? '"params": { ' + paramNames.map(function (p) { return '"' + p + '": "' + String.fromCharCode(8230) + '"'; }).join(', ') + ' }, ' : '') + '"wait": true }';
     var apiUrl = location.origin + '/agents/' + encodeURIComponent(agentName) + '/workflows/' + encodeURIComponent(w.id) + '/run';
-    return '<details class="workflow-section workflow-starts"><summary class="workflow-section-title">Run options</summary><div class="workflow-section-content">' +
+    return '<details class="workflow-section workflow-starts' + (startsCompact(w) ? ' wf-starts-compact' : '') + '"><summary class="workflow-section-title">Run options</summary><div class="workflow-section-content">' +
+      wfStartSection('run-' + w.id, 'Run now',
+        'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
+        (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
+        '<div class="workflow-run-controls">' +
+          '<label class="workflow-run-notify" title="Sends the completed result through this agent' + String.fromCharCode(8217) + 's configured notifier"><input type="checkbox" class="workflow-run-notify-toggle"> Send result to messaging app</label>' +
+          '<button type="button" class="workflow-run primary">Run now</button></div>') +
       wfStartSection('schedule-' + w.id, 'Schedule',
         'Runs it on a timer, like every day at 9:00, with the values you give the schedule. Nobody needs to be there: approvals and questions go to the agent' + String.fromCharCode(8217) + 's messaging app.',
         (schedules ? '<ul class="schedule-history">' + schedules + '</ul>' : '<span class="hint">None yet.</span>') +
@@ -928,12 +942,6 @@ ${consoleShellScript}
         'A private web address another app (Stripe, GitHub, Shopify or your own) calls when something happens. Each call starts a run, with values taken from what the app sends.',
         '<div class="workflow-hooks"></div>' +
         '<div class="workflow-hooks-add"' + (w.webhooks || w.webhooksWaiting || w.webhooksOff ? ' hidden' : '') + '><button type="button" class="workflow-hooks-btn">Add a webhook</button></div>') +
-      wfStartSection('run-' + w.id, 'Run now',
-        'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
-        (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
-        '<div class="workflow-run-controls">' +
-          '<label class="workflow-run-notify" title="Sends the completed result through this agent' + String.fromCharCode(8217) + 's configured notifier"><input type="checkbox" class="workflow-run-notify-toggle"> Send result to messaging app</label>' +
-          '<button type="button" class="workflow-run primary">Run now</button></div>') +
       wfStartSection('api-' + w.id, 'API',
         'Your own app starts a run by calling this address with an API key. Add "wait": true to get the result in the answer, or "callback_url" to have it posted to you when the run ends.',
         '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
@@ -1431,6 +1439,8 @@ ${consoleShellScript}
         w.webhooksOff = list.length - w.webhooks - w.webhooksWaiting;
         var chips = card.querySelector('.wf-chips');
         if (chips) chips.innerHTML = workflowStatusChips(w);
+        var starts = card.querySelector('.workflow-starts');
+        if (starts) starts.classList.toggle('wf-starts-compact', startsCompact(w));
         if (addBox) addBox.hidden = list.length > 0;
         // One waiting for its secret, or just made: open the Run options
         // row it's in, so its steps show.
