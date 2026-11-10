@@ -90,6 +90,7 @@ export {
   estimateTokens as estimateSkillIndexTokens,
   buildBudgetedIndex,
   substituteArguments,
+  substituteParameters,
   matchesActivationPaths,
 } from './core/skillgarden/index.js'
 export type {
