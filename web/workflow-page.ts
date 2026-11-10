@@ -258,7 +258,9 @@ ${consoleShellScript}
   function openExample(id) {
     var e = state.examples.filter(function (x) { return x.id === id; })[0];
     if (!e) return;
-    // A copy: the review screen edits the plan it shows.
+    // A copy: the review screen edits the plan it shows. Its message is
+    // the workflow's original message, as a typed one would be.
+    state.description = e.message;
     state.planned = { plan: JSON.parse(JSON.stringify(e.plan)), example: e.id };
     renderPlan();
     window.scrollTo(0, 0);
