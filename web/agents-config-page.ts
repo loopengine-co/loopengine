@@ -829,7 +829,7 @@ ${consoleShellScript}
         '<div><button type="button" class="workflow-add-schedule">Add a schedule</button></div>') +
       wfStartSection('webhook-' + w.id, 'Webhook',
         'A private web address another app (Stripe, GitHub, Shopify or your own) calls when something happens. Each call starts a run, with values taken from what the app sends.',
-        webhookSummaryHtml(w) +
+        '<div class="workflow-hook-summary">' + webhookSummaryHtml(w) + '</div>' +
         '<div><button type="button" class="workflow-hooks-btn">' + (w.webhooks || w.webhooksWaiting || w.webhooksOff ? 'Webhooks' : 'Add a webhook') + '</button></div>' +
         '<div class="workflow-hooks" hidden></div>') +
       wfStartSection('run-' + w.id, 'Run now',
@@ -1175,11 +1175,13 @@ ${consoleShellScript}
 
   function hookFormHtml(w) {
     var params = Object.keys(w.parameters || {});
+    // Where the events come from first, then which ones; the name follows
+    // from those unless you give one.
     return '<form class="add-source hook-form">' +
-      '<label>Name<input name="name" maxlength="80" placeholder="Stripe disputes"></label>' +
-      '<label>Check the sender' + String.fromCharCode(8217) + 's signature <span class="hint">(the URL itself is secret; this also proves who sent it)</span>' +
-        '<select name="sender"><option value="">No, the URL is enough</option><option value="stripe">Stripe</option><option value="github">GitHub</option><option value="shopify">Shopify</option>' +
-          '<option value="standard">Standard Webhooks (Clerk, Resend, OpenAI, Svix)</option><option value="custom">Another service: set it up myself</option></select></label>' +
+      '<label>Where it comes from <span class="hint">(a known sender' + String.fromCharCode(8217) + 's signature is checked, so only it can start runs)</span>' +
+        '<select name="sender"><option value="stripe">Stripe</option><option value="github">GitHub</option><option value="shopify">Shopify</option>' +
+          '<option value="standard">Standard Webhooks (Clerk, Resend, OpenAI, Svix)</option><option value="custom">Another service that signs its requests</option>' +
+          '<option value="">Any app: the secret URL is enough</option></select></label>' +
       '<div class="hook-custom body-field" hidden>How it signs <span class="hint">(from its webhook docs: an HMAC of the request body, in a header)</span>' +
         '<div class="workflow-param-row">' +
           '<input name="sig_header" placeholder="Header, e.g. Linear-Signature" style="flex:1">' +
@@ -1187,9 +1189,10 @@ ${consoleShellScript}
           '<select name="sig_encoding" aria-label="Written as"><option value="hex">hex</option><option value="base64">base64</option></select>' +
           '<input name="sig_prefix" placeholder="Prefix, e.g. sha256= (if any)" style="width:180px">' +
         '</div></div>' +
-      '<label class="hook-secret" hidden>Signing secret <span class="hint">(from the sender' + String.fromCharCode(8217) + 's webhook settings)</span><input name="secret" autocomplete="off"></label>' +
+      '<label class="hook-secret" hidden>Signing secret <span class="hint">(optional now: most senders show it only after you give them the URL, so you can add it next)</span><input name="secret" autocomplete="off"></label>' +
       '<label>Run only when <span class="hint">(optional: a field in the payload, and the values that start a run)</span>' +
         '<div class="workflow-param-row"><input name="filter_path" placeholder="type"><input name="filter_values" placeholder="charge.dispute.created, charge.dispute.updated" style="flex:1"></div></label>' +
+      '<label>Name <span class="hint">(optional)</span><input name="name" maxlength="80" placeholder="Stripe events"></label>' +
       (params.length
         ? '<div class="body-field">Parameters from the payload <span class="hint">(a dot path into its JSON, e.g. data.object.id)</span>' +
             params.map(function (p) { return '<div class="workflow-param-row"><code class="wp-name">' + escapeHtml(p) + '</code><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" style="flex:1"></div>'; }).join('') + '</div>' +
@@ -1214,15 +1217,28 @@ ${consoleShellScript}
     var form = dialog.querySelector('.hook-form');
     var secretField = form.querySelector('.hook-secret');
     var customField = form.querySelector('.hook-custom');
-    form.sender.addEventListener('change', function () {
+    // The name it gets when none is given: "Stripe: charge.dispute.created".
+    function defaultName() {
+      var who = form.sender.value === 'custom' || !form.sender.value ? 'Webhook' : (HOOK_SENDERS[form.sender.value] || 'Webhook');
+      var events = form.filter_values.value.split(',').map(function (v) { return v.trim(); }).filter(Boolean);
+      return events.length ? who + ': ' + events.join(', ') : (who === 'Webhook' ? who : who + ' events');
+    }
+    function senderChanged() {
       secretField.hidden = !form.sender.value;
       customField.hidden = form.sender.value !== 'custom';
-    });
+      form.name.placeholder = defaultName();
+    }
+    form.sender.addEventListener('change', senderChanged);
+    form.filter_values.addEventListener('input', function () { form.name.placeholder = defaultName(); });
+    senderChanged();
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var result = form.querySelector('.hook-form-result');
-      var body = { name: form.name.value };
-      if (form.sender.value) body.verify = { sender: form.sender.value, secret: form.secret.value };
+      var body = { name: form.name.value.trim() || defaultName() };
+      if (form.sender.value) body.verify = { sender: form.sender.value, secret: form.secret.value.trim() };
+      // No secret yet (most senders only show it once they have the URL):
+      // made turned off, with steps to finish it.
+      if (form.sender.value && !form.secret.value.trim()) { delete body.verify.secret; body.enabled = false; }
       if (form.sender.value === 'custom') {
         body.verify.header = form.sig_header.value.trim();
         body.verify.algorithm = form.sig_algorithm.value;
@@ -1244,14 +1260,14 @@ ${consoleShellScript}
       fetchJsonRetryOnce(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not make it'; submit.disabled = false; return; }
         dialog.close();
-        onCreated(r.body.url, r.body.trigger && r.body.trigger.trigger_id);
+        onCreated(r.body.url, r.body.trigger && r.body.trigger.trigger_id, r.body.trigger);
       }).catch(function (err) {
         result.textContent = err && err.message ? err.message : 'Could not make it';
         submit.disabled = false;
       });
     });
     dialog.showModal();
-    form.name.focus();
+    form.sender.focus();
   }
 
   function hookUrlHtml(url) {
@@ -1259,13 +1275,24 @@ ${consoleShellScript}
       '<input readonly value="' + escapeHtml(url) + '" onclick="this.select()"></div>';
   }
 
-  function openWorkflowHooks(name, card) {
+  // The card's webhooks button: hides the list while it's open, else opens
+  // it, or goes straight to the form when there are none.
+  function hooksButtonLabel(card, w) {
+    var btn = card.querySelector('.workflow-hooks-btn');
+    var box = card.querySelector('.workflow-hooks');
+    if (!btn) return;
+    btn.textContent = box && !box.hidden ? 'Hide webhooks' : (w.webhooks || w.webhooksWaiting || w.webhooksOff ? 'Webhooks' : 'Add a webhook');
+  }
+
+  // shown: a webhook just made, whose URL is shown in its first step.
+  function openWorkflowHooks(name, card, shown) {
     var w = workflowsById[card.dataset.workflow];
     var box = card.querySelector('.workflow-hooks');
     if (!w || !box) return;
-    if (!box.hidden) { box.hidden = true; box.innerHTML = ''; workflowEditing = false; return; }
+    if (!box.hidden) { box.hidden = true; box.innerHTML = ''; workflowEditing = false; hooksButtonLabel(card, w); return; }
     workflowEditing = true;
     box.hidden = false;
+    hooksButtonLabel(card, w);
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/triggers';
     var hooksById = {};
     function render(shownUrl, shownId) {
@@ -1275,6 +1302,13 @@ ${consoleShellScript}
         var list = r.body.triggers || [];
         hooksById = {};
         list.forEach(function (t) { hooksById[t.trigger_id] = t; });
+        // Keep the card's summary in step with what was just changed.
+        w.webhooks = list.filter(function (t) { return t.enabled; }).length;
+        w.webhooksWaiting = list.filter(function (t) { return !t.enabled && t.verify && !t.verify.secret_set; }).length;
+        w.webhooksOff = list.length - w.webhooks - w.webhooksWaiting;
+        var summary = card.querySelector('.workflow-hook-summary');
+        if (summary) summary.innerHTML = webhookSummaryHtml(w);
+        hooksButtonLabel(card, w);
         var setupPending = list.some(function (t) { return t.verify && !t.verify.secret_set; });
         box.innerHTML = '<h4 style="margin:10px 0 4px">Webhooks</h4>' +
           '<p class="hint" style="margin:0 0 6px">A secret URL an outside service (Stripe, GitHub, a form, monitoring) posts its events to; each one starts a run.</p>' +
@@ -1284,7 +1318,7 @@ ${consoleShellScript}
             ? (setupPending
               ? '<p class="hint" style="margin:8px 0 0">Finish setting up the webhook above before adding another.</p>'
               : '<div style="margin-top:10px"><button type="button" class="hook-add-another">Add another webhook</button></div>')
-            : '<div style="margin-top:10px"><button type="button" class="hook-add-first">Add a webhook</button></div>');
+            : '<p class="hint" style="margin:0">No webhooks yet.</p><div style="margin-top:10px"><button type="button" class="hook-add-first">Add a webhook</button></div>');
         wire();
       });
     }
@@ -1335,7 +1369,7 @@ ${consoleShellScript}
         openHookFormDialog(w, base, function (url, id) { render(url, id); });
       });
     }
-    render(null);
+    render(shown ? shown.url : null, shown ? shown.id : null);
   }
 
   function wireWorkflowCard(name, card) {
@@ -1364,7 +1398,24 @@ ${consoleShellScript}
         btn.setAttribute('aria-expanded', String(!text.hidden));
       });
     }
-    card.querySelector('.workflow-hooks-btn').addEventListener('click', function () { openWorkflowHooks(name, card); });
+    // With no webhook yet, the button goes straight to the form; once one
+    // is made, its setup steps open on the card.
+    card.querySelector('.workflow-hooks-btn').addEventListener('click', function (ev) {
+      var btn = ev.currentTarget;
+      var w = workflowsById[id];
+      var box = card.querySelector('.workflow-hooks');
+      if (w && box && box.hidden && !(w.webhooks || w.webhooksWaiting || w.webhooksOff)) {
+        openHookFormDialog(w, base + '/triggers', function (url, triggerId, t) {
+          if (t && t.enabled) w.webhooks = (w.webhooks || 0) + 1;
+          else if (t && t.verify && !t.verify.secret_set) w.webhooksWaiting = (w.webhooksWaiting || 0) + 1;
+          else w.webhooksOff = (w.webhooksOff || 0) + 1;
+          card.querySelector('.workflow-hook-summary').innerHTML = webhookSummaryHtml(w);
+          openWorkflowHooks(name, card, { url: url, id: triggerId });
+        });
+        return;
+      }
+      openWorkflowHooks(name, card);
+    });
     // Add a schedule: the Schedules tab's form, with this workflow chosen.
     card.querySelector('.workflow-add-schedule').addEventListener('click', function () {
       pendingScheduleWorkflow = id;
