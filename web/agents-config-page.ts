@@ -978,7 +978,13 @@ ${consoleShellScript}
       workflows.forEach(function (w) { workflowsById[w.id] = w; });
       el.innerHTML = renderWorkflowsHtml(name, workflows);
       var cards = el.querySelectorAll('.workflow-card');
-      for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
+      for (var i = 0; i < cards.length; i++) {
+        wireWorkflowCard(name, cards[i]);
+        // A planned webhook is waiting for its signing secret. Open its
+        // setup in place so the user sees what to do without another click.
+        var workflow = workflowsById[cards[i].dataset.workflow];
+        if (workflow && workflow.webhooksWaiting) openWorkflowHooks(name, cards[i]);
+      }
       openPendingWorkflowEdit();
       // Keep a running run's status current while the Overview is open.
       var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }); });
