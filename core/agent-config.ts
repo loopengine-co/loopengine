@@ -304,6 +304,10 @@ export interface ToolDefinition extends ToolSchema {
 export interface AgentConfig {
   /** Also doubles as the ActAuth scope.agent segment. */
   name: string
+  /** The name people see in the console (its sidebar and page headers),
+   * when it isn't `name` itself. `name` is the agent's id (its folder, API
+   * address and every saved record), so it never changes; this can. */
+  displayName?: string
   systemPrompt: string
   /** Required only when this agent is wrapped with `agentAsTool` (see
    * agent-as-tool.ts) — the ToolDefinition.description shown to a

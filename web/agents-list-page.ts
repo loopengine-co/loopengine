@@ -59,8 +59,11 @@ ${consoleSidebarHtml}
     <form id="newAgentForm" style="display:none">
       <p class="hint" style="margin:0">Not sure what to build? <a href="/workflows/new#examples">Start from a workflow example</a>, or <a href="/interview">find your first agent</a>: a short interview that suggests one and creates it.</p>
       <h2>New agent</h2>
-      <label>Name <span class="hint">(lowercase, hyphens allowed: becomes agents/&lt;name&gt;/)</span>
-        <input type="text" name="name" placeholder="weather-agent" pattern="[a-z0-9]+(-[a-z0-9]+)*" required>
+      <label>Name <span class="hint">(what you'll see in the sidebar; you can change it later)</span>
+        <input type="text" name="displayName" placeholder="Weather assistant" maxlength="60" required>
+      </label>
+      <label>ID <span class="hint">(lowercase and hyphens; its folder agents/&lt;id&gt;/ and API address use it, so it can't be changed later)</span>
+        <input type="text" name="name" placeholder="weather-assistant" pattern="[a-z0-9]+(-[a-z0-9]+)*" required>
       </label>
       <label>System prompt
         <textarea name="systemPrompt" placeholder="You are ..."></textarea>
@@ -128,7 +131,7 @@ ${consoleShellScript}
           var qs = '?agent=' + encodeURIComponent(agent.name);
           li.innerHTML =
             '<div class="le-card agent-card">' +
-            '<div class="name">' + escapeHtml(agent.name) + '</div>' +
+            '<div class="name">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? ' <span class="hint" style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span>' : '') + '</div>' +
             '<div class="prompt">' + escapeHtml(agent.systemPrompt) + '</div>' +
             '<div class="links">' +
             '<a class="primary" href="/playground' + qs + '">Chat</a>' +
@@ -179,7 +182,7 @@ ${consoleShellScript}
     newAgentBtn.style.display = 'none';
     newAgentForm.style.display = 'grid';
     newAgentResult.style.display = 'none';
-    newAgentForm.querySelector('input[name="name"]').focus();
+    newAgentForm.querySelector('input[name="displayName"]').focus();
     // Checks which providers have keys, then loads the chosen provider's
     // models; both when the form opens, not on every visit to this page.
     // Starts on openai / gpt-6-luna (the markup's defaults) when openai
@@ -190,6 +193,18 @@ ${consoleShellScript}
       if (!providerSelect.disabled) leShell.wireModelPicker(newAgentForm);
     });
   });
+
+  // The id follows the name as it's typed ("Weather assistant" becomes
+  // weather-assistant), until the id is typed in itself.
+  var displayNameInput = newAgentForm.querySelector('input[name="displayName"]');
+  var idInput = newAgentForm.querySelector('input[name="name"]');
+  var idTyped = false;
+  idInput.addEventListener('input', function () { idTyped = idInput.value !== ''; });
+  displayNameInput.addEventListener('input', function () {
+    if (idTyped) return;
+    idInput.value = displayNameInput.value.toLowerCase().split("'").join('').split(String.fromCharCode(8217)).join('').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+  });
+  newAgentForm.addEventListener('reset', function () { idTyped = false; });
 
   cancelNewAgentBtn.addEventListener('click', function () {
     newAgentForm.style.display = 'none';
@@ -208,6 +223,8 @@ ${consoleShellScript}
     // adapters/http.ts's parseAgentTemplateOptions for the defaults
     // scaffoldAgent falls back to then.
     var body = { name: data.get('name') };
+    var displayName = data.get('displayName');
+    if (displayName && displayName.trim()) body.displayName = displayName;
     var systemPrompt = data.get('systemPrompt');
     if (systemPrompt && systemPrompt.trim()) body.systemPrompt = systemPrompt;
     var provider = data.get('provider');

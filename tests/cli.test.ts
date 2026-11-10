@@ -87,6 +87,11 @@ describe('scaffoldAgent', () => {
     await expect(scaffoldAgent(dir, 'no-model-agent', { model: { provider: 'deepseek' } })).rejects.toThrow(AgentModelError)
   })
 
+  it('writes a display name after name when one is given', async () => {
+    const indexPath = await scaffoldAgent(tmpDir(), 'support', { displayName: 'Support desk', model: { provider: 'anthropic' } })
+    expect(readFileSync(indexPath, 'utf8')).toContain("name: 'support',\n  displayName: 'Support desk',\n  systemPrompt")
+  })
+
   it('anthropic with no model name still defaults to claude-sonnet-5-5', async () => {
     const dir = tmpDir()
 

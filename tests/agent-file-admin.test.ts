@@ -47,6 +47,19 @@ describe('editAgentFile', () => {
     expect(contents).toContain("import type { AgentConfig } from 'loopengine'")
   })
 
+  it('adds a display name after name, changes it, and removes its line when cleared', () => {
+    writeFixture(TEMPLATE)
+
+    expect(editAgentFile(AGENT_NAME, { displayName: "Ana's support desk" })).toEqual({ displayName: "Ana's support desk" })
+    expect(readFileSync(INDEX_PATH, 'utf8')).toContain(`name: '${AGENT_NAME}',\n  displayName: 'Ana\\'s support desk',\n  systemPrompt`)
+
+    editAgentFile(AGENT_NAME, { displayName: 'Support' })
+    expect(readFileSync(INDEX_PATH, 'utf8')).toContain("  displayName: 'Support',\n")
+
+    expect(editAgentFile(AGENT_NAME, { displayName: '  ' })).toEqual({ displayName: '' })
+    expect(readFileSync(INDEX_PATH, 'utf8')).toBe(TEMPLATE)
+  })
+
   it('escapes a systemPrompt containing a quote or backslash into valid TS', () => {
     writeFixture(TEMPLATE)
 

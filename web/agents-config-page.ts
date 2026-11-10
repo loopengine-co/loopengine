@@ -199,6 +199,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .ed-actions { position: sticky; bottom: -20px; z-index: 1; display: flex; justify-content: flex-end; gap: 8px; margin: 6px -24px -20px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
   .ed-actions button { height: 38px; padding: 0 16px; border-radius: 8px; font-weight: 600; }
   .edit-dialog [data-dialog-cancel] { display: inline-block !important; }
+  .ov-name { margin: 0; font-size: 15px; }
+  .ov-name code { font-size: 12.5px; }
   dialog.workflow-editor-dialog { width: min(760px, calc(100vw - 24px)); }
   .ed-body .workflow-param-row input:not([type="checkbox"]) { width: auto; }
   .ed-body .workflow-param-row .wp-name { flex: 0 0 170px; font-family: var(--font-mono); font-size: 13px; }
@@ -1657,6 +1659,20 @@ ${consoleShellScript}
   }
 
   function renderOverviewHtml(cfg) {
+    // The name people see; the id is fixed (its folder, API address and
+    // saved records all use it).
+    var nameSection =
+      '<h3>Name <button type="button" class="edit-btn" id="editDisplayNameBtn">Edit</button></h3>' +
+      '<p class="ov-name"><span id="displayNameDisplay">' + escapeHtml(cfg.displayName || cfg.name) + '</span>' +
+        ' <span class="muted">&middot; id <code>' + escapeHtml(cfg.name) + '</code></span></p>' +
+      editDialogHtml('<h3>Edit name</h3>', '<p>The name shown in the sidebar and at the top of its pages. Its id, <code>' + escapeHtml(cfg.name) + '</code>, stays the same: its API address and saved runs use it.</p>',
+        '<form class="add-source" id="displayNameForm" style="display:none">' +
+          '<label>Name<input type="text" name="displayName" maxlength="60" placeholder="' + escapeHtml(cfg.name) + '" value="' + escapeHtml(cfg.displayName || '') + '"></label>' +
+          '<p class="hint" style="margin:0">Leave it empty to show the id.</p>' +
+          '<div class="error" id="displayNameError"></div>' +
+          '<div class="ed-actions"><button type="button" data-dialog-cancel>Cancel</button><button type="submit" class="primary">Save</button></div>' +
+        '</form>');
+
     var systemPromptSection =
       '<h3>System prompt <button type="button" class="edit-btn" id="editSystemPromptBtn">Edit</button></h3>' +
       '<pre id="systemPromptDisplay">' + escapeHtml(cfg.systemPrompt) + '</pre>' +
@@ -1715,6 +1731,7 @@ ${consoleShellScript}
     }
 
     return renderOverviewCards(cfg) +
+      '<section>' + nameSection + '</section>' +
       '<section>' + systemPromptSection + '</section>' +
       '<section>' + modelSection + '</section>' +
       '<section><h3>Limits &amp; budgets <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
@@ -1753,6 +1770,45 @@ ${consoleShellScript}
   function wireOverviewHandlers(name) {
     var overviewPanel = detail.querySelector('[data-tab-panel="overview"]');
     if (!overviewPanel) return;
+
+    var editDisplayNameBtn = overviewPanel.querySelector('#editDisplayNameBtn');
+    if (editDisplayNameBtn) {
+      var displayNameForm = overviewPanel.querySelector('#displayNameForm');
+      var displayNameError = overviewPanel.querySelector('#displayNameError');
+      editDisplayNameBtn.addEventListener('click', function () {
+        displayNameForm.style.display = '';
+        openEditDialog(displayNameForm);
+        displayNameForm.querySelector('input').select();
+      });
+      displayNameForm.querySelector('[data-dialog-cancel]').addEventListener('click', function () {
+        displayNameForm.style.display = 'none';
+        displayNameError.textContent = '';
+      });
+      displayNameForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        displayNameError.textContent = '';
+        var submitBtn = displayNameForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        fetch('/agents/' + encodeURIComponent(name), {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ displayName: displayNameForm.querySelector('input[name="displayName"]').value }),
+        })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+          .then(function (result) {
+            if (!result.ok) throw new Error(result.body.error || 'request failed');
+            currentCfg = result.body;
+            overviewPanel.innerHTML = renderOverviewHtml(result.body);
+            fillOverviewCards(currentName);
+            wireOverviewHandlers(name);
+            leShell.setDisplayName(name, result.body.displayName || '');
+          })
+          .catch(function (err) {
+            displayNameError.textContent = err.message;
+            submitBtn.disabled = false;
+          });
+      });
+    }
 
     var editSystemPromptBtn = overviewPanel.querySelector('#editSystemPromptBtn');
     if (editSystemPromptBtn) {
@@ -4897,6 +4953,7 @@ ${consoleShellScript}
     detail.innerHTML =
       leShell.renderHead({
         name: cfg.name,
+        displayName: cfg.displayName,
         prompt: cfg.systemPrompt,
         chips: [modelChip(cfg), { text: 'unmatched calls: ' + cfg.permissions.defaultDecision }],
         tab: currentTab,

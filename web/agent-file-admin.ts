@@ -77,6 +77,8 @@ const MODEL_ENV_VAR: Record<Provider, string> = {
 const MODEL_COMMENT_PATTERN = /^\/\/\s*reads\s+[A-Z_]+$/
 
 export interface AgentEditableFields {
+  /** Empty removes it, so the agent shows by its name again. */
+  displayName?: string
   systemPrompt?: string
   model?: { provider: Provider; model?: string; maxTokens?: number; reasoningEffort?: string }
   maxTurns?: number
@@ -85,6 +87,7 @@ export interface AgentEditableFields {
 }
 
 export interface AgentEditResult {
+  displayName?: string
   systemPrompt?: string
   model?: { provider: Provider; model: string; maxTokens?: number; reasoningEffort?: string }
   maxTurns?: number
@@ -198,6 +201,37 @@ export function editAgentFile(agentName: string, fields: AgentEditableFields): A
   const edits: TextEdit[] = []
   const result: AgentEditResult = {}
 
+  const toInsert: string[] = []
+
+  if (fields.displayName !== undefined) {
+    const displayName = fields.displayName.trim()
+    const prop = findProperty(configObj, 'displayName')
+    if (prop && (!ts.isPropertyAssignment(prop) || !ts.isStringLiteral(prop.initializer))) {
+      throw new AgentEditNotSupportedError('displayName in this file is not a plain string literal — edit it directly.')
+    }
+    if (prop && displayName) {
+      edits.push({ start: (prop as TS.PropertyAssignment).initializer.getStart(sourceFile), end: (prop as TS.PropertyAssignment).initializer.getEnd(), text: tsStringLiteral(displayName) })
+    } else if (prop) {
+      // Its whole line, comma and line break included.
+      const lineStart = source.lastIndexOf('\n', prop.getStart(sourceFile)) + 1
+      let end = prop.getEnd()
+      if (source[end] === ',') end++
+      const lineEnd = source.indexOf('\n', end)
+      edits.push({ start: lineStart, end: lineEnd === -1 ? end : lineEnd + 1, text: '' })
+    } else if (displayName) {
+      // Right after name, where the scaffold writes it.
+      const nameProp = findProperty(configObj, 'name')
+      if (nameProp) {
+        let at = nameProp.getEnd()
+        if (source[at] === ',') at++
+        edits.push({ start: at, end: at, text: `\n  displayName: ${tsStringLiteral(displayName)},` })
+      } else {
+        toInsert.push(`displayName: ${tsStringLiteral(displayName)}`)
+      }
+    }
+    result.displayName = displayName
+  }
+
   if (fields.systemPrompt !== undefined) {
     const prop = findProperty(configObj, 'systemPrompt')
     if (!prop || !ts.isPropertyAssignment(prop) || !ts.isStringLiteral(prop.initializer)) {
@@ -257,7 +291,6 @@ export function editAgentFile(agentName: string, fields: AgentEditableFields): A
     }
   }
 
-  const toInsert: string[] = []
   for (const name of ['maxTurns', 'contextBudgetTokens', 'skillIndexBudgetTokens'] as const) {
     const value = fields[name]
     if (value === undefined) continue

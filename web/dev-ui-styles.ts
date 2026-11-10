@@ -158,6 +158,7 @@ export const devUiCss: string = `
   .le-head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
   .le-title { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
   .le-title h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0; overflow-wrap: anywhere; }
+  .le-head-id { margin-left: 10px; font-family: var(--font-mono); font-size: 12.5px; font-weight: 400; color: var(--ink-faint); letter-spacing: 0; vertical-align: middle; }
   .le-title p { margin: 4px 0 0; color: var(--ink-muted); max-width: 72ch; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .le-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .le-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--ink-muted); white-space: nowrap; }

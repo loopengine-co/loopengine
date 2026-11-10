@@ -40,6 +40,7 @@ const MODEL_ENV_VAR: Record<Provider, string> = {
 
 export interface AgentTemplateOptions {
   systemPrompt?: string
+  displayName?: string
   model?: { provider: Provider; model?: string }
 }
 
@@ -86,10 +87,11 @@ export function agentIndexTemplate(name: string, options: AgentTemplateOptions =
   const systemPrompt = options.systemPrompt?.trim() || 'You are ...'
   const provider = options.model?.provider ?? 'anthropic'
   const modelName = options.model?.model?.trim() || (provider === 'anthropic' ? 'claude-sonnet-5-5' : '')
+  const displayName = options.displayName?.trim()
   return `import type { AgentConfig } from '${importSpecifier}'
 
 export const config: AgentConfig = {
-  name: '${name}',
+  name: '${name}',${displayName ? `\n  displayName: ${tsStringLiteral(displayName)},` : ''}
   systemPrompt: ${tsStringLiteral(systemPrompt)},
   model: { provider: '${provider}', model: ${tsStringLiteral(modelName)} }, // reads ${MODEL_ENV_VAR[provider]}
 }

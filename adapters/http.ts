@@ -447,6 +447,7 @@ async function describeAgent(entry: RegistryEntry): Promise<Record<string, unkno
 
   return {
     name: config.name,
+    ...(config.displayName ? { displayName: config.displayName } : {}),
     systemPrompt: config.systemPrompt,
     model: config.model
       ? {
@@ -845,6 +846,13 @@ function parseAgentTemplateOptions(body: Record<string, unknown>): { ok: true; v
   const options: AgentTemplateOptions = {}
   if (typeof body.systemPrompt === 'string' && body.systemPrompt.trim()) {
     options.systemPrompt = body.systemPrompt
+  }
+  // Kept even when empty: on an edit, that clears it.
+  if (body.displayName !== undefined && body.displayName !== null) {
+    if (typeof body.displayName !== 'string') return { ok: false, error: 'displayName must be a string' }
+    const displayName = body.displayName.trim().replace(/\s+/g, ' ')
+    if (displayName.length > 60) return { ok: false, error: 'displayName: 60 characters at most' }
+    options.displayName = displayName
   }
   if (body.model !== undefined && body.model !== null) {
     if (typeof body.model !== 'object') {
@@ -1560,7 +1568,7 @@ async function handleEditAgent(req: IncomingMessage, res: ServerResponse, agentN
   if (Object.keys(editFields).length === 0) {
     res
       .writeHead(400, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ error: 'systemPrompt, model, maxTurns, contextBudgetTokens, or skillIndexBudgetTokens is required' }))
+      .end(JSON.stringify({ error: 'displayName, systemPrompt, model, maxTurns, contextBudgetTokens, or skillIndexBudgetTokens is required' }))
     return
   }
 
@@ -1576,6 +1584,7 @@ async function handleEditAgent(req: IncomingMessage, res: ServerResponse, agentN
 
   const configPatch: Partial<AgentConfig> = {}
   if (result.systemPrompt !== undefined) configPatch.systemPrompt = result.systemPrompt
+  if (result.displayName !== undefined) configPatch.displayName = result.displayName || undefined
   if (result.maxTurns !== undefined) configPatch.maxTurns = result.maxTurns
   if (result.contextBudgetTokens !== undefined) configPatch.contextBudgetTokens = result.contextBudgetTokens
   if (result.skillIndexBudgetTokens !== undefined) configPatch.skillIndexBudgetTokens = result.skillIndexBudgetTokens
@@ -4310,7 +4319,7 @@ const server = createServer(async (req, res) => {
         return
       }
       res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({ agents: listAgents().map((name) => ({ name, systemPrompt: getEntry(name)!.config.systemPrompt })) }),
+        JSON.stringify({ agents: listAgents().map((name) => ({ name, ...(getEntry(name)!.config.displayName ? { displayName: getEntry(name)!.config.displayName } : {}), systemPrompt: getEntry(name)!.config.systemPrompt })) }),
       )
       return
     }

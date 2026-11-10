@@ -9,6 +9,8 @@
 // before its own script. Pages talk to it through window.leShell:
 //   leShell.ready            Promise of the /agents list
 //   leShell.setActive(name)  highlight the agent this page shows
+//   leShell.setDisplayName(name, displayName)  show a renamed agent's new name
+//   leShell.displayNameOf(name)  an agent's display name, or its id
 //   leShell.renderHead(opts) agent header + tabs HTML (see below)
 //   leShell.setTab(tab)      move the tab highlight without a reload
 //   leShell.esc(s)           HTML-escape
@@ -94,9 +96,9 @@ export const consoleShellScript: string = `<script>
     list.innerHTML = agents.map(function (a) {
       var n = toSet[a.name] || 0;
       var meta = n ? '<span class="le-pill warn" title="Settings this agent must set before its tools work">' + n + ' to set</span>' : '';
-      return '<li><a class="le-agent-item" href="' + agentHref(a.name) + '" data-le-agent="' + esc(a.name) + '"' + (a.name === activeAgent ? ' aria-current="page"' : '') + '>' +
+      return '<li><a class="le-agent-item" href="' + agentHref(a.name) + '" data-le-agent="' + esc(a.name) + '"' + (a.displayName ? ' title="' + esc(a.name) + '"' : '') + (a.name === activeAgent ? ' aria-current="page"' : '') + '>' +
         '<span class="le-dot' + (n ? ' warn' : '') + '" aria-hidden="true"></span>' +
-        '<span class="le-name">' + esc(a.name) + '</span>' + meta + '</a></li>';
+        '<span class="le-name">' + esc(a.displayName || a.name) + '</span>' + meta + '</a></li>';
     }).join('');
   }
 
@@ -137,7 +139,7 @@ export const consoleShellScript: string = `<script>
       return [];
     });
 
-  // opts: { name, prompt, chips: [{ text, mono }], tab, counts: { tools, skills, abilities, actauth } }
+  // opts: { name, displayName, prompt, chips: [{ text, mono }], tab, counts: { tools, skills, abilities, actauth } }
   function renderHead(opts) {
     var counts = opts.counts || {};
     var chips = (opts.chips || []).map(function (c) {
@@ -151,7 +153,8 @@ export const consoleShellScript: string = `<script>
     }).join('');
     return '<div class="le-head"><div class="le-head-row">' +
       '<div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
-      '<div style="min-width:0"><h1>' + esc(opts.name) + '</h1>' + (opts.prompt ? '<p>' + esc(opts.prompt) + '</p>' : '') + '</div></div>' +
+      '<div style="min-width:0"><h1><span data-le-head-name>' + esc(opts.displayName || opts.name) + '</span>' +
+        '<span class="le-head-id" data-le-head-id' + (opts.displayName ? '' : ' hidden') + '>' + esc(opts.name) + '</span></h1>' + (opts.prompt ? '<p>' + esc(opts.prompt) + '</p>' : '') + '</div></div>' +
       '<div class="le-chips">' + chips + '</div></div>' +
       '<nav class="le-tabs" aria-label="Agent sections">' + tabs + '</nav></div>';
   }
@@ -175,6 +178,23 @@ export const consoleShellScript: string = `<script>
   function setActive(name) {
     activeAgent = name;
     renderList();
+  }
+
+  // After the agent's name for people changes: the sidebar and the
+  // header show it, with the id beside it, or the id alone when cleared.
+  function setDisplayName(name, displayName) {
+    agents.forEach(function (a) { if (a.name === name) { if (displayName) a.displayName = displayName; else delete a.displayName; } });
+    renderList();
+    var title = document.querySelector('[data-le-head-name]');
+    var id = document.querySelector('[data-le-head-id]');
+    if (title) title.textContent = displayName || name;
+    if (id) id.hidden = !displayName;
+  }
+
+  /** An agent's name for people: its display name, or its id. */
+  function displayNameOf(name) {
+    var a = agents.filter(function (x) { return x.name === name; })[0];
+    return (a && a.displayName) || name;
   }
 
   var section = params.get('section');
@@ -443,6 +463,6 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`
