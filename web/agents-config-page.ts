@@ -63,13 +63,53 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-markdown-full { max-width: 900px; max-height: 70vh; overflow: auto; }
   .workflow-run-entry .workflow-markdown { max-width: none; }
   .schedule-history { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
-  .workflow-section { margin: 10px 0 0; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; overflow: hidden; background: var(--le-surface, #f6f7f9); }
-  .workflow-section-title { display: flex; align-items: center; gap: 8px; padding: 9px 12px; color: var(--le-accent, #0f766e); background: var(--le-accent-soft, #e6f4ef); font-size: 13px; font-weight: 650; cursor: pointer; list-style: none; }
+  /* A workflow card: a header (title, description, what starts it, and its
+     actions), then rows that open: its message, instructions, run options
+     and recent runs. */
+  .le-tab .le-pending { margin-left: 4px; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+  .wf-tab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
+  .wf-tab-head p { margin: 0; max-width: 72ch; }
+  .wf-new-btn { flex: none; display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 8px; background: var(--accent); color: var(--on-accent); font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .wf-new-btn:hover { filter: brightness(1.08); }
+  .wf-card { margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: 0 1px 2px rgba(15, 23, 42, .04); overflow: hidden; }
+  .wf-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px 16px; }
+  .wf-card-title { min-width: 0; }
+  .wf-card-title h3 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; color: var(--ink); }
+  .wf-card-title p { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-muted); }
+  .wf-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .wf-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted); font-size: 12px; font-weight: 550; line-height: 1.5; }
+  .wf-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .7; }
+  .wf-chip.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
+  .wf-chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .wf-chip.accent { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+  .wf-card-actions { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
+  .wf-card-actions button { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
+  .wf-card-actions .wf-remove { border-color: transparent; background: transparent; color: var(--bad); }
+  .wf-card-actions .wf-remove:hover:not(:disabled) { background: var(--bad-soft); }
+  .wf-card-actions .wf-remove[data-confirming="1"] { height: auto; min-height: 32px; padding: 6px 12px; background: var(--bad-soft); text-align: left; white-space: normal; }
+  .wf-empty { padding: 12px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); }
+  .wf-card > .workflow-result:empty { display: none; }
+  .wf-card > .workflow-result { padding: 10px 20px; border-top: 1px solid var(--line); }
+  .wf-empty-state { display: grid; justify-items: start; gap: 8px; padding: 28px; border: 1px dashed var(--line); border-radius: 12px; background: var(--surface); }
+  .wf-empty-state p { margin: 0; color: var(--ink-muted); max-width: 60ch; }
+  .workflow-section { margin: 0; border-top: 1px solid var(--line); background: none; }
+  .workflow-section-title { display: flex; align-items: center; gap: 10px; padding: 12px 20px; color: var(--ink); font-size: 13.5px; font-weight: 600; cursor: pointer; list-style: none; }
+  .workflow-section-title:hover { background: var(--surface); }
   .workflow-section-title::-webkit-details-marker { display: none; }
-  .workflow-section-title::before { content: '▸'; font-size: 12px; }
-  .workflow-section[open] > .workflow-section-title::before { content: '▾'; }
-  .workflow-section-content { padding: 0 12px 10px; }
-  .workflow-section-meta { margin-left: auto; color: var(--ink-muted); font-size: 11px; font-weight: 500; }
+  .workflow-section-title::before { content: ''; width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
+  .workflow-section[open] > .workflow-section-title::before { transform: rotate(45deg); }
+  .workflow-section-content { padding: 0 20px 16px; }
+  .workflow-section-meta { margin-left: auto; color: var(--ink-muted); font-size: 12px; font-weight: 500; }
+  .wf-card .workflow-steps-text { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); font-size: 13px; line-height: 1.6; max-height: 320px; overflow: auto; }
+  .workflow-starts > .workflow-section-content { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .workflow-starts .wf-start { align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .workflow-starts .wf-start:first-of-type { padding-top: 14px; border-top: 1px solid var(--line); }
+  .workflow-starts .wf-start:has(.workflow-hook), .workflow-starts .wf-start:has(pre) { grid-column: 1 / -1; }
+  .workflow-starts .workflow-hooks:empty { display: none; }
+  @media (max-width: 640px) {
+    .wf-tab-head, .wf-card-head { flex-direction: column; }
+    .wf-card-actions { max-width: none; justify-content: flex-start; }
+  }
   .workflow-run-entry { padding: 10px 12px; border: 1px solid var(--le-line, #e5e7eb); border-radius: 8px; background: var(--le-bg, #fff); display: grid; gap: 8px; }
   .workflow-run-entry-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .workflow-run-time { font-size: 12px; }
@@ -88,7 +128,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-card.workflow-focus { box-shadow: 0 0 0 2px var(--le-accent, #0f766e); transition: box-shadow 0.3s; }
   tr.schedule-focus td { background: var(--le-accent-soft, #e6f4ef); transition: background 0.3s; }
   .workflow-starts { margin-top: 10px; }
-  .workflow-run-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .workflow-run-controls { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
   .workflow-run-notify { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
   .workflow-run-notify input { width: auto; margin: 0; }
   .wf-start { padding: 10px 0; border-top: 1px solid var(--le-line, #e5e7eb); display: grid; gap: 6px; font-size: 13px; }
@@ -108,8 +148,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .hook-custom[hidden] { display: none; }
   /* The add-webhook dialog: a header, sections that scroll, and a footer
      that stays with the buttons. */
-  dialog.hook-dialog { width: min(600px, calc(100vw - 24px)); max-width: none; max-height: calc(100vh - 48px); padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 64px rgba(15, 23, 42, .22), 0 2px 8px rgba(15, 23, 42, .08); }
-  dialog.hook-dialog::backdrop { background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px); }
+  dialog.le-dialog { width: min(600px, calc(100vw - 24px)); max-width: none; max-height: calc(100vh - 48px); padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 64px rgba(15, 23, 42, .22), 0 2px 8px rgba(15, 23, 42, .08); }
+  dialog.le-dialog::backdrop { background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px); }
   .hd { display: flex; flex-direction: column; max-height: calc(100vh - 48px); margin: 0; }
   .hd [hidden] { display: none !important; }
   .hd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 24px 16px; border-bottom: 1px solid var(--line); }
@@ -886,14 +926,14 @@ ${consoleShellScript}
         '<div><button type="button" class="workflow-add-schedule">Add a schedule</button></div>') +
       wfStartSection('webhook-' + w.id, 'Webhook',
         'A private web address another app (Stripe, GitHub, Shopify or your own) calls when something happens. Each call starts a run, with values taken from what the app sends.',
-        '<div class="workflow-hook-summary">' + webhookSummaryHtml(w) + '</div>' +
-        '<div><button type="button" class="workflow-hooks-btn">' + (w.webhooks || w.webhooksWaiting || w.webhooksOff ? 'Webhooks' : 'Add a webhook') + '</button></div>' +
-        '<div class="workflow-hooks" hidden></div>') +
+        '<div class="workflow-hooks"></div>' +
+        '<div class="workflow-hooks-add"' + (w.webhooks || w.webhooksWaiting || w.webhooksOff ? ' hidden' : '') + '><button type="button" class="workflow-hooks-btn">Add a webhook</button></div>') +
       wfStartSection('run-' + w.id, 'Run now',
         'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
         (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
-        '<div class="workflow-run-controls"><button type="button" class="workflow-run primary">Run now</button>' +
-          '<label class="workflow-run-notify" title="Sends the completed result through this agent' + String.fromCharCode(8217) + 's configured notifier"><input type="checkbox" class="workflow-run-notify-toggle"> Send result to messaging app</label></div>') +
+        '<div class="workflow-run-controls">' +
+          '<label class="workflow-run-notify" title="Sends the completed result through this agent' + String.fromCharCode(8217) + 's configured notifier"><input type="checkbox" class="workflow-run-notify-toggle"> Send result to messaging app</label>' +
+          '<button type="button" class="workflow-run primary">Run now</button></div>') +
       wfStartSection('api-' + w.id, 'API',
         'Your own app starts a run by calling this address with an API key. Add "wait": true to get the result in the answer, or "callback_url" to have it posted to you when the run ends.',
         '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
@@ -902,21 +942,33 @@ ${consoleShellScript}
     '</div></details>';
   }
 
+  // What starts a workflow and what it's doing, as chips under its title:
+  // each schedule, then its webhooks; one line when nothing starts it.
+  function workflowStatusChips(w) {
+    var chips = [];
+    var cap = function (t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; };
+    var when = function (iso) { return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+    var DOT = ' ' + String.fromCharCode(183) + ' ';
+    (w.schedules || []).forEach(function (x) {
+      var what = escapeHtml(cap(x.describe));
+      if (x.waiting) chips.push('<span class="wf-chip warn">' + what + DOT + 'waiting for a decision</span>');
+      else if (x.status === 'running') chips.push('<span class="wf-chip accent">' + what + DOT + 'running</span>');
+      else if (x.status === 'paused') chips.push('<span class="wf-chip warn">' + what + DOT + 'paused</span>');
+      else chips.push('<span class="wf-chip good">' + what + (x.nextRunAt ? DOT + 'next ' + escapeHtml(when(x.nextRunAt)) : '') + '</span>');
+    });
+    var n = function (count, one, many) { return count === 1 ? one : count + ' ' + many; };
+    if (w.webhooks) chips.push('<span class="wf-chip good">' + n(w.webhooks, 'Webhook on', 'webhooks on') + '</span>');
+    if (w.webhooksWaiting) chips.push('<span class="wf-chip warn">' + n(w.webhooksWaiting, 'Webhook needs its signing secret', 'webhooks need their signing secrets') + '</span>');
+    if (w.webhooksOff) chips.push('<span class="wf-chip">' + n(w.webhooksOff, 'Webhook off', 'webhooks off') + '</span>');
+    if (!chips.length) chips.push('<span class="wf-chip">Runs when you start it: Run now, the API or Chat</span>');
+    return chips.join('');
+  }
+
   function renderWorkflowsHtml(name, workflows) {
     if (!workflows.length) {
-      return '<p class="hint" style="margin:0">No workflows yet. <a href="/workflows/new">Describe a workflow</a>: say the steps and where you want to decide, and it' + String.fromCharCode(8217) + 's set up for you.</p>';
+      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Describe a job in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new">New workflow</a></div>';
     }
     return workflows.map(function (w) {
-      var s = w.schedule;
-      var state = !s
-        ? '<span class="hint">' + escapeHtml(workflowStartsSummary(w)) + '</span>'
-        : s.waiting
-          ? '<span class="le-pill ask">Waiting for a decision</span>'
-          : s.status === 'paused'
-            ? '<span class="le-pill warn">Schedule paused</span>'
-            : s.status === 'running'
-              ? '<span class="le-pill accent">Running</span>'
-              : '<span class="le-pill good">On</span>' + (s.nextRunAt ? ' <span class="hint">next ' + escapeHtml(new Date(s.nextRunAt).toLocaleString()) + '</span>' : '');
       var paramNames = Object.keys(w.parameters || {});
       var params = paramNames.map(function (p) {
         var spec = w.parameters[p];
@@ -938,21 +990,21 @@ ${consoleShellScript}
           (values ? '<div><div class="workflow-run-entry-label">Parameters</div><div class="workflow-run-params">' + values + '</div></div>' : '') +
           (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result workflow-markdown">' + formattedOutcome + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><div class="schedule-result-full workflow-markdown workflow-markdown-full">' + formattedOutcome + '</div></details></div>' : '') + '</li>';
       }).join('');
-      return '<div class="source workflow-card" data-workflow="' + escapeHtml(w.id) + '">' +
-        '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">' +
-          '<strong>' + escapeHtml(w.title) + '</strong><span>' + state + '</span></div>' +
-        '<p class="hint" style="margin:4px 0 6px">' + escapeHtml(w.description) + (s ? ' ' + String.fromCharCode(183) + ' ' + escapeHtml(workflowStartsSummary(w)) : '') + '</p>' +
+      return '<article class="workflow-card wf-card" data-workflow="' + escapeHtml(w.id) + '">' +
+        '<header class="wf-card-head"><div class="wf-card-title">' +
+            '<h3>' + escapeHtml(w.title) + '</h3>' +
+            (w.description ? '<p>' + escapeHtml(w.description) + '</p>' : '') +
+            '<div class="wf-chips">' + workflowStatusChips(w) + '</div></div>' +
+          '<div class="wf-card-actions"><button type="button" class="workflow-edit">Edit</button><button type="button" class="wf-remove workflow-forget">Remove</button></div>' +
+        '</header>' +
         (w.originalRequest ? '<details class="workflow-section" open><summary class="workflow-section-title">Original message</summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></div></details>' : '') +
         '<details class="workflow-section" open><summary class="workflow-section-title">Instructions <span class="workflow-section-meta">' + escapeHtml(w.id) + ' skill</span></summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></div></details>' +
         workflowStartsHtml(w, name, params) +
-        '<div class="hint workflow-result" style="margin-top:6px"></div>' +
         (runs ? '<details class="workflow-section workflow-runs"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="workflow-section-title">Recent runs<span class="workflow-section-meta">' + w.recentRuns.length + '</span></summary><div class="workflow-section-content"><ul class="schedule-history">' + runs + '</ul></div></details>'
-          : '<p class="hint" style="margin:10px 0 0">No runs yet.</p>') +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
-          '<button type="button" class="workflow-edit">Edit</button>' +
-          '<button type="button" class="delete-btn workflow-forget">Remove workflow</button>' +
-        '</div></div>';
-    }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
+          : '<div class="wf-empty">No runs yet.</div>') +
+        '<div class="hint workflow-result"></div>' +
+        '</article>';
+    }).join('');
   }
 
   // The Overview's Workflows tile: how many, the next scheduled run, and
@@ -1031,6 +1083,14 @@ ${consoleShellScript}
   // Set while a workflow's editor is open, so the running-run refresh
   // doesn't redraw the card under someone typing.
   var workflowEditing = false;
+  // Whether redrawing the cards now would lose something: a dialog open,
+  // or a webhook secret being typed.
+  function workflowInputInUse() {
+    if (document.querySelector('dialog[open]')) return true;
+    var inputs = detail.querySelectorAll('.workflow-hooks input');
+    for (var i = 0; i < inputs.length; i++) if (inputs[i].value || inputs[i] === document.activeElement) return true;
+    return false;
+  }
 
   function loadWorkflowsSection(name) {
     var el = detail.querySelector('#workflowsContent');
@@ -1046,17 +1106,13 @@ ${consoleShellScript}
       workflows.forEach(function (w) { workflowsById[w.id] = w; });
       el.innerHTML = renderWorkflowsHtml(name, workflows);
       var cards = el.querySelectorAll('.workflow-card');
-      for (var i = 0; i < cards.length; i++) {
-        wireWorkflowCard(name, cards[i]);
-        // A planned webhook is waiting for its signing secret. Open its
-        // setup in place so the user sees what to do without another click.
-        var workflow = workflowsById[cards[i].dataset.workflow];
-        if (workflow && workflow.webhooksWaiting) openWorkflowHooks(name, cards[i]);
-      }
+      // Each card lists its webhooks as it's wired, a waiting one's setup
+      // steps included.
+      for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
       openPendingWorkflowEdit();
       // Keep a running run's status current while the Overview is open.
       var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }); });
-      if (running && currentTab === 'workflows') workflowsRefreshTimer = setTimeout(function () { if (!workflowEditing) loadWorkflowsSection(name); }, 3000);
+      if (running && currentTab === 'workflows') workflowsRefreshTimer = setTimeout(function () { if (!workflowEditing && !workflowInputInUse()) loadWorkflowsSection(name); }, 3000);
     });
   }
 
@@ -1161,17 +1217,6 @@ ${consoleShellScript}
     });
     check();
     form.title.focus();
-  }
-
-  // What a workflow's webhooks are doing: on, waiting for the sender's
-  // signing secret, or off.
-  function webhookSummaryHtml(w) {
-    var parts = [];
-    var n = function (count, one, many) { return count === 1 ? one : count + ' ' + many; };
-    if (w.webhooks) parts.push('<span>' + n(w.webhooks, '1 webhook is on', 'webhooks are on') + '.</span>');
-    if (w.webhooksWaiting) parts.push('<span class="le-pill warn">' + n(w.webhooksWaiting, '1 webhook needs its signing secret', 'webhooks need their signing secrets') + '</span>');
-    if (w.webhooksOff) parts.push('<span class="hint">' + n(w.webhooksOff, '1 webhook is off', 'webhooks are off') + '.</span>');
-    return parts.length ? '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + parts.join(' ') + '</div>' : '<span class="hint">None yet.</span>';
   }
 
   // ---- A workflow's webhook triggers (core/workflow-triggers.ts): secret
@@ -1293,7 +1338,7 @@ ${consoleShellScript}
 
   function openHookFormDialog(w, base, onCreated) {
     var dialog = document.createElement('dialog');
-    dialog.className = 'hook-dialog';
+    dialog.className = 'le-dialog hook-dialog';
     dialog.innerHTML = hookFormHtml(w);
     document.body.appendChild(dialog);
     dialog.addEventListener('close', function () { dialog.remove(); });
@@ -1362,28 +1407,19 @@ ${consoleShellScript}
       '<input readonly value="' + escapeHtml(url) + '" onclick="this.select()"></div>';
   }
 
-  // The card's webhooks button: hides the list while it's open, else opens
-  // it, or goes straight to the form when there are none.
-  function hooksButtonLabel(card, w) {
-    var btn = card.querySelector('.workflow-hooks-btn');
-    var box = card.querySelector('.workflow-hooks');
-    if (!btn) return;
-    btn.textContent = box && !box.hidden ? 'Hide webhooks' : (w.webhooks || w.webhooksWaiting || w.webhooksOff ? 'Webhooks' : 'Add a webhook');
-  }
-
-  // shown: a webhook just made, whose URL is shown in its first step.
-  function openWorkflowHooks(name, card, shown) {
+  // A workflow's webhooks, listed in its Webhook tile: each with its setup
+  // steps while it waits for the sender's secret, and a way to add another.
+  // With none, the tile shows just "Add a webhook". shown: a webhook just
+  // made, whose URL appears in its first step.
+  function loadWorkflowHooks(name, card, shown) {
     var w = workflowsById[card.dataset.workflow];
     var box = card.querySelector('.workflow-hooks');
+    var addBox = card.querySelector('.workflow-hooks-add');
     if (!w || !box) return;
-    if (!box.hidden) { box.hidden = true; box.innerHTML = ''; workflowEditing = false; hooksButtonLabel(card, w); return; }
-    workflowEditing = true;
-    box.hidden = false;
-    hooksButtonLabel(card, w);
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/triggers';
     var hooksById = {};
     function render(shownUrl, shownId) {
-      box.innerHTML = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
+      if (!box.innerHTML) box.innerHTML = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
       fetchJsonRetryOnce(base).then(function (r) {
         if (!r.ok) { box.innerHTML = '<p class="error">' + escapeHtml(r.body.error || 'Could not load webhooks') + '</p>'; return; }
         var list = r.body.triggers || [];
@@ -1393,19 +1429,21 @@ ${consoleShellScript}
         w.webhooks = list.filter(function (t) { return t.enabled; }).length;
         w.webhooksWaiting = list.filter(function (t) { return !t.enabled && t.verify && !t.verify.secret_set; }).length;
         w.webhooksOff = list.length - w.webhooks - w.webhooksWaiting;
-        var summary = card.querySelector('.workflow-hook-summary');
-        if (summary) summary.innerHTML = webhookSummaryHtml(w);
-        hooksButtonLabel(card, w);
+        var chips = card.querySelector('.wf-chips');
+        if (chips) chips.innerHTML = workflowStatusChips(w);
+        if (addBox) addBox.hidden = list.length > 0;
+        // One waiting for its secret, or just made: open the Run options
+        // row it's in, so its steps show.
+        var row = box.closest('details');
+        if (row && (shownId || w.webhooksWaiting)) row.open = true;
         var setupPending = list.some(function (t) { return t.verify && !t.verify.secret_set; });
-        box.innerHTML = '<h4 style="margin:10px 0 4px">Webhooks</h4>' +
-          '<p class="hint" style="margin:0 0 6px">A secret URL an outside service (Stripe, GitHub, a form, monitoring) posts its events to; each one starts a run.</p>' +
-          (list.length ? list.map(function (t) { return hookRowHtml(t, t.trigger_id === shownId ? shownUrl : null); }).join('') : '') +
+        box.innerHTML = list.map(function (t) { return hookRowHtml(t, t.trigger_id === shownId ? shownUrl : null); }).join('') +
           // Finish a planned webhook's setup before offering a second one.
           (list.length
             ? (setupPending
               ? '<p class="hint" style="margin:8px 0 0">Finish setting up the webhook above before adding another.</p>'
               : '<div style="margin-top:10px"><button type="button" class="hook-add-another">Add another webhook</button></div>')
-            : '<p class="hint" style="margin:0">No webhooks yet.</p><div style="margin-top:10px"><button type="button" class="hook-add-first">Add a webhook</button></div>');
+            : '');
         wire();
       });
     }
@@ -1451,7 +1489,7 @@ ${consoleShellScript}
           });
         })(rows[i]);
       }
-      var addButton = box.querySelector('.hook-add-another, .hook-add-first');
+      var addButton = box.querySelector('.hook-add-another');
       if (addButton) addButton.addEventListener('click', function () {
         openHookFormDialog(w, base, function (url, id) { render(url, id); });
       });
@@ -1485,24 +1523,17 @@ ${consoleShellScript}
         btn.setAttribute('aria-expanded', String(!text.hidden));
       });
     }
-    // With no webhook yet, the button goes straight to the form; once one
-    // is made, its setup steps open on the card.
-    card.querySelector('.workflow-hooks-btn').addEventListener('click', function (ev) {
-      var btn = ev.currentTarget;
+    // Shown only while it has none: straight to the form; once one is made,
+    // it's listed in the tile with its setup steps.
+    card.querySelector('.workflow-hooks-btn').addEventListener('click', function () {
       var w = workflowsById[id];
-      var box = card.querySelector('.workflow-hooks');
-      if (w && box && box.hidden && !(w.webhooks || w.webhooksWaiting || w.webhooksOff)) {
-        openHookFormDialog(w, base + '/triggers', function (url, triggerId, t) {
-          if (t && t.enabled) w.webhooks = (w.webhooks || 0) + 1;
-          else if (t && t.verify && !t.verify.secret_set) w.webhooksWaiting = (w.webhooksWaiting || 0) + 1;
-          else w.webhooksOff = (w.webhooksOff || 0) + 1;
-          card.querySelector('.workflow-hook-summary').innerHTML = webhookSummaryHtml(w);
-          openWorkflowHooks(name, card, { url: url, id: triggerId });
-        });
-        return;
-      }
-      openWorkflowHooks(name, card);
+      if (!w) return;
+      openHookFormDialog(w, base + '/triggers', function (url, triggerId) {
+        loadWorkflowHooks(name, card, { url: url, id: triggerId });
+      });
     });
+    var wf = workflowsById[id];
+    if (wf && (wf.webhooks || wf.webhooksWaiting || wf.webhooksOff)) loadWorkflowHooks(name, card);
     // Add a schedule: the Schedules tab's form, with this workflow chosen.
     card.querySelector('.workflow-add-schedule').addEventListener('click', function () {
       pendingScheduleWorkflow = id;
@@ -1560,6 +1591,7 @@ ${consoleShellScript}
       if (currentName !== name) return;
       var set = function (id, html) { var el = detail.querySelector('#' + id); if (el) el.innerHTML = html; };
       var n = results[0].ok ? results[0].body : null;
+      showMessagingCount(n);
       var pending = (results[1].ok && results[1].body.pending) || [];
       var connected = n && (n.source === 'file' || n.source === 'code' || n.source === 'default');
       set('ovMessagingValue', !n ? '&mdash;' : connected ? escapeHtml(APP_NAMES[n.channel] || n.channel) + (n.source === 'default' ? ' (default)' : '') : 'Not connected');
@@ -1589,7 +1621,7 @@ ${consoleShellScript}
   // the dialog with it. titleHtml is the header (an h3, which may carry an
   // id the form's code retitles); its Cancel carries data-dialog-cancel.
   function editDialogHtml(titleHtml, leadHtml, formHtml) {
-    return '<dialog class="hook-dialog edit-dialog"><div class="hd">' +
+    return '<dialog class="le-dialog edit-dialog"><div class="hd">' +
       '<header class="hd-head"><div>' + titleHtml + (leadHtml || '') + '</div><button type="button" class="hd-close" aria-label="Close">&times;</button></header>' +
       '<div class="ed-body">' + formHtml + '</div></div></dialog>';
   }
@@ -1921,15 +1953,24 @@ ${consoleShellScript}
       '<div id="approvalsContent"><p class="hint">Loading&hellip;</p></div>';
   }
 
-  // How many decisions are waiting: a badge on the Messaging tab, seen
-  // from every tab, and a line at the top of Permissions.
+  // The Messaging tab's count, like the other tabs': the messaging apps
+  // it's connected to (a notifier in its code, or the server's default,
+  // counts as one when none is saved).
+  function showMessagingCount(n) {
+    if (!n) return;
+    var saved = (n.connections || []).length;
+    leShell.setCount('messaging', saved || (n.source === 'code' || n.source === 'default' ? 1 : 0));
+  }
+
+  // How many decisions are waiting: an amber badge beside the Messaging
+  // tab's count, seen from every tab, and a line at the top of Permissions.
   function showPendingCount(n) {
-    leShell.setCount('messaging', n);
     var link = detail.querySelector('.le-tab[data-tab="messaging"]');
-    var badge = link && link.querySelector('.le-count');
+    var badge = link && link.querySelector('.le-pending');
+    if (link && n && !badge) { badge = document.createElement('span'); badge.className = 'le-pending'; link.appendChild(badge); }
     if (badge) {
-      badge.className = 'le-count warn';
-      if (!n) badge.remove();
+      if (n) { badge.textContent = String(n); badge.title = (n === 1 ? '1 request is' : n + ' requests are') + ' waiting for a decision'; }
+      else badge.remove();
     }
     var note = detail.querySelector('#pendingNote');
     if (note) {
@@ -2658,6 +2699,7 @@ ${consoleShellScript}
       if (currentName !== name) return;
       if (!results[0].ok) throw new Error(results[0].body.error || 'request failed');
       lastNotifier = results[0].body;
+      showMessagingCount(results[0].body);
       // Keep open the app sections that were open (a save redraws the tab).
       var wasOpen = Array.prototype.map.call(content.querySelectorAll('details.msg-conn[open]'), function (d) { return d.dataset.channel; });
       content.innerHTML = renderApprovalsHtml(results[0].body);
@@ -4855,7 +4897,8 @@ ${consoleShellScript}
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +
       // Workflows: the jobs this agent does, each with what starts it.
       '<div class="tab-panel" data-tab-panel="workflows">' +
-        '<p class="muted" style="margin:0 0 20px">The jobs this agent does on its own: what it does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
+        '<div class="wf-tab-head"><p class="muted">The jobs this agent does on its own: what it does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
+          '<a class="wf-new-btn" href="/workflows/new">New workflow</a></div>' +
         '<section id="workflowsSection"><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '</div>' +
       // Advanced: the agent's own tools (and Composio, subagents), then its
