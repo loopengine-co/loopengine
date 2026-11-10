@@ -79,7 +79,8 @@ export const consoleShellScript: string = `<script>
   // where you are: on a config tab you land on the same tab for the other
   // agent, and in Chat on its Chat.
   function agentHref(name) {
-    if (page === 'agent-config') return tabHref(name, params.get('tab') || 'overview');
+    // Read live: the agent page changes tabs and agents without reloading.
+    if (page === 'agent-config') return tabHref(name, new URLSearchParams(location.search).get('tab') || 'overview');
     if (page === 'chat') return tabHref(name, 'chat');
     return tabHref(name, 'overview');
   }
@@ -93,7 +94,7 @@ export const consoleShellScript: string = `<script>
     list.innerHTML = agents.map(function (a) {
       var n = toSet[a.name] || 0;
       var meta = n ? '<span class="le-pill warn" title="Settings this agent must set before its tools work">' + n + ' to set</span>' : '';
-      return '<li><a class="le-agent-item" href="' + agentHref(a.name) + '"' + (a.name === activeAgent ? ' aria-current="page"' : '') + '>' +
+      return '<li><a class="le-agent-item" href="' + agentHref(a.name) + '" data-le-agent="' + esc(a.name) + '"' + (a.name === activeAgent ? ' aria-current="page"' : '') + '>' +
         '<span class="le-dot' + (n ? ' warn' : '') + '" aria-hidden="true"></span>' +
         '<span class="le-name">' + esc(a.name) + '</span>' + meta + '</a></li>';
     }).join('');

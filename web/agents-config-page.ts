@@ -527,7 +527,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
 <div class="le-app">
 ${consoleSidebarHtml}
 <main class="le-main">
-  <div id="empty">Loading agents&hellip;</div>
+  <div id="empty">Loading&hellip;</div>
   <div id="detail" style="display:none;flex-direction:column;flex:1;min-height:0"></div>
 </main>
 </div>
@@ -4945,18 +4945,25 @@ ${consoleShellScript}
     loadWorkflowsSection(cfg.name);
   }
 
-  function selectAgent(name) {
+  function fetchAgentConfig(name) {
+    return fetch('/agents/' + encodeURIComponent(name) + '/config')
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); });
+  }
+
+  // prefetched: the config request already under way for this agent, as
+  // on a first load, which asks for it alongside the agent list.
+  function selectAgent(name, prefetched) {
     currentName = name;
     gatewayLoadedFor = null;
     actauthLoadedFor = null;
     envLoadedFor = null;
     abilitiesLoadedFor = null;
+    if (workflowsRefreshTimer) { clearTimeout(workflowsRefreshTimer); workflowsRefreshTimer = null; }
     leShell.setActive(name);
-    detail.innerHTML = '<p class="muted" style="padding:24px">Loading&hellip;</p>';
-    empty.style.display = 'none';
-    detail.style.display = 'flex';
-    fetch('/agents/' + encodeURIComponent(name) + '/config')
-      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+    // On a first load the page's own "Loading…" stays up; only a switch
+    // from an agent already shown needs one in its place.
+    if (detail.style.display !== 'none') detail.innerHTML = '<p class="muted" style="padding:24px">Loading&hellip;</p>';
+    (prefetched || fetchAgentConfig(name))
       .then(function (result) {
         if (currentName !== name) return;
         // A non-ok response's body is {error: "..."}, not a real config
@@ -4971,9 +4978,32 @@ ${consoleShellScript}
       })
       .catch(function (err) {
         if (currentName !== name) return;
+        empty.style.display = 'none';
+        detail.style.display = 'flex';
         detail.innerHTML = '<p class="error">Could not load config: ' + escapeHtml(err.message) + '</p>';
       });
   }
+
+  // Another agent in the sidebar opens in place, on the same tab: the
+  // address changes as a click on the link would, without reloading the
+  // page or the agent list.
+  document.addEventListener('click', function (ev) {
+    var link = ev.target.closest('a[data-le-agent]');
+    if (!link || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    if (document.querySelector('dialog[open]')) return;
+    ev.preventDefault();
+    var name = link.dataset.leAgent;
+    if (name === currentName) return;
+    history.pushState(null, '', leShell.tabHref(name, currentTab));
+    selectAgent(name);
+  });
+  window.addEventListener('popstate', function () {
+    var params = new URLSearchParams(location.search);
+    var name = params.get('agent');
+    if (!name) return;
+    currentTab = resolveTab(params.get('tab'));
+    if (name !== currentName) selectAgent(name); else switchTab(currentTab);
+  });
 
   // Chat is a real link to the playground; every other tab, and every
   // Overview card pointing at one, switches in place. Delegated once
@@ -4989,6 +5019,10 @@ ${consoleShellScript}
   currentTab = resolveTab(initialParams.get('tab'));
   // An old ?tab=tools or ?tab=skills link: scrolled to that part once loaded.
   var initialAdvancedPart = TAB_ALIASES[initialParams.get('tab')] ? initialParams.get('tab') : null;
+  // The agent asked for is fetched alongside the list, not after it.
+  var requestedAgent = initialParams.get('agent');
+  var prefetchedConfig = requestedAgent ? fetchAgentConfig(requestedAgent) : null;
+  if (prefetchedConfig) prefetchedConfig.catch(function () {});
   leShell.ready.then(function (agents) {
     if (!agents.length) {
       empty.innerHTML = leShell.loadError()
@@ -4996,9 +5030,8 @@ ${consoleShellScript}
         : 'No agents yet. <a href="/agents?new=1">Create one</a> or add a folder under agents/.';
       return;
     }
-    var requested = initialParams.get('agent');
-    var initial = agents.some(function (a) { return a.name === requested; }) ? requested : agents[0].name;
-    selectAgent(initial);
+    var found = agents.some(function (a) { return a.name === requestedAgent; });
+    selectAgent(found ? requestedAgent : agents[0].name, found ? prefetchedConfig : null);
   });
 })();
 </script>
