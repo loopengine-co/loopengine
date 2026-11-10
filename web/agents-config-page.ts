@@ -104,7 +104,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-steps-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--le-surface, #f6f7f9); }
   .workflow-params { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .workflow-params[hidden] { display: none; }
-  .workflow-editor[hidden] { display: none; }
   .workflow-hooks[hidden] { display: none; }
   .hook-custom[hidden] { display: none; }
   /* The add-webhook dialog: a header, sections that scroll, and a footer
@@ -148,14 +147,23 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .ed-body form.add-source { display: grid; gap: 14px; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
   .ed-body form.add-source label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
   .ed-body form.add-source label .hint { font-weight: 400; }
-  .ed-body input:not([type="checkbox"]):not([type="radio"]), .ed-body select, .ed-body textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; transition: border-color .15s, box-shadow .15s; }
+  .ed-body input:not([type="checkbox"]):not([type="radio"]), .ed-body select, .ed-body textarea { width: 100%; box-sizing: border-box; font-family: inherit; font-weight: 400; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; transition: border-color .15s, box-shadow .15s; }
   .ed-body input:not([type="checkbox"]):not([type="radio"]), .ed-body select { height: 38px; padding: 0 12px; }
+  .ed-body input, .ed-body select, .ed-body textarea { font-weight: 400; }
+  .ed-body .body-field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .ed-body .body-field .hint { font-weight: 400; }
   .ed-body textarea { padding: 10px 12px; line-height: 1.5; min-height: 140px; }
   .ed-body textarea.ed-tall { min-height: min(55vh, 520px); font-family: var(--font-mono); font-size: 13px; }
   .ed-body input:focus, .ed-body select:focus, .ed-body textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .ed-actions { position: sticky; bottom: -20px; z-index: 1; display: flex; justify-content: flex-end; gap: 8px; margin: 6px -24px -20px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
   .ed-actions button { height: 38px; padding: 0 16px; border-radius: 8px; font-weight: 600; }
   .edit-dialog [data-dialog-cancel] { display: inline-block !important; }
+  dialog.workflow-editor-dialog { width: min(760px, calc(100vw - 24px)); }
+  .ed-body .workflow-param-row input:not([type="checkbox"]) { width: auto; }
+  .ed-body .workflow-param-row .wp-name { flex: 0 0 170px; font-family: var(--font-mono); font-size: 13px; }
+  .ed-body .workflow-param-row .wp-desc { flex: 1 1 200px; }
+  .ed-body .workflow-param-row label { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+  .ed-body .workflow-editor-form textarea[name="instructions"] { min-height: min(45vh, 420px); font-family: var(--font-mono); font-size: 13px; }
   .edit-dialog .hd-head h3 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
   @media (max-width: 520px) {
     .hd-row, .hd-sig, .hd-map { grid-template-columns: minmax(0, 1fr); }
@@ -943,7 +951,7 @@ ${consoleShellScript}
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
           '<button type="button" class="workflow-edit">Edit</button>' +
           '<button type="button" class="delete-btn workflow-forget">Remove workflow</button>' +
-        '</div><div class="workflow-editor" hidden></div></div>';
+        '</div></div>';
     }).join('') + '<p class="hint" style="margin:6px 0 0"><a href="/workflows/new">Describe another workflow</a></p>';
   }
 
@@ -1064,7 +1072,7 @@ ${consoleShellScript}
 
   function workflowEditorHtml(w) {
     var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
-    return '<form class="add-source workflow-editor-form" style="margin-top:10px">' +
+    return '<form class="add-source workflow-editor-form">' +
       '<label>Title<input name="title" maxlength="120" value="' + escapeHtml(w.title) + '">' +
         '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
       '<label>Description <span class="hint">(one line on what this job is; the agent uses it to recognise the job when you ask in Chat)</span>' +
@@ -1075,8 +1083,8 @@ ${consoleShellScript}
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
       '<p class="hint workflow-editor-check" style="margin:0"></p>' +
-      '<div style="display:flex;gap:8px"><button type="submit" class="primary">Save</button><button type="button" class="wp-cancel">Cancel</button></div>' +
-      '<div class="hint workflow-editor-result"></div></form>';
+      '<div class="hint workflow-editor-result"></div>' +
+      '<div class="ed-actions"><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary">Save</button></div></form>';
   }
 
   // Placeholders the instructions use that no parameter declares, and
@@ -1100,16 +1108,25 @@ ${consoleShellScript}
 
   function openWorkflowEditor(name, card) {
     var w = workflowsById[card.dataset.workflow];
-    var box = card.querySelector('.workflow-editor');
-    if (!w || !box) return;
+    if (!w) return;
     workflowEditing = true;
-    box.innerHTML = workflowEditorHtml(w);
-    box.hidden = false;
-    var form = box.querySelector('form');
+    // In a dialog: the editor's code holds its own form, so it needn't sit
+    // in the card. Closing it any way (Esc, the backdrop, x, Cancel)
+    // discards the edits.
+    var dialog = document.createElement('dialog');
+    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, the steps the agent follows and the values each run is given.</p>', workflowEditorHtml(w));
+    dialog = dialog.firstChild;
+    dialog.classList.add('workflow-editor-dialog');
+    document.body.appendChild(dialog);
+    var form = dialog.querySelector('form');
     var rows = form.querySelector('.workflow-param-rows');
     var result = form.querySelector('.workflow-editor-result');
     function check() { workflowPlaceholderCheck(w, form); }
-    function close() { workflowEditing = false; box.hidden = true; box.innerHTML = ''; }
+    function close() { workflowEditing = false; if (dialog.open) dialog.close(); }
+    dialog.addEventListener('close', function () { workflowEditing = false; dialog.remove(); });
+    dialog.addEventListener('click', function (ev) { if (ev.target === dialog) close(); });
+    dialog.querySelector('.hd-close').addEventListener('click', close);
+    dialog.showModal();
     rows.addEventListener('click', function (ev) {
       if (ev.target.classList.contains('wp-remove')) { ev.target.closest('.workflow-param-row').remove(); check(); }
     });
@@ -1138,7 +1155,7 @@ ${consoleShellScript}
         body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
-        workflowEditing = false;
+        close();
         loadWorkflowsSection(name);
       });
     });
