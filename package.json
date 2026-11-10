@@ -1,6 +1,6 @@
 {
   "name": "loopengine",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
   "license": "FSL-1.1-MIT",
