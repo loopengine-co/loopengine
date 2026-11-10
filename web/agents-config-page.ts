@@ -107,14 +107,63 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-editor[hidden] { display: none; }
   .workflow-hooks[hidden] { display: none; }
   .hook-custom[hidden] { display: none; }
-  dialog.hook-dialog { width: min(640px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgba(0,0,0,.28); }
-  dialog.hook-dialog::backdrop { background: rgba(15, 23, 42, .48); }
-  .hook-dialog-inner { padding: 20px; }
-  .hook-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-  .hook-dialog-head h3 { margin: 0; font-size: 18px; }
-  .hook-dialog-close { width: 32px; height: 32px; padding: 0; font-size: 20px; line-height: 1; }
-  form.add-source.hook-form { max-width: none; }
-  .hook-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  /* The add-webhook dialog: a header, sections that scroll, and a footer
+     that stays with the buttons. */
+  dialog.hook-dialog { width: min(600px, calc(100vw - 24px)); max-width: none; max-height: calc(100vh - 48px); padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 64px rgba(15, 23, 42, .22), 0 2px 8px rgba(15, 23, 42, .08); }
+  dialog.hook-dialog::backdrop { background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px); }
+  .hd { display: flex; flex-direction: column; max-height: calc(100vh - 48px); margin: 0; }
+  .hd [hidden] { display: none !important; }
+  .hd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 24px 16px; border-bottom: 1px solid var(--line); }
+  .hd-head h3 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+  .hd-head p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-muted); }
+  .hd-close { flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink-muted); font-size: 22px; line-height: 1; cursor: pointer; }
+  .hd-close:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
+  .hd-body { overflow-y: auto; padding: 0 24px; }
+  .hd-section { display: grid; gap: 14px; margin: 0; padding: 18px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; box-shadow: none; }
+  .hd-section:last-child { border-bottom: 0; }
+  .hd-section h4 { margin: 0; font-size: 11.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+  .hd-field { display: grid; gap: 6px; }
+  .hd-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .hd-optional { font-weight: 400; color: var(--ink-muted); }
+  .hd-hint { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-muted); }
+  .hd input:not([type="checkbox"]), .hd select { width: 100%; box-sizing: border-box; height: 38px; padding: 0 12px; font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; transition: border-color .15s, box-shadow .15s; }
+  .hd input::placeholder { color: var(--ink-faint); }
+  .hd input:focus, .hd select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .hd-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px; }
+  .hd-sig { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .hd-map { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 10px; align-items: center; }
+  .hd-map code { font-family: var(--font-mono); font-size: 12.5px; padding: 4px 8px; border-radius: 6px; background: var(--surface); }
+  .hd-check { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; transition: border-color .15s, background .15s; }
+  .hd-check:hover { border-color: var(--accent); }
+  .hd-check:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .hd-check input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+  .hd-check strong { display: block; font-size: 13.5px; font-weight: 600; }
+  .hd-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
+  .hd-foot .hook-form-result { font-size: 13px; color: var(--ink-muted); }
+  .hd-actions { display: flex; gap: 8px; margin-left: auto; }
+  .hd-actions button { height: 38px; padding: 0 16px; border-radius: 8px; font-weight: 600; }
+  /* Edit forms in a dialog (Overview and Advanced). */
+  dialog.edit-dialog { width: min(680px, calc(100vw - 24px)); }
+  .ed-body { overflow-y: auto; padding: 20px 24px; }
+  .ed-body form.add-source { display: grid; gap: 14px; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+  .ed-body form.add-source label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .ed-body form.add-source label .hint { font-weight: 400; }
+  .ed-body input:not([type="checkbox"]):not([type="radio"]), .ed-body select, .ed-body textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; transition: border-color .15s, box-shadow .15s; }
+  .ed-body input:not([type="checkbox"]):not([type="radio"]), .ed-body select { height: 38px; padding: 0 12px; }
+  .ed-body textarea { padding: 10px 12px; line-height: 1.5; min-height: 140px; }
+  .ed-body textarea.ed-tall { min-height: min(55vh, 520px); font-family: var(--font-mono); font-size: 13px; }
+  .ed-body input:focus, .ed-body select:focus, .ed-body textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .ed-actions { position: sticky; bottom: -20px; z-index: 1; display: flex; justify-content: flex-end; gap: 8px; margin: 6px -24px -20px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
+  .ed-actions button { height: 38px; padding: 0 16px; border-radius: 8px; font-weight: 600; }
+  .edit-dialog [data-dialog-cancel] { display: inline-block !important; }
+  .edit-dialog .hd-head h3 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+  @media (max-width: 520px) {
+    .hd-row, .hd-sig, .hd-map { grid-template-columns: minmax(0, 1fr); }
+    .ed-body { padding: 16px; }
+    .ed-actions { bottom: -16px; margin: 6px -16px -16px; padding: 12px 16px; }
+    .hd-head, .hd-foot { padding-left: 16px; padding-right: 16px; }
+    .hd-body { padding: 0 16px; }
+  }
   .workflow-hook { border-top: 1px solid var(--le-line, #e5e7eb); padding: 8px 0; }
   .hook-url { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; margin: 6px 0; border-radius: 6px; background: var(--le-surface, #f6f7f9); font-size: 13px; }
   .hook-url input { font-family: var(--le-mono, monospace); font-size: 12.5px; }
@@ -1173,41 +1222,62 @@ ${consoleShellScript}
         '<button type="button" class="delete-btn hook-delete">Delete</button></div></div>';
   }
 
+  // The add-webhook dialog's form: where the events come from, which ones,
+  // what the workflow gets from each, and what happens after each run.
   function hookFormHtml(w) {
     var params = Object.keys(w.parameters || {});
-    // Where the events come from first, then which ones; the name follows
-    // from those unless you give one.
-    return '<form class="add-source hook-form">' +
-      '<label>Where it comes from <span class="hint">(a known sender' + String.fromCharCode(8217) + 's signature is checked, so only it can start runs)</span>' +
-        '<select name="sender"><option value="stripe">Stripe</option><option value="github">GitHub</option><option value="shopify">Shopify</option>' +
-          '<option value="standard">Standard Webhooks (Clerk, Resend, OpenAI, Svix)</option><option value="custom">Another service that signs its requests</option>' +
-          '<option value="">Any app: the secret URL is enough</option></select></label>' +
-      '<div class="hook-custom body-field" hidden>How it signs <span class="hint">(from its webhook docs: an HMAC of the request body, in a header)</span>' +
-        '<div class="workflow-param-row">' +
-          '<input name="sig_header" placeholder="Header, e.g. Linear-Signature" style="flex:1">' +
-          '<select name="sig_algorithm" aria-label="Hash"><option value="sha256">SHA-256</option><option value="sha1">SHA-1</option><option value="sha512">SHA-512</option></select>' +
-          '<select name="sig_encoding" aria-label="Written as"><option value="hex">hex</option><option value="base64">base64</option></select>' +
-          '<input name="sig_prefix" placeholder="Prefix, e.g. sha256= (if any)" style="width:180px">' +
-        '</div></div>' +
-      '<label class="hook-secret" hidden>Signing secret <span class="hint">(optional now: most senders show it only after you give them the URL, so you can add it next)</span><input name="secret" autocomplete="off"></label>' +
-      '<label>Run only when <span class="hint">(optional: a field in the payload, and the values that start a run)</span>' +
-        '<div class="workflow-param-row"><input name="filter_path" placeholder="type"><input name="filter_values" placeholder="charge.dispute.created, charge.dispute.updated" style="flex:1"></div></label>' +
-      '<label>Name <span class="hint">(optional)</span><input name="name" maxlength="80" placeholder="Stripe events"></label>' +
-      (params.length
-        ? '<div class="body-field">Parameters from the payload <span class="hint">(a dot path into its JSON, e.g. data.object.id)</span>' +
-            params.map(function (p) { return '<div class="workflow-param-row"><code class="wp-name">' + escapeHtml(p) + '</code><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" style="flex:1"></div>'; }).join('') + '</div>' +
-          '<label>Or give the whole payload to <select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select></label>'
-        : '<p class="hint" style="margin:0">This workflow takes no parameters, so the payload isn' + String.fromCharCode(8217) + 't passed on. Add one in Edit to use it.</p>') +
-      '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
-      '<label>Post each run' + String.fromCharCode(8217) + 's result to <span class="hint">(optional, an https URL)</span><input name="callback_url" placeholder="https://example.com/hooks/loopengine"></label>' +
-      '<div class="hook-dialog-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">Make the URL</button></div>' +
-      '<div class="hint hook-form-result"></div></form>';
+    var RSQ = String.fromCharCode(8217);
+    var field = function (label, input, hint, attrs) {
+      return '<div class="hd-field"' + (attrs || '') + '><label class="hd-label">' + label + input + '</label>' + (hint ? '<p class="hd-hint">' + hint + '</p>' : '') + '</div>';
+    };
+    return '<form class="hook-form hd">' +
+      '<header class="hd-head"><div><h3>Add a webhook</h3>' +
+        '<p>Another app calls a private URL when something happens, and each call starts a run of ' + String.fromCharCode(8220) + escapeHtml(w.title || w.id) + String.fromCharCode(8221) + '.</p></div>' +
+        '<button type="button" class="hd-close hook-dialog-close" aria-label="Close">&times;</button></header>' +
+      '<div class="hd-body">' +
+        '<section class="hd-section"><h4>Source</h4>' +
+          field('Where it comes from',
+            '<select name="sender"><option value="stripe">Stripe</option><option value="github">GitHub</option><option value="shopify">Shopify</option>' +
+              '<option value="standard">Standard Webhooks (Clerk, Resend, OpenAI, Svix)</option><option value="custom">Another service that signs its requests</option>' +
+              '<option value="">Any app: the secret URL is enough</option></select>',
+            'A known sender' + RSQ + 's signature is checked, so only it can start runs.') +
+          '<div class="hd-field hook-custom" hidden><span class="hd-label">How it signs</span>' +
+            '<div class="hd-sig"><input name="sig_header" placeholder="Header, e.g. Linear-Signature" aria-label="Signature header">' +
+              '<select name="sig_algorithm" aria-label="Hash"><option value="sha256">SHA-256</option><option value="sha1">SHA-1</option><option value="sha512">SHA-512</option></select>' +
+              '<select name="sig_encoding" aria-label="Written as"><option value="hex">hex</option><option value="base64">base64</option></select></div>' +
+            '<input name="sig_prefix" placeholder="Prefix before the signature, e.g. sha256= (if any)" aria-label="Signature prefix">' +
+            '<p class="hd-hint">From its webhook docs: an HMAC of the request body, sent in a header.</p></div>' +
+          '<div class="hd-field hook-secret" hidden><label class="hd-label">Signing secret <span class="hd-optional">(optional now)</span><input name="secret" autocomplete="off" placeholder="whsec_' + String.fromCharCode(8230) + '"></label>' +
+            '<p class="hd-hint">Most senders show it only after you give them the URL. Leave it empty and add it in the next step.</p></div>' +
+        '</section>' +
+        '<section class="hd-section"><h4>Events</h4>' +
+          '<div class="hd-field"><span class="hd-label">Run only when <span class="hd-optional">(optional)</span></span>' +
+            '<div class="hd-row"><input name="filter_path" placeholder="type" aria-label="Field in the payload"><input name="filter_values" placeholder="charge.dispute.created, charge.dispute.updated" aria-label="Values that start a run"></div>' +
+            '<p class="hd-hint">A field in what the app sends, and the values that start a run. Everything else is skipped.</p></div>' +
+          field('Name <span class="hd-optional">(optional)</span>', '<input name="name" maxlength="80" placeholder="Stripe events">', 'Filled in from the source and events if you leave it empty.') +
+        '</section>' +
+        '<section class="hd-section"><h4>Workflow inputs</h4>' +
+          (params.length
+            ? '<div class="hd-field"><span class="hd-label">From each call</span><div class="hd-map">' +
+                params.map(function (p) { return '<code>' + escapeHtml(p) + '</code><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" aria-label="Where ' + escapeHtml(p) + ' comes from">'; }).join('') + '</div>' +
+                '<p class="hd-hint">A dot path into the JSON the app sends, such as <code>data.object.id</code>.</p></div>' +
+              field('Or give the whole payload to', '<select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select>', '')
+            : '<p class="hd-hint">This workflow takes no inputs, so what the app sends isn' + RSQ + 't passed on. Add one with Edit to use it.</p>') +
+        '</section>' +
+        '<section class="hd-section"><h4>After each run</h4>' +
+          '<label class="hd-check"><input type="checkbox" name="notify"><span><strong>Send the result to the messaging app</strong><span class="hd-hint">Through the agent' + RSQ + 's Messaging tab: Slack, Telegram, email or another you set up.</span></span></label>' +
+          field('Post the result to <span class="hd-optional">(optional)</span>', '<input name="callback_url" placeholder="https://example.com/hooks/loopengine" inputmode="url">', 'An https address in your own app that gets each run' + RSQ + 's result.') +
+        '</section>' +
+      '</div>' +
+      '<footer class="hd-foot"><span class="hook-form-result" role="status"></span>' +
+        '<div class="hd-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">Create webhook</button></div></footer>' +
+      '</form>';
   }
 
   function openHookFormDialog(w, base, onCreated) {
     var dialog = document.createElement('dialog');
     dialog.className = 'hook-dialog';
-    dialog.innerHTML = '<div class="hook-dialog-inner"><div class="hook-dialog-head"><h3>Add a webhook</h3><button type="button" class="hook-dialog-close" aria-label="Close">&times;</button></div>' + hookFormHtml(w) + '</div>';
+    dialog.innerHTML = hookFormHtml(w);
     document.body.appendChild(dialog);
     dialog.addEventListener('close', function () { dialog.remove(); });
     dialog.addEventListener('click', function (ev) { if (ev.target === dialog) dialog.close(); });
@@ -1497,16 +1567,47 @@ ${consoleShellScript}
     });
   }
 
+  // An edit form in a dialog, written in place, so its handlers find its
+  // fields where they always did and a save that redraws the section takes
+  // the dialog with it. titleHtml is the header (an h3, which may carry an
+  // id the form's code retitles); its Cancel carries data-dialog-cancel.
+  function editDialogHtml(titleHtml, leadHtml, formHtml) {
+    return '<dialog class="hook-dialog edit-dialog"><div class="hd">' +
+      '<header class="hd-head"><div>' + titleHtml + (leadHtml || '') + '</div><button type="button" class="hd-close" aria-label="Close">&times;</button></header>' +
+      '<div class="ed-body">' + formHtml + '</div></div></dialog>';
+  }
+
+  // Opens the dialog an edit form sits in. Esc, the backdrop and the close
+  // button press the form's own Cancel, so the page puts itself back as
+  // its Cancel always did.
+  function openEditDialog(form) {
+    var dialog = form && form.closest('dialog.edit-dialog');
+    if (!dialog) return;
+    if (!dialog.dataset.wired) {
+      dialog.dataset.wired = '1';
+      var cancel = dialog.querySelector('[data-dialog-cancel]');
+      var byCancel = false;
+      if (cancel) cancel.addEventListener('click', function () { byCancel = true; if (dialog.open) dialog.close(); });
+      dialog.querySelector('.hd-close').addEventListener('click', function () { dialog.close(); });
+      dialog.addEventListener('click', function (ev) { if (ev.target === dialog) dialog.close(); });
+      dialog.addEventListener('close', function () {
+        if (!byCancel && cancel) cancel.click();
+        byCancel = false;
+      });
+    }
+    if (!dialog.open) dialog.showModal();
+  }
+
   function renderOverviewHtml(cfg) {
     var systemPromptSection =
       '<h3>System prompt <button type="button" class="edit-btn" id="editSystemPromptBtn">Edit</button></h3>' +
       '<pre id="systemPromptDisplay">' + escapeHtml(cfg.systemPrompt) + '</pre>' +
-      '<form class="add-source" id="systemPromptForm" style="display:none">' +
-        '<textarea name="systemPrompt">' + escapeHtml(cfg.systemPrompt) + '</textarea>' +
-        '<button type="submit">Save</button>' +
-        '<button type="button" id="cancelSystemPromptBtn">Cancel</button>' +
-        '<div class="error" id="systemPromptError"></div>' +
-      '</form>';
+      editDialogHtml('<h3>Edit system prompt</h3>', '<p>What the agent reads on every run: who it is and the rules it always follows.</p>',
+        '<form class="add-source" id="systemPromptForm" style="display:none">' +
+          '<textarea name="systemPrompt" class="ed-tall">' + escapeHtml(cfg.systemPrompt) + '</textarea>' +
+          '<div class="error" id="systemPromptError"></div>' +
+          '<div class="ed-actions"><button type="button" id="cancelSystemPromptBtn" data-dialog-cancel>Cancel</button><button type="submit" class="primary">Save</button></div>' +
+        '</form>');
 
     // Only editable when cfg.model is the resolved {provider, model,
     // maxTokens} object — a custom createModelCall (the string case) has
@@ -1528,6 +1629,7 @@ ${consoleShellScript}
             (cfg.model.provider === 'openai' && /^(gpt-[5-9]|o[0-9])/i.test(cfg.model.model || '') ? 'low (default)'
               : REASONING_PROVIDERS.indexOf(cfg.model.provider) !== -1 ? '(model default)' : 'n/a')) + '</dd>' +
         '</dl>' +
+        editDialogHtml('<h3>Edit model</h3>', '<p>The model this agent uses, and how much it may write and think.</p>',
         '<form class="add-source" id="modelForm" style="display:none">' +
           '<label>Provider' +
             '<select name="provider">' +
@@ -1549,10 +1651,9 @@ ${consoleShellScript}
               }).join('') +
             '</select>' +
           '</label>' +
-          '<button type="submit">Save</button>' +
-          '<button type="button" id="cancelModelBtn">Cancel</button>' +
           '<div class="error" id="modelError"></div>' +
-        '</form>';
+          '<div class="ed-actions"><button type="button" id="cancelModelBtn" data-dialog-cancel>Cancel</button><button type="submit" class="primary">Save</button></div>' +
+        '</form>');
     }
 
     return renderOverviewCards(cfg) +
@@ -1564,6 +1665,7 @@ ${consoleShellScript}
           '<dt>contextBudgetTokens</dt><dd>' + escapeHtml(cfg.contextBudgetTokens) + '</dd>' +
           '<dt>skillIndexBudgetTokens</dt><dd>' + escapeHtml(cfg.skillIndexBudgetTokens) + '</dd>' +
         '</dl>' +
+        editDialogHtml('<h3>Edit limits &amp; budgets</h3>', '<p>Caps on how long a turn runs and how much context it keeps.</p>',
         '<form class="add-source" id="limitsForm" style="display:none">' +
           '<label>Max turns <span class="hint">(hard cap on model calls in one turn)</span>' +
             '<input type="number" name="maxTurns" min="1" step="1" value="' + escapeHtml(cfg.maxTurns) + '">' +
@@ -1574,10 +1676,9 @@ ${consoleShellScript}
           '<label>Skill index budget <span class="hint">(tokens — caps the always-loaded skill name/description index)</span>' +
             '<input type="number" name="skillIndexBudgetTokens" min="1" step="1" value="' + escapeHtml(cfg.skillIndexBudgetTokens) + '">' +
           '</label>' +
-          '<button type="submit">Save</button>' +
-          '<button type="button" id="cancelLimitsBtn">Cancel</button>' +
           '<div class="error" id="limitsError"></div>' +
-        '</form>' +
+          '<div class="ed-actions"><button type="button" id="cancelLimitsBtn" data-dialog-cancel>Cancel</button><button type="submit" class="primary">Save</button></div>' +
+        '</form>') +
       '</section>';
   }
 
@@ -1602,9 +1703,8 @@ ${consoleShellScript}
       var systemPromptError = overviewPanel.querySelector('#systemPromptError');
 
       editSystemPromptBtn.addEventListener('click', function () {
-        systemPromptDisplay.style.display = 'none';
-        editSystemPromptBtn.style.display = 'none';
         systemPromptForm.style.display = '';
+        openEditDialog(systemPromptForm);
         systemPromptForm.querySelector('textarea').focus();
       });
       overviewPanel.querySelector('#cancelSystemPromptBtn').addEventListener('click', function () {
@@ -1658,9 +1758,8 @@ ${consoleShellScript}
       providerSelect.addEventListener('change', syncReasoningField);
       editModelBtn.addEventListener('click', function () {
         syncReasoningField();
-        modelDisplay.style.display = 'none';
-        editModelBtn.style.display = 'none';
         modelForm.style.display = '';
+        openEditDialog(modelForm);
         // Only providers with a key saved can be chosen; the agent's
         // current one stays selectable either way. Then the model dropdown.
         var currentProvider = modelForm.querySelector('select[name="provider"] option[selected]');
@@ -1714,9 +1813,8 @@ ${consoleShellScript}
       var limitsError = overviewPanel.querySelector('#limitsError');
 
       editLimitsBtn.addEventListener('click', function () {
-        limitsDisplay.style.display = 'none';
-        editLimitsBtn.style.display = 'none';
         limitsForm.style.display = '';
+        openEditDialog(limitsForm);
       });
       overviewPanel.querySelector('#cancelLimitsBtn').addEventListener('click', function () {
         limitsForm.style.display = 'none';
@@ -1902,7 +2000,8 @@ ${consoleShellScript}
       : '<p class="hint">No rules yet: every tool call gets the decision for when no rule matches.</p>';
     return '<p class="muted" style="margin:0 0 12px">Every rule in <code>actauth.yml</code>. The first rule that matches a call decides it; Who narrows a rule to a tenant and environment (<code>*/*</code> is everyone).</p>' +
       rulesHtml + '<p class="error" id="rulesError" style="margin:6px 0 0"></p>' +
-      '<h3 id="ruleFormHeading" style="margin-top:20px">Add a rule</h3>' +
+      '<div style="margin-top:16px"><button type="button" class="open-rule-form">Add a rule</button></div>' +
+      editDialogHtml('<h3 id="ruleFormHeading">Add a rule</h3>', '<p>The first rule that matches a call decides it.</p>',
         '<form class="add-source" id="ruleForm">' +
           '<label>Name' +
             '<input name="name" id="ruleNameInput" required placeholder="my-rule-name">' +
@@ -1920,10 +2019,9 @@ ${consoleShellScript}
               '<option value="deny">Never</option>' +
             '</select>' +
           '</label>' +
-          '<button type="submit" id="ruleSubmitBtn">Add</button>' +
-          '<button type="button" id="ruleCancelBtn" style="display:none">Cancel</button>' +
           '<div id="ruleFormError" class="error"></div>' +
-        '</form></section>';
+          '<div class="ed-actions"><button type="button" id="ruleCancelBtn" data-dialog-cancel style="display:none">Cancel</button><button type="submit" id="ruleSubmitBtn" class="primary">Add</button></div>' +
+        '</form>') + '</section>';
   }
 
   // ---- Messaging tab: the decisions still waiting (GET .../pending),
@@ -2914,11 +3012,16 @@ ${consoleShellScript}
         content.querySelector('#ruleCancelBtn').style.display = '';
         content.querySelector('#ruleFormError').textContent = '';
         editingRuleName = rule.name;
-        content.querySelector('#ruleForm').scrollIntoView({ block: 'nearest' });
+        openEditDialog(content.querySelector('#ruleForm'));
       });
     }
 
     content.querySelector('#ruleCancelBtn').addEventListener('click', resetRuleForm);
+    content.querySelector('.open-rule-form').addEventListener('click', function () {
+      resetRuleForm();
+      openEditDialog(content.querySelector('#ruleForm'));
+      content.querySelector('#ruleNameInput').focus();
+    });
 
     var ruleForm = content.querySelector('#ruleForm');
     ruleForm.addEventListener('submit', function (ev) {
@@ -3833,7 +3936,8 @@ ${consoleShellScript}
   function renderSkillsTabHtml(cfg) {
     var listHtml = cfg.skills.length ? cfg.skills.map(renderSkillCard).join('') : '<p class="hint">No skills yet.</p>';
     return '<section><h3>Skills (' + cfg.skills.length + ')</h3><div id="skillList">' + listHtml + '</div></section>' +
-      '<section><h3 id="skillFormHeading">Add a skill</h3>' +
+      '<section><button type="button" class="open-skill-form">Add a skill</button>' +
+      editDialogHtml('<h3 id="skillFormHeading">Add a skill</h3>', '<p>Know-how the agent opens when a request matches its description.</p>',
         '<form class="add-source" id="skillForm">' +
           '<label>Id <span class="hint">(lowercase, hyphen-separated — becomes the SKILL.md folder name; nested skills aren\\'t editable here)</span>' +
             '<input name="id" id="skillIdInput" required pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="summarize-files">' +
@@ -3852,10 +3956,9 @@ ${consoleShellScript}
             '<textarea name="body" id="skillBodyInput" required></textarea>' +
             '<div class="markdown-body" id="skillBodyPreview" style="display:none"></div>' +
           '</div>' +
-          '<button type="submit" id="skillSubmitBtn">Add</button>' +
-          '<button type="button" id="skillCancelBtn" style="display:none">Cancel</button>' +
           '<div id="skillFormError" class="error"></div>' +
-        '</form></section>';
+          '<div class="ed-actions"><button type="button" id="skillCancelBtn" data-dialog-cancel style="display:none">Cancel</button><button type="submit" id="skillSubmitBtn" class="primary">Add</button></div>' +
+        '</form>') + '</section>';
   }
 
   function skillsPanelEl() {
@@ -3954,7 +4057,7 @@ ${consoleShellScript}
             panel.querySelector('#skillCancelBtn').style.display = '';
             editingSkillId = result.body.id;
             showBodyWrite();
-            panel.querySelector('#skillForm').scrollIntoView({ block: 'nearest' });
+            openEditDialog(panel.querySelector('#skillForm'));
           })
           .catch(function (err) {
             errorEl.textContent = 'Could not load skill: ' + err.message;
@@ -3963,6 +4066,11 @@ ${consoleShellScript}
     }
 
     panel.querySelector('#skillCancelBtn').addEventListener('click', resetSkillForm);
+    panel.querySelector('.open-skill-form').addEventListener('click', function () {
+      resetSkillForm();
+      openEditDialog(panel.querySelector('#skillForm'));
+      panel.querySelector('#skillIdInput').focus();
+    });
 
     var form = panel.querySelector('#skillForm');
     form.addEventListener('submit', function (ev) {
@@ -4007,7 +4115,8 @@ ${consoleShellScript}
   function renderToolsTabHtml(cfg) {
     return '<p class="muted" style="margin:0 0 20px">Everything this agent can call. <strong>Runs</strong> comes from Permissions: allow runs on its own, ask waits for a person, deny never runs.</p>' +
       '<section><h3>Your tools (' + cfg.localTools.length + ')</h3>' + renderLocalTools(cfg.localTools) +
-      '<div class="admin-subsection"><h4 id="httpToolFormHeading">Create an HTTP tool</h4>' + renderHttpToolFormHtml() + '</div>' +
+      '<div class="admin-subsection"><button type="button" class="open-http-tool-form">Create an HTTP tool</button>' +
+        editDialogHtml('<h3 id="httpToolFormHeading">Create an HTTP tool</h3>', '<p>A tool that calls a web address, with the fields the agent fills in.</p>', renderHttpToolFormHtml()) + '</div>' +
       '</section>' +
       // Shown only for an agent that already has Composio tools
       // (gateway-tools.yml): see applyGatewaySources.
@@ -4093,9 +4202,8 @@ ${consoleShellScript}
           '<option value="deny">deny</option>' +
         '</select>' +
       '</label>' +
-      '<button type="submit" id="httpToolSubmitBtn">Create tool</button>' +
-      '<button type="button" id="httpToolCancelBtn" style="display:none">Cancel</button>' +
       '<div id="httpToolError" class="error"></div>' +
+      '<div class="ed-actions"><button type="button" id="httpToolCancelBtn" data-dialog-cancel style="display:none">Cancel</button><button type="submit" id="httpToolSubmitBtn" class="primary">Create tool</button></div>' +
       '</form>';
   }
 
@@ -4186,6 +4294,11 @@ ${consoleShellScript}
     }
 
     cancelBtn.addEventListener('click', resetHttpToolForm);
+    var openHttpToolBtn = detail.querySelector('.open-http-tool-form');
+    if (openHttpToolBtn) openHttpToolBtn.addEventListener('click', function () {
+      resetHttpToolForm();
+      openEditDialog(form);
+    });
 
     // Local tools table's own Edit buttons (renderLocalTools) — only
     // present for tools describeAgent flagged httpToolEditable, so this
@@ -4206,7 +4319,7 @@ ${consoleShellScript}
             cancelBtn.style.display = '';
             decisionField.style.display = 'none';
             editingHttpToolName = toolName;
-            form.scrollIntoView({ block: 'nearest' });
+            openEditDialog(form);
           })
           .catch(function (err) {
             errorEl.textContent = 'Could not load tool "' + toolName + '": ' + err.message;
