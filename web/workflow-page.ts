@@ -348,7 +348,7 @@ ${consoleShellScript}
     return '<div class="wf-card" id="wfNeeds"><h3 style="margin:0">' + (missing ? 'Before you create it' : 'What it uses') + '</h3>' +
       '<ul class="wf-needs">' + reqs.map(function (r) {
         return '<li>' + (r.ready ? '<span class="le-pill allow">Ready</span>' : '<span class="le-pill bad">Missing</span>') + ' <strong>' + esc(r.title) + '</strong>' +
-          (r.ready ? '' : ' <span class="hint">' + esc(r.todo) + '</span>' + (r.href ? ' <a href="' + esc(r.href) + '" target="_blank" rel="noopener">Open</a>' : '')) + '</li>';
+          (r.ready ? (r.note ? ' <span class="hint">' + esc(r.note) + '</span>' : '') : ' <span class="hint">' + esc(r.todo) + '</span>' + (r.href ? ' <a href="' + esc(r.href) + '" target="_blank" rel="noopener">Open</a>' : '')) + '</li>';
       }).join('') + '</ul>' +
       (missing ? '<div class="wf-actions"><button type="button" class="wf-btn plain" id="wfRecheck">Check again</button><span class="hint" id="wfRecheckStatus">Add ' + (missing === 1 ? 'it' : 'them') + ' (it opens in a new tab), then check again.</span></div>' : '') +
       '</div>';

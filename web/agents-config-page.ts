@@ -2115,13 +2115,20 @@ ${consoleShellScript}
     return '<tr>' +
       '<td><code>' + escapeHtml(r.name || '') + '</code></td>' +
       '<td><code>' + escapeHtml(r.scope) + '</code></td>' +
-      '<td>' + (r.ability ? '<code>' + escapeHtml(r.ability) + '</code>' : '') + '</td>' +
+      '<td>' + abilityCellHtml(r) + '</td>' +
       '<td><code>' + escapeHtml(r.tool) + '</code></td>' +
       '<td>' + (r.name
         ? decisionSwitch(r.decision, 'Decision for ' + r.name, 'data-rule="' + escapeHtml(r.name) + '"')
         : '<span class="le-pill ' + escapeHtml(r.decision) + '">' + escapeHtml(DECISION_LABELS[r.decision] || r.decision) + '</span>') + '</td>' +
       '<td>' + actionsHtml + '</td>' +
       '</tr>';
+  }
+
+  // The App/Ability column: an app by its name (Stripe), an ability by
+  // its package name.
+  function abilityCellHtml(x) {
+    if (x.app) return '<span title="' + escapeHtml(x.ability || '') + '">' + escapeHtml(x.app) + '</span>';
+    return x.ability ? '<code>' + escapeHtml(x.ability) + '</code>' : '';
   }
 
   // The Permissions tab: every tool the agent has, each with its ability
@@ -2136,7 +2143,7 @@ ${consoleShellScript}
         : '<span class="le-pill ' + escapeHtml(t.decision) + '">' + escapeHtml(DECISION_LABELS[t.decision] || t.decision) + '</span>';
       var note = t.isDefault ? 'default' : t.scopeNote;
       return '<tr>' +
-        '<td>' + (t.ability ? '<code>' + escapeHtml(t.ability) + '</code>' : '') + '</td>' +
+        '<td>' + abilityCellHtml(t) + '</td>' +
         '<td><code>' + escapeHtml(t.tool) + '</code></td>' +
         '<td>' + decision + (note ? ' <span class="hint">' + escapeHtml(note) + '</span>' : '') + '</td>' +
         '</tr>';
@@ -2144,7 +2151,7 @@ ${consoleShellScript}
     return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own (Allow), which wait for a person (Ask me), and which never run (Never). Click to change; it&#39;s saved at once. Scoped rules, adding and removing rules are in <a href="?tab=advanced" data-tab="advanced">Advanced</a>.</p>' +
       '<section><h3>Tools (' + tools.length + ')</h3>' +
         (tools.length
-          ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>Ability</th><th>Tool</th><th>Decision</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+          ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>App/Ability</th><th>Tool</th><th>Decision</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
           : '<p class="hint">This agent has no tools yet. Install an ability, or add a tool in Advanced.</p>') +
         '<p class="error" id="toolsDecisionError" style="margin:6px 0 0"></p></section>' +
       '<section><h3>When no rule matches</h3>' +
@@ -2157,7 +2164,7 @@ ${consoleShellScript}
   // and scope, to edit, remove or add.
   function renderRulesEditorHtml(cfg) {
     var rulesHtml = cfg.rules.length
-      ? '<div class="le-table-wrap"><table class="actauth-rules actauth-rules-full"><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>Ability</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
+      ? '<div class="le-table-wrap"><table class="actauth-rules actauth-rules-full"><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>App/Ability</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
         cfg.rules.map(renderActauthRuleRow).join('') + '</tbody></table></div>'
       : '<p class="hint">No rules yet: every tool call gets the decision for when no rule matches.</p>';
     return '<p class="muted" style="margin:0 0 12px">Every rule in <code>actauth.yml</code>. The first rule that matches a call decides it; Who narrows a rule to a tenant and environment (<code>*/*</code> is everyone).</p>' +

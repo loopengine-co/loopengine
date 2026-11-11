@@ -2449,13 +2449,22 @@ function parseActauthRuleBody(body: Record<string, unknown>, requireName: boolea
 // story, so the Permissions tab doesn't look like it has duplicates.
 async function actauthConfigWithAbilities(agentName: string) {
   const config = readActauthConfig(agentName)
-  let installed: Array<{ name: string; tools: string[]; actauthRules: string[] }> = []
+  let installed: Array<{ name: string; tools: string[]; actauthRules: string[]; mcp?: { tools: { name: string }[] } }> = []
   try {
     installed = listInstalledAbilities(agentName)
   } catch {}
   const abilityFor = (tool: string, ruleName?: string) =>
-    (installed.find((a) => ruleName && a.actauthRules.includes(ruleName)) ?? installed.find((a) => a.tools.includes(tool)))?.name ?? null
-  const rules = config.rules.map((rule) => ({ ...rule, ability: abilityFor(rule.tool, rule.name) }))
+    (installed.find((a) => ruleName && a.actauthRules.includes(ruleName)) ?? installed.find((a) => a.tools.includes(tool) || a.mcp?.tools.some((t) => t.name === tool)))?.name ?? null
+  // An app's ability is shown by the app's name ("Stripe", not mcp-stripe).
+  let appTitles = new Map<string, string>()
+  try {
+    appTitles = new Map(describeApps().connected.map((c) => [c.ability, c.title]))
+  } catch {}
+  const appFor = (ability: string | null) => (ability ? appTitles.get(ability) ?? null : null)
+  const rules = config.rules.map((rule) => {
+    const ability = abilityFor(rule.tool, rule.name)
+    return { ...rule, ability, app: appFor(ability) }
+  })
 
   const entry = getEntry(agentName)
   let toolNames: string[] = []
@@ -2474,6 +2483,7 @@ async function actauthConfigWithAbilities(agentName: string) {
     return {
       tool,
       ability: rule?.ability ?? abilityFor(tool),
+      app: rule ? rule.app : appFor(abilityFor(tool)),
       decision: rule?.decision ?? config.defaultDecision,
       isDefault: !rule,
       // A rule with no name can't be changed here (rules are changed by name).

@@ -9,8 +9,8 @@ import { generateMcpAbility } from '../core/mcp-ability-generator.js'
 import { addWorkspaceAbility, WORKSPACE_ABILITIES_DIR_ENV } from '../core/workspace-abilities.js'
 import { appTools, refreshAppTools, setAppDefault, AppToolsError } from '../core/mcp-apps.js'
 import { closeMcpConnections, loadMcpAbilityTools } from '../core/mcp-abilities.js'
-import { addActauthRule, readActauthConfig } from '../web/actauth-admin.js'
-import { AbilityManifestError, configureAgentMcpTools, installAbility } from '../bin/ability-manager.js'
+import { addActauthRule, applyPlannedRules, readActauthConfig } from '../web/actauth-admin.js'
+import { AbilityManifestError, configureAgentMcpTools, installAbility, listInstalledAbilities } from '../bin/ability-manager.js'
 // @ts-expect-error — a plain .mjs test fixture, no type declarations
 import { createFakeMcpServer } from './fixtures/fake-mcp-server.mjs'
 
@@ -101,6 +101,31 @@ describe('adding an app to an agent', () => {
     expect(await loaded()).toEqual(['fake_create_thing', 'fake_list_things'])
     const rules = readActauthConfig(AGENT_NAME).rules
     expect(rules.map((r) => [r.tool, r.decision]).sort()).toEqual([['fake_create_thing', 'deny'], ['fake_list_things', 'allow']])
+  })
+
+  it("for a workflow: just its steps' tools, under the app, and the workflow's rules add none of their own", async () => {
+    const spec = await connect()
+    // What Create does: the app with the steps' tools, then the plan's rules.
+    await install(spec, { mcpTools: ['getThing', 'createThing'] })
+    const ruled = applyPlannedRules(AGENT_NAME, [{ tool: 'fake_get_thing', decision: 'allow' }, { tool: 'fake_create_thing', decision: 'ask' }])
+    expect(ruled).toEqual({ added: [], unchanged: ['fake_get_thing', 'fake_create_thing'], kept: [] })
+    expect(await loaded()).toEqual(['fake_create_thing', 'fake_get_thing'])
+    const app = listInstalledAbilities(AGENT_NAME).find((a) => a.name === 'mcp-fake')!
+    expect(app.mcp?.tools.map((t) => t.name).sort()).toEqual(['fake_create_thing', 'fake_get_thing'])
+    // Every rule is the app's.
+    const rules = readActauthConfig(AGENT_NAME).rules
+    expect(rules.map((r) => r.tool).sort()).toEqual(['fake_create_thing', 'fake_get_thing'])
+    expect(rules.every((r) => app.actauthRules.includes(r.name))).toBe(true)
+  })
+
+  it("for a workflow on an agent that has the app: the tool turned on is the app's too", async () => {
+    const spec = await connect()
+    await install(spec, { mcpTools: ['getThing'] })
+    configureAgentMcpTools(AGENT_NAME, 'mcp-fake', spec.replace(/^file:/, ''), [{ remote: 'getThing', decision: 'allow' }, { remote: 'createThing', decision: 'ask' }])
+    expect(applyPlannedRules(AGENT_NAME, [{ tool: 'fake_create_thing', decision: 'ask' }]).added).toEqual([])
+    const app = listInstalledAbilities(AGENT_NAME).find((a) => a.name === 'mcp-fake')!
+    const rule = readActauthConfig(AGENT_NAME).rules.find((r) => r.tool === 'fake_create_thing')!
+    expect(app.actauthRules).toContain(rule.name)
   })
 
   it('with no choice, gets only the read-only tools', async () => {

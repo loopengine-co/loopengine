@@ -117,14 +117,41 @@ describe('workflow examples', () => {
     expect([task.status, task.workflow_id]).toEqual(['paused', 'answer-customer-emails'])
   })
 
-  it("isn't created until the agent has its apps and messaging", async () => {
+  it("isn't created until its apps are connected and the agent has messaging", async () => {
     const plan = structuredClone(workflowExample('inbox-to-tasks')!.plan) as WorkflowPlan
     const agent = { name: 'ops', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: null }
-    await expect(createWorkflow({ plan, agent: 'ops' }, deps({ agentInfo: async () => [agent], appStatus: async () => ({ state: 'connected', title: 'GitHub' }) })))
-      .rejects.toThrow(/Before creating it: Add GitHub to ops on its Apps tab, with search_issues, issue_write and add_issue_comment; Set up ops's Messaging/)
+    await expect(createWorkflow({ plan, agent: 'ops' }, deps({ agentInfo: async () => [agent], appStatus: async () => ({ state: 'missing', title: 'GitHub' }) })))
+      .rejects.toThrow(/Before creating it: Connect GitHub on the Apps page; it's added to ops when you create it, with search_issues, issue_write and add_issue_comment; Set up ops's Messaging/)
     expect(scratch.steps).toEqual([])
     expect(readWorkflow(join(scratch.root, 'ops'), 'inbox-to-tasks')).toBeUndefined()
     await expect(createWorkflow({ plan }, deps({ agentInfo: async () => [agent] }))).rejects.toThrow(/Choose the agent/)
+  })
+
+  it('adds a connected app to the agent with just the tools its steps use', async () => {
+    const plan = structuredClone(workflowExample('inbox-to-tasks')!.plan) as WorkflowPlan
+    const agent = { name: 'ops', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack' }
+    const added: string[] = []
+    await createWorkflow({ plan, agent: 'ops' }, deps({
+      agentInfo: async () => [agent],
+      appStatus: async () => ({ state: 'connected', title: 'GitHub' }),
+      prepareApp: async () => 'file:/ws/abilities/mcp-github',
+      installAbility: async (name, spec, options) => void added.push(`${name} ${spec} ${(options?.mcpTools ?? ['(defaults)']).join(',')}`),
+    }))
+    // Its Gmail ability is installed as usual; the app gets only its steps' tools.
+    expect(added.filter((a) => a.includes('mcp-github'))).toEqual(['ops file:/ws/abilities/mcp-github search_issues,issue_write,add_issue_comment'])
+  })
+
+  it("turns on just the missing tools when the agent has the app", async () => {
+    const plan = structuredClone(workflowExample('inbox-to-tasks')!.plan) as WorkflowPlan
+    const github = { id: 'io.github.github/github-mcp-server', title: 'GitHub', url: 'https://api.githubcopilot.com/mcp/', tools: ['search_issues'], all: ['search_issues', 'issue_write', 'add_issue_comment'].map((name) => ({ name, remote: name })) }
+    const agent = { name: 'ops', tools: ['search_issues'], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack', apps: [github] }
+    const added: string[] = []
+    await createWorkflow({ plan, agent: 'ops' }, deps({
+      agentInfo: async () => [agent],
+      prepareApp: async () => 'file:/ws/abilities/mcp-github',
+      addAppTools: async (name, spec, tools) => void added.push(`${name} ${spec} ${tools.join(',')}`),
+    }))
+    expect(added).toEqual(['ops file:/ws/abilities/mcp-github issue_write,add_issue_comment'])
   })
 
   it('adds to an agent you have without replacing its own skills or settings', async () => {

@@ -57,11 +57,15 @@ export interface WorkflowRequirement {
   ready: boolean
   /** What to do, when it isn't ready, and where. */
   todo?: string
+  /** What Create does about it, when it's ready (adds a connected app to
+   * the agent, or turns on its tools). */
+  note?: string
   href?: string
 }
 
 /** Where an app stands for an agent: on it, connected to the workspace
- * but not on it, or not connected at all. */
+ * but not on it (Create adds it, with the tools the steps use), or not
+ * connected at all (the person connects it first). */
 export type WorkflowAppStatus = { state: 'ready' | 'connected' | 'missing'; title?: string }
 
 /** Whether runs need the agent's messaging app: to send each result, or
@@ -89,10 +93,10 @@ export async function workflowRequirements(plan: WorkflowPlan, agent: WorkflowAg
     // The tools to tick when adding it: just the ones the steps use.
     const used = appToolsUsed(plan, id)
     const withTools = used.length ? `, with ${listWords(used)}` : ''
-    if (off.length) out.push({ kind: 'app', id, title, ready: false, todo: `Turn on ${off.join(', ')} for ${title} on ${agent.name}'s Apps tab`, href: tab('abilities') })
+    if (off.length) out.push({ kind: 'app', id, title, ready: true, note: `${listWords(off)} ${off.length === 1 ? 'is' : 'are'} turned on for ${agent.name} when you create it` })
     else if (status.state === 'ready') out.push({ kind: 'app', id, title, ready: true })
-    else if (status.state === 'connected') out.push({ kind: 'app', id, title, ready: false, todo: `Add ${title} to ${agent.name} on its Apps tab${withTools}`, href: tab('abilities') })
-    else out.push({ kind: 'app', id, title, ready: false, todo: `Connect ${title} on the Apps page, then add it to ${agent.name} on its Apps tab${withTools}`, href: '/config?section=apps' })
+    else if (status.state === 'connected') out.push({ kind: 'app', id, title, ready: true, note: `Added to ${agent.name} when you create it${withTools}` })
+    else out.push({ kind: 'app', id, title, ready: false, todo: `Connect ${title} on the Apps page; it's added to ${agent.name} when you create it${withTools}`, href: '/config?section=apps' })
   }
   const need = messagingNeed(plan)
   if (need) {
@@ -658,8 +662,9 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
     }
   }
 
-  // Apps: added with just the tools the steps use, or those tools added
-  // to the agent's when it has the app already.
+  // Apps (connected to the workspace, checked above): added with just the
+  // tools the steps use, or those tools turned on when the agent has the
+  // app already.
   const appsToConnect: string[] = []
   for (const app of plan.apps ?? []) {
     const spec = deps.prepareApp ? await deps.prepareApp(app.id) : undefined
@@ -667,12 +672,20 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
       appsToConnect.push(app.title)
       continue
     }
+    const has = agent.apps?.find((a) => a.id === app.id)
+    const toAdd = has ? app.tools.filter((remote) => !has.tools.includes(has.all?.find((t) => t.remote === remote)?.name ?? remote)) : app.tools
+    if (has && !toAdd.length) continue
     if (!deps.installAbility) {
       failed.push({ name: app.title, error: 'adding apps needs LOOPENGINE_ADMIN_AUTH set on the server' })
       continue
     }
     try {
-      await deps.installAbility(agent.name, spec, { mcpTools: app.tools })
+      if (has && deps.addAppTools) {
+        await deps.addAppTools(agent.name, spec, toAdd)
+        installed.push(app.title)
+        continue
+      }
+      await deps.installAbility(agent.name, spec, toAdd.length ? { mcpTools: toAdd } : {})
       installed.push(app.title)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
