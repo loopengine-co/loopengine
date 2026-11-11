@@ -121,7 +121,7 @@ describe('workflow examples', () => {
     const plan = structuredClone(workflowExample('inbox-to-tasks')!.plan) as WorkflowPlan
     const agent = { name: 'ops', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: null }
     await expect(createWorkflow({ plan, agent: 'ops' }, deps({ agentInfo: async () => [agent], appStatus: async () => ({ state: 'connected', title: 'GitHub' }) })))
-      .rejects.toThrow(/Before creating it: Add GitHub to ops on its Apps tab; Set up ops's Messaging/)
+      .rejects.toThrow(/Before creating it: Add GitHub to ops on its Apps tab, with search_issues, issue_write and add_issue_comment; Set up ops's Messaging/)
     expect(scratch.steps).toEqual([])
     expect(readWorkflow(join(scratch.root, 'ops'), 'inbox-to-tasks')).toBeUndefined()
     await expect(createWorkflow({ plan }, deps({ agentInfo: async () => [agent] }))).rejects.toThrow(/Choose the agent/)

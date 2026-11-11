@@ -994,7 +994,16 @@ async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
           const installed = listInstalledAbilities(name)
           abilities = installed.map((a) => a.name)
           const connected = describeApps().connected
-          apps = installed.flatMap((a) => (a.mcp?.server.url ? [{ title: connected.find((c) => c.ability === a.name)?.title ?? a.name, url: a.mcp.server.url, tools: a.mcp.tools.map((t) => t.name) }] : []))
+          apps = installed.flatMap((a) => {
+            if (!a.mcp?.server.url) return []
+            const app = connected.find((c) => c.ability === a.name)
+            // Every tool the app offers, to turn on for a workflow's step.
+            let all: { name: string; remote: string }[] | undefined
+            try {
+              if (app) all = resolveMcpManifest(app.ability, (JSON.parse(readFileSync(join(app.spec.replace(/^file:/, ''), 'loopengine.ability.json'), 'utf8')) as { mcp?: unknown }).mcp).tools
+            } catch {}
+            return [{ ...(app?.id ? { id: app.id } : {}), title: app?.title ?? a.name, url: a.mcp.server.url, tools: a.mcp.tools.map((t) => t.name), ...(all ? { all } : {}) }]
+          })
         } catch {}
         let messaging: string | null = null
         try {
@@ -1037,11 +1046,25 @@ const workflowMcp: WorkflowMcpDeps = {
   keyValue: (name) => process.env[name],
 }
 
+/** The connected app a workspace ability was made from, by its spec or
+ * name: the planner can find it among the workspace's abilities. */
+function workflowAppForSpec(spec: string): { id: string; title: string; tools: { name: string; remote: string }[] } | undefined {
+  const bare = spec.replace(/^file:/, '')
+  const app = describeApps().connected.find((c) => c.spec === spec || c.spec.replace(/^file:/, '') === bare || c.ability === spec)
+  if (!app) return undefined
+  try {
+    const manifest = JSON.parse(readFileSync(join(app.spec.replace(/^file:/, ''), 'loopengine.ability.json'), 'utf8')) as { mcp?: unknown }
+    return { id: app.id ?? app.ability, title: app.title, tools: resolveMcpManifest(app.ability, manifest.mcp).tools }
+  } catch {
+    return undefined
+  }
+}
+
 /** Where an app (a catalog id or an MCP server's) stands for an agent:
  * on it, connected to the workspace but not on it, or not connected. */
 async function workflowAppStatus(agent: string, id: string): Promise<WorkflowAppStatus> {
   const server = await appServer(id).catch(() => undefined)
-  const app = describeApps().connected.find((c) => c.id === id || (server && c.url === server.url))
+  const app = describeApps().connected.find((c) => c.id === id || c.ability === id || (server && c.url === server.url))
   if (!app) return { state: 'missing', ...(server?.title ? { title: server.title } : {}) }
   let has = false
   try {
@@ -1113,7 +1136,7 @@ function addAgentAppTools(agent: string, spec: string, tools: string[]): void {
  * undefined when it isn't connected. Its tools are chosen at install. */
 async function prepareWorkspaceApp(id: string): Promise<string | undefined> {
   const server = await appServer(id)
-  return describeApps().connected.find((c) => c.id === id || (server && c.url === server.url))?.spec
+  return describeApps().connected.find((c) => c.id === id || c.ability === id || (server && c.url === server.url))?.spec
 }
 
 /** The workspace's own servers (mcp-servers.yml), for the Apps page. */
@@ -1343,7 +1366,11 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           rules: a.rules.filter((r) => r.decision !== a.defaultDecision).slice(0, 40).map((r) => `${r.tool}: ${r.decision}`),
         })),
         searchPublicAbilities: (query) => base.searchPublicAbilities(query),
-        listWorkspaceAbilities: async () => listWorkspaceAbilities().map((a) => ({ name: a.name, description: a.description, spec: a.spec })),
+        // Apps are planned as apps (their MCP servers), not abilities.
+        listWorkspaceAbilities: async () => {
+          const apps = new Set(describeApps().connected.map((c) => c.ability))
+          return listWorkspaceAbilities().filter((a) => !apps.has(a.name)).map((a) => ({ name: a.name, description: a.description, spec: a.spec }))
+        },
         abilityDetails: async (spec) => {
           const d = await abilityDetails(spec)
           return { name: d.name, tools: d.tools.map((t) => ({ name: t.name, description: t.description.slice(0, 300), decision: t.decision ?? null })), settings: d.settings.map((x) => x.name) }
@@ -1352,6 +1379,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
         searchMcpServers: async (query) => (await searchMcpServers(query)).map((s) => ({ id: s.id, title: s.title, description: s.description, url: s.url, official: Boolean(s.official), verified: s.verified, source: s.source })),
         mcpServerTools: workflowMcpServerTools,
         mcp: workflowMcp,
+        appForSpec: workflowAppForSpec,
       }))
       return json(202, job)
     }
@@ -1359,13 +1387,14 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
     // again from the review screen.
     if (action === 'check' && req.method === 'POST') {
       const body = await readJsonBody(req)
-      return json(200, await checkWorkflowRequirements(body, { agentInfo: workflowAgentInfo, appStatus: workflowAppStatus }))
+      return json(200, await checkWorkflowRequirements(body, { agentInfo: workflowAgentInfo, appStatus: workflowAppStatus, appForSpec: workflowAppForSpec }))
     }
     if (action === 'create' && req.method === 'POST') {
       const body = await readJsonBody(req)
       const created = await createWorkflow(body, {
         addAppTools: async (agent, spec, tools) => addAgentAppTools(agent, spec, tools),
         appStatus: workflowAppStatus,
+        appForSpec: workflowAppForSpec,
         mcp: {
           ...workflowMcp,
           // The planning model matches steps to the app's tools, when the

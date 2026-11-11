@@ -39,8 +39,10 @@ export interface WorkflowAgentInfo {
   messaging: string | null
   /** Tools from its connected services (gateway-tools.yml), by source. */
   connected?: { source: string; tools: string[] }[]
-  /** Its apps (MCP servers it has), with the tools it has from each. */
-  apps?: { title: string; url: string; tools: string[] }[]
+  /** Its apps (MCP servers it has), with the tools it has from each and
+   * every tool the app offers (`all`, installed name and the server's own),
+   * so a step can use one that's only to be turned on. */
+  apps?: { id?: string; title: string; url: string; tools: string[]; all?: { name: string; remote: string }[] }[]
   /** Its own instructions (system prompt). */
   instructions?: string
 }
@@ -83,9 +85,14 @@ export async function workflowRequirements(plan: WorkflowPlan, agent: WorkflowAg
   for (const [id, planned] of apps) {
     const status = await appStatus(agent.name, id).catch((): WorkflowAppStatus => ({ state: 'missing' }))
     const title = status.title ?? planned
-    if (status.state === 'ready') out.push({ kind: 'app', id, title, ready: true })
-    else if (status.state === 'connected') out.push({ kind: 'app', id, title, ready: false, todo: `Add ${title} to ${agent.name} on its Apps tab`, href: tab('abilities') })
-    else out.push({ kind: 'app', id, title, ready: false, todo: `Connect ${title} on the Apps page, then add it to ${agent.name} on its Apps tab`, href: '/config?section=apps' })
+    const off = status.state === 'ready' ? appToolsOff(plan, agent, id) : []
+    // The tools to tick when adding it: just the ones the steps use.
+    const used = appToolsUsed(plan, id)
+    const withTools = used.length ? `, with ${listWords(used)}` : ''
+    if (off.length) out.push({ kind: 'app', id, title, ready: false, todo: `Turn on ${off.join(', ')} for ${title} on ${agent.name}'s Apps tab`, href: tab('abilities') })
+    else if (status.state === 'ready') out.push({ kind: 'app', id, title, ready: true })
+    else if (status.state === 'connected') out.push({ kind: 'app', id, title, ready: false, todo: `Add ${title} to ${agent.name} on its Apps tab${withTools}`, href: tab('abilities') })
+    else out.push({ kind: 'app', id, title, ready: false, todo: `Connect ${title} on the Apps page, then add it to ${agent.name} on its Apps tab${withTools}`, href: '/config?section=apps' })
   }
   const need = messagingNeed(plan)
   if (need) {
@@ -96,13 +103,67 @@ export async function workflowRequirements(plan: WorkflowPlan, agent: WorkflowAg
   return out
 }
 
+/** The tools a plan's steps use from app `id`. */
+function appToolsUsed(plan: WorkflowPlan, id: string): string[] {
+  return [...new Set([
+    ...(plan.apps ?? []).filter((a) => a.id === id).flatMap((a) => a.tools),
+    ...plan.steps.flatMap((step) => (step.mcp === id && step.tool ? [step.tool] : [])),
+  ])]
+}
+
+/** "a", "a and b", "a, b and c". */
+function listWords(items: string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}
+
+/** The tools a plan uses from app `id` that the agent has the app for but
+ * not those tools turned on, by their installed names. */
+function appToolsOff(plan: WorkflowPlan, agent: WorkflowAgentInfo, id: string): string[] {
+  const app = agent.apps?.find((a) => a.id === id)
+  if (!app) return []
+  const wanted = appToolsUsed(plan, id)
+  const off: string[] = []
+  for (const tool of wanted) {
+    const known = app.all?.find((t) => t.remote === tool || t.name === tool)
+    const name = known?.name ?? tool
+    if (!app.tools.includes(name) && !off.includes(name)) off.push(name)
+  }
+  return off
+}
+
+/** A step on a tool of one of the agent's own apps that it hasn't turned
+ * on, whether the planner names the app (its id as "mcp") or only the
+ * tool: made one of that app's tools, so the review lists it to turn on
+ * before Create, rather than looked up as a server to connect. */
+export function resolveAgentAppTools(plan: WorkflowPlan, agent: WorkflowAgentInfo): void {
+  for (const step of plan.steps) {
+    const tool = step.tool
+    if (!tool || step.ability || step.connection || agent.tools.includes(tool)) continue
+    const app = agent.apps?.find((a) => a.id && (!step.mcp || step.mcp === a.id) && a.all?.some((t) => t.name === tool || t.remote === tool))
+    if (!app?.id) continue
+    const known = app.all!.find((t) => t.name === tool || t.remote === tool)!
+    const remote = known.remote
+    delete step.mcp
+    step.tool = known.name
+    const entry = plan.apps?.find((a) => a.id === app.id)
+    if (entry) {
+      if (!entry.tools.includes(remote)) entry.tools.push(remote)
+    } else plan.apps = [...(plan.apps ?? []), { id: app.id, title: app.title, tools: [remote] }]
+  }
+}
+
 /** What the planner reads about the agent first. */
 function agentBrief(agent: WorkflowAgentInfo): string {
   const lines = [`The workflow is added to the agent "${agent.name}"${agent.displayName && agent.displayName !== agent.name ? ` (shown as "${agent.displayName}")` : ''}.`]
   if (agent.description?.trim()) lines.push(`Its description: ${agent.description.trim().slice(0, 600)}`)
   if (agent.instructions?.trim()) lines.push(`Its instructions:\n${agent.instructions.trim().slice(0, 3000)}`)
   lines.push(`Its tools: ${agent.tools.slice(0, 60).join(', ') || 'none yet'}.`)
-  lines.push(agent.apps?.length ? `Its apps: ${agent.apps.map((a) => `${a.title} (${a.url}; tools: ${a.tools.slice(0, 30).join(', ')})`).join('; ')}.` : 'Its apps: none yet.')
+  lines.push(agent.apps?.length
+    ? `Its apps: ${agent.apps.map((a) => {
+      const off = (a.all ?? []).map((t) => t.name).filter((n) => !a.tools.includes(n))
+      return `${a.title} (${a.id ? `id ${a.id}, ` : ''}${a.url}; tools turned on: ${a.tools.slice(0, 30).join(', ') || 'none'}${off.length ? `; can be turned on: ${off.slice(0, 30).join(', ')}` : ''})`
+    }).join('; ')}.`
+    : 'Its apps: none yet.')
   lines.push(`Its messaging: ${agent.messaging ?? 'none set up'}.`)
   const ruled = agent.rules.filter((r) => r.decision !== agent.defaultDecision).slice(0, 40).map((r) => `${r.tool}: ${r.decision}`)
   if (ruled.length) lines.push(`Its permission rules (default ${agent.defaultDecision}): ${ruled.join(', ')}.`)
@@ -189,6 +250,43 @@ function specNames(spec: string): string[] {
   const scoped = spec.match(/^(@[^/]+\/[^@]+)/)?.[1]
   const named = spec.match(/^([^@/:][^@]*)(@.*)?$/)?.[1]
   return [...new Set([scoped, named, last.replace(/@.*$/, '')].filter((n): n is string => Boolean(n)))]
+}
+
+/** A connected app, found by the workspace ability made from it. */
+export interface WorkflowAppAbility {
+  id: string
+  title: string
+  tools: { name: string; remote: string }[]
+}
+export type AppForSpec = (spec: string) => WorkflowAppAbility | undefined
+
+/** A step on a connected app's ability (the planner can find it among the
+ * workspace's abilities) is a step on that app: installing the ability
+ * would add only its read-only tools, and apps are added by the person
+ * first. So it becomes one of the plan's apps, with the tools its steps
+ * use, and leaves the abilities to install. */
+export function resolveAppAbilities(plan: WorkflowPlan, appForSpec: AppForSpec | undefined): void {
+  if (!appForSpec) return
+  const specs = new Set<string>()
+  for (const spec of new Set([...plan.abilities, ...plan.steps.flatMap((s) => (s.ability ? [s.ability] : []))])) {
+    const app = appForSpec(spec)
+    if (!app) continue
+    specs.add(spec)
+    for (const step of plan.steps) {
+      if (step.ability !== spec) continue
+      delete step.ability
+      const known = step.tool ? app.tools.find((t) => t.name === step.tool || t.remote === step.tool) : undefined
+      if (!known) continue
+      step.tool = known.name
+      const entry = plan.apps?.find((a) => a.id === app.id)
+      if (entry) {
+        if (!entry.tools.includes(known.remote)) entry.tools.push(known.remote)
+      } else plan.apps = [...(plan.apps ?? []), { id: app.id, title: app.title, tools: [known.remote] }]
+    }
+    // An app the steps don't name a tool of is still the app.
+    if (!plan.apps?.some((a) => a.id === app.id)) plan.apps = [...(plan.apps ?? []), { id: app.id, title: app.title, tools: [] }]
+  }
+  plan.abilities = plan.abilities.filter((spec) => !specs.has(spec))
 }
 
 // ---- MCP servers ----
@@ -349,6 +447,8 @@ export interface WorkflowPlanDeps extends WorkflowPlannerTools {
   agentInfo(): Promise<WorkflowAgentInfo[]>
   mcp?: WorkflowMcpDeps
   appStatus(agent: string, id: string): Promise<WorkflowAppStatus>
+  /** The connected app a workspace ability was made from. */
+  appForSpec?: AppForSpec
 }
 
 /** Plans a workflow from a description for the agent the person picked,
@@ -365,6 +465,8 @@ export async function planWorkflow(description: unknown, agentName: unknown, mod
   if (!result.plan) throw new WorkflowError(result.reply || 'The planner did not produce a plan; try describing the steps more plainly.')
   const plan = result.plan
   resolveConnections(plan, agents)
+  resolveAppAbilities(plan, tools.appForSpec)
+  resolveAgentAppTools(plan, agent)
   if (tools.mcp) await resolveMcpServers(plan, tools.mcp)
   else for (const step of plan.steps) if (step.mcp) { delete step.mcp; step.missing = step.missing ?? 'no ability does this' }
   return { plan, agent: agent.name, check: checkWorkflowForAgent(plan, agent), requirements: await workflowRequirements(plan, agent, tools.appStatus) }
@@ -372,12 +474,13 @@ export async function planWorkflow(description: unknown, agentName: unknown, mod
 
 /** The requirements of a plan (planned, or a ready-made example) for an
  * agent: what the review screen lists, and checks again. */
-export async function checkWorkflowRequirements(input: { plan?: unknown; agent?: unknown }, deps: { agentInfo(): Promise<WorkflowAgentInfo[]>; appStatus(agent: string, id: string): Promise<WorkflowAppStatus> }): Promise<{ agent: string; check: WorkflowCheck; requirements: WorkflowRequirement[] }> {
+export async function checkWorkflowRequirements(input: { plan?: unknown; agent?: unknown }, deps: { agentInfo(): Promise<WorkflowAgentInfo[]>; appStatus(agent: string, id: string): Promise<WorkflowAppStatus>; appForSpec?: AppForSpec }): Promise<{ agent: string; check: WorkflowCheck; requirements: WorkflowRequirement[] }> {
   const plan = input.plan as WorkflowPlan | undefined
   if (!plan || typeof plan !== 'object' || !Array.isArray(plan.steps) || !Array.isArray(plan.rules)) throw new WorkflowError('Plan the workflow first.')
   const agents = await deps.agentInfo()
   const agent = agents.find((a) => a.name === input.agent)
   if (!agent) throw new WorkflowError(typeof input.agent === 'string' && input.agent ? `There's no agent named ${input.agent}.` : 'Choose the agent the workflow goes into.')
+  resolveAppAbilities(plan, deps.appForSpec)
   return { agent: agent.name, check: checkWorkflowForAgent(plan, agent), requirements: await workflowRequirements(plan, agent, deps.appStatus) }
 }
 
@@ -475,6 +578,8 @@ export interface WorkflowCreateDeps extends Pick<TemplateCreateDeps, 'installAbi
   /** Gives an agent that already has an app more of its tools (at their
    * default permission), keeping the ones it has. */
   addAppTools?: (agent: string, spec: string, tools: string[]) => Promise<void>
+  /** The connected app a workspace ability was made from. */
+  appForSpec?: AppForSpec
 }
 
 /** A to-do for each step nothing could be found for, first in the list. */
@@ -526,7 +631,8 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
   const agent = agents.find((a) => a.name === agentName)
   if (!agent) throw new WorkflowError(typeof agentName === 'string' && agentName ? `There's no agent named ${agentName}.` : 'Choose the agent the workflow goes into.')
   // What it needs from the agent, checked again: it may have changed
-  // since the plan was shown.
+  // since the plan was shown. An app planned as an ability is an app.
+  resolveAppAbilities(plan, deps.appForSpec)
   const missing = (await workflowRequirements(plan, agent, deps.appStatus)).filter((r) => !r.ready)
   if (missing.length) throw new WorkflowError(`Before creating it: ${missing.map((r) => r.todo).join('; ')}.`)
   resolveConnections(plan, agents)

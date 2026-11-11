@@ -223,8 +223,8 @@ describe("what a workflow needs from its agent", () => {
     const { requirements } = await checkWorkflowRequirements({ plan: plan(), agent: 'web-agent' }, { agentInfo: async () => [agent({ messaging: null })], appStatus })
     expect(requirements).toEqual([
       { kind: 'app', id: 'stripe', title: 'Stripe', ready: true },
-      { kind: 'app', id: 'linear', title: 'Linear', ready: false, todo: 'Add Linear to web-agent on its Apps tab', href: '/agents/config?agent=web-agent&tab=abilities' },
-      { kind: 'app', id: 'notion', title: 'Notion', ready: false, todo: 'Connect Notion on the Apps page, then add it to web-agent on its Apps tab', href: '/config?section=apps' },
+      { kind: 'app', id: 'linear', title: 'Linear', ready: false, todo: 'Add Linear to web-agent on its Apps tab, with create_issue', href: '/agents/config?agent=web-agent&tab=abilities' },
+      { kind: 'app', id: 'notion', title: 'Notion', ready: false, todo: 'Connect Notion on the Apps page, then add it to web-agent on its Apps tab, with search', href: '/config?section=apps' },
       { kind: 'messaging', title: 'Messaging', ready: false, todo: "Set up web-agent's Messaging (Slack, email, Lark or a webhook), so its questions and approvals reach you when you're not in Chat", href: '/agents/config?agent=web-agent&tab=messaging' },
     ])
   })
@@ -233,6 +233,81 @@ describe("what a workflow needs from its agent", () => {
     const byHand = { ...validateWorkflowPlan({ ...RAW_PLAN, trigger: { kind: 'on_request', description: 'when asked' } })!, apps: [] }
     const { requirements } = await checkWorkflowRequirements({ plan: byHand, agent: 'web-agent' }, { agentInfo: async () => [agent({ messaging: null })], appStatus })
     expect(requirements).toEqual([])
+  })
+
+  it("lists a tool of the agent's own app that isn't turned on, whether or not the planner named the app", async () => {
+    const stripe = { id: 'stripe', title: 'Stripe', url: 'https://mcp.stripe.com', tools: ['stripe_api_read'], all: [{ name: 'stripe_api_read', remote: 'stripe_api_read' }, { name: 'stripe_api_write', remote: 'stripe_api_write' }] }
+    const cs = agent({ tools: ['web_search', 'stripe_api_read'], apps: [stripe] })
+    const raw = {
+      ...RAW_PLAN,
+      trigger: { kind: 'on_request', description: 'when asked' },
+      steps: [
+        { title: 'Read the dispute', kind: 'tool', tool: 'stripe_api_read' },
+        { title: 'Ask before submitting', kind: 'approval', tool: 'stripe_api_write' },
+      ],
+      rules: [{ tool: 'stripe_api_read', decision: 'allow' }, { tool: 'stripe_api_write', decision: 'ask' }],
+    }
+    const seen: string[] = []
+    const asked: string[] = []
+    const model = scriptedModel(raw, seen)
+    const reading = (async (messages: { content: unknown }[], ...rest: unknown[]) => {
+      asked.push(String(messages[0]!.content))
+      return (model as unknown as (...a: unknown[]) => unknown)(messages, ...rest)
+    }) as unknown as ModelCall
+    const ready = async (): Promise<WorkflowAppStatus> => ({ state: 'ready', title: 'Stripe' })
+    const planned = await planWorkflow('When a Stripe dispute comes in, gather evidence and ask me first.', 'web-agent', reading, { ...tools([cs], seen), appStatus: ready })
+    expect(asked[0]).toMatch(/Stripe \(id stripe, https:\/\/mcp\.stripe\.com; tools turned on: stripe_api_read; can be turned on: stripe_api_write\)/)
+    expect(planned.plan.apps).toEqual([{ id: 'stripe', title: 'Stripe', tools: ['stripe_api_write'] }])
+    expect(planned.requirements).toEqual([
+      { kind: 'app', id: 'stripe', title: 'Stripe', ready: false, todo: "Turn on stripe_api_write for Stripe on web-agent's Apps tab", href: '/agents/config?agent=web-agent&tab=abilities' },
+    ])
+    // Once it's on, nothing is left to do.
+    const on = agent({ tools: ['web_search', 'stripe_api_read', 'stripe_api_write'], apps: [{ ...stripe, tools: ['stripe_api_read', 'stripe_api_write'] }] })
+    const again = await checkWorkflowRequirements({ plan: planned.plan, agent: 'web-agent' }, { agentInfo: async () => [on], appStatus: ready })
+    expect(again.requirements).toEqual([{ kind: 'app', id: 'stripe', title: 'Stripe', ready: true }])
+  })
+})
+
+describe('an app the planner found among the workspace abilities', () => {
+  const SPEC = 'file:/ws/abilities/mcp-stripe'
+  const appForSpec = (spec: string) => (spec === SPEC || spec === 'mcp-stripe'
+    ? { id: 'stripe', title: 'Stripe', tools: [{ name: 'stripe_api_read', remote: 'stripe_api_read' }, { name: 'stripe_api_write', remote: 'stripe_api_write' }] }
+    : undefined)
+  const raw = {
+    ...RAW_PLAN,
+    trigger: { kind: 'on_request', description: 'when asked' },
+    steps: [
+      { title: 'Read the dispute', kind: 'tool', tool: 'stripe_api_read', ability: SPEC },
+      { title: 'Submit the evidence', kind: 'approval', tool: 'stripe_api_write', ability: SPEC },
+    ],
+    rules: [{ tool: 'stripe_api_read', decision: 'allow' }, { tool: 'stripe_api_write', decision: 'ask' }],
+  }
+
+  it("is planned as the app with every tool its steps use, to add first, not an ability to install with only its read-only tools", async () => {
+    const seen: string[] = []
+    const connected = async (): Promise<WorkflowAppStatus> => ({ state: 'connected', title: 'Stripe' })
+    const planned = await planWorkflow('When a Stripe dispute comes in, gather evidence and ask me first.', 'web-agent', scriptedModel(raw, seen), { ...tools([agent()], seen), appStatus: connected, appForSpec })
+    expect(planned.plan.abilities).toEqual([])
+    expect(planned.check.toInstall).toEqual([])
+    expect(planned.plan.steps.map((s) => s.ability)).toEqual([undefined, undefined])
+    expect(planned.plan.apps).toEqual([{ id: 'stripe', title: 'Stripe', tools: ['stripe_api_read', 'stripe_api_write'] }])
+    expect(planned.requirements).toEqual([
+      { kind: 'app', id: 'stripe', title: 'Stripe', ready: false, todo: 'Add Stripe to web-agent on its Apps tab, with stripe_api_read and stripe_api_write', href: '/agents/config?agent=web-agent&tab=abilities' },
+    ])
+    // Added with only its read-only tool: the write tool is still to turn on.
+    const readOnly = agent({ tools: ['web_search', 'stripe_api_read'], apps: [{ id: 'stripe', title: 'Stripe', url: 'https://mcp.stripe.com', tools: ['stripe_api_read'], all: appForSpec(SPEC)!.tools }] })
+    const ready = async (): Promise<WorkflowAppStatus> => ({ state: 'ready', title: 'Stripe' })
+    const again = await checkWorkflowRequirements({ plan: planned.plan, agent: 'web-agent' }, { agentInfo: async () => [readOnly], appStatus: ready, appForSpec })
+    expect(again.requirements.map((r) => r.todo)).toEqual(["Turn on stripe_api_write for Stripe on web-agent's Apps tab"])
+  })
+
+  it('is caught on the review screen too, for a plan made before', async () => {
+    const plan = validateWorkflowPlan(raw)!
+    expect(plan.abilities).toEqual([SPEC])
+    const connected = async (): Promise<WorkflowAppStatus> => ({ state: 'connected', title: 'Stripe' })
+    const { check, requirements } = await checkWorkflowRequirements({ plan, agent: 'web-agent' }, { agentInfo: async () => [agent()], appStatus: connected, appForSpec })
+    expect(check.toInstall).toEqual([])
+    expect(requirements.map((r) => r.todo)).toEqual(['Add Stripe to web-agent on its Apps tab, with stripe_api_read and stripe_api_write'])
   })
 })
 
