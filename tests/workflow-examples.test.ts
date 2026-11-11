@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -42,12 +42,7 @@ afterEach(() => rmSync(scratch.root, { recursive: true, force: true }))
 
 function deps(over: Partial<Deps> = {}, env: Record<string, string> = {}): Deps {
   return {
-    agentExists: (name) => existsSync(join(scratch.root, name)),
-    scaffoldAgent: async (name, systemPrompt) => {
-      mkdirSync(join(scratch.root, name), { recursive: true })
-      writeFileSync(join(scratch.root, name, 'instructions.txt'), systemPrompt)
-    },
-    registerAgent: async () => {},
+    appStatus: async () => ({ state: 'ready' }),
     reloadAgent: async () => {},
     installAbility: async (name, spec) => void scratch.steps.push(`install ${name} ${spec}`),
     envValue: (_name, variable) => env[variable],
@@ -97,10 +92,10 @@ describe('workflow examples', () => {
   })
 
   it('split a plan the way the planner is told to', () => {
-    // The planner writes a new agent's instructions the same way: the
-    // role and standing rules, not the steps.
-    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/newAgent\.systemPrompt: the new agent's standing instructions/)
-    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Don't repeat the steps, the tools or the schedule/)
+    // The planner writes a workflow's rules and facts the same way: the
+    // standing rules, not the steps.
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/context: rules and facts this workflow needs/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Don't repeat the agent's instructions, the steps, the tools or the schedule/)
   })
 
   it('becomes a template with its skills, settings and notes', () => {
@@ -111,17 +106,25 @@ describe('workflow examples', () => {
     expect(template.setup.notes).toEqual(plan.notes)
   })
 
-  it('creates a new agent: its instructions, the workflow, the skills it comes with, and a paused schedule that runs the workflow', async () => {
+  it('creates it in the agent: the workflow, the skills it comes with, and a paused schedule that runs the workflow', async () => {
     const plan = structuredClone(workflowExample('customer-email-replies')!.plan) as WorkflowPlan
-    plan.newAgent.systemPrompt += '\n\nSign every reply "The Acme team".'
-    const created = await createWorkflow({ plan, target: { kind: 'new' } }, deps())
-    expect(created).toMatchObject({ agent: 'customer-email-replies', newAgent: true, workflow: 'Answer customer emails' })
-    expect(readFileSync(join(scratch.root, 'customer-email-replies', 'instructions.txt'), 'utf8')).toContain('Sign every reply "The Acme team".')
-    expect(scratch.steps).toEqual(expect.arrayContaining(['install customer-email-replies @loopengine-co/gmail', 'skill customer-email-replies support-policies']))
-    expect(readWorkflow(join(scratch.root, 'customer-email-replies'), 'answer-customer-emails')).toMatchObject({ title: 'Answer customer emails' })
-    const [task] = await listScheduledTasks({ agent: 'customer-email-replies' })
+    const agent = { name: 'support', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack' }
+    const created = await createWorkflow({ plan, agent: 'support' }, deps({ agentInfo: async () => [agent] }))
+    expect(created).toMatchObject({ agent: 'support', workflow: 'Answer customer emails' })
+    expect(scratch.steps).toEqual(expect.arrayContaining(['install support @loopengine-co/gmail', 'skill support support-policies']))
+    expect(readWorkflow(join(scratch.root, 'support'), 'answer-customer-emails')).toMatchObject({ title: 'Answer customer emails' })
+    const [task] = await listScheduledTasks({ agent: 'support' })
     expect([task.status, task.workflow_id]).toEqual(['paused', 'answer-customer-emails'])
-    expect(created.checklist.map((c) => c.label)).toContain('Write your policies into its support-policies skill (Advanced → Skills): the agent answers from it and nothing else')
+  })
+
+  it("isn't created until the agent has its apps and messaging", async () => {
+    const plan = structuredClone(workflowExample('inbox-to-tasks')!.plan) as WorkflowPlan
+    const agent = { name: 'ops', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: null }
+    await expect(createWorkflow({ plan, agent: 'ops' }, deps({ agentInfo: async () => [agent], appStatus: async () => ({ state: 'connected', title: 'GitHub' }) })))
+      .rejects.toThrow(/Before creating it: Add GitHub to ops on its Apps tab; Set up ops's Messaging/)
+    expect(scratch.steps).toEqual([])
+    expect(readWorkflow(join(scratch.root, 'ops'), 'inbox-to-tasks')).toBeUndefined()
+    await expect(createWorkflow({ plan }, deps({ agentInfo: async () => [agent] }))).rejects.toThrow(/Choose the agent/)
   })
 
   it('adds to an agent you have without replacing its own skills or settings', async () => {
@@ -130,8 +133,8 @@ describe('workflow examples', () => {
     writeSkillFile(join(own, 'SKILL.md'), { name: 'return-policy', description: 'Ours' }, 'Our real policy.')
     const plan = { ...structuredClone(workflowExample('refund-approvals')!.plan), env: { REFUND_LIMIT: '100', REFUND_CURRENCY: 'EUR' } } as WorkflowPlan
     const agent = { name: 'support', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack' }
-    const created = await createWorkflow({ plan, target: { kind: 'existing', agent: 'support' } }, deps({ agentInfo: async () => [agent] }, { REFUND_LIMIT: '250' }))
-    expect(created).toMatchObject({ agent: 'support', newAgent: false })
+    const created = await createWorkflow({ plan, agent: 'support' }, deps({ agentInfo: async () => [agent] }, { REFUND_LIMIT: '250' }))
+    expect(created).toMatchObject({ agent: 'support' })
     expect(readFileSync(join(own, 'SKILL.md'), 'utf8')).toContain('Our real policy.')
     expect(scratch.steps).not.toContain('skill support return-policy')
     expect(scratch.steps).toContain('env support REFUND_CURRENCY=EUR')
@@ -143,7 +146,7 @@ describe('workflow examples', () => {
     const plan = structuredClone(workflowExample('inbox-to-tasks')!.plan) as WorkflowPlan
     const context = 'Tasks live in this GitHub repository: acme/ops.\n\nRules:\n- Never promise a fix.'
     const agent = { name: 'ops', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack' }
-    const created = await createWorkflow({ plan, target: { kind: 'existing', agent: 'ops' }, workflowContext: context }, deps({ agentInfo: async () => [agent] }))
+    const created = await createWorkflow({ plan, agent: 'ops', workflowContext: context }, deps({ agentInfo: async () => [agent] }))
     const instructions = readWorkflow(join(scratch.root, 'ops'), 'inbox-to-tasks')!.instructions
     // The start line, then the rules and facts, then the steps.
     expect(instructions.startsWith(`${plan.startMessage}\n\nRules and facts for this workflow:\n${context}\n\n1. `)).toBe(true)

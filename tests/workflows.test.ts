@@ -6,7 +6,7 @@ import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import { WEBHOOK_WITHOUT_PARAMETERS, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
 import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
-import { checkWorkflowForAgent, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, type WorkflowAgentInfo } from '#web/workflow-admin.js'
+import { checkWorkflowForAgent, checkWorkflowRequirements, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowPlanDeps } from '#web/workflow-admin.js'
 import { FileRunStore, WorkflowRunner, setRunStore } from '#core/workflow-runs.js'
 import { FileTriggerStore, createTrigger, listTriggers, setTriggerStore } from '#core/workflow-triggers.js'
 
@@ -29,8 +29,7 @@ const RAW_PLAN = {
   keys: ['TAVILY_API_KEY', 'TAVILY_API_KEY'],
   skill: { description: 'The weekly blog post workflow', body: '1. Search with web_search.\n2. Ask with system_ask_user.\n3. Draft with draft_blog_post.' },
   startMessage: 'Run the weekly blog post workflow.',
-  target: { kind: 'new', reason: 'No agent writes blog posts yet.' },
-  newAgent: { name: 'Blog Writer', systemPrompt: 'You write our blog.' },
+  context: 'Our blog: [url] (edit this).',
 }
 
 const agent = (overrides: Partial<WorkflowAgentInfo> = {}): WorkflowAgentInfo => ({
@@ -47,7 +46,7 @@ describe('a workflow plan', () => {
   it('is cleaned up: ids slugified, approval tools always ask, the ask tool needs no rule, abilities gathered from steps', () => {
     const plan = validateWorkflowPlan(RAW_PLAN)!
     expect(plan.id).toBe('weekly-blog-post')
-    expect(plan.newAgent.name).toBe('blog-writer')
+    expect(plan.context).toBe('Our blog: [url] (edit this).')
     expect(plan.rules).toEqual([{ tool: 'web_search', decision: 'allow' }, { tool: 'draft_blog_post', decision: 'ask' }])
     expect(plan.abilities).toEqual(['lp-web-search', 'lp-blog-drafter'])
     expect(plan.keys).toEqual(['TAVILY_API_KEY'])
@@ -63,6 +62,15 @@ describe('a workflow plan', () => {
   it('falls back to on request for a schedule it cannot read, and refuses a plan with no steps or skill', () => {
     expect(validateWorkflowPlan({ ...RAW_PLAN, trigger: { kind: 'schedule', every: 'mondays' } })!.trigger.kind).toBe('on_request')
     expect(validateWorkflowPlan({ ...RAW_PLAN, steps: [] })).toBeUndefined()
+  })
+
+  it("keeps the planner's verdict on whether the job is the agent's kind of work", () => {
+    expect(validateWorkflowPlan(RAW_PLAN)!.fit).toBeUndefined()
+    expect(validateWorkflowPlan({ ...RAW_PLAN, fit: { matches: true, reason: '' } })!.fit).toEqual({ matches: true, reason: '' })
+    const reason = 'Support desk answers customers; this workflow runs payroll.'
+    expect(validateWorkflowPlan({ ...RAW_PLAN, fit: { matches: false, reason } })!.fit).toEqual({ matches: false, reason })
+    // A mismatch with nothing to tell the person counts as a match.
+    expect(validateWorkflowPlan({ ...RAW_PLAN, fit: { matches: false, reason: ' ' } })!.fit).toEqual({ matches: true, reason: '' })
     expect(validateWorkflowPlan({ ...RAW_PLAN, skill: {} })).toBeUndefined()
   })
 
@@ -71,7 +79,7 @@ describe('a workflow plan', () => {
     expect(t.setup.skills).toEqual([{ id: 'weekly-blog-post', description: 'The weekly blog post workflow', body: RAW_PLAN.skill.body }])
     expect(t.setup.rules.map((r) => [r.tool, r.decision])).toEqual([['web_search', 'allow'], ['draft_blog_post', 'ask']])
     expect(t.setup.schedule).toEqual({ every: '7d', at: '09:00', weekday: 1, name: 'Weekly blog post', message: 'Run the weekly blog post workflow.', workflowId: 'weekly-blog-post' })
-    expect(t.candidate.agent.name).toBe('blog-writer')
+    expect(t.candidate.agent.name).toBe('weekly-blog-post')
   })
 })
 
@@ -156,8 +164,9 @@ function scriptedModel(plan: unknown, seen: string[]): ModelCall {
   }) as unknown as ModelCall
 }
 
-const tools = (agents: WorkflowAgentInfo[], seen: string[]): WorkflowPlannerTools & { agentInfo(): Promise<WorkflowAgentInfo[]> } => ({
+const tools = (agents: WorkflowAgentInfo[], seen: string[], apps: Record<string, WorkflowAppStatus> = {}): WorkflowPlanDeps => ({
   agentInfo: async () => agents,
+  appStatus: async (_agent, id) => apps[id] ?? { state: 'missing' },
   listAgents: async () => { seen.push('listAgents'); return agents },
   searchPublicAbilities: async (q) => { seen.push(`search:${q}`); return [{ name: 'lp-web-search' }] },
   listWorkspaceAbilities: async () => [],
@@ -173,24 +182,57 @@ describe('planning with a model', () => {
     expect(result.plan?.name).toBe('Weekly blog post')
   })
 
-  it('switches a suggested agent that would have a decision changed to a new agent, saying why', async () => {
+  it('plans for the picked agent: it reads the agent first, and the plan is checked against it', async () => {
     const seen: string[] = []
-    const plan = { ...RAW_PLAN, target: { kind: 'existing', agent: 'web-agent', reason: 'It already searches the web.' } }
-    const planned = await planWorkflow('Every Monday find blog ideas, ask me, draft it.', scriptedModel(plan, seen), tools([agent({ rules: [{ tool: 'draft_blog_post', decision: 'allow', scope: '*/*' }] })], seen))
-    expect(planned.plan.target.kind).toBe('new')
-    expect(planned.note).toMatch(/draft_blog_post \(allow there, ask here\)/)
+    const asked: string[] = []
+    const model = scriptedModel(RAW_PLAN, seen)
+    const reading = (async (messages: { content: unknown }[], ...rest: unknown[]) => {
+      asked.push(String(messages[0]!.content))
+      return (model as unknown as (...a: unknown[]) => unknown)(messages, ...rest)
+    }) as unknown as ModelCall
+    const web = agent({ rules: [{ tool: 'draft_blog_post', decision: 'allow', scope: '*/*' }], instructions: 'You help the marketing team.', displayName: 'Web', description: 'Writes and posts marketing content.' })
+    const planned = await planWorkflow('Every Monday find blog ideas, ask me, draft it.', 'web-agent', reading, tools([web], seen))
+    expect(asked[0]).toMatch(/added to the agent "web-agent" \(shown as "Web"\)/)
+    expect(asked[0]).toMatch(/Its description: Writes and posts marketing content\./)
+    expect(asked[0]).toMatch(/You help the marketing team\./)
+    expect(asked[0]).toMatch(/Its messaging: slack\./)
+    expect(planned.agent).toBe('web-agent')
+    // A decision the agent has is kept, and shown, not a reason to move.
+    expect(planned.check.conflicts).toEqual([{ tool: 'draft_blog_post', has: 'allow', wants: 'ask' }])
+    expect(planned.check.toInstall).toEqual(['lp-blog-drafter'])
+    // Scheduled with questions: it needs messaging, which the agent has.
+    expect(planned.requirements).toEqual([{ kind: 'messaging', title: 'Messaging (slack)', ready: true }])
   })
 
-  it('keeps a suggested agent that fits, with its check', async () => {
-    const seen: string[] = []
-    const plan = { ...RAW_PLAN, target: { kind: 'existing', agent: 'web-agent', reason: 'It already searches the web.' } }
-    const planned = await planWorkflow('Every Monday find blog ideas, ask me, draft it.', scriptedModel(plan, seen), tools([agent()], seen))
-    expect(planned.plan.target).toMatchObject({ kind: 'existing', agent: 'web-agent' })
-    expect(planned.check?.toInstall).toEqual(['lp-blog-drafter'])
+  it('refuses without an agent, or one that does not exist', async () => {
+    await expect(planWorkflow('Every Monday find blog ideas, ask me, draft it.', '', scriptedModel(RAW_PLAN, []), tools([agent()], []))).rejects.toThrow(/Choose the agent/)
+    await expect(planWorkflow('Every Monday find blog ideas, ask me, draft it.', 'nobody', scriptedModel(RAW_PLAN, []), tools([agent()], []))).rejects.toThrow(/no agent named nobody/)
   })
 
   it('refuses a description too short to plan', async () => {
-    await expect(planWorkflow('blog', scriptedModel(RAW_PLAN, []), tools([], []))).rejects.toThrow(/sentence or two/)
+    await expect(planWorkflow('blog', 'web-agent', scriptedModel(RAW_PLAN, []), tools([], []))).rejects.toThrow(/sentence or two/)
+  })
+})
+
+describe("what a workflow needs from its agent", () => {
+  const appStatus = async (_agent: string, id: string): Promise<WorkflowAppStatus> =>
+    id === 'stripe' ? { state: 'ready', title: 'Stripe' } : id === 'linear' ? { state: 'connected', title: 'Linear' } : { state: 'missing', title: 'Notion' }
+  const plan = () => ({ ...validateWorkflowPlan(RAW_PLAN)!, apps: [{ id: 'stripe', title: 'Stripe', tools: ['list_disputes'] }, { id: 'linear', title: 'Linear', tools: ['create_issue'] }, { id: 'notion', title: 'Notion', tools: ['search'] }] })
+
+  it('lists each app as on the agent, to add from its Apps tab, or to connect first; and messaging it lacks', async () => {
+    const { requirements } = await checkWorkflowRequirements({ plan: plan(), agent: 'web-agent' }, { agentInfo: async () => [agent({ messaging: null })], appStatus })
+    expect(requirements).toEqual([
+      { kind: 'app', id: 'stripe', title: 'Stripe', ready: true },
+      { kind: 'app', id: 'linear', title: 'Linear', ready: false, todo: 'Add Linear to web-agent on its Apps tab', href: '/agents/config?agent=web-agent&tab=abilities' },
+      { kind: 'app', id: 'notion', title: 'Notion', ready: false, todo: 'Connect Notion on the Apps page, then add it to web-agent on its Apps tab', href: '/config?section=apps' },
+      { kind: 'messaging', title: 'Messaging', ready: false, todo: "Set up web-agent's Messaging (Slack, email, Lark or a webhook), so its questions and approvals reach you when you're not in Chat", href: '/agents/config?agent=web-agent&tab=messaging' },
+    ])
+  })
+
+  it('needs no messaging for a workflow started by hand', async () => {
+    const byHand = { ...validateWorkflowPlan({ ...RAW_PLAN, trigger: { kind: 'on_request', description: 'when asked' } })!, apps: [] }
+    const { requirements } = await checkWorkflowRequirements({ plan: byHand, agent: 'web-agent' }, { agentInfo: async () => [agent({ messaging: null })], appStatus })
+    expect(requirements).toEqual([])
   })
 })
 

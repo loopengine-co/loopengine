@@ -1,18 +1,18 @@
 // Backs "Describe a workflow" (web/workflow-page.ts) and the Workflows list
 // on an agent's Overview: plans a workflow from a description
-// (core/system-agents/workflow-planner.ts), checks the plan against the
-// agent it would go into, and creates it: as a new agent through the same
-// path as a template (web/templates-admin.ts), or added to an existing
-// one without changing anything that agent already does.
+// (core/system-agents/workflow-planner.ts) for the agent the person picked,
+// lists what that agent still needs (apps, messaging) for the person to
+// add first, and creates it in that agent without changing anything the
+// agent already does.
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { addGatewayTool, readGatewayToolsFromDir } from '../core/gateway-tools.js'
 import { applyPlannedRules } from './actauth-admin.js'
 import { writeSkill } from './skills-admin.js'
 import { setAgentEnvVar } from './env-admin.js'
-import { createFromTemplateObject, installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
+import { installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
-import { planParameters, planWebhook, planWorkflowWithModel, slugify, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
+import { planParameters, planWebhook, planWorkflowWithModel, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
 import { createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
@@ -27,6 +27,10 @@ export class WorkflowError extends Error {}
 /** What the planner and the checks need to know about an agent. */
 export interface WorkflowAgentInfo {
   name: string
+  /** The name people see, when it isn't `name`. */
+  displayName?: string
+  /** What it's for, as told to other agents (toolDescription). */
+  description?: string
   tools: string[]
   abilities: string[]
   rules: { tool: string; decision: 'allow' | 'ask' | 'deny'; scope: string }[]
@@ -35,6 +39,74 @@ export interface WorkflowAgentInfo {
   messaging: string | null
   /** Tools from its connected services (gateway-tools.yml), by source. */
   connected?: { source: string; tools: string[] }[]
+  /** Its apps (MCP servers it has), with the tools it has from each. */
+  apps?: { title: string; url: string; tools: string[] }[]
+  /** Its own instructions (system prompt). */
+  instructions?: string
+}
+
+/** Something the agent needs before the workflow can be created in it:
+ * an app its steps use, or messaging to reach the person. */
+export interface WorkflowRequirement {
+  kind: 'app' | 'messaging'
+  /** An app's id (the catalog's, or an MCP server's). */
+  id?: string
+  title: string
+  ready: boolean
+  /** What to do, when it isn't ready, and where. */
+  todo?: string
+  href?: string
+}
+
+/** Where an app stands for an agent: on it, connected to the workspace
+ * but not on it, or not connected at all. */
+export type WorkflowAppStatus = { state: 'ready' | 'connected' | 'missing'; title?: string }
+
+/** Whether runs need the agent's messaging app: to send each result, or
+ * to ask the person something when a run isn't started from Chat. */
+function messagingNeed(plan: WorkflowPlan): string | undefined {
+  const unattended = plan.trigger.kind !== 'on_request' || Boolean(plan.webhook)
+  if (!unattended) return undefined
+  if (plan.needsApprovals) return plan.notify?.on ? 'its questions, approvals and results reach you' : 'its questions and approvals reach you'
+  if (plan.notify?.on) return 'its results reach you'
+  return undefined
+}
+
+/** The apps and messaging a plan needs from the agent, each saying
+ * whether the agent has it, and if not, what to do and where. */
+export async function workflowRequirements(plan: WorkflowPlan, agent: WorkflowAgentInfo, appStatus: (agent: string, id: string) => Promise<WorkflowAppStatus>): Promise<WorkflowRequirement[]> {
+  const tab = (t: string) => `/agents/config?agent=${encodeURIComponent(agent.name)}&tab=${t}`
+  const apps = new Map<string, string>()
+  for (const s of plan.mcpServers ?? []) apps.set(s.id, s.title)
+  for (const a of plan.apps ?? []) if (!apps.has(a.id)) apps.set(a.id, a.title)
+  const out: WorkflowRequirement[] = []
+  for (const [id, planned] of apps) {
+    const status = await appStatus(agent.name, id).catch((): WorkflowAppStatus => ({ state: 'missing' }))
+    const title = status.title ?? planned
+    if (status.state === 'ready') out.push({ kind: 'app', id, title, ready: true })
+    else if (status.state === 'connected') out.push({ kind: 'app', id, title, ready: false, todo: `Add ${title} to ${agent.name} on its Apps tab`, href: tab('abilities') })
+    else out.push({ kind: 'app', id, title, ready: false, todo: `Connect ${title} on the Apps page, then add it to ${agent.name} on its Apps tab`, href: '/config?section=apps' })
+  }
+  const need = messagingNeed(plan)
+  if (need) {
+    out.push(agent.messaging
+      ? { kind: 'messaging', title: `Messaging (${agent.messaging})`, ready: true }
+      : { kind: 'messaging', title: 'Messaging', ready: false, todo: `Set up ${agent.name}'s Messaging (Slack, email, Lark or a webhook), so ${need} when you're not in Chat`, href: tab('messaging') })
+  }
+  return out
+}
+
+/** What the planner reads about the agent first. */
+function agentBrief(agent: WorkflowAgentInfo): string {
+  const lines = [`The workflow is added to the agent "${agent.name}"${agent.displayName && agent.displayName !== agent.name ? ` (shown as "${agent.displayName}")` : ''}.`]
+  if (agent.description?.trim()) lines.push(`Its description: ${agent.description.trim().slice(0, 600)}`)
+  if (agent.instructions?.trim()) lines.push(`Its instructions:\n${agent.instructions.trim().slice(0, 3000)}`)
+  lines.push(`Its tools: ${agent.tools.slice(0, 60).join(', ') || 'none yet'}.`)
+  lines.push(agent.apps?.length ? `Its apps: ${agent.apps.map((a) => `${a.title} (${a.url}; tools: ${a.tools.slice(0, 30).join(', ')})`).join('; ')}.` : 'Its apps: none yet.')
+  lines.push(`Its messaging: ${agent.messaging ?? 'none set up'}.`)
+  const ruled = agent.rules.filter((r) => r.decision !== agent.defaultDecision).slice(0, 40).map((r) => `${r.tool}: ${r.decision}`)
+  if (ruled.length) lines.push(`Its permission rules (default ${agent.defaultDecision}): ${ruled.join(', ')}.`)
+  return lines.join('\n')
 }
 
 /** A rule the workflow wants that the agent already decides differently. */
@@ -132,11 +204,9 @@ export interface WorkflowMcpDeps {
 }
 
 export interface WorkflowMcpCreateDeps extends WorkflowMcpDeps {
+  /** Matches the steps to the server's tools, when the plan doesn't name
+   * them (the server needed a key before they could be seen). */
   generate(request: Omit<McpAbilityRequest, 'modelCall'>): Promise<GeneratedMcpAbility>
-  /** Stores a generated package as a workspace ability; returns its spec. */
-  store(dir: string, source: string): string
-  /** Saves a key project-wide. */
-  saveKey(name: string, value: string): Promise<void>
 }
 
 /** Looks up each MCP server the plan's steps name: a server that can't
@@ -175,12 +245,11 @@ export async function resolveMcpServers(plan: WorkflowPlan, deps: WorkflowMcpDep
   else delete plan.mcpServers
 }
 
-/** On Create: each MCP server on the plan becomes a private ability (or
- * reuses the one already made from it), and its steps point at that
- * ability's tools. A server that can't be set up leaves its steps
- * missing and is reported. `keys` are what the person typed per server. */
-export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<string, string>, deps: WorkflowMcpCreateDeps | undefined): Promise<{ made: string[]; failed: { name: string; error: string }[] }> {
-  const made: string[] = []
+/** On Create: each MCP server on the plan is an app connected already
+ * (the person connects it first), and its steps point at that app's
+ * tools. One that isn't connected leaves its steps missing and is
+ * reported. */
+export async function prepareMcpAbilities(plan: WorkflowPlan, deps: WorkflowMcpCreateDeps | undefined): Promise<{ failed: { name: string; error: string }[] }> {
   const failed: { name: string; error: string }[] = []
   for (const planned of plan.mcpServers ?? []) {
     const steps = plan.steps.map((step, index) => ({ step, index })).filter(({ step }) => step.mcp === planned.id)
@@ -196,14 +265,18 @@ export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<strin
       fail('setting up MCP servers isn\'t available on this server')
       continue
     }
-    // The app, connected already or connected now; and the server tool for
-    // each step (the planner's when the app has it, else worked out).
+    // The app, connected already; and the server tool for each step (the
+    // planner's when the app has it, else worked out).
     const existing = deps.existingFor(planned.url)
+    if (!existing) {
+      fail(`connect ${planned.title} on the Apps page first`)
+      continue
+    }
     const known = existing && steps.every(({ step }) => step.tool && existing.tools.some((t) => t.remote === step.tool))
     let spec: string
     let stepTools: Record<number, string>
     let names: { remote: string; name: string }[]
-    if (existing && known) {
+    if (known) {
       spec = existing.spec
       stepTools = Object.fromEntries(steps.map(({ step, index }) => [index, step.tool!]))
       names = existing.tools
@@ -213,8 +286,7 @@ export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<strin
         fail('the server couldn\'t be found any more')
         continue
       }
-      const typed = keys[planned.id]?.trim()
-      const key = typed || deps.keyValue(planned.keyEnv)
+      const key = deps.keyValue(planned.keyEnv)
       let generated: GeneratedMcpAbility
       try {
         generated = await deps.generate({
@@ -226,23 +298,10 @@ export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<strin
         fail(err instanceof Error ? err.message : String(err))
         continue
       }
+      // Only the step matching was needed: the app is the one connected.
       stepTools = generated.stepTools
-      names = generated.tools
-      if (existing) {
-        // Connected already: only the step matching was needed.
-        spec = existing.spec
-      } else {
-        if (typed && generated.keyEnv) {
-          try {
-            await deps.saveKey(generated.keyEnv, typed)
-          } catch (err) {
-            failed.push({ name: planned.title, error: `its key wasn't saved (${err instanceof Error ? err.message : String(err)}); add ${generated.keyEnv} from the checklist` })
-            if (!plan.keys.includes(generated.keyEnv)) plan.keys.push(generated.keyEnv)
-          }
-        }
-        spec = deps.store(generated.dir, `mcp:${server.url}`)
-        made.push(generated.name)
-      }
+      names = existing.tools
+      spec = existing.spec
     }
     const installedName = (remote: string) => names.find((t) => t.remote === remote)?.name ?? remote
     const tools: string[] = []
@@ -273,44 +332,53 @@ export async function prepareMcpAbilities(plan: WorkflowPlan, keys: Record<strin
     if (tools.length) plan.apps = [...(plan.apps ?? []).filter((a) => a.id !== planned.id), { id: planned.id, title: planned.title, tools }]
   }
   delete plan.mcpServers
-  return { made, failed }
+  return { failed }
 }
 
 export interface PlannedWorkflow {
   plan: WorkflowPlan
-  /** The check against the suggested agent, when the plan names one. */
-  check?: WorkflowCheck
-  /** Why the suggestion was changed, if it was (e.g. a conflict). */
-  note?: string
+  /** The agent it goes into. */
+  agent: string
+  /** The plan checked against that agent. */
+  check: WorkflowCheck
+  /** The apps and messaging it needs from the agent. */
+  requirements: WorkflowRequirement[]
 }
 
-/** Plans a workflow from a description, then checks the suggested agent:
- * one that would have a decision changed, or doesn't exist, becomes a new
- * agent instead, saying why. */
-export async function planWorkflow(description: unknown, modelCall: ModelCall, tools: WorkflowPlannerTools & { agentInfo(): Promise<WorkflowAgentInfo[]>; mcp?: WorkflowMcpDeps }): Promise<PlannedWorkflow> {
+export interface WorkflowPlanDeps extends WorkflowPlannerTools {
+  agentInfo(): Promise<WorkflowAgentInfo[]>
+  mcp?: WorkflowMcpDeps
+  appStatus(agent: string, id: string): Promise<WorkflowAppStatus>
+}
+
+/** Plans a workflow from a description for the agent the person picked,
+ * then checks the plan against it: the apps and messaging it still needs
+ * are listed, for the person to add before Create. */
+export async function planWorkflow(description: unknown, agentName: unknown, modelCall: ModelCall, tools: WorkflowPlanDeps): Promise<PlannedWorkflow> {
   const text = typeof description === 'string' ? description.trim() : ''
   if (text.length < 15) throw new WorkflowError('Describe the workflow in a sentence or two: what starts it, the steps, and where you want to decide.')
   if (text.length > 4000) throw new WorkflowError('That description is too long: keep it under 4000 characters.')
-  const result = await planWorkflowWithModel(modelCall, text, tools)
+  const agents = await tools.agentInfo()
+  const agent = agents.find((a) => a.name === agentName)
+  if (!agent) throw new WorkflowError(typeof agentName === 'string' && agentName ? `There's no agent named ${agentName}.` : 'Choose the agent the workflow goes into.')
+  const result = await planWorkflowWithModel(modelCall, text, tools, agentBrief(agent))
   if (!result.plan) throw new WorkflowError(result.reply || 'The planner did not produce a plan; try describing the steps more plainly.')
   const plan = result.plan
-  const agents = await tools.agentInfo()
   resolveConnections(plan, agents)
   if (tools.mcp) await resolveMcpServers(plan, tools.mcp)
   else for (const step of plan.steps) if (step.mcp) { delete step.mcp; step.missing = step.missing ?? 'no ability does this' }
-  if (plan.target.kind !== 'existing' || !plan.target.agent) return { plan }
-  const agent = agents.find((a) => a.name === plan.target.agent)
-  if (!agent) {
-    plan.target = { kind: 'new', reason: `${plan.target.agent} doesn't exist, so it would be a new agent.` }
-    return { plan, note: plan.target.reason }
-  }
-  const check = checkWorkflowForAgent(plan, agent)
-  if (!check.fits) {
-    const note = `Adding it to ${agent.name} would change ${check.conflicts.map((c) => `${c.tool} (${c.has} there, ${c.wants} here)`).join(', ')}, so a new agent is suggested.`
-    plan.target = { kind: 'new', reason: note }
-    return { plan, check, note }
-  }
-  return { plan, check }
+  return { plan, agent: agent.name, check: checkWorkflowForAgent(plan, agent), requirements: await workflowRequirements(plan, agent, tools.appStatus) }
+}
+
+/** The requirements of a plan (planned, or a ready-made example) for an
+ * agent: what the review screen lists, and checks again. */
+export async function checkWorkflowRequirements(input: { plan?: unknown; agent?: unknown }, deps: { agentInfo(): Promise<WorkflowAgentInfo[]>; appStatus(agent: string, id: string): Promise<WorkflowAppStatus> }): Promise<{ agent: string; check: WorkflowCheck; requirements: WorkflowRequirement[] }> {
+  const plan = input.plan as WorkflowPlan | undefined
+  if (!plan || typeof plan !== 'object' || !Array.isArray(plan.steps) || !Array.isArray(plan.rules)) throw new WorkflowError('Plan the workflow first.')
+  const agents = await deps.agentInfo()
+  const agent = agents.find((a) => a.name === input.agent)
+  if (!agent) throw new WorkflowError(typeof input.agent === 'string' && input.agent ? `There's no agent named ${input.agent}.` : 'Choose the agent the workflow goes into.')
+  return { agent: agent.name, check: checkWorkflowForAgent(plan, agent), requirements: await workflowRequirements(plan, agent, deps.appStatus) }
 }
 
 // Planning can take a few minutes (the model looks around first), longer
@@ -349,8 +417,6 @@ export function getPlanJob(id: string): PlanJob | undefined {
 
 export interface CreatedWorkflow {
   agent: string
-  /** A new agent was made for it. */
-  newAgent: boolean
   workflow: string
   abilities: { installed: string[]; failed: { name: string; error: string }[] }
   /** Rules left as the agent already had them. */
@@ -397,12 +463,14 @@ async function makePlannedWebhook(plan: WorkflowPlan, agent: string, agentDir: s
   }
 }
 
-export interface WorkflowCreateDeps extends TemplateCreateDeps {
+export interface WorkflowCreateDeps extends Pick<TemplateCreateDeps, 'installAbility' | 'prepareApp' | 'envValue' | 'messagingConfigured'> {
   agentDir(name: string): string
   agentInfo(): Promise<WorkflowAgentInfo[]>
+  /** Where an app stands for an agent (checked again before creating). */
+  appStatus(agent: string, id: string): Promise<WorkflowAppStatus>
   /** Makes sure the agent is loaded once its new tools and skill are in place. */
   reloadAgent(name: string): Promise<void>
-  /** Sets up the plan's MCP servers as private abilities. */
+  /** Points the plan's MCP steps at the apps' tools. */
   mcp?: WorkflowMcpCreateDeps
   /** Gives an agent that already has an app more of its tools (at their
    * default permission), keeping the ones it has. */
@@ -416,9 +484,6 @@ function withMissingSteps(plan: WorkflowPlan, agent: string, checklist: Template
   return [...missing, ...checklist]
 }
 
-/** Creates the workflow: in a new agent (as a template would), or in an
- * existing one. An existing agent keeps every decision it already has: a
- * conflicting rule is left alone and reported, not changed. */
 /** Rules and facts carried into a workflow added to an existing agent,
  * which keeps its own instructions: between the start line and the steps,
  * so every run of this workflow reads them. */
@@ -432,14 +497,18 @@ export function withWorkflowContext(instructions: string, startMessage: string, 
 
 /** A checklist note pointing at a new agent's instructions, pointed at the
  * workflow's own instead, for a workflow added to an existing agent. */
-function noteForExistingAgent(note: string): string {
+export function noteForExistingAgent(note: string): string {
   return note.replace(/(at the top of )?its instructions \(Overview tab\)/, "in the workflow's instructions (its Edit, on the Workflows tab)")
 }
 
-export async function createWorkflow(input: { plan?: unknown; target?: unknown; description?: unknown; mcpKeys?: unknown; workflowContext?: unknown }, deps: WorkflowCreateDeps): Promise<CreatedWorkflow> {
+/** Creates the workflow in the agent the person picked, once it has the
+ * apps and messaging the plan needs. The agent keeps every decision it
+ * already has: a conflicting rule is left alone and reported, not
+ * changed. `target` ({ agent }) is still taken for `agent`. */
+export async function createWorkflow(input: { plan?: unknown; agent?: unknown; target?: unknown; description?: unknown; workflowContext?: unknown }, deps: WorkflowCreateDeps): Promise<CreatedWorkflow> {
   const plan = input.plan as WorkflowPlan | undefined
-  if (!plan || typeof plan !== 'object' || !Array.isArray(plan.steps) || !plan.skill || !plan.newAgent) throw new WorkflowError('Plan the workflow first.')
-  const target = (input.target ?? plan.target) as { kind?: string; agent?: string }
+  if (!plan || typeof plan !== 'object' || !Array.isArray(plan.steps) || !plan.skill) throw new WorkflowError('Plan the workflow first.')
+  const agentName = input.agent ?? (input.target as { agent?: unknown } | undefined)?.agent
   // The plan's skill becomes a workflow: how a run starts, in its front
   // matter. Its parameters are tidied again, as the plan may have been
   // edited on the review screen.
@@ -454,35 +523,15 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
     ...(originalRequest ? { originalRequest } : {}),
   })
   const agents = await deps.agentInfo()
+  const agent = agents.find((a) => a.name === agentName)
+  if (!agent) throw new WorkflowError(typeof agentName === 'string' && agentName ? `There's no agent named ${agentName}.` : 'Choose the agent the workflow goes into.')
+  // What it needs from the agent, checked again: it may have changed
+  // since the plan was shown.
+  const missing = (await workflowRequirements(plan, agent, deps.appStatus)).filter((r) => !r.ready)
+  if (missing.length) throw new WorkflowError(`Before creating it: ${missing.map((r) => r.todo).join('; ')}.`)
   resolveConnections(plan, agents)
-  const keys = input.mcpKeys && typeof input.mcpKeys === 'object' ? Object.fromEntries(Object.entries(input.mcpKeys as Record<string, unknown>).flatMap(([k, v]) => (typeof v === 'string' && v.trim() ? [[k, v.trim()]] : []))) : {}
-  const mcp = await prepareMcpAbilities(plan, keys, deps.mcp)
+  const mcp = await prepareMcpAbilities(plan, deps.mcp)
   const template = workflowTemplate(plan)
-
-  if (target.kind !== 'existing') {
-    const created = await createFromTemplateObject(template, deps)
-    // Read on its next run: the agent needs no reloading for it.
-    const connected = copyConnectedTools(plan, created.name, agents, deps.agentDir)
-    const loadError = created.loadError
-    markWorkflow(deps.agentDir(created.name))
-    const hook = await makePlannedWebhook(plan, created.name, deps.agentDir(created.name))
-    return {
-      agent: created.name,
-      newAgent: true,
-      workflow: plan.name,
-      abilities: { installed: [...created.abilities.installed, ...connected.copied], failed: [...mcp.failed, ...created.abilities.failed, ...connected.failed] },
-      keptDecisions: [],
-      checklist: [...withMissingSteps(plan, created.name, created.checklist), ...hook.checklist],
-      ...(hook.webhook ? { webhook: hook.webhook } : {}),
-      ...(hook.webhookError ? { webhookError: hook.webhookError } : {}),
-      ...(created.schedule ? { schedule: created.schedule } : {}),
-      ...(created.scheduleError ? { scheduleError: created.scheduleError } : {}),
-      ...(loadError ? { loadError } : {}),
-    }
-  }
-
-  const agent = agents.find((a) => a.name === target.agent)
-  if (!agent) throw new WorkflowError(`There's no agent named ${target.agent ?? '(none)'}.`)
   const check = checkWorkflowForAgent(plan, agent)
 
   // 1. Abilities it doesn't have yet (their rules come with them).
@@ -584,7 +633,6 @@ export async function createWorkflow(input: { plan?: unknown; target?: unknown; 
   const hook = await makePlannedWebhook(plan, agent.name, deps.agentDir(agent.name))
   return {
     agent: agent.name,
-    newAgent: false,
     workflow: plan.name,
     abilities: { installed, failed },
     keptDecisions: ruled.kept,

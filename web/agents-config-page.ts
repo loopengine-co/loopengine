@@ -975,7 +975,7 @@ ${consoleShellScript}
 
   function renderWorkflowsHtml(name, workflows) {
     if (!workflows.length) {
-      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Describe a job in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new">New workflow</a></div>';
+      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Describe a job in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
     }
     return workflows.map(function (w) {
       var paramNames = Object.keys(w.parameters || {});
@@ -4964,7 +4964,7 @@ ${consoleShellScript}
       // Workflows: the jobs this agent does, each with what starts it.
       '<div class="tab-panel" data-tab-panel="workflows">' +
         '<div class="wf-tab-head"><p class="muted">The jobs this agent does on its own: what it does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
-          '<a class="wf-new-btn" href="/workflows/new">New workflow</a></div>' +
+          '<a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(cfg.name) + '">Build a workflow</a></div>' +
         '<section id="workflowsSection"><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '</div>' +
       // Advanced: the agent's own tools (and Composio, subagents), then its

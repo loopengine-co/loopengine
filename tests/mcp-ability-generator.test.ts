@@ -203,8 +203,6 @@ describe('MCP servers in a workflow plan', () => {
       rules: [{ tool: 'createThing', decision: 'allow' }],
       skill: { description: 'd', body: 'Run listThings, then createThing.' },
       startMessage: 'go',
-      target: { kind: 'new', reason: '' },
-      newAgent: { name: 'things', systemPrompt: 'You make things.' },
     })!
   }
 
@@ -224,51 +222,37 @@ describe('MCP servers in a workflow plan', () => {
     expect(gone.mcpServers).toBeUndefined()
   })
 
-  it('on Create: connects the app, points the steps at its tools, adds just those to the agent, and saves the key', async () => {
-    requiredKey = 'k-2'
+  it("on Create: an app that isn't connected leaves its steps missing and is reported", async () => {
     const p = plan()
-    const saved: Record<string, string> = {}
     const deps: WorkflowMcpCreateDeps = {
       getServer: async () => server(),
       existingFor: () => undefined,
       keyValue: () => undefined,
-      generate: (request) => generateMcpAbility(request),
-      store: (dir) => `file:${dir}`,
-      saveKey: async (name, value) => void (saved[name] = value),
+      generate: async () => { throw new Error('should not generate') },
     }
     await resolveMcpServers(p, deps)
-    const result = await prepareMcpAbilities(p, { 'dev.fake/fake': 'k-2' }, deps)
-
-    expect(result).toEqual({ made: ['mcp-fake'], failed: [] })
-    expect(p.steps.map((s) => [s.tool, s.mcp])).toEqual([['fake_list_things', undefined], ['fake_create_thing', undefined]])
-    expect(p.steps[0].ability).toMatch(/^file:/)
-    expect(p.abilities).toEqual([])
-    expect(p.apps).toEqual([{ id: 'dev.fake/fake', title: 'Fake', tools: ['listThings', 'createThing'] }])
-    // The approval step's tool asks first.
-    expect(p.rules).toEqual([{ tool: 'fake_create_thing', decision: 'ask' }])
-    expect(p.skill.body).toBe('Run fake_list_things, then fake_create_thing.')
-    expect(saved).toEqual({ FAKE_MCP_KEY: 'k-2' })
-    expect(p.mcpServers).toBeUndefined()
-    const dir = p.steps[0].ability!.replace(/^file:/, '')
-    expect(existsSync(join(dir, 'loopengine.ability.json'))).toBe(true)
+    const result = await prepareMcpAbilities(p, deps)
+    expect(result.failed).toEqual([{ name: 'Fake', error: 'connect Fake on the Apps page first' }])
+    expect(p.steps.every((s) => s.missing === 'Fake: connect Fake on the Apps page first')).toBe(true)
+    expect(p.apps).toBeUndefined()
   })
 
-  it('on Create: a server that can\'t be set up leaves its steps missing and is reported', async () => {
-    requiredKey = 'k-3'
+  it('on Create: matches steps to the connected app\'s tools when the plan doesn\'t name them', async () => {
+    requiredKey = 'k-2'
     const p = plan()
+    p.steps[1].tool = 'something_else'
     const deps: WorkflowMcpCreateDeps = {
       getServer: async () => server(),
-      existingFor: () => undefined,
-      keyValue: () => undefined,
+      existingFor: () => ({ spec: 'file:/ws/mcp-fake', tools: [{ name: 'fake_list_things', remote: 'listThings' }, { name: 'fake_create_thing', remote: 'createThing' }] }),
+      keyValue: () => 'k-2',
       generate: (request) => generateMcpAbility(request),
-      store: (dir) => `file:${dir}`,
-      saveKey: async () => {},
     }
     await resolveMcpServers(p, deps)
-    const result = await prepareMcpAbilities(p, {}, deps)
-    expect(result.failed[0]).toMatchObject({ name: 'Fake' })
-    expect(p.steps.every((s) => s.missing?.includes('needs a key'))).toBe(true)
-    expect(p.abilities).toEqual([])
+    const result = await prepareMcpAbilities(p, deps)
+    expect(result).toEqual({ failed: [] })
+    // Without a model to pick, a step keeps only a tool the server has.
+    expect(p.steps.map((s) => [s.tool, s.ability, s.missing])).toEqual([['fake_list_things', 'file:/ws/mcp-fake', undefined], [undefined, 'file:/ws/mcp-fake', 'Fake has no tool for this']])
+    expect(p.apps).toEqual([{ id: 'dev.fake/fake', title: 'Fake', tools: ['listThings'] }])
   })
 
   it('on Create: reuses the workspace ability already made from the server', async () => {
@@ -278,13 +262,11 @@ describe('MCP servers in a workflow plan', () => {
       existingFor: () => ({ spec: 'file:/ws/mcp-fake', tools: [{ name: 'fake_list_things', remote: 'listThings' }, { name: 'fake_create_thing', remote: 'createThing' }] }),
       keyValue: () => undefined,
       generate: async () => { throw new Error('should not generate') },
-      store: () => { throw new Error('should not store') },
-      saveKey: async () => {},
     }
     await resolveMcpServers(p, deps)
     expect(p.mcpServers?.[0].existing).toBe('file:/ws/mcp-fake')
-    const result = await prepareMcpAbilities(p, {}, deps)
-    expect(result).toEqual({ made: [], failed: [] })
+    const result = await prepareMcpAbilities(p, deps)
+    expect(result).toEqual({ failed: [] })
     expect(p.steps.map((s) => s.tool)).toEqual(['fake_list_things', 'fake_create_thing'])
     expect(p.abilities).toEqual([])
     expect(p.apps).toEqual([{ id: 'dev.fake/fake', title: 'Fake', tools: ['listThings', 'createThing'] }])

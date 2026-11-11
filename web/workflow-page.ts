@@ -1,4 +1,4 @@
-// The console's "New workflow" page (/workflows/new): a person starts
+// The console's "Build a workflow" page (/workflows/new): a person starts
 // from a ready-made example (core/system-agents/workflow-examples.ts,
 // which replace the old templates) or describes a workflow they already
 // have in mind, and sees the plan (web/workflow-admin.ts behind /workflows/*): each
@@ -15,7 +15,7 @@ export const workflowPageHtml: string = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>New workflow</title>
+<title>Build a workflow</title>
 <style>${devUiCss}
   .wf { max-width: 860px; display: grid; gap: 18px; }
   .wf textarea { width: 100%; min-height: 130px; box-sizing: border-box; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
@@ -47,8 +47,6 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-steps td, .wf-steps th { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; font-size: 13px; }
   .wf-steps th { font-size: 12px; color: var(--ink-muted); font-weight: 600; border-top: 0; }
   .wf-num { width: 24px; color: var(--ink-muted); }
-  .wf-target { display: grid; gap: 8px; }
-  .wf-target label { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
   .wf-notify { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
   .wf-notify input { margin: 0; }
   .wf-hook { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 4px; background: var(--surface); font-size: 13px; }
@@ -72,9 +70,10 @@ export const workflowPageHtml: string = `<!doctype html>
      colours and just brighten (or, plain ones, get a soft fill). */
   .wf-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: brightness(1.08); }
   .wf-btn.plain:hover:not(:disabled) { background: var(--surface); color: var(--ink); filter: none; }
-  .wf-mcp { display: grid; gap: 10px; }
-  .wf-mcp-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; background: var(--surface); }
-  .wf-mcp-row input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; max-width: 360px; box-sizing: border-box; }
+  .wf-agent { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13.5px; }
+  .wf-agent select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); max-width: 100%; }
+  .wf-needs { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .wf-needs li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13.5px; }
   .hint { font-size: 12px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); }
 </style>
@@ -86,7 +85,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>New workflow</h1><p>Describe what you want done, or start from an example. You get a plan to check before anything is created.</p></div>
+        <div><h1>Build a workflow</h1><p>Describe what you want done, or start from an example. You get a plan to check before anything is created.</p></div>
       </div>
     </div>
   </div>
@@ -101,7 +100,9 @@ ${consoleShellScript}
   var DASH = String.fromCharCode(8212);
   var LABELS = { allow: 'Allow', ask: 'Ask me', deny: 'Never' };
   var SENDERS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'your app' };
-  var state = { description: '', planned: null, agents: [], examples: [], messages: [], ready: false, canInstall: false, exQuery: '', exCat: 'All', exPage: 1 };
+  // ?description= comes back from making a new agent for a workflow that
+  // didn't fit the agent it was planned for.
+  var state = { description: new URLSearchParams(location.search).get('description') || '', planned: null, agent: new URLSearchParams(location.search).get('agent') || '', agents: [], examples: [], messages: [], ready: false, canInstall: false, exQuery: '', exCat: 'All', exPage: 1 };
   var EX_PAGE = 6;
 
   function esc(s) {
@@ -113,6 +114,18 @@ ${consoleShellScript}
     return fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); });
   }
+  function agentLabel(name) {
+    var a = state.agents.filter(function (x) { return x.name === name; })[0];
+    return a && a.displayName ? a.displayName : name;
+  }
+  // The agent picker: a workflow always goes into an agent.
+  function agentPickerHtml() {
+    if (!state.agents.length) return '<p class="error" style="margin:0">A workflow goes into an agent, and there are none yet. <a href="/agents">Create an agent</a> first, or <a href="/interview">find your first agent</a>.</p>';
+    return '<label class="wf-agent" for="wfAgent"><strong>Agent</strong> <select id="wfAgent">' +
+      (state.agent ? '' : '<option value="">Choose the agent it goes into' + ELLIPSIS + '</option>') +
+      state.agents.map(function (a) { return '<option value="' + esc(a.name) + '"' + (a.name === state.agent ? ' selected' : '') + '>' + esc(a.displayName || a.name) + (a.displayName ? ' (' + esc(a.name) + ')' : '') + '</option>'; }).join('') +
+      '</select> <span class="hint">It uses this agent' + String.fromCharCode(8217) + 's apps and messaging.</span></label>';
+  }
   function pill(decision) {
     return '<span class="le-pill ' + esc(decision) + '">' + esc(LABELS[decision] || decision) + '</span>';
   }
@@ -121,15 +134,18 @@ ${consoleShellScript}
   function renderDescribe(error) {
     page.innerHTML =
       (state.ready ? '' : '<p class="error">Planning needs a model: set one on an agent (Overview ' + String.fromCharCode(8594) + ' Model) and add its key under <a href="/config?section=models">Models</a>.</p>') +
-      '<div class="wf-card"><label for="wfText"><strong>Your workflow</strong> <span class="hint">what starts it, the steps in order, and where you want to choose or approve</span></label>' +
+      '<div class="wf-card">' + agentPickerHtml() + '<label for="wfText"><strong>Your workflow</strong> <span class="hint">what starts it, the steps in order, and where you want to choose or approve</span></label>' +
       '<textarea id="wfText" placeholder="Every Monday, find blog ideas on the web, ask me on Slack to pick one, draft it, and let me review it before it goes up.">' + esc(state.description) + '</textarea>' +
       '<div class="wf-actions"><button type="button" class="wf-btn" id="wfPlan"' + (state.ready ? '' : ' disabled') + '>Plan it</button>' +
-        '<span class="hint" id="wfStatus">It looks at your agents and abilities first; this can take a few minutes.</span></div>' +
+        '<span class="hint" id="wfStatus">It looks at the agent and your abilities first; this can take a few minutes.</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '') +
       '</div>' +
       '<p class="hint">Rather start from something ready-made? <a href="#examples">Choose a workflow example</a>, or <a href="/interview">find your first agent</a>.</p>' +
       examplesHtml();
     var text = document.getElementById('wfText');
+    var picker = document.getElementById('wfAgent');
+    if (picker) picker.addEventListener('change', function () { state.agent = picker.value; });
+    if (!state.agents.length) document.getElementById('wfPlan').disabled = true;
     wireExamples();
     if (location.hash === '#examples') {
       var box = document.getElementById('examples');
@@ -137,11 +153,12 @@ ${consoleShellScript}
     }
     document.getElementById('wfPlan').addEventListener('click', function () {
       state.description = text.value.trim();
+      if (!state.agent) { document.getElementById('wfStatus').textContent = 'Choose the agent it goes into first.'; return; }
       var btn = document.getElementById('wfPlan');
       btn.disabled = true;
-      document.getElementById('wfStatus').textContent = 'Planning' + ELLIPSIS + ' looking at your agents and abilities. This can take a few minutes; keep this page open.';
+      document.getElementById('wfStatus').textContent = 'Planning' + ELLIPSIS + ' looking at ' + agentLabel(state.agent) + ' and your abilities. This can take a few minutes; keep this page open.';
       var started = Date.now();
-      post('/workflows/plan', { description: state.description }).then(function (r) {
+      post('/workflows/plan', { description: state.description, agent: state.agent }).then(function (r) {
         if (!r.ok) { renderDescribe(r.body.error || 'Could not plan it.'); return; }
         waitForPlan(r.body.id, started);
       }).catch(function (err) { renderDescribe(err.message); });
@@ -258,12 +275,24 @@ ${consoleShellScript}
   function openExample(id) {
     var e = state.examples.filter(function (x) { return x.id === id; })[0];
     if (!e) return;
+    if (!state.agent) {
+      window.scrollTo(0, 0);
+      var picker = document.getElementById('wfAgent');
+      if (picker) picker.focus();
+      var status = document.getElementById('wfStatus');
+      if (status) status.textContent = 'Choose the agent it goes into first, then use the example.';
+      return;
+    }
     // A copy: the review screen edits the plan it shows. Its message is
     // the workflow's original message, as a typed one would be.
-    state.description = e.message;
-    state.planned = { plan: JSON.parse(JSON.stringify(e.plan)), example: e.id };
-    renderPlan();
-    window.scrollTo(0, 0);
+    var plan = JSON.parse(JSON.stringify(e.plan));
+    post('/workflows/check', { plan: plan, agent: state.agent }).then(function (r) {
+      if (!r.ok) { renderDescribe(r.body.error || 'Could not open the example.'); return; }
+      state.description = e.message;
+      state.planned = { plan: plan, example: e.id, agent: r.body.agent, check: r.body.check, requirements: r.body.requirements };
+      renderPlan();
+      window.scrollTo(0, 0);
+    }).catch(function (err) { renderDescribe(err.message); });
   }
 
   // Planning runs on the server as a job; check on it every few seconds.
@@ -275,7 +304,7 @@ ${consoleShellScript}
           if (!r.ok) { renderDescribe(r.body.error || 'Could not plan it.'); return; }
           if (r.body.status === 'planning') {
             var status = document.getElementById('wfStatus');
-            if (status) status.textContent = 'Planning' + ELLIPSIS + ' ' + Math.round((Date.now() - started) / 1000) + 's so far. It looks at your agents and abilities first; keep this page open.';
+            if (status) status.textContent = 'Planning' + ELLIPSIS + ' ' + Math.round((Date.now() - started) / 1000) + 's so far. It looks at the agent and your abilities first; keep this page open.';
             waitForPlan(id, started);
             return;
           }
@@ -311,18 +340,17 @@ ${consoleShellScript}
     return '<tr><td class="wf-num">' + (i + 1) + '</td><td><strong>' + esc(step.title) + '</strong>' + (step.detail ? '<div class="hint">' + esc(step.detail) + '</div>' : '') + '</td><td>' + becomes + '</td><td>' + badge + '</td></tr>';
   }
 
-  function mcpRow(s) {
-    var badge = s.verified ? '<span class="le-pill allow">' + (s.source === 'saved' ? 'Saved server' : 'Verified') + '</span>' : '<span class="le-pill ask">Unverified</span>';
-    var what = s.existing
-      ? 'Uses <code>' + esc(s.ability) + '</code>, already in your workspace.'
-      : 'Connected to the workspace when you create this, as <code>' + esc(s.ability) + '</code>; the agent gets just the tools its steps use (anything that changes data asks you first).';
-    var key = s.existing ? '' :
-      '<label class="hint" for="wfKey-' + esc(s.ability) + '">API key' + (s.keySet ? ' (one is saved; leave blank to use it)' : ' (if it needs one)') + '</label>' +
-      '<input type="password" autocomplete="off" id="wfKey-' + esc(s.ability) + '" data-mcp-key="' + esc(s.id) + '" placeholder="' + esc(s.keyEnv) + '">';
-    return '<div class="wf-mcp-row"><div><strong>' + esc(s.title) + '</strong> ' + badge + '</div>' +
-      '<div class="hint">' + esc(s.url) + (s.description ? ' ' + DASH + ' ' + esc(s.description) : '') + '</div>' +
-      '<div class="hint">' + what + '</div>' + key +
-      (s.verified ? '' : '<div class="hint">Not published on the app' + String.fromCharCode(8217) + 's own domain: only add a key if you trust who runs it.</div>') +
+  // What the agent still needs: each app the steps use, and messaging
+  // when runs reach the person outside Chat. Create waits for all of it.
+  function needsHtml(reqs) {
+    if (!reqs || !reqs.length) return '';
+    var missing = reqs.filter(function (r) { return !r.ready; }).length;
+    return '<div class="wf-card" id="wfNeeds"><h3 style="margin:0">' + (missing ? 'Before you create it' : 'What it uses') + '</h3>' +
+      '<ul class="wf-needs">' + reqs.map(function (r) {
+        return '<li>' + (r.ready ? '<span class="le-pill allow">Ready</span>' : '<span class="le-pill bad">Missing</span>') + ' <strong>' + esc(r.title) + '</strong>' +
+          (r.ready ? '' : ' <span class="hint">' + esc(r.todo) + '</span>' + (r.href ? ' <a href="' + esc(r.href) + '" target="_blank" rel="noopener">Open</a>' : '')) + '</li>';
+      }).join('') + '</ul>' +
+      (missing ? '<div class="wf-actions"><button type="button" class="wf-btn plain" id="wfRecheck">Check again</button><span class="hint" id="wfRecheckStatus">Add ' + (missing === 1 ? 'it' : 'them') + ' (it opens in a new tab), then check again.</span></div>' : '') +
       '</div>';
   }
 
@@ -378,14 +406,15 @@ ${consoleShellScript}
   // parameter is filled from. Made turned off; its signing secret comes
   // from the sender, after Create.
   function webhookPlanHtml(p) {
-    var w = p.webhook;
+    // One turned off on this screen is still shown, to turn back on.
+    var w = p.webhook || (state.planned && state.planned.webhookOff);
     if (!w) return '';
     var who = SENDERS[w.sender] || w.sender;
     var lines = [];
     if (w.filter) lines.push('Runs for ' + esc(w.filter.path) + ' ' + esc(w.filter.values.join(' or ')));
     Object.keys(w.mapping || {}).forEach(function (param) { lines.push('<code>' + esc(param) + '</code> ' + String.fromCharCode(8592) + ' <code>' + esc(w.mapping[param]) + '</code> in the payload'); });
     return '<div class="wf-hook">' +
-      '<label class="wf-notify"><input type="checkbox" id="wfWebhook" checked> <strong>' + (p.trigger.kind === 'schedule' ? 'Also start it from a webhook: ' : 'Webhook: ') + esc(w.name) + '</strong></label>' +
+      '<label class="wf-notify"><input type="checkbox" id="wfWebhook"' + (p.webhook ? ' checked' : '') + '> <strong>' + (p.trigger.kind === 'schedule' ? 'Also start it from a webhook: ' : 'Webhook: ') + esc(w.name) + '</strong></label>' +
       '<span class="hint">' + esc(who) + ' calls a private URL and each event starts a run. It' + String.fromCharCode(8217) + 's made turned off; after Create you paste the URL into ' + esc(w.sender === 'custom' ? 'your app' : who) + ' and add the signing secret.</span>' +
       (lines.length ? '<ul class="hint">' + lines.map(function (l) { return '<li>' + l + '</li>'; }).join('') + '</ul>' : '') +
       (w.setup ? '<span class="hint">' + esc(w.setup) + '</span>' : '') +
@@ -394,9 +423,22 @@ ${consoleShellScript}
 
   function renderPlan(error) {
     var p = state.planned.plan;
-    var suggested = p.target.kind === 'existing' && p.target.agent ? p.target.agent : '';
-    var others = state.agents.filter(function (a) { return a !== suggested; });
+    var agent = state.planned.agent || state.agent;
+    var reqs = state.planned.requirements || [];
+    // The planner thinks the job isn't this agent's kind of work: the
+    // person makes a new agent for it, or adds it here anyway.
+    var misfit = p.fit && p.fit.matches === false && !state.planned.example;
+    var fitPending = misfit && !state.planned.fitOk;
+    var blocked = fitPending || reqs.some(function (r) { return !r.ready; });
+    var conflicts = (state.planned.check && state.planned.check.conflicts) || [];
+    var context = typeof p.context === 'string' ? p.context : workflowContextFrom(p.newAgent && p.newAgent.systemPrompt);
     page.innerHTML =
+      (fitPending
+        ? '<div class="wf-gaps wf-fit"><strong>This doesn' + String.fromCharCode(8217) + 't look like ' + esc(agentLabel(agent)) + String.fromCharCode(8217) + 's work</strong>' +
+            '<p style="margin:0">' + esc(p.fit.reason) + ' A new agent keeps its instructions, apps and permissions separate.</p>' +
+            '<div class="wf-actions"><a class="wf-btn" href="/agents?new=1&workflow=' + encodeURIComponent(state.description) + '">Create a new agent for it</a>' +
+            '<button type="button" class="wf-btn plain" id="wfFitOk">Add it to ' + esc(agentLabel(agent)) + ' anyway</button></div></div>'
+        : '') +
       '<div class="wf-card">' +
         '<h2>' + esc(p.name) + '</h2><p style="margin:0">' + esc(p.summary) + '</p>' +
         '<p class="hint" style="margin:0"><strong>Starts:</strong> ' + esc(p.trigger.description) + (p.trigger.kind === 'schedule' ? ' (created paused; you turn it on)' : '') + '</p>' +
@@ -410,45 +452,62 @@ ${consoleShellScript}
         '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th></th><th>Step</th><th>Becomes</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
         (p.rules.length ? '<h3>Permissions it sets</h3><ul class="wf-list">' + p.rules.map(function (r) { return '<li><code>' + esc(r.tool) + '</code> ' + pill(r.decision) + '</li>'; }).join('') + '</ul>' : '') +
         (p.abilities.length ? '<h3>Abilities it uses</h3><ul class="wf-list">' + p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; }).join('') + '</ul>' + (state.canInstall ? '' : '<p class="hint">Installing abilities needs LOOPENGINE_ADMIN_AUTH set; otherwise they head the checklist.</p>') : '') +
-        (p.mcpServers && p.mcpServers.length ? '<h3>Apps it connects to</h3><div class="wf-mcp">' + p.mcpServers.map(mcpRow).join('') + '</div>' : '') +
-        (p.apps && p.apps.length ? '<h3>Apps it uses</h3><ul class="wf-list">' + p.apps.map(function (a) { return '<li>' + esc(a.title) + ' <span class="hint">' + a.tools.length + ' tool' + (a.tools.length === 1 ? '' : 's') + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">Connected on the <a href="/config?section=apps">Apps</a> page; one that isn' + String.fromCharCode(8217) + 't connected yet heads the checklist.</p>' : '') +
         (p.skills && p.skills.length ? '<h3>Skills it comes with</h3><ul class="wf-list">' + p.skills.map(function (sk) { return '<li><code>' + esc(sk.id) + '</code> <span class="hint">' + esc(sk.description) + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">An agent that already has one keeps its own.</p>' : '') +
         (p.keys.length ? '<h3>Keys it needs</h3><p class="hint" style="margin:0">' + p.keys.map(esc).join(', ') + ' ' + DASH + ' you add them after, from the checklist.</p>' : '') +
         (p.needsApprovals ? '<p class="hint" style="margin:0">When it needs your approval or an answer, it asks you in Chat if you' + String.fromCharCode(8217) + 're running it there. Otherwise it sends the request to the app on its Messaging tab: Slack, Telegram, email or another you choose.</p>' : '') +
       '</div>' +
       (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
       (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
-      '<div class="wf-card"><h3 style="margin:0">Where it goes</h3>' +
-        '<div class="wf-target">' +
-          '<label><input type="radio" name="wfTarget" value="new"' + (suggested ? '' : ' checked') + '> A new agent, <code>' + esc(p.newAgent.name) + '</code></label>' +
-          (suggested ? '<label><input type="radio" name="wfTarget" value="existing" data-agent="' + esc(suggested) + '" checked> Add to <code>' + esc(suggested) + '</code></label>' : '') +
-          (others.length ? '<label><input type="radio" name="wfTarget" value="other"> Add to <select id="wfOther">' + others.map(function (a) { return '<option>' + esc(a) + '</option>'; }).join('') + '</select></label>' : '') +
-        '</div>' +
-        (p.target.reason ? '<p class="hint" style="margin:0">' + esc(p.target.reason) + '</p>' : '') +
-        '<div class="wf-instructions" id="wfNewAgentBox"' + (suggested ? ' hidden' : '') + '><label for="wfInstructions"><strong>Its instructions</strong> <span class="hint">read on every run of every workflow it has: who it is, rules it always follows, and anything marked (edit this). The steps are the workflow' + String.fromCharCode(8217) + 's.</span></label>' +
-          '<textarea id="wfInstructions">' + esc(p.newAgent.systemPrompt) + '</textarea></div>' +
-        '<div class="wf-instructions" id="wfExistingBox"' + (suggested ? '' : ' hidden') + '><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">The agent keeps its own instructions. These go at the top of this workflow' + String.fromCharCode(8217) + 's instructions, read on every run of it. Edit them, or clear them if the agent already knows.</span></label>' +
-          '<textarea id="wfContext">' + esc(workflowContextFrom(p.newAgent.systemPrompt)) + '</textarea></div>' +
-        (state.planned.note ? '<p class="hint" style="margin:0"><strong>Note:</strong> ' + esc(state.planned.note) + '</p>' : '') +
-        '<p class="hint" style="margin:0">Added to an existing agent, it keeps every decision that agent already has; any it would change are listed afterwards.</p>' +
+      '<div class="wf-card"><h3 style="margin:0">Goes into ' + esc(agentLabel(agent)) + '</h3>' +
+        '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">The agent keeps its own instructions. These go at the top of this workflow' + String.fromCharCode(8217) + 's instructions, read on every run of it. Edit them, or clear them if the agent already knows.</span></label>' +
+          '<textarea id="wfContext">' + esc(context) + '</textarea></div>' +
+        (conflicts.length ? '<p class="hint" style="margin:0"><strong>Kept as they are:</strong> ' + conflicts.map(function (c) { return '<code>' + esc(c.tool) + '</code> stays ' + esc(LABELS[c.has]) + ' (the workflow wants ' + esc(LABELS[c.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
+        '<p class="hint" style="margin:0">It keeps every decision the agent already has.</p>' +
+        (misfit && !fitPending ? '<p class="hint" style="margin:0">You chose to add it here, though it' + String.fromCharCode(8217) + 's not this agent' + String.fromCharCode(8217) + 's usual work.</p>' : '') +
       '</div>' +
+      needsHtml(reqs) +
       '<details class="wf-card"><summary><strong>The steps the agent follows</strong> <span class="hint">(saved as its skill <code>' + esc(p.id) + '</code>)</span></summary><div class="wf-skill">' + esc(p.skill.body) + '</div></details>' +
-      '<div class="wf-actions"><button type="button" class="wf-btn" id="wfCreate">Create it</button><button type="button" class="wf-btn plain" id="wfBack">' + (state.planned.example ? 'Back to the examples' : 'Change the description') + '</button>' +
-        '<span class="hint" id="wfStatus"></span></div>' +
+      '<div class="wf-actions"><button type="button" class="wf-btn" id="wfCreate"' + (blocked ? ' disabled' : '') + '>Create it</button><button type="button" class="wf-btn plain" id="wfBack">' + (state.planned.example ? 'Back to the examples' : 'Change the description') + '</button>' +
+        '<span class="hint" id="wfStatus">' + (fitPending ? 'Choose where it goes, above, first.' : '') + '</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '');
+    var fitOk = document.getElementById('wfFitOk');
+    if (fitOk) fitOk.addEventListener('click', function () {
+      p.context = document.getElementById('wfContext').value;
+      state.planned.fitOk = true;
+      renderPlan();
+    });
     document.getElementById('wfBack').addEventListener('click', function () {
       var fromExample = state.planned.example;
       renderDescribe();
       if (fromExample) document.getElementById('examples').scrollIntoView();
     });
-    var targets = page.querySelectorAll('input[name="wfTarget"]');
-    for (var t = 0; t < targets.length; t++) {
-      targets[t].addEventListener('change', function () {
-        var isNew = page.querySelector('input[name="wfTarget"]:checked').value === 'new';
-        document.getElementById('wfNewAgentBox').hidden = !isNew;
-        document.getElementById('wfExistingBox').hidden = isNew;
-      });
+    // Checks what the agent needs again, with the plan as edited so far
+    // (sending results, or a webhook, can need messaging).
+    function checkAgain() {
+      var recheck = document.getElementById('wfRecheck');
+      if (recheck) recheck.disabled = true;
+      var status = document.getElementById('wfRecheckStatus');
+      if (status) status.textContent = 'Checking' + ELLIPSIS;
+      // Kept as edited while it re-renders.
+      p.context = document.getElementById('wfContext').value;
+      var notifyBox = document.getElementById('wfNotify');
+      if (notifyBox) p.notify = { on: notifyBox.checked, reason: (p.notify && p.notify.reason) || '' };
+      var hookBox = document.getElementById('wfWebhook');
+      if (hookBox && !hookBox.checked) { state.planned.webhookOff = p.webhook; delete p.webhook; if (p.trigger.kind === 'webhook') { p.trigger.kind = 'on_request'; state.planned.wasWebhook = true; } }
+      if (hookBox && hookBox.checked && state.planned.webhookOff) { p.webhook = state.planned.webhookOff; delete state.planned.webhookOff; if (state.planned.wasWebhook) { p.trigger.kind = 'webhook'; delete state.planned.wasWebhook; } }
+      post('/workflows/check', { plan: p, agent: agent }).then(function (r) {
+        if (!r.ok) { renderPlan(r.body.error || 'Could not check.'); return; }
+        state.planned.requirements = r.body.requirements;
+        state.planned.check = r.body.check;
+        renderPlan();
+      }).catch(function (err) { renderPlan(err.message); });
     }
+    var recheck = document.getElementById('wfRecheck');
+    if (recheck) recheck.addEventListener('click', checkAgain);
+    var notifyToggle = document.getElementById('wfNotify');
+    if (notifyToggle) notifyToggle.addEventListener('change', checkAgain);
+    var hookToggle = document.getElementById('wfWebhook');
+    if (hookToggle) hookToggle.addEventListener('change', checkAgain);
     var paramsBox = document.getElementById('wfParams');
     paramsBox.addEventListener('click', function (ev) {
       if (ev.target.classList.contains('wf-param-remove')) ev.target.closest('.wf-param').remove();
@@ -468,17 +527,11 @@ ${consoleShellScript}
         delete p.webhook;
         if (p.trigger.kind === 'webhook') p.trigger.kind = 'on_request';
       }
-      p.newAgent.systemPrompt = document.getElementById('wfInstructions').value.trim() || p.newAgent.systemPrompt;
-      var chosen = page.querySelector('input[name="wfTarget"]:checked');
-      var target = chosen.value === 'new' ? { kind: 'new' } : { kind: 'existing', agent: chosen.value === 'other' ? document.getElementById('wfOther').value : chosen.dataset.agent };
+      p.context = document.getElementById('wfContext').value;
       var btn = document.getElementById('wfCreate');
       btn.disabled = true;
-      var mcpKeys = {};
-      var keyInputs = page.querySelectorAll('[data-mcp-key]');
-      for (var k = 0; k < keyInputs.length; k++) if (keyInputs[k].value.trim()) mcpKeys[keyInputs[k].dataset.mcpKey] = keyInputs[k].value.trim();
-      document.getElementById('wfStatus').textContent = 'Creating' + ELLIPSIS + (p.mcpServers && p.mcpServers.length ? ' connecting to its apps and installing abilities can take a minute or two.' : ' installing abilities can take a minute.');
-      var body = { plan: p, target: target, description: state.description, mcpKeys: mcpKeys };
-      if (target.kind === 'existing') body.workflowContext = document.getElementById('wfContext').value;
+      document.getElementById('wfStatus').textContent = 'Creating' + ELLIPSIS + ' installing abilities can take a minute.';
+      var body = { plan: p, agent: agent, description: state.description, workflowContext: p.context };
       post('/workflows/create', body).then(function (r) {
         if (!r.ok) { renderPlan(r.body.error || 'Could not create it.'); return; }
         renderDone(r.body);
@@ -486,9 +539,9 @@ ${consoleShellScript}
     });
   }
 
-  // A new agent's instructions, for a workflow added to an existing agent:
-  // its rules and facts, without the opening paragraph that says who the
-  // agent is ("You help ..."), since the existing agent has its own.
+  // A ready-made example's standing instructions, for the workflow: its
+  // rules and facts, without the opening paragraph that says who the
+  // agent is ("You help ..."), since the agent has its own.
   function workflowContextFrom(systemPrompt) {
     var NL = String.fromCharCode(10);
     var parts = String(systemPrompt || '').trim().split(NL + NL);
@@ -502,7 +555,7 @@ ${consoleShellScript}
     var items = c.checklist || [];
     page.innerHTML = '<div class="wf-card">' +
       '<h2>' + esc(c.workflow) + ' is ready</h2>' +
-      '<p style="margin:0">' + (c.newAgent ? 'Created as a new agent, <code>' + esc(c.agent) + '</code>.' : 'Added to <code>' + esc(c.agent) + '</code>.') + '</p>' +
+      '<p style="margin:0">Added to ' + esc(agentLabel(c.agent)) + '.</p>' +
       (c.schedule ? '<p class="hint" style="margin:0">Its schedule (' + esc(c.schedule.description) + ') is paused: turn it on in the agent' + String.fromCharCode(8217) + 's Schedules tab when you' + String.fromCharCode(8217) + 're ready.</p>' : '') +
       (c.scheduleError ? '<p class="error">The schedule could not be created: ' + esc(c.scheduleError) + '</p>' : '') +
       webhookDoneHtml(c) +
@@ -510,8 +563,8 @@ ${consoleShellScript}
       (c.abilities.failed.length ? '<p class="error">Not installed: ' + c.abilities.failed.map(function (f) { return esc(f.name) + ' (' + esc(f.error) + ')'; }).join('; ') + '</p>' : '') +
       (c.keptDecisions.length ? '<p class="hint" style="margin:0"><strong>Kept as they were:</strong> ' + c.keptDecisions.map(function (k) { return '<code>' + esc(k.tool) + '</code> stays ' + esc(LABELS[k.has]) + ' (the workflow wanted ' + esc(LABELS[k.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
       (items.length ? '<h3>Left to do</h3><ul class="wf-list">' + items.map(function (it) { return '<li>' + (it.href ? '<a href="' + esc(it.href) + '">' + esc(it.label) + '</a>' : esc(it.label)) + '</li>'; }).join('') + '</ul>' : '<p class="hint" style="margin:0">Nothing left to set up.</p>') +
-      '<div class="wf-actions"><a class="wf-btn" href="' + agentHref + '">Open ' + esc(c.agent) + '</a><a class="wf-btn plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a>' +
-        '<button type="button" class="wf-btn plain" id="wfAnother">New workflow</button></div>' +
+      '<div class="wf-actions"><a class="wf-btn" href="' + agentHref + '">Open ' + esc(agentLabel(c.agent)) + '</a><a class="wf-btn plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a>' +
+        '<button type="button" class="wf-btn plain" id="wfAnother">Build another</button></div>' +
       '</div>';
     document.getElementById('wfAnother').addEventListener('click', function () { state.description = ''; state.planned = null; renderDescribe(); });
     wireWebhookDone(c);
@@ -580,7 +633,10 @@ ${consoleShellScript}
     .then(function (d) {
       state.ready = Boolean(d.ready);
       state.canInstall = Boolean(d.canInstallAbilities);
-      state.agents = d.agents || [];
+      // Names from an older server, objects from this one.
+      state.agents = (d.agents || []).map(function (a) { return typeof a === 'string' ? { name: a } : a; });
+      if (state.agent && !state.agents.some(function (a) { return a.name === state.agent; })) state.agent = '';
+      if (!state.agent && state.agents.length === 1) state.agent = state.agents[0].name;
       state.examples = d.examples || [];
       state.messages = d.messages || [];
       renderDescribe();

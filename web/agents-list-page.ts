@@ -57,7 +57,7 @@ ${consoleSidebarHtml}
   </div>
   <div class="le-scroll"><div class="le-page">
     <form id="newAgentForm" style="display:none">
-      <p class="hint" style="margin:0">Not sure what to build? <a href="/workflows/new#examples">Start from a workflow example</a>, or <a href="/interview">find your first agent</a>: a short interview that suggests one and creates it.</p>
+      <p class="hint" style="margin:0">Not sure what to build? <a href="/interview">Find your first agent</a>: a short interview that suggests one and creates it. Then give it workflows, described in your own words or from an example.</p>
       <h2>New agent</h2>
       <label>Name <span class="hint">(what you'll see in the sidebar; you can change it later)</span>
         <input type="text" name="displayName" placeholder="Weather assistant" maxlength="60" required>
@@ -248,8 +248,12 @@ ${consoleShellScript}
         newAgentResult.style.display = 'block';
         if (result.body.registered) {
           // Straight to the new agent, which also refreshes the sidebar's
-          // agent list.
-          location.href = '/agents/config?agent=' + encodeURIComponent(body.name);
+          // agent list; or back to planning a workflow that didn't fit the
+          // agent it was first planned for, now in this one.
+          var workflow = new URLSearchParams(location.search).get('workflow');
+          location.href = workflow !== null
+            ? '/workflows/new?agent=' + encodeURIComponent(body.name) + '&description=' + encodeURIComponent(workflow)
+            : '/agents/config?agent=' + encodeURIComponent(body.name);
         } else {
           newAgentResult.textContent =
             'Created ' + result.body.path + ', but it could not be loaded into this running server' +

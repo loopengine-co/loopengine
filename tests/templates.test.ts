@@ -268,14 +268,18 @@ describe('an older project adapter', () => {
 
 describe("a workflow's template", () => {
   it('gives its new agent a schedule that runs the workflow, sending each result when the plan says so', async () => {
-    const plan = validateWorkflowPlan({
+    // A ready-made example's plan carries the agent made from it.
+    const plan = {
+      ...validateWorkflowPlan({
       name: 'Pricing watch', id: 'pricing-watch', summary: 'Checks competitors\' pricing pages and reports changes.',
       trigger: { kind: 'schedule', description: 'Every weekday at 9', every: '1d', at: '09:00' },
       steps: [{ title: 'Read the pages', kind: 'other' }], rules: [], abilities: [], keys: [],
       skill: { description: 'Pricing watch', body: '1. Read the pages.\n2. Report what changed.' },
       startMessage: 'Check the pricing pages.', notify: { on: true, reason: 'Nothing else sends the changes to you.' },
-      target: { kind: 'new', reason: 'New job.' }, newAgent: { name: 'pricing-agent', systemPrompt: 'You watch prices.' }, gaps: [],
-    })!
+      gaps: [],
+      })!,
+      newAgent: { name: 'pricing-agent', systemPrompt: 'You watch prices.' },
+    }
     await admin.createFromTemplateObject(workflowTemplate(plan), deps())
 
     const [task] = await listScheduledTasks({ agent: 'pricing-agent' })

@@ -32,7 +32,6 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
   <div class="le-nav-label"><span>Agents</span><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
-  <a class="le-find" href="/workflows/new" data-le-nav="workflows">New workflow</a>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
   <nav class="le-foot" aria-label="Settings">
     <a href="/config?section=models" data-le-nav="models">Models</a>

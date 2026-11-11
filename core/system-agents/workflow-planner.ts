@@ -4,9 +4,10 @@
 // built-in system_ask_user), the points where a person decides become
 // checkpoints (a question, or a tool set to "ask"), the steps in order
 // become a skill, and the trigger a schedule or a webhook (an outside
-// service's events start runs). The plan names the agent it
-// belongs in: an existing one when it fits without changing anything that
-// agent already does, else a new one.
+// service's events start runs). A workflow always goes into an agent the
+// person picked first: the plan builds on that agent's tools and apps,
+// and names any app or messaging it still needs, for the person to add
+// before it's created.
 //
 // Like the interviewer (./interviewer.ts), it only reads (agents,
 // abilities, connections) and records the plan: creating or changing an
@@ -102,9 +103,19 @@ export interface WorkflowPlan {
    * the person through the agent's messaging app, and why (shown on the
    * review screen). */
   notify: { on: boolean; reason: string }
-  target: { kind: 'existing' | 'new'; agent?: string; reason: string }
-  /** For a new agent. */
-  newAgent: { name: string; systemPrompt: string }
+  /** Rules and facts this workflow needs that the agent's own
+   * instructions don't say: put at the top of the workflow's
+   * instructions on Create. */
+  context?: string
+  /** Whether the job is the kind of work the agent does (by its name,
+   * description and instructions), and why not when it isn't: the plan
+   * screen then suggests a new agent for it, or adding it anyway. */
+  fit?: { matches: boolean; reason: string }
+  /** Where an older plan or a ready-made example suggested it go. */
+  target?: { kind: 'existing' | 'new'; agent?: string; reason: string }
+  /** A ready-made example's standing instructions, for an agent made
+   * from it as a template (core/system-agents/templates.ts). */
+  newAgent?: { name: string; systemPrompt: string }
   /** What the workspace can't do yet, in plain words. */
   gaps: string[]
   /** MCP servers its steps use, set up on Create (filled in after planning). */
@@ -156,17 +167,17 @@ export interface WorkflowPlannerTools {
 
 const MAX_TOOL_ROUNDS = 12
 
-export const WORKFLOW_PLANNER_PROMPT = `You turn a workflow a person describes into a plan for a LoopEngine agent.
+export const WORKFLOW_PLANNER_PROMPT = `You turn a workflow a person describes into a plan for one LoopEngine agent: the agent named in the request, which the workflow is added to. The request also says what that agent has: its instructions, tools, apps and messaging.
 
 LoopEngine agents call tools. Tools come from abilities (installable packages: public ones on npm, or the workspace's own private ones) or are built in. Each tool has a permission: allow (runs on its own), ask (waits for a person to approve, edit or deny it) or deny. When nobody is in Chat, questions and approvals go to the agent's messaging app (Slack, Telegram, Lark or email) and the run waits, for days if needed, then carries on.
 
 How to plan:
-1. Look before you plan: list_agents (what exists, and what each agent's tools and rules are), list_workspace_abilities, search_public_abilities for each kind of step, ability_details for any ability you might use (its exact tool names and the settings it needs), and list_connections.
+1. Look before you plan: start from what the agent has (in the request), then list_workspace_abilities, search_public_abilities for each kind of step, ability_details for any ability you might use (its exact tool names and the settings it needs), and list_connections. list_agents shows the other agents, for a connected service one of them has.
 2. Split the workflow into steps, in order. For each step:
    - something to fetch or do: kind "tool", with the exact tool name and where it comes from. Pick the source in this order:
-     a. A tool the target agent already has (from list_agents): use it, nothing to install.
+     a. A tool the agent already has, its apps' tools included: use it, nothing to install.
      b. An ability: a workspace ability (list_workspace_abilities) or a public one (search_public_abilities, e.g. "firecrawl" or "web search" for searching and reading the web). Set "ability" to its install spec (the npm name, or a workspace ability's spec) and use the exact tool name from ability_details.
-     c. Only when no ability can do it, and search_mcp_servers is available: an app's MCP server. Search for the app (e.g. "linear", "stripe"), pick the app's own server (official), else a saved or verified one, then call mcp_server_tools. Set "mcp" to the server's id, and "tool" to its exact tool name when mcp_server_tools lists them (leave "tool" empty when it needs a key first, and say in "detail" what the step does). It's set up as a private ability when the workflow is created, which picks its tools and their permissions, so add no rules for MCP tools.
+     c. Only when no ability can do it, and search_mcp_servers is available: an app's MCP server. For an app the agent has, use its id from the request. Otherwise search for the app (e.g. "linear", "stripe"), pick the app's own server (official), else a saved or verified one, then call mcp_server_tools. Set "mcp" to the server's id, and "tool" to its exact tool name when mcp_server_tools lists them (leave "tool" empty when it needs a key first, and say in "detail" what the step does). An app the agent doesn't have yet is still planned: the person adds it to the agent before the workflow is created. The app sets its tools' permissions, so add no rules for MCP tools.
    - the person chooses or answers ("ask me which", "let me pick"): kind "ask", tool "system_ask_user" (built in, no ability). Say what options are offered. It reaches them through the agent's messaging app by itself, so don't add a separate step to post to Slack or another chat first, and don't install a chat ability just to ask.
    - the person reviews or approves before something happens ("let me review it", "before it's sent"): kind "approval", on the tool that does that thing; its rule becomes "ask".
    - the agent's own work (writing, summarising, choosing): kind "other".
@@ -187,9 +198,10 @@ How to plan:
    Every required parameter should come from the payload through mapping; parameters are the only way event details reach the run.
 6. Notify (scheduled and webhook workflows): whether each run's result is sent to the person through the agent's messaging app. true when the result is for them and no step already delivers it ("tell me", "send me", "let me know", a summary or findings that no step posts or emails). false when a step already sends it (posting to a channel, emailing a report): it would arrive twice. false when the work itself is the outcome (answering emails, filing tasks), where a message every run is noise; questions and approvals reach them either way. Say why in one short sentence.
 7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
-8. Target: an existing agent only when it already has (or can install) the tools, none of the workflow's rules would change a decision it already has, and the same people would approve. Otherwise a new agent, with a short lowercase-hyphenated name and its system prompt (rule 9). Give the reason either way.
-9. newAgent.systemPrompt: the new agent's standing instructions, read on every run of every workflow it will ever have, so write what's true whatever it's doing: who it works for and its role, in one or two sentences ("You help the on-call engineer triage incidents."); facts every job needs that the person must fill in, as "[...] (edit this)" ("Our repository on GitHub: [owner/name] (edit this)."); and rules that always hold ("Never roll anything back yourself."). Don't repeat the steps, the tools or the schedule: they're the skill's. Under 15 lines.
-10. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
+8. context: rules and facts this workflow needs that the agent's instructions don't already say, read at the top of the workflow on every run: facts the person must fill in, as "[...] (edit this)" ("Our repository on GitHub: [owner/name] (edit this)."), and rules that always hold for this job ("Never refund more than $refund_limit yourself."). Don't repeat the agent's instructions, the steps, the tools or the schedule. Under 10 lines; empty when there's nothing to add.
+9. fit: whether this job is the kind of work the agent does, judged from its name, description and instructions (not its tools or apps: missing ones get added). matches false only when the job is clearly a different line of work (a customer support agent asked to run payroll); a related or broader job still matches, and so does any job for an agent with no description or instructions yet. reason: one short sentence the person reads, naming what the agent does and what the job is ("Support desk answers customers' questions; this workflow runs payroll."); empty when it matches. Plan the workflow fully either way.
+10. Messaging: questions, approvals and results reach the person through the agent's messaging app when they're not in Chat. You don't set it up; if the agent has none, plan as usual and the person sets it up before Create.
+11. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Not for MCP servers: their keys are asked for on the plan.
 
 Then call save_plan once, with the whole plan. Don't ask the person questions: if something is unclear, plan the most reasonable version and note the assumption in gaps.`
 
@@ -268,11 +280,11 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
             description: 'Values each run is given, by snake_case name; use $name in startMessage and the skill. Leave out when every run is the same.',
             additionalProperties: { type: 'object', properties: { description: { type: 'string' }, required: { type: 'boolean' } } },
           },
-          target: { type: 'object', properties: { kind: { type: 'string', enum: ['existing', 'new'] }, agent: { type: 'string' }, reason: { type: 'string' } }, required: ['kind', 'reason'] },
-          newAgent: { type: 'object', properties: { name: { type: 'string' }, systemPrompt: { type: 'string' } }, required: ['name', 'systemPrompt'] },
+          context: { type: 'string', description: "rules and facts this workflow needs that the agent's instructions don't say; empty when none" },
+          fit: { type: 'object', properties: { matches: { type: 'boolean' }, reason: { type: 'string' } }, required: ['matches', 'reason'] },
           gaps: { type: 'array', items: { type: 'string' } },
         },
-        required: ['name', 'summary', 'trigger', 'steps', 'rules', 'skill', 'startMessage', 'target', 'newAgent'],
+        required: ['name', 'summary', 'trigger', 'steps', 'rules', 'skill', 'startMessage', 'fit'],
       },
     },
   ]
@@ -300,9 +312,7 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
   const summary = str(r.summary, 600)
   const skillRaw = (r.skill ?? {}) as Record<string, unknown>
   const skillBody = str(skillRaw.body, 12000)
-  const agentRaw = (r.newAgent ?? {}) as Record<string, unknown>
-  const systemPrompt = str(agentRaw.systemPrompt, 8000)
-  if (!name || !summary || !skillBody || !systemPrompt) return undefined
+  if (!name || !summary || !skillBody) return undefined
 
   const steps: WorkflowStep[] = (Array.isArray(r.steps) ? r.steps : []).flatMap((s): WorkflowStep[] => {
     const step = (s ?? {}) as Record<string, unknown>
@@ -356,7 +366,6 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     ...(Array.isArray(r.abilities) ? r.abilities.flatMap((a) => (str(a, 300) ? [str(a, 300)!] : [])) : []),
     ...steps.flatMap((s) => (s.ability ? [s.ability] : [])),
   ])].filter((spec) => !steps.some((s) => s.connection === spec && s.ability !== spec))
-  const targetRaw = (r.target ?? {}) as Record<string, unknown>
   const id = slugify(str(r.id, 60) ?? name)
   const startMessage = str(r.startMessage, 1000) ?? `Run the "${name}" workflow.`
   const gaps = Array.isArray(r.gaps) ? r.gaps.flatMap((g) => (str(g, 400) ? [str(g, 400)!] : [])).slice(0, 10) : []
@@ -382,12 +391,8 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     parameters: planned.parameters,
     ...(webhook ? { webhook } : {}),
     notify: planNotify(r.notify),
-    target: {
-      kind: targetRaw.kind === 'existing' && str(targetRaw.agent, 80) ? 'existing' : 'new',
-      ...(targetRaw.kind === 'existing' && str(targetRaw.agent, 80) ? { agent: str(targetRaw.agent, 80) } : {}),
-      reason: str(targetRaw.reason, 600) ?? '',
-    },
-    newAgent: { name: slugify(str(agentRaw.name, 60) ?? id, id), systemPrompt },
+    context: str(r.context, 6000) ?? '',
+    ...(r.fit ? { fit: planFit(r.fit) } : {}),
     gaps: [...gaps, ...planned.notes].slice(0, 12),
   }
 }
@@ -445,6 +450,15 @@ export function planNotify(raw: unknown): WorkflowPlan['notify'] {
  * optional one, and, for a scheduled workflow, required ones made
  * optional (a schedule has no one to fill them in), with a note saying
  * so. Also used on a plan edited before Create. */
+/** The planner's fit verdict; a mismatch without a reason counts as a
+ * match, since there's nothing to show the person. */
+function planFit(raw: unknown): { matches: boolean; reason: string } | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const f = raw as { matches?: unknown; reason?: unknown }
+  const reason = typeof f.reason === 'string' ? f.reason.trim().slice(0, 400) : ''
+  return f.matches === false && reason ? { matches: false, reason } : { matches: true, reason: '' }
+}
+
 export function planParameters(raw: unknown, context: { startMessage: string; skillBody: string; scheduled: boolean }): { parameters: Record<string, WorkflowParameter>; notes: string[] } {
   const parameters: Record<string, WorkflowParameter> = {}
   const notes: string[] = []
@@ -474,8 +488,8 @@ export interface WorkflowPlanResult {
 }
 
 /** Runs the planner on a description until it saves a plan. */
-export async function planWorkflowWithModel(modelCall: ModelCall, description: string, tools: WorkflowPlannerTools): Promise<WorkflowPlanResult> {
-  const messages: Message[] = [{ role: 'user', content: `Plan this workflow:\n\n${description}` }]
+export async function planWorkflowWithModel(modelCall: ModelCall, description: string, tools: WorkflowPlannerTools, agentBrief = ''): Promise<WorkflowPlanResult> {
+  const messages: Message[] = [{ role: 'user', content: `${agentBrief ? `${agentBrief}\n\n` : ''}Plan this workflow:\n\n${description}` }]
   let nudges = 0
   let retries = 0
   let sentBackWebhook = false
@@ -548,7 +562,7 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
               output = 'not saved: the webhook fills no parameters, so a run would not know which event it is about. Declare a parameter for what each event is about (e.g. dispute_id), write $name in startMessage and the skill where it is used, map it in webhook.mapping, and call save_plan again.'
               break
             }
-            output = plan ? 'saved' : 'that plan needs a name, summary, at least one step, a skill body and newAgent.systemPrompt; fix and call again'
+            output = plan ? 'saved' : 'that plan needs a name, summary, at least one step and a skill body; fix and call again'
             break
           default:
             output = `unknown tool ${call.name}`
@@ -578,7 +592,7 @@ export function workflowTemplate(plan: WorkflowPlan): StarterTemplate {
       risk: plan.rules.some((r) => r.decision === 'allow') && plan.needsApprovals ? 'medium' : 'low',
       asksFirst: plan.steps.filter((s) => s.kind === 'approval' || s.kind === 'ask').map((s) => s.title),
       needs: plan.abilities.map((spec) => ({ kind: 'ability' as const, name: spec, description: spec })),
-      agent: { name: plan.newAgent.name, systemPrompt: plan.newAgent.systemPrompt, scheduleMessage: plan.startMessage, exampleMessage: plan.startMessage },
+      agent: { name: plan.newAgent?.name ?? plan.id, systemPrompt: plan.newAgent?.systemPrompt ?? plan.context ?? '', scheduleMessage: plan.startMessage, exampleMessage: plan.startMessage },
     },
     setup: {
       abilities: plan.abilities,

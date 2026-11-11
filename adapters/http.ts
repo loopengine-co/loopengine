@@ -60,7 +60,6 @@ import {
   getInterview,
   interviewTools,
   listInterviews,
-  pickAgentModel,
   pickInterviewModel,
   previewCandidate,
   startInterview,
@@ -114,7 +113,7 @@ import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlack
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
-import { WorkflowError, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowMcpDeps } from '#web/workflow-admin.js'
+import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, noteForExistingAgent, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -990,8 +989,12 @@ async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
           tools = [...new Set(all.map((t) => t.name))].filter((t) => !gateway.has(t))
         } catch {}
         let abilities: string[] = []
+        let apps: NonNullable<WorkflowAgentInfo['apps']> = []
         try {
-          abilities = listInstalledAbilities(name).map((a) => a.name)
+          const installed = listInstalledAbilities(name)
+          abilities = installed.map((a) => a.name)
+          const connected = describeApps().connected
+          apps = installed.flatMap((a) => (a.mcp?.server.url ? [{ title: connected.find((c) => c.ability === a.name)?.title ?? a.name, url: a.mcp.server.url, tools: a.mcp.tools.map((t) => t.name) }] : []))
         } catch {}
         let messaging: string | null = null
         try {
@@ -1006,6 +1009,10 @@ async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
           rules: rules.flatMap((r) => (decided(r.decision) && !gateway.has(r.tool) ? [{ tool: r.tool, decision: r.decision, scope: r.scope }] : [])),
           defaultDecision: decided(defaultDecision) ? defaultDecision : 'ask',
           messaging,
+          apps,
+          instructions: entry.config.systemPrompt,
+          ...(entry.config.displayName ? { displayName: entry.config.displayName } : {}),
+          ...(entry.config.toolDescription ? { description: entry.config.toolDescription } : {}),
         }
       })()]
     }),
@@ -1028,6 +1035,19 @@ const workflowMcp: WorkflowMcpDeps = {
     return undefined
   },
   keyValue: (name) => process.env[name],
+}
+
+/** Where an app (a catalog id or an MCP server's) stands for an agent:
+ * on it, connected to the workspace but not on it, or not connected. */
+async function workflowAppStatus(agent: string, id: string): Promise<WorkflowAppStatus> {
+  const server = await appServer(id).catch(() => undefined)
+  const app = describeApps().connected.find((c) => c.id === id || (server && c.url === server.url))
+  if (!app) return { state: 'missing', ...(server?.title ? { title: server.title } : {}) }
+  let has = false
+  try {
+    has = listInstalledAbilities(agent).some((a) => a.name === app.ability)
+  } catch {}
+  return { state: has ? 'ready' : 'connected', title: app.title }
 }
 
 /** A server's tools for the planner, or why they can't be seen yet. */
@@ -1281,7 +1301,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
     } catch {
       picked = undefined
     }
-    if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents(), examples: WORKFLOW_EXAMPLES, messages: WORKFLOW_EXAMPLE_MESSAGES })
+    if (!action && req.method === 'GET') return json(200, { ready: Boolean(picked), canInstallAbilities: secretsProtected, agents: listAgents().map((name) => ({ name, ...(getEntry(name)?.config.displayName ? { displayName: getEntry(name)!.config.displayName } : {}) })), examples: WORKFLOW_EXAMPLES.map((e) => (e.plan.notes ? { ...e, plan: { ...e.plan, notes: e.plan.notes.map(noteForExistingAgent) } } : e)), messages: WORKFLOW_EXAMPLE_MESSAGES })
     // A planning job's progress (the page checks every few seconds).
     if (action === 'plan' && jobId && req.method === 'GET') {
       const job = getPlanJob(jobId)
@@ -1291,17 +1311,26 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
       if (!picked) return json(409, { error: 'No model is ready to plan with: set one on an agent (Overview → Model) and add its key under Models.' })
       const body = await readJsonBody(req)
       const base = interviewTools(interviewAgents())
-      // The same model, with room for a whole plan in one reply (an
-      // agent's own model call stops at its maxTokens, often 4096).
-      let modelCall = picked.modelCall
+      // The agent's own model when its key is set, else the first ready
+      // one; with room for a whole plan in one reply (an agent's own
+      // model call stops at its maxTokens, often 4096).
+      let own: ReturnType<typeof pickInterviewModel>
       try {
-        modelCall = (await synthesizeCreateModelCall({ ...picked.model, maxTokens: 8192 } as AgentModelConfig))()
+        own = pickInterviewModel(interviewAgents().filter((a) => a.name === body.agent))
+      } catch {
+        own = undefined
+      }
+      const chosen = own ?? picked
+      let modelCall = chosen.modelCall
+      try {
+        modelCall = (await synthesizeCreateModelCall({ ...chosen.model, maxTokens: 8192 } as AgentModelConfig))()
       } catch {}
       if (typeof body.description !== 'string' || body.description.trim().length < 15) {
         return json(400, { error: 'Describe the workflow in a sentence or two: what starts it, the steps, and where you want to decide.' })
       }
-      const job = startPlanJob(() => planWorkflow(body.description, modelCall, {
+      const job = startPlanJob(() => planWorkflow(body.description, body.agent, modelCall, {
         agentInfo: workflowAgentInfo,
+        appStatus: workflowAppStatus,
         // A summary: an agent's first tools and its rules that aren't the
         // default, to keep what the model reads short.
         listAgents: async () => (await workflowAgentInfo()).map((a) => ({
@@ -1326,39 +1355,29 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
       }))
       return json(202, job)
     }
+    // What a plan (or a ready-made example) needs from an agent, checked
+    // again from the review screen.
+    if (action === 'check' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      return json(200, await checkWorkflowRequirements(body, { agentInfo: workflowAgentInfo, appStatus: workflowAppStatus }))
+    }
     if (action === 'create' && req.method === 'POST') {
       const body = await readJsonBody(req)
-      const model = pickAgentModel(interviewAgents())
       const created = await createWorkflow(body, {
         addAppTools: async (agent, spec, tools) => addAgentAppTools(agent, spec, tools),
+        appStatus: workflowAppStatus,
         mcp: {
           ...workflowMcp,
-          // The planning model picks the server's tools and writes the skill.
-          generate: (request) => generateMcpAbility({ ...request, ...(picked ? { modelCall: picked.modelCall } : {}) }),
-          store: (dir, source) => {
-            try {
-              return addWorkspaceAbility(dir, source).spec
-            } finally {
-              rmSync(dir, { recursive: true, force: true })
-            }
-          },
-          saveKey: async (name, value) => {
-            if (!secretsProtected) throw new Error('saving keys needs LOOPENGINE_ADMIN_AUTH set on the server')
-            await setEnvVar(name, value)
+          // The planning model matches steps to the app's tools, when the
+          // plan didn't name them.
+          generate: async (request) => {
+            const generated = await generateMcpAbility({ ...request, ...(picked ? { modelCall: picked.modelCall } : {}) })
+            rmSync(generated.dir, { recursive: true, force: true })
+            return generated
           },
         },
-        agentExists: (name) => Boolean(getEntry(name)) || existsSync(dirOf(name)),
         agentDir: dirOf,
         agentInfo: workflowAgentInfo,
-        scaffoldAgent: async (name, systemPrompt) => {
-          const parsed = parseAgentTemplateOptions({ systemPrompt, ...(model ? { model } : {}) })
-          if (!parsed.ok) throw new WorkflowError(parsed.error)
-          await scaffoldAgent(projectDir(), name, parsed.value)
-        },
-        registerAgent: async (name) => {
-          const indexPath = join(dirOf(name), 'index.ts')
-          registerAgent(await loadAgentModule(indexPath, indexPath))
-        },
         // Skills, rules and gateway tools are read on every run, so a
         // loaded agent already sees them; new ability code restarts the
         // server (exitIfCodeChanged). Only an agent not loaded yet is.
@@ -1385,7 +1404,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
       json(200, created)
       // New tools in an agent that was already running load with a restart,
       // as after installing an ability from its tab.
-      if (!created.newAgent && created.abilities.installed.length) exitIfCodeChanged(res)
+      if (created.abilities.installed.length) exitIfCodeChanged(res)
       return
     }
     return json(404, { error: 'not found' })
@@ -4341,7 +4360,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html' }).end(workflowPageHtml)
       return
     }
-    if (pathname === '/workflows' || pathname === '/workflows/plan' || pathname.startsWith('/workflows/plan/') || pathname === '/workflows/create') {
+    if (pathname === '/workflows' || pathname === '/workflows/plan' || pathname.startsWith('/workflows/plan/') || pathname === '/workflows/check' || pathname === '/workflows/create') {
       await handleWorkflows(req, res, pathname)
       return
     }
