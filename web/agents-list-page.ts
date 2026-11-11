@@ -65,7 +65,7 @@ ${consoleSidebarHtml}
       <label>ID <span class="hint">(lowercase and hyphens; its folder agents/&lt;id&gt;/ and API address use it, so it can't be changed later)</span>
         <input type="text" name="name" placeholder="weather-assistant" pattern="[a-z0-9]+(-[a-z0-9]+)*" required>
       </label>
-      <label>System prompt
+      <label>Identity <span class="hint">(who it is and the rules it always follows)</span>
         <textarea name="systemPrompt" placeholder="You are ..."></textarea>
       </label>
       <label>Model provider

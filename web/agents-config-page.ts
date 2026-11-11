@@ -1678,9 +1678,9 @@ ${consoleShellScript}
         '</form>');
 
     var systemPromptSection =
-      '<h3>System prompt <button type="button" class="edit-btn" id="editSystemPromptBtn">Edit</button></h3>' +
+      '<h3>Identity <button type="button" class="edit-btn" id="editSystemPromptBtn">Edit</button></h3>' +
       '<pre id="systemPromptDisplay">' + escapeHtml(cfg.systemPrompt) + '</pre>' +
-      editDialogHtml('<h3>Edit system prompt</h3>', '<p>What the agent reads on every run: who it is and the rules it always follows.</p>',
+      editDialogHtml('<h3>Edit identity</h3>', '<p>What the agent reads on every run: who it is and the rules it always follows.</p>',
         '<form class="add-source" id="systemPromptForm" style="display:none">' +
           '<textarea name="systemPrompt" class="ed-tall">' + escapeHtml(cfg.systemPrompt) + '</textarea>' +
           '<div class="error" id="systemPromptError"></div>' +
@@ -1761,7 +1761,7 @@ ${consoleShellScript}
       '</section>';
   }
 
-  // Wires the System prompt / Model / Limits & budgets Edit buttons rendered by
+  // Wires the Identity / Model / Limits & budgets Edit buttons rendered by
   // renderOverviewHtml above — called every time that HTML gets (re)set
   // (renderDetail, refreshOverviewPanel, refreshSkillsDependentPanels),
   // same pattern every other tab's own wireXHandlers already follows.

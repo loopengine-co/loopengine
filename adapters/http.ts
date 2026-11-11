@@ -1522,7 +1522,7 @@ async function handleCreateAgent(req: IncomingMessage, res: ServerResponse): Pro
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ path: indexPath, registered: true }))
 }
 
-// Backs the Overview tab's System prompt / Model / Limits & budgets edit
+// Backs the Overview tab's Identity / Model / Limits & budgets edit
 // forms — any subset of systemPrompt, model, maxTurns, contextBudgetTokens,
 // skillIndexBudgetTokens can be sent independently (see
 // parseAgentTemplateOptions/parseAgentLimitsFields), every other field
