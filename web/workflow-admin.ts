@@ -4,7 +4,7 @@
 // lists what that agent still needs (apps, messaging) for the person to
 // add first, and creates it in that agent without changing anything the
 // agent already does.
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { addGatewayTool, readGatewayToolsFromDir } from '../core/gateway-tools.js'
 import { applyPlannedRules } from './actauth-admin.js'
@@ -18,7 +18,7 @@ import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } fro
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow } from '../core/workflows.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
-import { cancelScheduledTask, createScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
+import { cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
 import { wallTimeAt, workspaceTimeZone } from '../core/time-zone.js'
 import type { ModelCall } from '../core/run-agent.js'
 
@@ -827,6 +827,36 @@ export async function forgetWorkflow(agentName: string, agentDir: string, id: st
     webhooks++
   }
   return { cancelled, webhooks }
+}
+
+/** What deleting an agent removes besides itself. */
+export interface ForgottenAgent {
+  schedules: number
+  webhooks: number
+}
+
+/** Deletes an agent made in the console (a folder with an index.ts):
+ * its schedules and webhooks, so nothing starts it again, then its folder
+ * (instructions, workflows, skills, tools, abilities, permissions,
+ * messaging and its own .env). Past runs and chats are kept. The caller
+ * takes it out of the live registry. An agent written as a single file
+ * (agents/<name>.ts) is refused: that's code to remove by hand. */
+export async function forgetAgent(agentName: string, agentDir: string): Promise<ForgottenAgent> {
+  if (!existsSync(join(agentDir, 'index.ts'))) {
+    throw new WorkflowError(`${agentName} isn't in its own folder (agents/${agentName}/index.ts), so it can't be deleted here. Remove its file from agents/ yourself.`)
+  }
+  let schedules = 0
+  for (const task of await listScheduledTasks({ agent: agentName })) {
+    await deleteScheduledTask(task.task_id)
+    schedules++
+  }
+  let webhooks = 0
+  for (const trigger of await listTriggers(agentName)) {
+    await getTriggerStore().remove(trigger.trigger_id)
+    webhooks++
+  }
+  rmSync(agentDir, { recursive: true, force: true })
+  return { schedules, webhooks }
 }
 
 export function agentDirIn(projectDir: string, name: string): string {

@@ -338,6 +338,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     border-color: var(--bad);
   }
   .delete-btn:hover { background: var(--bad-soft); }
+  .agent-delete { display: grid; gap: 10px; max-width: 640px; }
+  .agent-delete-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+  .agent-delete-row input { width: 220px; max-width: 100%; }
+  .agent-delete .delete-btn:disabled { opacity: .5; cursor: not-allowed; }
   /* Explicit rather than relying on inherited font-size: .edit-rule-btn
      sits inside a 12px table, but .edit-skill-btn sits in .source-head
      (no font-size of its own, so it'd otherwise inherit the page's
@@ -1767,6 +1771,41 @@ ${consoleShellScript}
   // those in the first place) and applies the change live; the response
   // is the freshly-resolved config, so this re-renders the whole
   // Overview panel from it directly instead of a second GET.
+  // Advanced > Delete this agent: typing its name enables the button.
+  function renderDeleteAgentHtml(cfg) {
+    return '<div class="agent-delete">' +
+      '<p class="muted" style="margin:0">Deletes <strong>' + escapeHtml(cfg.displayName || cfg.name) + '</strong> and everything in its folder: its instructions, workflows, skills, tools, apps, permission rules, messaging and keys. Its schedules and webhooks stop. Past runs and chats are kept. This can&#39;t be undone.</p>' +
+      '<div class="agent-delete-row"><label for="deleteAgentName">Type <code>' + escapeHtml(cfg.name) + '</code> to confirm</label>' +
+        '<input id="deleteAgentName" type="text" autocomplete="off" spellcheck="false">' +
+        '<button type="button" class="delete-btn" id="deleteAgentBtn" disabled>Delete agent</button></div>' +
+      '<p class="hint" id="deleteAgentStatus" style="margin:0"></p></div>';
+  }
+  function wireDeleteAgent(name) {
+    var input = detail.querySelector('#deleteAgentName');
+    var btn = detail.querySelector('#deleteAgentBtn');
+    var status = detail.querySelector('#deleteAgentStatus');
+    if (!input || !btn) return;
+    input.addEventListener('input', function () { btn.disabled = input.value.trim() !== name; });
+    btn.addEventListener('click', function () {
+      if (input.value.trim() !== name) return;
+      btn.disabled = true;
+      input.disabled = true;
+      status.className = 'hint';
+      status.textContent = 'Deleting' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name), { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: name }) })
+        .then(function (r) {
+          if (!r.ok) throw new Error((r.body && r.body.error) || 'Could not delete it.');
+          location.href = '/agents';
+        })
+        .catch(function (err) {
+          status.className = 'hint status-error';
+          status.textContent = err.message;
+          input.disabled = false;
+          btn.disabled = input.value.trim() !== name;
+        });
+    });
+  }
+
   function wireOverviewHandlers(name) {
     var overviewPanel = detail.querySelector('[data-tab-panel="overview"]');
     if (!overviewPanel) return;
@@ -4978,6 +5017,8 @@ ${consoleShellScript}
         '<div data-tab-panel="skills">' + renderSkillsTabHtml(cfg) + '</div>' +
         '<h2 class="advanced-part" id="advanced-rules">Permission rules</h2>' +
         '<div id="advancedRulesContent"><p class="hint">Loading&hellip;</p></div>' +
+        '<h2 class="advanced-part" id="advanced-delete">Delete this agent</h2>' +
+        renderDeleteAgentHtml(cfg) +
       '</div>' +
       '<div class="tab-panel" data-tab-panel="actauth">' + renderActauthTabPlaceholder() + '</div>' +
       '<div class="tab-panel" data-tab-panel="messaging">' + renderMessagingTabPlaceholder() + '</div>' +
@@ -4988,6 +5029,7 @@ ${consoleShellScript}
 
     wireSkillsHandlers(cfg.name);
     wireOverviewHandlers(cfg.name);
+    wireDeleteAgent(cfg.name);
     wireHttpToolFormHandlers(cfg.name);
     var gatewayRefreshBtn = detail.querySelector('#gatewayToolsRefreshBtn');
     if (gatewayRefreshBtn) {

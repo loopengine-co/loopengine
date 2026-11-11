@@ -258,6 +258,8 @@ export {
   checkWorkflowRequirements,
   createWorkflow,
   forgetWorkflow,
+  forgetAgent,
+  type ForgottenAgent,
   migrateAgentWorkflows,
   getPlanJob,
   listAgentWorkflows,

@@ -89,3 +89,10 @@ export function updateAgent(name: string, patch: { config?: Partial<AgentConfig>
   if (patch.config) Object.assign(entry.config, patch.config)
   if (patch.createModelCall) entry.createModelCall = patch.createModelCall
 }
+
+/** Takes a deleted agent out of the live registry, so nothing in this
+ * process runs it again (see adapters/http.ts's handleDeleteAgent, which
+ * removes its folder first). Returns whether it was registered. */
+export function unregisterAgent(name: string): boolean {
+  return entries.delete(name)
+}
