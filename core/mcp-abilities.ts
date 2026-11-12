@@ -19,11 +19,13 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { AgentEnv, ToolDefinition } from './agent-config.js'
 import { createAgentEnv } from './agent-env.js'
+import { runtimeOAuthProvider } from './mcp-oauth.js'
 
 /** How the adapter authenticates to a remote server. `key` sends an
  * agent setting as a header (`Authorization: Bearer <value>` by
- * default). OAuth isn't supported yet. */
-export type McpAuth = { type: 'none' } | { type: 'key'; env: string; header?: string; prefix?: string }
+ * default). `oauth` uses a sign-in kept in a workspace setting
+ * (core/mcp-oauth.ts), refreshing its token as needed. */
+export type McpAuth = { type: 'none' } | { type: 'key'; env: string; header?: string; prefix?: string } | { type: 'oauth'; env: string }
 
 /** The `mcp` block of loopengine.ability.json. Exactly one of `url`
  * (a remote server) or `command` (a local server, started as a child
@@ -87,10 +89,12 @@ export function resolveMcpManifest(abilityName: string, mcp: unknown): Installed
     }
   }
   if (m.transport && m.transport !== 'streamable-http' && m.transport !== 'sse') throw new McpManifestError(`'mcp.transport' must be 'streamable-http' or 'sse'.`)
-  if (m.auth && m.auth.type !== 'none' && m.auth.type !== 'key') {
-    throw new McpManifestError(`'mcp.auth.type' must be 'none' or 'key' — OAuth isn't supported yet.`)
+  if (m.auth && m.auth.type !== 'none' && m.auth.type !== 'key' && m.auth.type !== 'oauth') {
+    throw new McpManifestError(`'mcp.auth.type' must be 'none', 'key' or 'oauth'.`)
   }
   if (m.auth?.type === 'key' && !m.auth.env) throw new McpManifestError(`'mcp.auth' of type 'key' needs 'env', the setting that holds the key.`)
+  if (m.auth?.type === 'oauth' && !m.auth.env) throw new McpManifestError(`'mcp.auth' of type 'oauth' needs 'env', the setting that holds the sign-in.`)
+  if (m.auth?.type === 'oauth' && !m.url) throw new McpManifestError(`'mcp.auth' of type 'oauth' is only for a remote server ('url').`)
   if (m.defaults !== undefined) {
     const ok = m.defaults && typeof m.defaults === 'object' && Object.values(m.defaults).every((d) => typeof d === 'string' || (d && typeof d === 'object' && typeof d.env === 'string' && (d.part === undefined || Number.isInteger(d.part))))
     if (!ok) throw new McpManifestError(`'mcp.defaults' maps input names to a "\${SETTING}" string or { env, split?, part? }.`)
@@ -146,6 +150,8 @@ interface ResolvedServer {
   command?: string
   args: string[]
   env: Record<string, string>
+  /** A signed-in app: the setting its sign-in is in, and its value. */
+  oauth?: { env: string; value: string }
 }
 
 function resolveServer(server: InstalledMcpRecord['server'], env: AgentEnv): ResolvedServer {
@@ -155,7 +161,9 @@ function resolveServer(server: InstalledMcpRecord['server'], env: AgentEnv): Res
     const prefix = server.auth.prefix ?? (header.toLowerCase() === 'authorization' ? 'Bearer ' : '')
     headers[header] = `${prefix}${env.require(server.auth.env)}`
   }
+  const oauth = server.auth?.type === 'oauth' ? { env: server.auth.env, value: env.require(server.auth.env) } : undefined
   return {
+    ...(oauth ? { oauth } : {}),
     url: server.url,
     transport: server.transport,
     headers,
@@ -172,7 +180,10 @@ function resolveServer(server: InstalledMcpRecord['server'], env: AgentEnv): Res
 const clients = new Map<string, Promise<Client>>()
 
 function clientKey(dir: string, abilityName: string, server: ResolvedServer): string {
-  return `${dir}\0${abilityName}\0${createHash('sha256').update(JSON.stringify(server)).digest('hex')}`
+  // A sign-in's tokens change as they're refreshed; the connection's
+  // own provider keeps up with that, so only the setting's name counts.
+  const keyed = server.oauth ? { ...server, oauth: server.oauth.env } : server
+  return `${dir}\0${abilityName}\0${createHash('sha256').update(JSON.stringify(keyed)).digest('hex')}`
 }
 
 async function connect(server: ResolvedServer): Promise<Client> {
@@ -186,11 +197,12 @@ async function connect(server: ResolvedServer): Promise<Client> {
   }
   const url = new URL(server.url!)
   const requestInit = { headers: server.headers }
+  const authProvider = server.oauth ? runtimeOAuthProvider(server.oauth.env, server.oauth.value) : undefined
   if (server.transport === 'sse') {
-    await client.connect(new SSEClientTransport(url, { requestInit }))
+    await client.connect(new SSEClientTransport(url, { requestInit, ...(authProvider ? { authProvider } : {}) }))
     return client
   }
-  await client.connect(new StreamableHTTPClientTransport(url, { requestInit }))
+  await client.connect(new StreamableHTTPClientTransport(url, { requestInit, ...(authProvider ? { authProvider } : {}) }))
   return client
 }
 

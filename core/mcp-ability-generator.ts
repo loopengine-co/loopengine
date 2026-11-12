@@ -22,6 +22,7 @@ import type { ModelCall } from './run-agent.js'
 import { isReadOnlyToolName } from './gateway-tools.js'
 import { isMcpAuthError, listMcpServerTools, mcpToolName, type InstalledMcpRecord, type McpToolInfo } from './mcp-abilities.js'
 import type { McpDirectoryServer } from './mcp-directory.js'
+import { mcpOAuthEnvName } from './mcp-oauth.js'
 
 export type Decision = 'allow' | 'ask'
 
@@ -38,6 +39,9 @@ export interface McpAbilityStep {
 export interface McpAbilityRequest {
   server: McpDirectoryServer
   key?: string
+  /** Use the sign-in saved for the app (core/mcp-oauth.ts) instead of a
+   * key. */
+  signedIn?: boolean
   /** Steps the app is used for, to work out each one's tool (workflow
    * builder); none when it's connected from the Apps page. */
   workflow?: { name: string; summary: string; steps: McpAbilityStep[] }
@@ -53,13 +57,23 @@ export interface GeneratedMcpAbility {
   name: string
   /** The setting its key is read from, when it uses one. */
   keyEnv?: string
+  /** The setting its sign-in is kept in, when it uses one. */
+  oauthEnv?: string
   /** Every tool, with its default permission. */
   tools: { name: string; remote: string; decision: Decision }[]
   /** Step index → the server tool that does it. */
   stepTools: Record<number, string>
 }
 
-export class McpAbilityGenerationError extends Error {}
+export class McpAbilityGenerationError extends Error {
+  /** The server turned the connection down for want of credentials. */
+  needsAuth: boolean
+
+  constructor(message: string, options: { needsAuth?: boolean } = {}) {
+    super(message)
+    this.needsAuth = options.needsAuth ?? false
+  }
+}
 
 function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30).replace(/-+$/, '') || 'server'
@@ -104,22 +118,25 @@ export async function generateMcpAbility(request: McpAbilityRequest): Promise<Ge
   const key = request.key?.trim() || undefined
   const names = mcpAbilityNames(server)
   const keyEnv = key ? names.keyEnv : undefined
+  const oauthEnv = !key && request.signedIn ? mcpOAuthEnvName(names.prefix) : undefined
   const serverBlock: InstalledMcpRecord['server'] = {
     url: server.url,
     ...(server.headers ? { headers: server.headers } : {}),
     ...(server.transport === 'sse' ? { transport: 'sse' as const } : {}),
-    auth: keyEnv ? { type: 'key', env: keyEnv, ...(server.auth?.header ? { header: server.auth.header } : {}), ...(server.auth?.prefix !== undefined ? { prefix: server.auth.prefix } : {}) } : { type: 'none' },
+    auth: oauthEnv ? { type: 'oauth', env: oauthEnv } : keyEnv ? { type: 'key', env: keyEnv, ...(server.auth?.header ? { header: server.auth.header } : {}), ...(server.auth?.prefix !== undefined ? { prefix: server.auth.prefix } : {}) } : { type: 'none' },
   }
 
   let available: McpToolInfo[]
   try {
-    available = await listMcpServerTools(serverBlock, envWith(keyEnv, key))
+    available = await listMcpServerTools(serverBlock, oauthEnv ? envWith(oauthEnv, process.env[oauthEnv]) : envWith(keyEnv, key))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (isMcpAuthError(err)) {
       throw new McpAbilityGenerationError(key
         ? `${server.title} turned down the key.`
-        : `${server.title} needs a key to connect (or a sign-in, which LoopEngine doesn't support yet). Add its API key and try again.`)
+        : oauthEnv
+          ? `${server.title} turned down the sign-in.`
+          : `${server.title} needs a key or a sign-in to connect.`, { needsAuth: true })
     }
     throw new McpAbilityGenerationError(`Couldn't connect to ${server.title} (${server.url}): ${message}`)
   }
@@ -173,7 +190,7 @@ export async function generateMcpAbility(request: McpAbilityRequest): Promise<Ge
   writeFileSync(join(dir, 'actauth', 'rules.yml'), stringifyYaml(tools.map((t) => ({ name: appRuleName(names.name, t.name), scope: '*/*', tool: t.name, decision: t.decision }))))
   writeFileSync(join(dir, 'skills', skillId, 'SKILL.md'), `---\nname: ${skillId}\ndescription: ${JSON.stringify(skillDescription.slice(0, 300))}\n---\n\n${skillBody.trim()}\n`)
 
-  return { dir, name: names.name, ...(keyEnv ? { keyEnv } : {}), tools, stepTools }
+  return { dir, name: names.name, ...(keyEnv ? { keyEnv } : {}), ...(oauthEnv ? { oauthEnv } : {}), tools, stepTools }
 }
 
 /** The name of an app ability's rule for one of its tools. */

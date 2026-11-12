@@ -122,6 +122,7 @@ import { WORKFLOW_EXAMPLE_MESSAGES } from '#core/system-agents/workflow-example-
 import { McpServerInputError, getMcpServer, ownMcpServer, removeSavedMcpServer, saveMcpServer, savedMcpServers, searchMcpServers, type McpDirectoryServer } from '#core/mcp-directory.js'
 import { isMcpAuthError, listMcpServerTools, resolveMcpManifest } from '#core/mcp-abilities.js'
 import { McpAbilityGenerationError, generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
+import { McpSignInError, finishMcpSignIn, mcpOAuthEnvName, mcpSignInSupport, startMcpSignIn } from '#core/mcp-oauth.js'
 import { readAbilityDetails } from '#core/ability-details.js'
 import { AppToolsError, appCatalog, appServer, appTools, connectedApps, isAppAbility, loadAppIcons, refreshAppTools, setAppDefault, type AgentAppTools } from '#core/mcp-apps.js'
 import { AbilitySourceError, abilityOrigin, readAbilitySources, type AbilitySource } from '#core/ability-sources.js'
@@ -1155,27 +1156,54 @@ function describeApps(): { apps: ReturnType<typeof appCatalog>; connected: Retur
 }
 
 /** Connects a server: makes a workspace ability from it, with its key
- * saved in the workspace's settings. Returns the ability's name. */
-async function connectAppServer(server: McpDirectoryServer, key: string): Promise<string> {
+ * saved in the workspace's settings, or with the sign-in saved for it.
+ * A server that needs a sign-in it doesn't have yet isn't connected:
+ * the result is then the address of its sign-in page, which sends the
+ * browser back to /config/apps/oauth/callback (under `consoleBase`). */
+async function connectAppServer(server: McpDirectoryServer, key: string, consoleBase?: string): Promise<{ connectedAbility: string } | { signIn: string }> {
   let picked: ReturnType<typeof pickInterviewModel>
   try {
     picked = pickInterviewModel(interviewAgents())
   } catch {
     picked = undefined
   }
-  const generated = await generateMcpAbility({
-    server,
-    ...(key ? { key } : {}),
-    workflow: { name: `${server.title} for this workspace`, summary: `Everyday work with ${server.title}`, steps: [] },
-    ...(picked ? { modelCall: picked.modelCall } : {}),
-  })
+  const oauthEnv = mcpOAuthEnvName(mcpAbilityNames(server).prefix)
+  const signedIn = !key && process.env[oauthEnv] !== undefined
+  let generated: Awaited<ReturnType<typeof generateMcpAbility>>
+  try {
+    generated = await generateMcpAbility({
+      server,
+      ...(key ? { key } : { signedIn }),
+      workflow: { name: `${server.title} for this workspace`, summary: `Everyday work with ${server.title}`, steps: [] },
+      ...(picked ? { modelCall: picked.modelCall } : {}),
+    })
+  } catch (err) {
+    if (key || !consoleBase || !(err instanceof McpAbilityGenerationError) || !err.needsAuth) throw err
+    // No key: sign in instead, when the app offers a sign-in. A saved
+    // sign-in it turned down is dropped first.
+    if (signedIn) await unsetEnvVar(oauthEnv)
+    const support = await mcpSignInSupport(server.url)
+    if (!support.ok) {
+      throw new McpAbilityGenerationError(support.reason === 'no-registration'
+        ? `${server.title} needs an API key: its sign-in only works for apps registered with ${server.title} by hand.`
+        : `${server.title} needs an API key to connect. Add it and try again.`)
+    }
+    const { authorizeUrl } = await startMcpSignIn({ serverUrl: server.url, envName: oauthEnv, appId: server.id, appTitle: server.title, redirectUrl: `${consoleBase}/config/apps/oauth/callback`, discovery: support.discovery })
+    return { signIn: authorizeUrl }
+  }
   try {
     addWorkspaceAbility(generated.dir, `mcp:${server.url}`)
   } finally {
     rmSync(generated.dir, { recursive: true, force: true })
   }
   if (key && generated.keyEnv) await setEnvVar(generated.keyEnv, key)
-  return generated.name
+  return { connectedAbility: generated.name }
+}
+
+/** Where an app's sign-in sends the browser back to: this console, as
+ * LOOPENGINE_PUBLIC_URL names it or as the request reached it. */
+function consoleBaseUrl(req: IncomingMessage): string {
+  return (process.env.LOOPENGINE_PUBLIC_URL?.trim() || requestBaseUrl(req)).replace(/\/+$/, '')
 }
 
 async function handleAgentApp(req: IncomingMessage, res: ServerResponse, agent: string, ability: string): Promise<void> {
@@ -1243,8 +1271,25 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
       const key = typeof body.key === 'string' ? body.key.trim() : ''
       const server = id ? await appServer(id) : undefined
       if (!server) return json(400, { error: 'No such app.' })
-      const connectedAbility = await connectAppServer(server, key)
-      return json(200, { ...describeApps(), connectedAbility })
+      const result = await connectAppServer(server, key, consoleBaseUrl(req))
+      return json(200, { ...describeApps(), ...result })
+    }
+    // Back from an app's sign-in page: save the sign-in, then return to
+    // the Apps page, which finishes connecting the app with it.
+    if (pathname === '/config/apps/oauth/callback' && req.method === 'GET') {
+      const params = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const back = (query: Record<string, string>) => {
+        res.writeHead(302, { location: `/config?${new URLSearchParams({ section: 'apps', ...query })}`, 'cache-control': 'no-store' }).end()
+      }
+      if (!secretsProtected) return back({ signin_error: 'Connecting an app needs LOOPENGINE_ADMIN_AUTH set first.' })
+      const error = params.get('error')
+      if (error) return back({ signin_error: error === 'access_denied' ? 'The sign-in was cancelled.' : `The app said: ${params.get('error_description') || error}` })
+      try {
+        const { appId } = await finishMcpSignIn(params.get('state') ?? '', params.get('code') ?? '')
+        return back({ signed_in: appId })
+      } catch (err) {
+        return back({ signin_error: err instanceof Error ? err.message : String(err) })
+      }
     }
     // Your own server, by its address: saved once it connects, so a
     // mistyped address or a refused key leaves nothing behind.
@@ -1254,9 +1299,11 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
       const server = ownMcpServer(body)
       if (describeApps().connected.some((c) => c.url === server.url)) return json(400, { error: `${server.url} is already connected.` })
       const key = typeof body.key === 'string' ? body.key.trim() : ''
-      const connectedAbility = await connectAppServer(server, key)
+      const result = await connectAppServer(server, key, consoleBaseUrl(req))
+      // Saved before a sign-in too: the Apps page connects it by its id
+      // once the sign-in comes back.
       saveMcpServer(server)
-      return json(200, { ...describeApps(), connectedAbility })
+      return json(200, { ...describeApps(), ...result })
     }
     if (pathname === '/config/apps/servers' && req.method === 'DELETE') {
       if (!secretsProtected) return json(403, { error: 'Removing a server needs LOOPENGINE_ADMIN_AUTH set first.' })
@@ -1296,13 +1343,17 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
       const ability = new URL(req.url ?? '/', 'http://localhost').searchParams.get('ability') ?? ''
       const found = listWorkspaceAbilities().find((a) => a.name === ability && isAppAbility(a))
       if (!found) return json(400, { error: 'That app isn\'t connected.' })
+      // A sign-in is dropped with the app, so connecting it again signs
+      // in afresh. A key is kept, as it always was.
+      const oauthEnv = describeApps().connected.find((c) => c.ability === found.name)?.oauthEnv
       removeWorkspaceAbility(found.name)
+      if (oauthEnv) await unsetEnvVar(oauthEnv)
       return json(200, describeApps())
     }
     return json(404, { error: 'not found' })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (err instanceof McpAbilityGenerationError || err instanceof WorkspaceAbilityError || err instanceof AppToolsError || err instanceof McpServerInputError) return json(400, { error: message })
+    if (err instanceof McpAbilityGenerationError || err instanceof WorkspaceAbilityError || err instanceof AppToolsError || err instanceof McpServerInputError || err instanceof McpSignInError) return json(400, { error: message })
     if (isMcpAuthError(err)) return json(400, { error: 'The app turned down its saved key; reconnect it with a new one.' })
     console.error('[loopengine] apps failed:', err)
     return json(502, { error: message })

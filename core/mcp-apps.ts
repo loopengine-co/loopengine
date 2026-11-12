@@ -110,6 +110,9 @@ export interface ConnectedApp {
   /** The setting its key is read from, and whether it has a value. */
   keyEnv?: string
   keySet: boolean
+  /** Connected by signing in (OAuth): the setting the sign-in is kept
+   * in. keySet then says whether it's still there. */
+  oauthEnv?: string
   /** Agents that have added it. */
   agents: string[]
   connectedAt: string
@@ -147,6 +150,7 @@ export function connectedApps(workspace: WorkspaceAbility[], agentAbilities: Rec
     } catch {}
     const entry = APP_CATALOG.find((e) => e.url === url || e.id === manifest.generatedFrom?.server)
     const keyEnv = manifest.mcp?.auth?.type === 'key' ? manifest.mcp.auth.env : undefined
+    const oauthEnv = manifest.mcp?.auth?.type === 'oauth' ? manifest.mcp.auth.env : undefined
     return [{
       ...(manifest.generatedFrom?.server ?? entry?.id ? { id: manifest.generatedFrom?.server ?? entry!.id } : {}),
       title: entry?.title || a.description.split(':')[0].replace(/ \(made from its MCP server\)$/, '') || a.name,
@@ -155,7 +159,8 @@ export function connectedApps(workspace: WorkspaceAbility[], agentAbilities: Rec
       spec: a.spec,
       tools,
       ...(keyEnv ? { keyEnv } : {}),
-      keySet: keyEnv ? envValue(keyEnv) !== undefined : true,
+      ...(oauthEnv ? { oauthEnv } : {}),
+      keySet: keyEnv || oauthEnv ? envValue((keyEnv || oauthEnv)!) !== undefined : true,
       agents: Object.entries(agentAbilities).filter(([, names]) => names.includes(a.name)).map(([agent]) => agent),
       connectedAt: a.installedAt,
     }]

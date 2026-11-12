@@ -356,6 +356,7 @@ export { readAbilityDetails, readToolDefinitions, type AbilityDetails } from './
 export { loadMcpAbilityTools, mcpAbilityLoadError, closeMcpConnections, resolveMcpManifest, listMcpServerTools, isMcpAuthError, type McpServerManifest, type McpAuth, type InstalledMcpRecord, type McpToolInfo } from './core/mcp-abilities.js'
 export { searchMcpServers, getMcpServer, savedMcpServers, ownMcpServer, saveMcpServer, removeSavedMcpServer, McpServerInputError, type McpDirectoryServer } from './core/mcp-directory.js'
 export { generateMcpAbility, mcpAbilityNames, McpAbilityGenerationError, type GeneratedMcpAbility, type McpAbilityRequest } from './core/mcp-ability-generator.js'
+export { startMcpSignIn, finishMcpSignIn, mcpSignInSupport, mcpOAuthEnvName, parseMcpOAuthState, saveMcpOAuthState, McpSignInError, type McpOAuthState } from './core/mcp-oauth.js'
 export { abilityDetails } from './web/ability-details-admin.js'
 export { WorkspaceAbilityError, listWorkspaceAbilities, addWorkspaceAbility, removeWorkspaceAbility, workspaceAbilitiesDir, type WorkspaceAbility } from './core/workspace-abilities.js'
 export { installWorkspaceAbility, installUploadedAbility, MAX_UPLOAD_BYTES, type AbilityUpload } from './web/workspace-abilities-admin.js'

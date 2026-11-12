@@ -232,7 +232,10 @@ lp-linear/
 - **`auth`**: `{ "type": "none" }` (the default), or `{ "type": "key",
   "env": "<SETTING>" }`, sent as `Authorization: Bearer <value>`. Set
   `header` (e.g. `"X-Api-Key"`) and `prefix` (`""` for none) to change
-  that. OAuth isn't supported yet.
+  that. Or `{ "type": "oauth", "env": "<SETTING>" }` for a remote server
+  connected by signing in: the Apps page's Connect does the OAuth sign-in
+  (dynamic client registration and PKCE) and keeps it, tokens included,
+  as one JSON setting, refreshed as needed. You don't write this by hand.
 - **`tools`**: the server tools to expose. Nothing else on the server
   is, so a tool the vendor adds later never appears without a new
   version of the ability that lists it (and a rule for it).

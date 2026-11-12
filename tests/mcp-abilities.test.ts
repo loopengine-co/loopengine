@@ -75,8 +75,9 @@ describe('installing an MCP ability', () => {
     await expect(install({ tools: ['echo'] })).rejects.toThrow(AbilityManifestError)
   })
 
-  it('refuses OAuth, which isn\'t supported yet', async () => {
-    await expect(install({ url: 'https://example.com/mcp', auth: { type: 'oauth' }, tools: ['echo'] })).rejects.toThrow(/OAuth/)
+  it('refuses an OAuth sign-in without the setting it\'s kept in, or for a local server', async () => {
+    await expect(install({ url: 'https://example.com/mcp', auth: { type: 'oauth' }, tools: ['echo'] })).rejects.toThrow(/needs 'env'/)
+    await expect(install(stdioMcp(['echo'], { auth: { type: 'oauth', env: 'X_MCP_OAUTH' } }))).rejects.toThrow(/only for a remote server/)
   })
 
   it('refuses a plain-http remote server that isn\'t localhost', async () => {

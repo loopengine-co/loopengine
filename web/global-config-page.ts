@@ -544,6 +544,8 @@ ${consoleShellScript}
   // add it from their Apps tab.
 
   var apps = null;
+  // What happened to a sign-in the browser just came back from.
+  var signInNote = null;
   var appCategory = 'All';
   // Open tool panels, by ability: { tools, filter, error, busy }.
   var openTools = {};
@@ -570,7 +572,7 @@ ${consoleShellScript}
 
   function connectForm(id) {
     return '<form class="app-form" data-connect="' + escapeHtml(id) + '">' +
-      '<input type="password" name="key" autocomplete="off" placeholder="API key, if it needs one" aria-label="API key">' +
+      '<input type="password" name="key" autocomplete="off" placeholder="API key, or leave empty to sign in" aria-label="API key">' +
       '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="app-cancel">Cancel</button></div>' +
       '<p class="hint app-msg" style="margin:0"></p></form>';
   }
@@ -593,13 +595,13 @@ ${consoleShellScript}
           '<label>Name<input name="title" required maxlength="60" placeholder="Acme CRM"></label>' +
           '<label>Address<input name="url" type="url" required placeholder="https://mcp.yourcompany.com/mcp"></label>' +
           '<label>What it does <span class="hint">(optional)</span><input name="description" maxlength="200" placeholder="Our customers, orders and support tickets"></label>' +
-          '<label>API key <span class="hint">(if it needs one; saved in this workspace' + String.fromCharCode(8217) + 's settings)</span><input name="key" type="password" autocomplete="off"></label>' +
+          '<label>API key <span class="hint">(if it needs one; saved in this workspace' + String.fromCharCode(8217) + 's settings. Leave it empty to sign in instead)</span><input name="key" type="password" autocomplete="off"></label>' +
           '<label>Header for the key <span class="hint">(optional; empty sends it as Authorization: Bearer ' + String.fromCharCode(8230) + ')</span><input name="header" placeholder="X-Api-Key" pattern="[A-Za-z0-9-]+"></label>' +
           '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="own-cancel">Cancel</button></div>' +
           '<p class="hint app-msg" style="margin:0"></p></form>'
       : '<button type="button" class="own-add"' + (apps.canConnect ? '' : ' disabled') + '>Add your own server</button>';
     return '<section id="own-servers"><h3>Your own servers</h3>' +
-      '<p class="hint">Your company' + String.fromCharCode(8217) + 's own MCP server, by its address: it connects like any app, and only this workspace sees it. Servers that only offer a sign-in (OAuth) can' + String.fromCharCode(8217) + 't be connected yet.</p>' +
+      '<p class="hint">Your company' + String.fromCharCode(8217) + 's own MCP server, by its address: it connects like any app, and only this workspace sees it. Leave the key empty to sign in to it instead, if it offers a sign-in (OAuth).</p>' +
       (rows ? '<div class="app-list" style="margin-bottom:10px">' + rows + '</div>' : '') + form + '</section>';
   }
 
@@ -614,13 +616,15 @@ ${consoleShellScript}
     var shown = apps.apps.filter(function (a) { return appCategory === 'All' || a.category === appCategory; });
     el.innerHTML =
       (apps.canConnect ? '' : '<p class="error">Connecting an app saves its key on this server, so it needs LOOPENGINE_ADMIN_AUTH set first.</p>') +
+      (signInNote ? '<p class="' + (signInNote.bad ? 'error' : 'hint') + '">' + escapeHtml(signInNote.text) + '</p>' : '') +
       '<section><h3>Connected</h3>' + (apps.connected.length
         ? '<div class="app-list">' + apps.connected.map(function (c) {
             var used = c.agents.length ? 'Used by ' + c.agents.map(escapeHtml).join(', ') : 'Not added to an agent yet: add <code>' + escapeHtml(c.ability) + '</code> from an agent' + String.fromCharCode(8217) + 's Apps tab';
             return '<div class="app-row"><div class="app-head">' + appIcon(findApp(c) || c) + '</div>' +
-              '<div class="app-row-main"><div><strong>' + escapeHtml(c.title) + '</strong> <span class="hint">' + c.tools.length + ' tool' + (c.tools.length === 1 ? '' : 's') + ' &middot; <code>' + escapeHtml(c.ability) + '</code></span></div>' +
+              '<div class="app-row-main"><div><strong>' + escapeHtml(c.title) + '</strong> ' + (c.oauthEnv ? '<span class="badge badge-default">Signed in</span> ' : '') + '<span class="hint">' + c.tools.length + ' tool' + (c.tools.length === 1 ? '' : 's') + ' &middot; <code>' + escapeHtml(c.ability) + '</code></span></div>' +
                 '<div class="hint">' + used + '</div>' +
                 (c.keyEnv && !c.keySet ? '<div class="error" style="font-size:12px">Its key, ' + escapeHtml(c.keyEnv) + ', isn' + String.fromCharCode(8217) + 't set.</div>' : '') +
+                (c.oauthEnv && !c.keySet ? '<div class="error" style="font-size:12px">Its sign-in is gone. Disconnect it and connect it again to sign in.</div>' : '') +
               (openTools[c.ability] ? toolsPanel(c.ability) : '') +
               '</div>' +
               '<div class="app-foot"><button type="button" class="app-tools-btn" data-ability="' + escapeHtml(c.ability) + '">' + (openTools[c.ability] ? 'Hide tools' : 'Tools') + '</button> <button type="button" class="delete-btn app-disconnect" data-ability="' + escapeHtml(c.ability) + '">Disconnect</button></div></div>';
@@ -633,7 +637,7 @@ ${consoleShellScript}
             '<p class="app-desc">' + escapeHtml(a.description) + '</p>' +
             '<div class="app-slot">' + (a.connected ? '<span class="badge badge-custom">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(a.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div></div>';
         }).join('') + '</div>' +
-        '<p class="hint">Each is the app' + String.fromCharCode(8217) + 's own MCP server. Apps that only offer a sign-in (OAuth) can' + String.fromCharCode(8217) + 't be connected yet; their Connect says so.</p>' +
+        '<p class="hint">Each is the app' + String.fromCharCode(8217) + 's own MCP server. Leave the key empty to sign in with your account on the app instead (OAuth): you go to the app, approve LoopEngine, and come back here. A few apps, like GitHub, only take a key.</p>' +
       '</section>' +
       renderOwnServers() +
       '<section><h3>More apps</h3>' +
@@ -731,8 +735,36 @@ ${consoleShellScript}
     loadedSections.apps = true;
     fetch('/config/apps', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
-      .then(function (d) { apps = d; renderApps(); })
+      .then(function (d) { apps = d; renderApps(); finishSignIn(); })
       .catch(function (err) { document.getElementById('appsContent').innerHTML = '<p class="error">Could not load apps: ' + escapeHtml(err.message) + '</p>'; });
+  }
+
+  // Back from an app's sign-in page (/config/apps/oauth/callback sends
+  // the browser here): connect the app with the sign-in just saved.
+  function finishSignIn() {
+    var params = new URLSearchParams(location.search);
+    var id = params.get('signed_in');
+    var error = params.get('signin_error');
+    if (!id && !error) return;
+    params.delete('signed_in');
+    params.delete('signin_error');
+    history.replaceState(null, '', location.pathname + '?' + params.toString());
+    if (error) { signInNote = { text: 'Not connected: ' + error, bad: true }; renderApps(); return; }
+    var title = id;
+    (apps.apps || []).concat(apps.saved || []).forEach(function (a) { if (a.id === id) title = a.title; });
+    signInNote = { text: 'Signed in to ' + title + '. Connecting it' + String.fromCharCode(8230) + ' it looks at the app' + String.fromCharCode(8217) + 's tools and sets their permissions, which can take a minute.' };
+    renderApps();
+    fetch('/config/apps/connect', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: id, key: '' }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'request failed');
+        if (r.body.signIn) { location.href = r.body.signIn; return; }
+        apps = r.body;
+        signInNote = { text: 'Connected ' + title + '. Choose what agents may do with it below, then add it to an agent from its Apps tab.' };
+        if (r.body.connectedAbility) loadTools(r.body.connectedAbility, false);
+        else renderApps();
+      })
+      .catch(function (err) { signInNote = { text: 'Signed in, but ' + title + ' didn' + String.fromCharCode(8217) + 't connect: ' + err.message, bad: true }; renderApps(); });
   }
 
   document.getElementById('appsContent').addEventListener('click', function (ev) {
@@ -825,6 +857,7 @@ ${consoleShellScript}
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
         .then(function (r) {
           if (!r.ok) throw new Error(r.body.error || 'request failed');
+          if (r.body.signIn) { ownMsg.textContent = 'Taking you to the server' + String.fromCharCode(8217) + 's sign-in' + String.fromCharCode(8230); location.href = r.body.signIn; return; }
           apps = r.body;
           ownForm.open = false;
           if (r.body.connectedAbility) loadTools(r.body.connectedAbility, false);
@@ -847,6 +880,9 @@ ${consoleShellScript}
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (r) {
         if (!r.ok) throw new Error(r.body.error || 'request failed');
+        // No key and the app offers a sign-in: off to it; it comes back
+        // here to finish (finishSignIn).
+        if (r.body.signIn) { msg.textContent = 'Taking you to the app to sign in' + String.fromCharCode(8230); location.href = r.body.signIn; return; }
         apps = r.body;
         // Straight to its tools, to choose what agents may use.
         if (r.body.connectedAbility) loadTools(r.body.connectedAbility, false);
