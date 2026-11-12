@@ -1160,14 +1160,20 @@ function describeApps(): { apps: ReturnType<typeof appCatalog>; connected: Retur
  * A server that needs a sign-in it doesn't have yet isn't connected:
  * the result is then the address of its sign-in page, which sends the
  * browser back to /config/apps/oauth/callback (under `consoleBase`). */
-async function connectAppServer(server: McpDirectoryServer, key: string, consoleBase?: string): Promise<{ connectedAbility: string } | { signIn: string }> {
+async function connectAppServer(server: McpDirectoryServer, key: string, consoleBase?: string, method?: 'signin'): Promise<{ connectedAbility: string } | { signIn: string }> {
+  const oauthEnv = mcpOAuthEnvName(mcpAbilityNames(server).prefix)
+  // Sign in, chosen: straight to the app's sign-in page, afresh.
+  if (method === 'signin') {
+    if (!consoleBase) throw new McpSignInError('Signing in needs the console\'s address.')
+    if (process.env[oauthEnv] !== undefined) await unsetEnvVar(oauthEnv)
+    return { signIn: await appSignInUrl(server, oauthEnv, consoleBase) }
+  }
   let picked: ReturnType<typeof pickInterviewModel>
   try {
     picked = pickInterviewModel(interviewAgents())
   } catch {
     picked = undefined
   }
-  const oauthEnv = mcpOAuthEnvName(mcpAbilityNames(server).prefix)
   const signedIn = !key && process.env[oauthEnv] !== undefined
   let generated: Awaited<ReturnType<typeof generateMcpAbility>>
   try {
@@ -1182,14 +1188,7 @@ async function connectAppServer(server: McpDirectoryServer, key: string, console
     // No key: sign in instead, when the app offers a sign-in. A saved
     // sign-in it turned down is dropped first.
     if (signedIn) await unsetEnvVar(oauthEnv)
-    const support = await mcpSignInSupport(server.url)
-    if (!support.ok) {
-      throw new McpAbilityGenerationError(support.reason === 'no-registration'
-        ? `${server.title} needs an API key: its sign-in only works for apps registered with ${server.title} by hand.`
-        : `${server.title} needs an API key to connect. Add it and try again.`)
-    }
-    const { authorizeUrl } = await startMcpSignIn({ serverUrl: server.url, envName: oauthEnv, appId: server.id, appTitle: server.title, redirectUrl: `${consoleBase}/config/apps/oauth/callback`, discovery: support.discovery })
-    return { signIn: authorizeUrl }
+    return { signIn: await appSignInUrl(server, oauthEnv, consoleBase) }
   }
   try {
     addWorkspaceAbility(generated.dir, `mcp:${server.url}`)
@@ -1198,6 +1197,37 @@ async function connectAppServer(server: McpDirectoryServer, key: string, console
   }
   if (key && generated.keyEnv) await setEnvVar(generated.keyEnv, key)
   return { connectedAbility: generated.name }
+}
+
+/** The address of an app's sign-in page, for a sign-in that comes back
+ * to /config/apps/oauth/callback. */
+async function appSignInUrl(server: McpDirectoryServer, oauthEnv: string, consoleBase: string): Promise<string> {
+  const support = await mcpSignInSupport(server.url)
+  if (!support.ok) {
+    throw new McpAbilityGenerationError(support.reason === 'no-registration'
+      ? `${server.title} needs an API key: its sign-in only works for apps registered with ${server.title} by hand.`
+      : `${server.title} doesn't offer a sign-in. Connect it with an API key.`)
+  }
+  const { authorizeUrl } = await startMcpSignIn({ serverUrl: server.url, envName: oauthEnv, appId: server.id, appTitle: server.title, redirectUrl: `${consoleBase}/config/apps/oauth/callback`, discovery: support.discovery })
+  return authorizeUrl
+}
+
+/** How an app connects, so the Apps page offers only what works: a
+ * sign-in (OAuth), and whether it connects with no key at all. Anything
+ * else takes an API key. */
+async function appConnectOptions(server: McpDirectoryServer): Promise<{ signIn: boolean; open: boolean }> {
+  const within = <T>(p: Promise<T>, fallback: T) => Promise.race([p.catch(() => fallback), new Promise<T>((resolve) => setTimeout(() => resolve(fallback), 12_000))])
+  const [support, open] = await Promise.all([
+    within(mcpSignInSupport(server.url), { ok: false as const, reason: 'none' as const }),
+    within(
+      listMcpServerTools(
+        { url: server.url, ...(server.headers ? { headers: server.headers } : {}), ...(server.transport === 'sse' ? { transport: 'sse' as const } : {}), auth: { type: 'none' } },
+        { get: () => undefined, require: (n) => { throw new Error(`${n} is not set`) } },
+      ).then((tools) => tools.length > 0),
+      false,
+    ),
+  ])
+  return { signIn: support.ok, open }
 }
 
 /** Where an app's sign-in sends the browser back to: this console, as
@@ -1259,6 +1289,14 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
       await Promise.race([loadAppIcons(), new Promise((resolve) => setTimeout(resolve, 2500))])
       return json(200, describeApps())
     }
+    // How an app connects (sign-in, no key, or a key), asked when its
+    // Connect is clicked.
+    if (pathname === '/config/apps/connect-options' && req.method === 'GET') {
+      const id = new URL(req.url ?? '/', 'http://localhost').searchParams.get('id') ?? ''
+      const server = id ? await appServer(id) : undefined
+      if (!server) return json(400, { error: 'No such app.' })
+      return json(200, { title: server.title, ...(await appConnectOptions(server)) })
+    }
     if (pathname === '/config/apps/search' && req.method === 'GET') {
       const q = new URL(req.url ?? '/', 'http://localhost').searchParams.get('q')?.trim() ?? ''
       if (q.length < 2) return json(400, { error: 'Type at least two letters.' })
@@ -1271,7 +1309,7 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
       const key = typeof body.key === 'string' ? body.key.trim() : ''
       const server = id ? await appServer(id) : undefined
       if (!server) return json(400, { error: 'No such app.' })
-      const result = await connectAppServer(server, key, consoleBaseUrl(req))
+      const result = await connectAppServer(server, key, body.method === 'none' ? undefined : consoleBaseUrl(req), body.method === 'signin' ? 'signin' : undefined)
       return json(200, { ...describeApps(), ...result })
     }
     // Back from an app's sign-in page: save the sign-in, then return to
@@ -1298,8 +1336,9 @@ async function handleApps(req: IncomingMessage, res: ServerResponse, pathname: s
       const body = await readJsonBody(req)
       const server = ownMcpServer(body)
       if (describeApps().connected.some((c) => c.url === server.url)) return json(400, { error: `${server.url} is already connected.` })
-      const key = typeof body.key === 'string' ? body.key.trim() : ''
-      const result = await connectAppServer(server, key, consoleBaseUrl(req))
+      const key = body.method === 'key' && typeof body.key === 'string' ? body.key.trim() : ''
+      if (body.method === 'key' && !key) return json(400, { error: 'Paste the API key, or choose another way it connects.' })
+      const result = await connectAppServer(server, key, body.method === 'none' ? undefined : consoleBaseUrl(req), body.method === 'signin' ? 'signin' : undefined)
       // Saved before a sign-in too: the Apps page connects it by its id
       // once the sign-in comes back.
       saveMcpServer(server)

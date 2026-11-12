@@ -88,6 +88,12 @@ export const globalConfigPageHtml: string = `<!doctype html>
   .app-desc { font-size: 12.5px; color: var(--ink-muted); margin: 0; }
   .app-foot { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .app-form { display: grid; gap: 6px; }
+  /* A quieter second way to connect, under the main one. */
+  button.app-link { background: none; border: 0; padding: 2px 0; color: var(--accent-ink); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+  button.app-link:hover:not(:disabled) { background: none; }
+  .app-how { display: flex; gap: 14px; flex-wrap: wrap; border: 0; margin: 0; padding: 0; }
+  .app-how label { display: inline-flex; gap: 6px; align-items: center; font-weight: 500; white-space: nowrap; }
+  .app-form .app-how input { width: auto; margin: 0; }
   .app-form input { font: inherit; font-size: 12px; font-family: ui-monospace, monospace; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; box-sizing: border-box; }
   .app-row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid var(--line); }
   .app-row:first-child { border-top: 0; }
@@ -551,7 +557,7 @@ ${consoleShellScript}
   var openTools = {};
   var appSearch = { q: '', servers: null, error: '' };
   // The "Add your own server" form: open, and what's typed in it.
-  var ownForm = { open: false };
+  var ownForm = { open: false, method: 'signin' };
 
   function appLetter(title) {
     return '<span class="app-letter" aria-hidden="true">' + escapeHtml((title || '?').charAt(0).toUpperCase()) + '</span>';
@@ -570,11 +576,58 @@ ${consoleShellScript}
     img.replaceWith(holder.firstChild);
   }, true);
 
-  function connectForm(id) {
-    return '<form class="app-form" data-connect="' + escapeHtml(id) + '">' +
-      '<input type="password" name="key" autocomplete="off" placeholder="API key, or leave empty to sign in" aria-label="API key">' +
-      '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="app-cancel">Cancel</button></div>' +
+  // How each app connects, once asked (/config/apps/connect-options):
+  // { title, signIn, open }. Connect then offers what works: signing in
+  // first when the app has a sign-in, else a plain Connect when it needs
+  // nothing, else a key; the other ways stay one click away.
+  var connectOpts = {};
+
+  function connectPanel(id, mode) {
+    var o = connectOpts[id];
+    var title = escapeHtml(o.title);
+    mode = mode || (o.signIn ? 'signin' : o.open ? 'open' : 'key');
+    var others = [];
+    if (mode !== 'signin' && o.signIn) others.push('<button type="button" class="app-link app-mode" data-id="' + escapeHtml(id) + '" data-mode="signin">Sign in instead</button>');
+    if (mode !== 'key') others.push('<button type="button" class="app-link app-mode" data-id="' + escapeHtml(id) + '" data-mode="key">' + (mode === 'open' ? 'Add an API key' : 'Use an API key instead') + '</button>');
+    if (mode !== 'open' && o.open) others.push('<button type="button" class="app-link app-mode" data-id="' + escapeHtml(id) + '" data-mode="open">Connect without a key</button>');
+    var main = mode === 'signin'
+      ? '<button type="button" class="primary app-signin" data-id="' + escapeHtml(id) + '">Sign in with ' + title + '</button>' +
+        '<p class="hint" style="margin:0">You approve LoopEngine on ' + title + String.fromCharCode(8217) + 's site, then come back here.</p>'
+      : mode === 'open'
+        ? '<button type="button" class="primary app-open" data-id="' + escapeHtml(id) + '">Connect</button>' +
+          '<p class="hint" style="margin:0">' + title + ' needs no key or sign-in.</p>'
+        : '<input type="password" name="key" autocomplete="off" placeholder="' + title + ' API key" aria-label="' + title + ' API key" required>' +
+          '<div class="app-foot"><button type="submit">Connect</button></div>' +
+          '<p class="hint" style="margin:0">Saved in this workspace' + String.fromCharCode(8217) + 's settings.</p>';
+    return '<form class="app-form" data-connect="' + escapeHtml(id) + '">' + main +
+      '<div class="app-foot">' + others.join(' ') + ' <button type="button" class="app-link app-cancel">Cancel</button></div>' +
       '<p class="hint app-msg" style="margin:0"></p></form>';
+  }
+
+  // Connects the app one way (method: signin or none); a sign-in goes
+  // off to the app's own page and comes back (finishSignIn).
+  function connectWith(id, method, el) {
+    var form = el.closest('form');
+    var msg = form.querySelector('.app-msg');
+    form.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    msg.className = 'hint app-msg';
+    msg.textContent = method === 'signin'
+      ? 'Taking you to ' + connectOpts[id].title + ' to sign in' + String.fromCharCode(8230)
+      : 'Connecting' + String.fromCharCode(8230) + ' it looks at the app' + String.fromCharCode(8217) + 's tools and sets their permissions, which can take a minute.';
+    fetch('/config/apps/connect', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: id, method: method }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'request failed');
+        if (r.body.signIn) { location.href = r.body.signIn; return; }
+        apps = r.body;
+        if (r.body.connectedAbility) loadTools(r.body.connectedAbility, false);
+        else renderApps();
+      })
+      .catch(function (err) {
+        form.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+        msg.className = 'error app-msg';
+        msg.textContent = err.message;
+      });
   }
 
   // Your company's own servers (mcp-servers.yml): each connects like any
@@ -595,13 +648,21 @@ ${consoleShellScript}
           '<label>Name<input name="title" required maxlength="60" placeholder="Acme CRM"></label>' +
           '<label>Address<input name="url" type="url" required placeholder="https://mcp.yourcompany.com/mcp"></label>' +
           '<label>What it does <span class="hint">(optional)</span><input name="description" maxlength="200" placeholder="Our customers, orders and support tickets"></label>' +
-          '<label>API key <span class="hint">(if it needs one; saved in this workspace' + String.fromCharCode(8217) + 's settings. Leave it empty to sign in instead)</span><input name="key" type="password" autocomplete="off"></label>' +
-          '<label>Header for the key <span class="hint">(optional; empty sends it as Authorization: Bearer ' + String.fromCharCode(8230) + ')</span><input name="header" placeholder="X-Api-Key" pattern="[A-Za-z0-9-]+"></label>' +
+          '<fieldset class="app-how"><legend class="hint" style="padding:0 0 4px">How it connects</legend>' +
+            [['signin', 'Sign in'], ['key', 'API key'], ['none', 'Nothing needed']].map(function (m) {
+              return '<label><input type="radio" name="method" value="' + m[0] + '"' + (ownForm.method === m[0] ? ' checked' : '') + '> ' + m[1] + '</label>';
+            }).join('') + '</fieldset>' +
+          (ownForm.method === 'key'
+            ? '<label>API key <span class="hint">(saved in this workspace' + String.fromCharCode(8217) + 's settings)</span><input name="key" type="password" autocomplete="off" required></label>' +
+              '<label>Header for the key <span class="hint">(optional; empty sends it as Authorization: Bearer ' + String.fromCharCode(8230) + ')</span><input name="header" placeholder="X-Api-Key" pattern="[A-Za-z0-9-]+"></label>'
+            : ownForm.method === 'signin'
+              ? '<p class="hint" style="margin:0">You sign in on the server' + String.fromCharCode(8217) + 's own page (OAuth) and come back here.</p>'
+              : '') +
           '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="own-cancel">Cancel</button></div>' +
           '<p class="hint app-msg" style="margin:0"></p></form>'
       : '<button type="button" class="own-add"' + (apps.canConnect ? '' : ' disabled') + '>Add your own server</button>';
     return '<section id="own-servers"><h3>Your own servers</h3>' +
-      '<p class="hint">Your company' + String.fromCharCode(8217) + 's own MCP server, by its address: it connects like any app, and only this workspace sees it. Leave the key empty to sign in to it instead, if it offers a sign-in (OAuth).</p>' +
+      '<p class="hint">Your company' + String.fromCharCode(8217) + 's own MCP server, by its address: it connects like any app, and only this workspace sees it. It can take a sign-in (OAuth), an API key, or nothing.</p>' +
       (rows ? '<div class="app-list" style="margin-bottom:10px">' + rows + '</div>' : '') + form + '</section>';
   }
 
@@ -637,7 +698,7 @@ ${consoleShellScript}
             '<p class="app-desc">' + escapeHtml(a.description) + '</p>' +
             '<div class="app-slot">' + (a.connected ? '<span class="badge badge-custom">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(a.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div></div>';
         }).join('') + '</div>' +
-        '<p class="hint">Each is the app' + String.fromCharCode(8217) + 's own MCP server. Leave the key empty to sign in with your account on the app instead (OAuth): you go to the app, approve LoopEngine, and come back here. A few apps, like GitHub, only take a key.</p>' +
+        '<p class="hint">Each is the app' + String.fromCharCode(8217) + 's own MCP server. Connect shows the ways it takes: signing in with your account on the app (OAuth), or an API key.</p>' +
       '</section>' +
       renderOwnServers() +
       '<section><h3>More apps</h3>' +
@@ -778,10 +839,34 @@ ${consoleShellScript}
     }
     if (t.classList.contains('app-connect')) {
       var slot = t.parentNode;
-      slot.innerHTML = connectForm(t.dataset.id);
-      slot.querySelector('input').focus();
+      var cid = t.dataset.id;
+      var show = function (mode) {
+        slot.innerHTML = connectPanel(cid, mode);
+        var first = slot.querySelector('input, button.primary');
+        if (first) first.focus();
+      };
+      if (connectOpts[cid]) { show(); return; }
+      slot.innerHTML = '<p class="hint" style="margin:0">Checking how it connects' + String.fromCharCode(8230) + '</p>';
+      fetch('/config/apps/connect-options?id=' + encodeURIComponent(cid), { cache: 'no-store' })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.body.error || 'request failed');
+          connectOpts[cid] = r.body;
+          show();
+        })
+        // Unknown: offer a key, with signing in as the other way.
+        .catch(function () { connectOpts[cid] = { title: cid, signIn: true, open: false }; show('key'); });
       return;
     }
+    if (t.classList.contains('app-mode')) {
+      var holder = t.closest('.app-slot');
+      holder.innerHTML = connectPanel(t.dataset.id, t.dataset.mode);
+      var focus = holder.querySelector('input, button.primary');
+      if (focus) focus.focus();
+      return;
+    }
+    if (t.classList.contains('app-signin')) { connectWith(t.dataset.id, 'signin', t); return; }
+    if (t.classList.contains('app-open')) { connectWith(t.dataset.id, 'none', t); return; }
     if (t.classList.contains('app-cancel')) { renderApps(); return; }
     if (t.classList.contains('own-add')) {
       ownForm.open = true;
@@ -819,6 +904,18 @@ ${consoleShellScript}
 
   document.getElementById('appsContent').addEventListener('change', function (ev) {
     var t = ev.target;
+    if (t.name === 'method' && t.closest('#ownServerForm')) {
+      // Keep what's typed while the fields for the chosen way appear.
+      var f = t.closest('form');
+      ownForm.values = { title: ownField(f, 'title'), url: ownField(f, 'url'), description: ownField(f, 'description') };
+      ownForm.method = t.value;
+      renderApps();
+      var again = document.getElementById('ownServerForm');
+      ['title', 'url', 'description'].forEach(function (n) { again.querySelector('[name=' + n + ']').value = ownForm.values[n] || ''; });
+      var keyInput = again.querySelector('[name=key]');
+      if (keyInput) keyInput.focus();
+      return;
+    }
     if (t.classList.contains('app-decision')) setDefault(t.dataset.ability, t.dataset.tool, t.value);
   });
   document.getElementById('appsContent').addEventListener('input', function (ev) {
@@ -853,7 +950,7 @@ ${consoleShellScript}
       ownBtn.disabled = true;
       ownMsg.className = 'hint app-msg';
       ownMsg.textContent = 'Connecting' + String.fromCharCode(8230) + ' it asks the server for its tools and sets their permissions, which can take a minute.';
-      fetch('/config/apps/servers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: ownField(form, 'title'), url: ownField(form, 'url'), description: ownField(form, 'description'), key: ownField(form, 'key'), header: ownField(form, 'header') }) })
+      fetch('/config/apps/servers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: ownField(form, 'title'), url: ownField(form, 'url'), description: ownField(form, 'description'), method: ownForm.method, key: ownForm.method === 'key' ? ownField(form, 'key') : '', header: ownForm.method === 'key' ? ownField(form, 'header') : '' }) })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
         .then(function (r) {
           if (!r.ok) throw new Error(r.body.error || 'request failed');
@@ -876,6 +973,7 @@ ${consoleShellScript}
     btn.disabled = true;
     msg.className = 'hint app-msg';
     msg.textContent = 'Connecting' + String.fromCharCode(8230) + ' it looks at the app' + String.fromCharCode(8217) + 's tools and sets their permissions, which can take a minute.';
+    if (!form.key) return;
     fetch('/config/apps/connect', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: form.dataset.connect, key: form.key.value }) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (r) {
