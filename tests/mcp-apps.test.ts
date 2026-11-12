@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { APP_CATALOG, appCatalog, appServer, connectedApps } from '../core/mcp-apps.js'
+import { APP_CATALOG, appCatalog, appServer, connectedApps, pageIcons } from '../core/mcp-apps.js'
 import type { WorkspaceAbility } from '../core/workspace-abilities.js'
 
 function linearAbility(): WorkspaceAbility {
@@ -46,5 +46,22 @@ describe('Apps', () => {
     expect(APP_CATALOG.every((a) => a.url.startsWith('https://'))).toBe(true)
     expect(await appServer('com.stripe/mcp')).toMatchObject({ title: 'Stripe', url: 'https://mcp.stripe.com', verified: true })
     expect(await appServer('io.github.firecrawl/firecrawl-mcp-server')).toMatchObject({ title: 'Firecrawl', url: 'https://mcp.firecrawl.dev/v2/mcp' })
+  })
+})
+
+describe('app icons', () => {
+  it('reads the icons a home page declares, largest first, resolved against the page', () => {
+    const html = `<head>
+      <link rel="stylesheet" href="/site.css">
+      <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+      <link rel='apple-touch-icon' href='https://cdn.example.com/touch.png'>
+      <link rel="mask-icon" href="/pinned.svg">
+      <link href="/favicon.svg?v=2&amp;x=1" rel="shortcut icon">
+    </head>`
+    expect(pageIcons(html, 'https://www.example.com/en/')).toEqual([
+      'https://www.example.com/favicon.svg?v=2&x=1',
+      'https://cdn.example.com/touch.png',
+      'https://www.example.com/favicon-32x32.png',
+    ])
   })
 })

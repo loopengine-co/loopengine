@@ -781,7 +781,7 @@ ${consoleShellScript}
 
   function renderAppSearch() {
     if (appSearch.error) return '<p class="error">' + escapeHtml(appSearch.error) + '</p>';
-    if (!appSearch.servers) return '<p class="hint">Over a thousand apps publish an MCP server. Verified means it' + String.fromCharCode(8217) + 's on its publisher' + String.fromCharCode(8217) + 's own domain; only add a key to one you trust.</p>';
+    if (!appSearch.servers) return '<p class="hint">Thousands of apps publish an MCP server. Verified means it' + String.fromCharCode(8217) + 's on its publisher' + String.fromCharCode(8217) + 's own domain; only add a key to one you trust.</p>';
     if (!appSearch.servers.length) return '<p class="hint">Nothing found for ' + escapeHtml(appSearch.q) + '.</p>';
     return '<div class="app-list">' + appSearch.servers.map(function (s) {
       var connected = apps.connected.some(function (c) { return c.url === s.url; });
