@@ -44,8 +44,9 @@ export interface SourceAbility {
 
 export interface AbilityOrigin {
   /** official: under LoopEngine's @loopengine-co scope; public: any
-   * other npm package (an older lp-* one, say). */
-  kind: 'official' | 'public' | 'private'
+   * other npm package (an older lp-* one, say); app: made from a
+   * connected app's MCP server (the Apps page). */
+  kind: 'official' | 'public' | 'private' | 'app'
   /** Where it came from, for the console's badge: "npm", "GitHub
    * loopengine-co/lp-github", "Folder ../loopengine-abilities", ... */
   label: string
@@ -263,6 +264,7 @@ export function abilityOrigin(spec: string | undefined, name: string, sources: A
     const copy = workspaceAbilityAt(path)
     if (copy) {
       if (copy.source.startsWith('upload:')) return { kind: 'private', label: 'Workspace (uploaded)' }
+      if (copy.source.startsWith('mcp:')) return { kind: 'app', label: appTitle(path, copy.source.slice(4)) }
       const from = copy.source.startsWith('file:') ? undefined : abilityOrigin(copy.source, copy.name, sources)
       return { kind: 'private', label: from && from.kind === 'private' ? `Workspace (${from.label})` : 'Workspace' }
     }
@@ -276,6 +278,21 @@ export function abilityOrigin(spec: string | undefined, name: string, sources: A
   const npmSource = scope ? sources.find((s) => s.type === 'npm' && s.scope === scope) : undefined
   if (npmSource) return { kind: 'private', label: describeSource(npmSource) }
   return { kind: target.toLowerCase().startsWith('@loopengine-co/') ? 'official' : 'public', label: 'npm' }
+}
+
+/** A connected app's name, from its package's description ("Firecrawl:
+ * Search the web… (made from its MCP server)"), else its server's host. */
+function appTitle(dir: string, url: string): string {
+  try {
+    const description = (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { description?: string }).description ?? ''
+    const title = description.split(':')[0].replace(/ \(made from its MCP server\)$/, '').trim()
+    if (title) return title
+  } catch {}
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
 }
 
 function safeReadSources(): AbilitySource[] {

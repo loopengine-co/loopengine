@@ -2295,11 +2295,12 @@ async function handleAbilitiesGet(res: ServerResponse, agentName: string): Promi
       // otherwise permanently hide "Install deps" for an ability that
       // genuinely still needs something.
       const dependencies = a.dependencies !== undefined ? a.dependencies : ((await backfillDependencies(agentName, a.name)) ?? [])
-      // Public or private, for the console's badge. Only a public one is
-      // checked against npm for a newer version: a private ability could
-      // share its name with an unrelated public package.
+      // Official, public, private or an app, for the console's badge.
+      // Only an npm one is checked against npm for a newer version: a
+      // private ability or an app could share its name with an unrelated
+      // public package.
       const origin = abilityOrigin(a.spec, a.name, sources)
-      const latestVersion = origin.kind !== 'private' ? await fetchLatestAbilityVersion(a.name) : null
+      const latestVersion = origin.kind === 'official' || origin.kind === 'public' ? await fetchLatestAbilityVersion(a.name) : null
       const missingDependencies = dependencies.filter((dep) => !hasNodeModule(dep))
       return { ...a, origin, dependencies, latestVersion, upToDate: latestVersion !== null && latestVersion === a.version, missingDependencies }
     }),

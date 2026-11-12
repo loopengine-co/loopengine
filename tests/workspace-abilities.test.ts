@@ -48,6 +48,18 @@ describe('the workspace abilities', () => {
     expect(JSON.parse(readFileSync(join(workspace, 'workspace.json'), 'utf8'))['lp-github'].source).toBe('github:loopengine-co/lp-github')
   })
 
+  it('labels a connected app by its name, not as a private workspace ability', () => {
+    const pkg = fetched('mcp-firecrawl', '1.0.0')
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'mcp-firecrawl', version: '1.0.0', description: 'Firecrawl: Search the web and read pages. (made from its MCP server)' }))
+    const added = addWorkspaceAbility(pkg, 'mcp:https://mcp.firecrawl.dev/v2/mcp')
+    expect(abilityOrigin(added.spec, added.name, [])).toEqual({ kind: 'app', label: 'Firecrawl' })
+
+    const bare = fetched('mcp-acme', '1.0.0')
+    writeFileSync(join(bare, 'package.json'), JSON.stringify({ name: 'mcp-acme', version: '1.0.0' }))
+    const acme = addWorkspaceAbility(bare, 'mcp:https://mcp.acme.example/mcp')
+    expect(abilityOrigin(acme.spec, acme.name, [])).toEqual({ kind: 'app', label: 'mcp.acme.example' })
+  })
+
   it('replaces an earlier copy of the same ability, leaving no stale files', () => {
     addWorkspaceAbility(fetched('lp-github', '1.0.0', { 'tools/old.ts': 'old' }), 'github:loopengine-co/lp-github')
     addWorkspaceAbility(fetched('lp-github', '1.1.0', { 'tools/new.ts': 'new' }), 'github:loopengine-co/lp-github')

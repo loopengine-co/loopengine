@@ -383,12 +383,13 @@ export const consoleShellScript: string = `<script>
     return decision ? '<span class="le-pill ' + decision + '">' + DECISION_LABELS[decision] + '</span>' : '<span class="hint">No rule</span>';
   }
 
-  // Official (@loopengine-co), Public (other npm) or Private, with where
-  // it came from on hover.
+  // Official (@loopengine-co), Public (other npm), Private or App (a
+  // connected app's MCP server), with where it came from on hover.
+  var ORIGIN_LABELS = { official: 'Official', public: 'Public', private: 'Private', app: 'App' };
   function abilityOriginBadge(origin) {
     if (!origin) return '';
-    return '<span class="le-pill ' + (origin.kind === 'private' ? 'accent' : '') + '" title="' + esc(origin.label) + '">' +
-      (origin.kind === 'private' ? 'Private' : origin.kind === 'official' ? 'Official' : 'Public') + '</span> <span class="hint">' + esc(origin.label) + '</span>';
+    return '<span class="le-pill ' + (origin.kind === 'private' || origin.kind === 'app' ? 'accent' : '') + '" title="' + esc(origin.label) + '">' +
+      (ORIGIN_LABELS[origin.kind] || 'Public') + '</span> <span class="hint">' + esc(origin.label) + '</span>';
   }
 
 
