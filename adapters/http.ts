@@ -1463,7 +1463,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
         },
         abilityDetails: async (spec) => {
           const d = await abilityDetails(spec)
-          return { name: d.name, tools: d.tools.map((t) => ({ name: t.name, description: t.description.slice(0, 300), decision: t.decision ?? null })), settings: d.settings.map((x) => x.name) }
+          return { name: d.name, tools: d.tools.map((t) => ({ name: t.name, description: t.description.slice(0, 300), decision: t.decision ?? null })), settings: d.settings.map((x) => (x.description ? { name: x.name, description: x.description.slice(0, 200) } : { name: x.name })) }
         },
         listConnections: () => base.listConnections(),
         searchMcpServers: async (query) => (await searchMcpServers(query)).map((s) => ({ id: s.id, title: s.title, description: s.description, url: s.url, official: Boolean(s.official), verified: s.verified, source: s.source })),
