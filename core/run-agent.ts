@@ -21,6 +21,7 @@ import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
 import { loadGatewayToolsFromDir } from './gateway-tools.js'
 import { loadMcpAbilityTools } from './mcp-abilities.js'
+import { skillsForResult, skillsInHistory, toolSkillsFor, type ToolSkills } from './ability-skills.js'
 import { systemTools, createAskUserTool, createScheduleTools, CliQuestionHandler, isDurableQuestionHandler, type PendingQuestion } from './system-tools/index.js'
 import { resolveHttpNotifier } from './http-notifier.js'
 import type { LoopEvent } from './loop-events.js'
@@ -552,6 +553,8 @@ interface TurnContext {
   scope: Scope
   sessionId: string | undefined
   skillGarden: SkillGarden
+  toolSkills: ToolSkills
+  skillText: (name: string) => string | undefined
   toolsByName: Map<string, ToolDefinition>
   systemToolInstances: Set<ToolDefinition>
   toolSchemas: ToolSchema[]
@@ -655,6 +658,16 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // enough room for a handful of skills before truncating the index.
   const skillGarden = new SkillGarden({ dirs: [...skillsDirs, systemSkillsDir], indexBudgetTokens: config.skillIndexBudgetTokens ?? 2000 })
   const skillIndex = skillGarden.buildIndex().included
+  // Abilities' skills, attached to their tools' first results (see
+  // ability-skills.ts).
+  const skillText = (name: string): string | undefined => {
+    try {
+      return skillGarden.load(name).body
+    } catch {
+      return undefined
+    }
+  }
+  const toolSkills = toolSkillsFor(agentDirFor(config), skillText)
 
   // Also the tail-preservation window recover() below relies on — kept as
   // one named constant so the two can never drift out of sync.
@@ -780,6 +793,8 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     scope,
     sessionId: options.sessionId,
     skillGarden,
+    toolSkills,
+    skillText,
     toolsByName,
     systemToolInstances,
     toolSchemas,
@@ -812,7 +827,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
  * fresh in each case) but mutated here via pushMessage, same as the
  * single function this was split out of always did. */
 async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
-  const { modelCall, log, scope, sessionId, skillGarden, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel } = ctx
+  const { modelCall, log, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel } = ctx
 
   function pushMessage(message: Message): void {
     messages.push(message)
@@ -825,6 +840,9 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
   // toollane:result events come in below. One map for the whole run, not
   // re-derived every turn.
   const knownUrlsByBase = collectKnownUrls(messages)
+  // Skills the conversation already has, so an ability's skill is
+  // attached to its tools' first result once (ability-skills.ts).
+  const seenSkills = skillsInHistory(messages)
 
   const recovery = new Recovery<Message[]>({
     onPromptTooLong: async (currentMessages) => {
@@ -979,6 +997,7 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
           : undefined
         const body = skillGarden.invoke(block.input!.skill as string, block.input?.args as string | undefined, params)
         log({ type: 'skill:loaded', skill: block.input!.skill as string })
+        seenSkills.add(block.input!.skill as string)
         resultBlocks.push({ type: 'tool_result', tool_use_id: block.id!, content: body })
         continue
       }
@@ -1149,10 +1168,12 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
         // see known-urls.ts's own doc comment. Harmless no-op for a
         // non-JSON/error summary.
         recordKnownUrlsFromResult(summary, knownUrlsByBase)
+        const skills = result.status === 'fulfilled' ? skillsForResult(result.name, toolSkills, seenSkills, skillText) : { text: '', attached: [] }
+        for (const skill of skills.attached) log({ type: 'skill:loaded', skill })
         resultBlocks.push({
           type: 'tool_result',
           tool_use_id: result.id,
-          content: summary,
+          content: summary + skills.text,
           is_error: result.status === 'rejected',
           reason: meta?.reason,
         })
