@@ -56,7 +56,6 @@ export const APP_CATALOG: AppCatalogEntry[] = [
   { id: 'com.klaviyo/mcp', site: 'klaviyo.com', title: 'Klaviyo', url: 'https://mcp.klaviyo.com/mcp', category: 'Marketing', description: 'Profiles, lists, campaigns, flows and metrics.' },
   { id: 'com.beehiiv/beehiiv', site: 'beehiiv.com', title: 'beehiiv', url: 'https://mcp.beehiiv.com/mcp', category: 'Marketing', description: 'Newsletter posts, subscribers and stats.' },
   { id: 'com.ahrefs/mcp', site: 'ahrefs.com', title: 'Ahrefs', url: 'https://api.ahrefs.com/mcp/mcp', category: 'Marketing', description: 'SEO: keywords, backlinks, rankings and site audits.' },
-  { id: 'ai.redditgrow/mcp', site: 'redditgrow.ai', title: 'RedditGrow', url: 'https://redditgrow.ai/mcp', category: 'Marketing', description: 'Reddit posts worth replying to, drafted replies, brand mentions and DMs (not made by Reddit).' },
   { id: 'com.notion/mcp', site: 'notion.com', title: 'Notion', url: 'https://mcp.notion.com/mcp', category: 'Docs', description: 'Search, read and write pages and databases.' },
   { id: 'io.coda/mcp', site: 'coda.io', title: 'Coda', url: 'https://coda.io/apis/mcp', category: 'Docs', description: 'Docs, pages and tables.' },
   { id: 'app.gamma/mcp', site: 'gamma.app', title: 'Gamma', url: 'https://mcp.gamma.app/mcp', category: 'Docs', description: 'Presentations, documents and web pages.' },
