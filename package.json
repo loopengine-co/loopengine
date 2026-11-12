@@ -73,6 +73,8 @@
     "dist/core/mcp-directory.d.ts",
     "dist/core/mcp-ability-generator.js",
     "dist/core/mcp-ability-generator.d.ts",
+    "dist/core/ability-dependencies.js",
+    "dist/core/ability-dependencies.d.ts",
     "dist/core/mcp-oauth.js",
     "dist/core/mcp-oauth.d.ts",
     "dist/core/mcp-apps.js",

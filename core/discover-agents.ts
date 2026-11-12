@@ -11,6 +11,7 @@
 // silently collide in ActAuth's rules today regardless of this helper;
 // surfacing that collision loudly here, at discovery time, is a real
 // safety property this adds, not just convenience.
+import { installMissingAbilityDependencies } from './ability-dependencies.js'
 import { existsSync, readdirSync, type Dirent } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -163,6 +164,10 @@ export async function loadAgentModule(path: string, label: string): Promise<Agen
  * both are almost always a bug, not something to silently ignore. */
 export async function discoverAgents(dir: string): Promise<Map<string, AgentModule>> {
   const entries = new Map<string, AgentModule>()
+  // Before importing any agent: a package an installed ability needs and
+  // the project lacks would otherwise fail its import (and, for an agent
+  // that imports its tools up front, stop the server starting).
+  await installMissingAbilityDependencies(dir)
 
   for (const dirent of readdirSync(dir, { withFileTypes: true })) {
     const resolved = resolveModulePath(dir, dirent)

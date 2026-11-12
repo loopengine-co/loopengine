@@ -111,6 +111,7 @@ import { answerTelegramClick, createTelegramConnector, editTelegramMessage, pars
 import { describeChange } from '#core/messaging/decide.js'
 import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
+import { installMissingPackages } from '#core/ability-dependencies.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
 import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, noteForExistingAgent, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
@@ -1530,7 +1531,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
         },
         // As for templates and the Apps tab: installing runs
         // third-party code, so only behind the admin login.
-        ...(secretsProtected ? { installAbility: async (name: string, spec: string, options?: { mcpTools?: string[] }) => void (await installAbility(name, spec, options ?? {})) } : {}),
+        ...(secretsProtected ? { installAbility: async (name: string, spec: string, options?: { mcpTools?: string[] }) => void (await installAbilityAndDependencies(name, spec, options ?? {})) } : {}),
         prepareApp: prepareWorkspaceApp,
         envValue: (name, variable) => createAgentEnv(name, dirOf(name)).get(variable),
         messagingConfigured: (name) => {
@@ -2329,6 +2330,20 @@ function hasNodeModule(name: string): boolean {
   return existsSync(join(process.cwd(), 'node_modules', name))
 }
 
+// The packages an ability's tools import, installed with it (see
+// core/ability-dependencies.ts): one missing package breaks loading the
+// whole agent. The names come from installed abilities' records.
+function installMissingDependencies(deps: string[]): Promise<string[]> {
+  return installMissingPackages(process.cwd(), deps)
+}
+
+/** installAbility, then the packages its tools need. */
+async function installAbilityAndDependencies(agentName: string, spec: string, options: Parameters<typeof installAbility>[2] = {}): ReturnType<typeof installAbility> {
+  const result = await installAbility(agentName, spec, options)
+  await installMissingDependencies(result.dependencies)
+  return result
+}
+
 // Backs the Admin UI's Apps tab list — everything currently
 // installed for this agent, each annotated with the latest version
 // currently published on the public npm registry (fetchLatestAbilityVersion,
@@ -2415,7 +2430,7 @@ async function handleAbilityInstallPost(req: IncomingMessage, res: ServerRespons
     return
   }
   try {
-    const result = await installAbility(agentName, body.spec)
+    const result = await installAbilityAndDependencies(agentName, body.spec)
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
   } catch (err) {
     const status =
@@ -2448,6 +2463,8 @@ async function handleAbilityUpgradePost(req: IncomingMessage, res: ServerRespons
   const spec = typeof body.spec === 'string' && body.spec ? body.spec : undefined
   try {
     const result = await upgradeAbility(agentName, abilityName, spec ? { spec } : {})
+    // A new version can need a package the old one didn't.
+    await installMissingDependencies(listInstalledAbilities(agentName).find((a) => a.name === abilityName)?.dependencies ?? [])
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
   } catch (err) {
     const status =

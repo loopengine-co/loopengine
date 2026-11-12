@@ -129,6 +129,7 @@ export { createMetaModelCall } from './core/model-calls/meta-model-call.js'
 export type { MetaModelCallOptions } from './core/model-calls/meta-model-call.js'
 
 export { discoverAgents, loadAgentModule, synthesizeCreateModelCall } from './core/discover-agents.js'
+export { abilityDependencies, installMissingAbilityDependencies, installMissingPackages } from './core/ability-dependencies.js'
 export type { AgentModule } from './core/discover-agents.js'
 
 export { agentAsTool } from './core/agent-as-tool.js'
