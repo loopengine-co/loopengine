@@ -158,7 +158,7 @@ function scriptedModel(plan: unknown, seen: string[]): ModelCall {
     turn++
     const reply: ModelResponse =
       turn === 1
-        ? { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't1', name: 'list_agents', input: {} }, { type: 'tool_use', id: 't2', name: 'search_public_abilities', input: { query: 'web search' } }] }
+        ? { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't1', name: 'list_agents', input: {} }, { type: 'tool_use', id: 't2', name: 'ability_details', input: { spec: 'lp-web-search' } }] }
         : { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't3', name: 'save_plan', input: plan as Record<string, unknown> }] }
     return reply
   }) as unknown as ModelCall
@@ -168,9 +168,9 @@ const tools = (agents: WorkflowAgentInfo[], seen: string[], apps: Record<string,
   agentInfo: async () => agents,
   appStatus: async (_agent, id) => apps[id] ?? { state: 'missing' },
   listAgents: async () => { seen.push('listAgents'); return agents },
-  searchPublicAbilities: async (q) => { seen.push(`search:${q}`); return [{ name: 'lp-web-search' }] },
+  listOfficialAbilities: async () => [{ name: 'lp-web-search', description: 'Search and read the web' }],
   listWorkspaceAbilities: async () => [],
-  abilityDetails: async () => ({}),
+  abilityDetails: async (spec) => { seen.push(`details:${spec}`); return {} },
   listConnections: async () => ({}),
 })
 
@@ -178,8 +178,26 @@ describe('planning with a model', () => {
   it('looks at the workspace, then returns the saved plan', async () => {
     const seen: string[] = []
     const result = await planWorkflowWithModel(scriptedModel(RAW_PLAN, seen), 'weekly blog post', tools([agent()], seen))
-    expect(seen).toEqual(['listAgents', 'search:web search'])
+    expect(seen).toEqual(['listAgents', 'details:lp-web-search'])
     expect(result.plan?.name).toBe('Weekly blog post')
+  })
+
+  it('lists every official and workspace ability, and the apps it can connect, in the request, so nothing depends on search words', async () => {
+    let request = ''
+    const model = (async (messages: { content: unknown }[]) => {
+      request = String(messages[0].content)
+      return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't1', name: 'save_plan', input: RAW_PLAN as Record<string, unknown> }] }
+    }) as unknown as ModelCall
+    await planWorkflowWithModel(model, 'weekly blog post', {
+      ...tools([agent()], []),
+      listOfficialAbilities: async () => [{ name: '@loopengine-co/reddit', description: 'Search Reddit posts' }, { name: '@loopengine-co/gmail' }],
+      listWorkspaceAbilities: async () => [{ name: 'order-tools', description: 'Our orders', spec: 'file:/data/.abilities/order-tools' }],
+      listApps: async () => [{ id: 'app.linear/linear', title: 'Linear', description: 'Issues and projects.', connected: true }, { id: 'com.stripe/mcp', title: 'Stripe', connected: false }],
+    })
+    expect(request).toContain('Official abilities that can be added:\n- @loopengine-co/reddit: Search Reddit posts\n- @loopengine-co/gmail\n')
+    expect(request).toContain("The workspace's own abilities that can be added:\n- order-tools (spec file:/data/.abilities/order-tools): Our orders")
+    expect(request).toContain('- app.linear/linear: Linear, Issues and projects. (connected)\n- com.stripe/mcp: Stripe\n')
+    expect(request).toMatch(/Plan this workflow:\n\nweekly blog post$/)
   })
 
   it('plans for the picked agent: it reads the agent first, and the plan is checked against it', async () => {

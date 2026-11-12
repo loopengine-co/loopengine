@@ -1031,8 +1031,27 @@ async function workflowAgentInfo(): Promise<WorkflowAgentInfo[]> {
 
 // Steps no ability can do can use an app's MCP server
 // (core/mcp-directory.ts), made into a private ability on Create.
+/** The apps a workflow can plan with: the Apps page's catalog, then the
+ * servers the workspace has connected or saved that aren't in it. */
+function workflowApps(): { id: string; title: string; description?: string; connected: boolean }[] {
+  const { apps, connected, saved } = describeApps()
+  const list = apps.map((a) => ({ id: a.id, title: a.title, description: a.description, connected: a.connected }))
+  const listed = new Set(list.map((a) => a.id))
+  for (const c of connected) {
+    if (!c.id || listed.has(c.id) || apps.some((a) => a.url === c.url)) continue
+    listed.add(c.id)
+    list.push({ id: c.id, title: c.title, description: '', connected: true })
+  }
+  for (const s of saved) {
+    if (listed.has(s.id)) continue
+    listed.add(s.id)
+    list.push({ id: s.id, title: s.title, description: s.description, connected: false })
+  }
+  return list
+}
+
 const workflowMcp: WorkflowMcpDeps = {
-  getServer: getMcpServer,
+  getServer: appServer,
   // The workspace ability already using the server at `url`.
   existingFor(url) {
     for (const found of listWorkspaceAbilities()) {
@@ -1076,8 +1095,12 @@ async function workflowAppStatus(agent: string, id: string): Promise<WorkflowApp
 
 /** A server's tools for the planner, or why they can't be seen yet. */
 async function workflowMcpServerTools(id: string): Promise<unknown> {
-  const server = await getMcpServer(id)
-  if (!server) return `No MCP server ${id}.`
+  const server = await appServer(id)
+  if (!server) return `No app ${id}.`
+  // A connected app's tools are already known (and one connected by
+  // signing in can't be listed without its sign-in).
+  const existing = workflowMcp.existingFor(server.url)
+  if (existing?.tools.length) return { server: server.title, connected: true, tools: existing.tools.slice(0, 80).map((t) => ({ name: t.remote })) }
   const { keyEnv } = mcpAbilityNames(server)
   const key = process.env[keyEnv]
   try {
@@ -1089,7 +1112,7 @@ async function workflowMcpServerTools(id: string): Promise<unknown> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return isMcpAuthError(err)
-      ? `${server.title} needs a key before its tools can be seen. Plan its steps by what they do (leave "tool" empty); the person adds the key on the plan, and its tools are picked on Create.`
+      ? `${server.title} needs a key or a sign-in before its tools can be seen. Plan its steps by what they do (leave "tool" empty); the person connects it on the Apps page, and its tools are picked on Create.`
       : `Couldn't reach ${server.title}: ${message.slice(0, 200)}`
   }
 }
@@ -1455,7 +1478,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           tools: a.tools.slice(0, 40),
           rules: a.rules.filter((r) => r.decision !== a.defaultDecision).slice(0, 40).map((r) => `${r.tool}: ${r.decision}`),
         })),
-        searchPublicAbilities: (query) => base.searchPublicAbilities(query),
+        listOfficialAbilities: () => searchPublicAbilities(),
         // Apps are planned as apps (their MCP servers), not abilities.
         listWorkspaceAbilities: async () => {
           const apps = new Set(describeApps().connected.map((c) => c.ability))
@@ -1466,7 +1489,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           return { name: d.name, tools: d.tools.map((t) => ({ name: t.name, description: t.description.slice(0, 300), decision: t.decision ?? null })), settings: d.settings.map((x) => (x.description ? { name: x.name, description: x.description.slice(0, 200) } : { name: x.name })) }
         },
         listConnections: () => base.listConnections(),
-        searchMcpServers: async (query) => (await searchMcpServers(query)).map((s) => ({ id: s.id, title: s.title, description: s.description, url: s.url, official: Boolean(s.official), verified: s.verified, source: s.source })),
+        listApps: async () => workflowApps(),
         mcpServerTools: workflowMcpServerTools,
         mcp: workflowMcp,
         appForSpec: workflowAppForSpec,

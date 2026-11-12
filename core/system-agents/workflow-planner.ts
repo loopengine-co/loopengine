@@ -38,7 +38,7 @@ export interface WorkflowStep {
    * workflow, not installed. */
   connection?: string
   /** For a step done by an MCP server's tool, when no ability has it: the
-   * server's id (search_mcp_servers). `tool` is then the server's own
+   * app's id (the request's list of apps). `tool` is then the server's own
    * tool name, if the planner could see them. On Create the server
    * becomes a private ability (core/mcp-ability-generator.ts) and the
    * step points at its tool instead. */
@@ -153,14 +153,17 @@ export interface PlannedWebhook {
 export interface WorkflowPlannerTools {
   /** Every agent: its tools, installed abilities, rules and messaging. */
   listAgents(): Promise<unknown>
-  searchPublicAbilities(query: string): Promise<{ name: string; description?: string }[]>
-  /** The workspace's private abilities. */
+  /** Every official ability on npm (@loopengine-co), listed in the request. */
+  listOfficialAbilities(): Promise<{ name: string; description?: string }[]>
+  /** The workspace's private abilities, listed in the request. */
   listWorkspaceAbilities(): Promise<{ name: string; description?: string; spec: string }[]>
   /** An ability's tools (with the decision each ships with) and settings. */
   abilityDetails(spec: string): Promise<unknown>
   listConnections(): Promise<Record<string, unknown>>
-  /** MCP servers matching a query (core/mcp-directory.ts). Optional: without it the planner only plans with abilities. */
-  searchMcpServers?(query: string): Promise<unknown>
+  /** The apps the workspace can connect (the Apps page's catalog, and
+   * servers it has connected or saved), listed in the request. Optional:
+   * without it the planner only plans with abilities. */
+  listApps?(): Promise<{ id: string; title: string; description?: string; connected: boolean }[]>
   /** A server's tools, when it can be listed without a key (or with one already set). */
   mcpServerTools?(id: string): Promise<unknown>
 }
@@ -172,12 +175,12 @@ export const WORKFLOW_PLANNER_PROMPT = `You turn a workflow a person describes i
 LoopEngine agents call tools. Tools come from abilities (installable packages: public ones on npm, or the workspace's own private ones) or are built in. Each tool has a permission: allow (runs on its own), ask (waits for a person to approve, edit or deny it) or deny. When nobody is in Chat, questions and approvals go to the agent's messaging app (Slack, Telegram, Lark or email) and the run waits, for days if needed, then carries on.
 
 How to plan:
-1. Look before you plan: start from what the agent has (in the request), then list_workspace_abilities, search_public_abilities for each kind of step, ability_details for any ability you might use (its exact tool names and the settings it needs), and list_connections. list_agents shows the other agents, for a connected service one of them has.
+1. Look before you plan: start from what the agent has and every ability that can be added (both in the request), then ability_details for any ability you might use (its exact tool names and the settings it needs), and list_connections. list_agents shows the other agents, for a connected service one of them has.
 2. Split the workflow into steps, in order. For each step:
-   - something to fetch or do: kind "tool", with the exact tool name and where it comes from. A step about a named service (Reddit, X, Gmail, Shopify, GitHub...) uses that service's own tools: search_public_abilities and search_mcp_servers for the service's name before planning it, even when the agent can already search or scrape the web. They read the service directly, see what web search can't, and give each action its own permission. Web search and scraping are for the open web, or for a service nothing else covers. Pick the source in this order:
+   - something to fetch or do: kind "tool", with the exact tool name and where it comes from. A step about a named service (Reddit, X, Gmail, Shopify, GitHub...) uses that service's own tools: its ability when the request lists one, else its app from the request's list of apps, even when the agent can already search or scrape the web. They read the service directly, see what web search can't, and give each action its own permission. Web search and scraping are for the open web, or for a service nothing else covers. Pick the source in this order:
      a. A tool the agent already has, its apps' turned-on tools included: use it, nothing to install. A tool one of its apps can turn on (listed in the request) is planned the same way, with "mcp" set to that app's id: Create turns it on.
-     b. An ability: a workspace ability (list_workspace_abilities) or a public one (search_public_abilities, e.g. "firecrawl" or "web search" for searching and reading the web). Set "ability" to its install spec (the npm name, or a workspace ability's spec) and use the exact tool name from ability_details.
-     c. Only when no ability can do it, and search_mcp_servers is available: an app's MCP server. For an app the agent has, use its id from the request. Otherwise search for the app (e.g. "linear", "stripe"), pick the app's own server (official), else a saved or verified one, then call mcp_server_tools. Set "mcp" to the server's id, and "tool" to its exact tool name when mcp_server_tools lists them (leave "tool" empty when it needs a key first, and say in "detail" what the step does). An app the agent doesn't have yet is still planned: when it's connected to the workspace, Create adds it to the agent with the tools its steps use; otherwise the person connects it first. The app sets its tools' permissions, so add no rules for MCP tools.
+     b. An ability from the request's lists: an official one or one of the workspace's own. Set "ability" to its install spec (the npm name, or a workspace ability's spec) and use the exact tool name from ability_details.
+     c. Only when no ability can do it: an app from the request's list of apps (each is the app's own MCP server). Use its id, then call mcp_server_tools. Set "mcp" to the app's id, and "tool" to its exact tool name when mcp_server_tools lists them (leave "tool" empty when it needs a key first, and say in "detail" what the step does). An app the agent doesn't have yet is still planned: when it's connected to the workspace, Create adds it to the agent with the tools its steps use; otherwise the person connects it first. The app sets its tools' permissions, so add no rules for MCP tools. An app that isn't on the list can't be planned: set "missing" (e.g. "an app for Pipedrive") and say in gaps that it can be added on the Apps page, as their own server if the app publishes one.
    - the person chooses or answers ("ask me which", "let me pick"): kind "ask", tool "system_ask_user" (built in, no ability). Say what options are offered. It reaches them through the agent's messaging app by itself, so don't add a separate step to post to Slack or another chat first, and don't install a chat ability just to ask.
    - the person reviews or approves before something happens ("let me review it", "before it's sent"): kind "approval", on the tool that does that thing; its rule becomes "ask".
    - the agent's own work (writing, summarising, choosing): kind "other".
@@ -221,13 +224,10 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
   }
   return [
     { name: 'list_agents', description: "Every agent in the workspace: its tools, installed abilities, permission rules and messaging app.", input_schema: { type: 'object', properties: {} } },
-    { name: 'list_workspace_abilities', description: "The workspace's own private abilities, ready to add to an agent.", input_schema: { type: 'object', properties: {} } },
-    { name: 'search_public_abilities', description: 'Search public LoopEngine abilities on npm, e.g. "web search", "wordpress", "slack".', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
     { name: 'ability_details', description: "An ability's exact tool names, what each does, the permission each ships with, and the settings it needs. spec: its npm name or workspace spec.", input_schema: { type: 'object', properties: { spec: { type: 'string' } }, required: ['spec'] } },
     { name: 'list_connections', description: 'What is set up: model providers with keys, messaging apps per agent.', input_schema: { type: 'object', properties: {} } },
     ...(withMcp ? [
-      { name: 'search_mcp_servers', description: "Search apps' MCP servers (the workspace's saved ones, then the public MCP Registry), for a step no ability can do. query: the app's name, e.g. \"linear\".", input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
-      { name: 'mcp_server_tools', description: "An MCP server's tools (name, description, read-only or not), or a note that it needs a key before they can be seen. id: from search_mcp_servers.", input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+      { name: 'mcp_server_tools', description: "An app's tools (name, description, read-only or not), or a note that it needs a key or sign-in before they can be seen. id: from the request's list of apps.", input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
     ] : []),
     {
       name: 'save_plan',
@@ -488,15 +488,36 @@ export interface WorkflowPlanResult {
 }
 
 /** Runs the planner on a description until it saves a plan. */
+/** Everything that can be added, for the request: LoopEngine's official
+ * abilities, the workspace's own, and the apps it can connect. There are
+ * few enough to list whole, so the planner picks from what exists instead
+ * of guessing search words. */
+async function abilityList(tools: WorkflowPlannerTools): Promise<string> {
+  const line = (a: { name: string; description?: string; spec?: string }) =>
+    `- ${a.name}${a.spec && a.spec !== a.name ? ` (spec ${a.spec})` : ''}${a.description ? `: ${a.description.replace(/\s+/g, ' ').slice(0, 300)}` : ''}`
+  const [official, workspace, apps] = await Promise.all([
+    tools.listOfficialAbilities().then((list) => list.map(line), () => undefined),
+    tools.listWorkspaceAbilities().then((list) => list.map(line), () => undefined),
+    tools.listApps?.().then((list) => list.map((a) => `- ${a.id}: ${a.title}${a.description ? `, ${a.description.replace(/\s+/g, ' ').slice(0, 160)}` : ''}${a.connected ? ' (connected)' : ''}`), () => undefined),
+  ])
+  const section = (title: string, lines: string[] | undefined) => `${title}\n${lines ? lines.join('\n') || '(none)' : '(the list could not be loaded)'}`
+  return [
+    section('Official abilities that can be added:', official),
+    section("The workspace's own abilities that can be added:", workspace),
+    ...(tools.listApps ? [section('Apps (by id) the workspace can connect, each through its own MCP server; "connected" ones are ready to add:', apps)] : []),
+  ].join('\n\n')
+}
+
 export async function planWorkflowWithModel(modelCall: ModelCall, description: string, tools: WorkflowPlannerTools, agentBrief = ''): Promise<WorkflowPlanResult> {
-  const messages: Message[] = [{ role: 'user', content: `${agentBrief ? `${agentBrief}\n\n` : ''}Plan this workflow:\n\n${description}` }]
+  const abilities = await abilityList(tools)
+  const messages: Message[] = [{ role: 'user', content: `${agentBrief ? `${agentBrief}\n\n` : ''}${abilities}\n\nPlan this workflow:\n\n${description}` }]
   let nudges = 0
   let retries = 0
   let sentBackWebhook = false
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     let response
     try {
-      response = await modelCall(messages, WORKFLOW_PLANNER_PROMPT, workflowPlannerTools(Boolean(tools.searchMcpServers)))
+      response = await modelCall(messages, WORKFLOW_PLANNER_PROMPT, workflowPlannerTools(Boolean(tools.listApps)))
     } catch (err) {
       // A reply cut off part-way (its tool arguments end mid-JSON) usually
       // means it ran out of room: ask again, for a shorter plan.
@@ -533,20 +554,11 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
           case 'list_agents':
             output = await tools.listAgents()
             break
-          case 'list_workspace_abilities':
-            output = await tools.listWorkspaceAbilities()
-            break
-          case 'search_public_abilities':
-            output = await tools.searchPublicAbilities(String(input.query ?? ''))
-            break
           case 'ability_details':
             output = await tools.abilityDetails(String(input.spec ?? ''))
             break
           case 'list_connections':
             output = await tools.listConnections()
-            break
-          case 'search_mcp_servers':
-            output = tools.searchMcpServers ? await tools.searchMcpServers(String(input.query ?? '')) : 'not available'
             break
           case 'mcp_server_tools':
             output = tools.mcpServerTools ? await tools.mcpServerTools(String(input.id ?? '')) : 'not available'

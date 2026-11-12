@@ -60,10 +60,19 @@ export async function searchPublicAbilities(query?: string): Promise<PublicAbili
   // moves, so an operator typing a search term would otherwise see the
   // exact same full list every time. Filtering here on name/description
   // gives the strict, expected "search box" behavior npm's own API
-  // doesn't provide on its own.
-  if (!query) return results
-  const needle = query.toLowerCase()
-  return results.filter((r) => r.name.toLowerCase().includes(needle) || r.description.toLowerCase().includes(needle))
+  // doesn't provide on its own. Each word is matched on its own, so
+  // "reddit posts" finds the Reddit ability; abilities matching more of
+  // the words come first.
+  const words = (query ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1)
+  if (!words.length) return results
+  return results
+    .map((r) => {
+      const text = `${r.name} ${r.description}`.toLowerCase()
+      return { r, score: words.filter((w) => text.includes(w)).length }
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.r)
 }
 
 const NPM_LATEST_VERSION_TIMEOUT_MS = 5000

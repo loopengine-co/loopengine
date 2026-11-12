@@ -46,4 +46,16 @@ describe('official abilities', () => {
     }))))
     expect((await searchPublicAbilities()).map((a) => a.name)).toEqual(['@loopengine-co/gmail'])
   })
+  it('matches a search word by word, the best match first', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      objects: [
+        { package: { name: '@loopengine-co/gmail', description: 'Search and read email', version: '1.0.0' } },
+        { package: { name: '@loopengine-co/reddit', description: 'Search Reddit posts and read their comments', version: '1.0.0' } },
+        { package: { name: '@loopengine-co/shopify', description: 'Orders and refunds', version: '1.0.0' } },
+      ],
+    }))))
+    expect((await searchPublicAbilities('reddit posts')).map((a) => a.name)).toEqual(['@loopengine-co/reddit'])
+    expect((await searchPublicAbilities('search Reddit')).map((a) => a.name)).toEqual(['@loopengine-co/reddit', '@loopengine-co/gmail'])
+    expect(await searchPublicAbilities('stripe')).toEqual([])
+  })
 })
