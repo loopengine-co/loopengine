@@ -30,9 +30,10 @@ const BRAND_MARK =
 
 export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label="Console navigation">
   <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
+  <div class="le-nav-label"><span>Goals</span><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
+  <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
   <div class="le-nav-label"><span>Agents</span><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
-  <a class="le-find" href="/goals" data-le-nav="goals">Goals</a>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
   <nav class="le-foot" aria-label="Settings">
     <a href="/config?section=models" data-le-nav="models">Models</a>
@@ -121,6 +122,29 @@ export const consoleShellScript: string = `<script>
     });
   }
 
+  // ---- Goals, listed above the agents: each opens its goal on the Goals
+  // page; + New opens a new one. The Goals page reloads the list when it
+  // adds or removes one (leShell.reloadGoals).
+  var goalList = document.getElementById('leGoalList');
+  function reloadGoals() {
+    if (!goalList) return Promise.resolve();
+    return fetch('/goals', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { goals: [] }; })
+      .then(function (data) {
+        var goals = data.goals || [];
+        var current = page === 'goals' ? new URLSearchParams(location.search).get('goal') : null;
+        var newLink = document.querySelector('[data-le-goal-new]');
+        var creating = page === 'goals' && !current;
+        if (newLink) { if (creating) newLink.setAttribute('aria-current', 'page'); else newLink.removeAttribute('aria-current'); }
+        goalList.innerHTML = goals.length ? goals.map(function (g) {
+          return '<li><a class="le-agent-item le-goal-item" href="/goals?goal=' + enc(g.id) + '" title="' + esc(g.goal) + '"' + (g.id === current ? ' aria-current="page"' : '') + '>' +
+            '<span class="le-dot' + (g.status === 'planning' ? ' warn' : '') + '" aria-hidden="true"></span><span class="le-name">' + esc(g.goal) + '</span></a></li>';
+        }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No goals yet</span><span></span></li>';
+      })
+      .catch(function () { goalList.innerHTML = ''; });
+  }
+  reloadGoals();
+
   var loadError = null;
   var ready = fetch('/agents', { headers: { accept: 'application/json' } })
     .then(function (r) {
@@ -198,7 +222,7 @@ export const consoleShellScript: string = `<script>
   }
 
   var section = params.get('section');
-  var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' ? 'abilities' : section === 'apps' ? 'apps' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'workflows' || page === 'goals' ? page : '';
+  var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' ? 'abilities' : section === 'apps' ? 'apps' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'workflows' ? page : '';
   var footLinks = document.querySelectorAll('[data-le-nav]');
   for (var i = 0; i < footLinks.length; i++) {
     if (footLinks[i].getAttribute('data-le-nav') === foot) footLinks[i].setAttribute('aria-current', 'page');
@@ -464,6 +488,6 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`

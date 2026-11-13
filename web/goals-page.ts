@@ -27,9 +27,6 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
   .gl-btn.danger { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
   .gl-link { background: none; border: 0; padding: 0; color: var(--accent-ink); font-size: 13px; cursor: pointer; font-weight: 500; }
-  .gl-goals { display: flex; flex-wrap: wrap; gap: 6px; }
-  .gl-goals a { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; color: var(--ink); font-size: 13px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .gl-goals a[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
   .gl-goal-title { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
   .gl-focus { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-muted); }
   .gl-focus select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
@@ -72,7 +69,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Goals</h1><p>Say what you want to achieve. LoopEngine suggests workflows that move it, each with the agent it would go into. Save the ones worth keeping, generate more, and build them when you’re ready.</p></div>
+        <div><h1 id="glTitle">New goal</h1><p id="glLead">Say what you want to achieve. LoopEngine suggests workflows that move it, each with the agent it would go into. Save the ones worth keeping, generate more, and build them when you’re ready.</p></div>
       </div>
     </div>
   </div>
@@ -115,7 +112,9 @@ ${consoleShellScript}
       state.goals = r.body.goals || [];
       state.about = r.body.about || '';
       state.settings = r.body.settings || {};
-      var id = selectId || new URLSearchParams(location.search).get('goal') || (state.goals[0] && state.goals[0].id);
+      // A goal from the sidebar (?goal=), else a new one (+ New, or the
+      // workspace's front page).
+      var id = selectId || new URLSearchParams(location.search).get('goal');
       state.current = state.goals.filter(function (g) { return g.id === id; })[0] || null;
       render();
     });
@@ -129,9 +128,13 @@ ${consoleShellScript}
       api('GET', '/goals/' + encodeURIComponent(state.current.id)).then(function (r) {
         if (!r.ok) return;
         replaceGoal(r.body.goal);
+        if (r.body.goal.status !== 'planning') reloadSidebar();
         render();
       });
     }, 3000);
+  }
+  function reloadSidebar() {
+    if (window.leShell && window.leShell.reloadGoals) window.leShell.reloadGoals();
   }
   function replaceGoal(goal) {
     state.goals = state.goals.map(function (g) { return g.id === goal.id ? goal : g; });
@@ -212,17 +215,19 @@ ${consoleShellScript}
   }
 
   function render() {
-    var list = state.goals.length > 1 || (state.goals.length === 1 && !state.current) ? '<div class="gl-goals">' + state.goals.map(function (g) {
-      return '<a href="?goal=' + encodeURIComponent(g.id) + '" data-goal="' + esc(g.id) + '" aria-current="' + (state.current && state.current.id === g.id) + '" title="' + esc(g.goal) + '">' + esc(g.goal) + '</a>';
-    }).join('') + '</div>' : '';
-    page.innerHTML = newGoalHtml() + list + (state.current ? goalHtml(state.current) : '') + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '');
+    var title = document.getElementById('glTitle');
+    var lead = document.getElementById('glLead');
+    if (title) title.textContent = state.current ? 'Goal' : 'New goal';
+    if (lead) lead.style.display = state.current ? 'none' : '';
+    page.innerHTML = (state.current ? goalHtml(state.current) : newGoalHtml()) + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '');
     state.error = '';
     wire();
     watch();
   }
 
   function wire() {
-    document.getElementById('glSubmit').addEventListener('click', function () {
+    var submit = document.getElementById('glSubmit');
+    if (submit) submit.addEventListener('click', function () {
       var goal = document.getElementById('glGoal').value.trim();
       var aboutBox = document.getElementById('glAbout');
       var status = document.getElementById('glSubmitStatus');
@@ -235,6 +240,7 @@ ${consoleShellScript}
         state.startedAt = Date.now();
         replaceGoal(r.body.goal);
         setUrl(r.body.goal.id);
+        reloadSidebar();
         render();
       });
     });
@@ -242,15 +248,6 @@ ${consoleShellScript}
     if (kind) kind.addEventListener('change', function () { saveSettings({ businessKind: kind.value || null }); });
     var share = document.getElementById('glShare');
     if (share) share.addEventListener('change', function () { saveSettings({ shareLeverStats: share.checked }); });
-    var links = page.querySelectorAll('[data-goal]');
-    for (var i = 0; i < links.length; i++) links[i].addEventListener('click', function (ev) {
-      ev.preventDefault();
-      var id = ev.currentTarget.getAttribute('data-goal');
-      state.current = state.goals.filter(function (g) { return g.id === id; })[0] || null;
-      state.showDiscarded = false;
-      setUrl(id);
-      render();
-    });
     if (!state.current) return;
     var g = state.current;
     var base = '/goals/' + encodeURIComponent(g.id);
@@ -278,7 +275,7 @@ ${consoleShellScript}
     var del = document.getElementById('glDelete');
     if (del) del.addEventListener('click', function () {
       if (del.dataset.confirming !== '1') { del.dataset.confirming = '1'; del.textContent = 'Click again to delete this goal (built workflows stay in their agents)'; return; }
-      api('DELETE', base).then(function () { setUrl(''); load(); });
+      api('DELETE', base).then(function () { state.current = null; setUrl(''); reloadSidebar(); load(); });
     });
     var cards = page.querySelectorAll('[data-wf]');
     for (var c = 0; c < cards.length; c++) wireCard(cards[c], base);

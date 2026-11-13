@@ -4460,10 +4460,10 @@ const server = createServer(async (req, res) => {
     // web/playground.ts. GET, not POST, and an exact path match
     // (neither has a :name segment), so no risk of colliding with the
     // regexes above (already partitioned by method).
-    // The bare address is the console itself, the same page as
-    // /agents/config (all its links and requests use absolute paths).
+    // The bare address opens a new goal (the Goals page; all its links and
+    // requests use absolute paths). Agents are at /agents/config.
     if (req.method === 'GET' && pathname === '/') {
-      res.writeHead(200, { 'content-type': 'text/html' }).end(agentsConfigPageHtml)
+      res.writeHead(200, { 'content-type': 'text/html' }).end(goalsPageHtml)
       return
     }
 
