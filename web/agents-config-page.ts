@@ -85,14 +85,56 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-chip.accent { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
   .wf-card-actions { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
   .wf-card-actions button { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
-  .wf-card-actions .workflow-edit { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
-  .wf-card-actions .workflow-edit:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
-  .wf-card-actions .wf-remove { border-color: var(--bad); background: var(--bad); color: var(--bg); }
-  .wf-card-actions .wf-remove:hover:not(:disabled) { background: var(--bad); filter: brightness(1.08); }
+  .wf-card-actions .workflow-edit { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+  .wf-card-actions .workflow-edit:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+  .wf-card-actions .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+  .wf-card-actions .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   .wf-card-actions .wf-remove[data-confirming="1"] { height: auto; min-height: 32px; padding: 6px 12px; text-align: left; white-space: normal; }
   .wf-empty { padding: 12px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); }
   .wf-card > .workflow-result:empty { display: none; }
   .wf-card > .workflow-result { padding: 10px 20px; border-top: 1px solid var(--line); }
+  /* The list: one row per workflow; a row opens to its tabs. */
+  .wf-list-box { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+  .wf-row + .wf-row { border-top: 1px solid var(--line); }
+  .wf-row.workflow-focus { box-shadow: inset 3px 0 0 var(--accent); }
+  .wf-row-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) 160px 250px auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
+  .wf-row-head:hover { background: var(--surface); }
+  .wf-row-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .wf-row-caret { width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; }
+  .wf-row.is-open .wf-row-caret { transform: rotate(45deg); }
+  .wf-row-main { min-width: 0; display: grid; gap: 2px; }
+  .wf-row-main strong { font-size: 14px; font-weight: 650; color: var(--ink); }
+  .wf-row-desc { font-size: 12.5px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wf-row-starts { font-size: 12.5px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wf-row-last { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; white-space: nowrap; }
+  .wf-row-last .hint { white-space: nowrap; }
+  .wf-row-actions { display: flex; gap: 6px; }
+  .wf-row-actions button, .wf-row-foot button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-row-actions button:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+  .wf-row-body { padding: 4px 16px 16px 44px; display: grid; gap: 12px; }
+  .wf-row-body[hidden], .wf-panel[hidden] { display: none; }
+  .wf-row-body .wf-chips { margin-top: 0; }
+  .wf-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+  .wf-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 10px; margin-bottom: -1px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
+  .wf-tab:hover:not(:disabled) { background: none; color: var(--ink); }
+  .wf-tab[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
+  .wf-tab-count { margin-left: 4px; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .wf-row .workflow-steps-text { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); font-size: 13px; line-height: 1.6; max-height: 420px; overflow: auto; white-space: pre-wrap; }
+  .wf-original { margin-top: 10px; }
+  .wf-original summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-muted); margin-bottom: 6px; }
+  .wf-row .workflow-starts > .workflow-section-content { padding: 0; }
+  .wf-row .workflow-result:empty { display: none; }
+  .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
+  .wf-row-foot .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
+  .wf-row-foot .wf-remove[data-confirming="1"] { height: auto; min-height: 30px; padding: 6px 12px; text-align: left; white-space: normal; }
+  @media (max-width: 760px) {
+    .wf-row-head { grid-template-columns: 14px minmax(0, 1fr) auto; row-gap: 6px; }
+    .wf-row-starts, .wf-row-last { white-space: normal; }
+    .wf-row-starts, .wf-row-last { grid-column: 2 / 3; }
+    .wf-row-actions { grid-column: 3; grid-row: 1; }
+    .wf-row-body { padding-left: 16px; }
+  }
   .wf-empty-state { display: grid; justify-items: start; gap: 8px; padding: 28px; border: 1px dashed var(--line); border-radius: 12px; background: var(--surface); }
   .wf-empty-state p { margin: 0; color: var(--ink-muted); max-width: 60ch; }
   .workflow-section { margin: 0; border-top: 1px solid var(--line); background: none; }
@@ -941,7 +983,7 @@ ${consoleShellScript}
     // for the result.
     var example = '{ ' + (paramNames.length ? '"params": { ' + paramNames.map(function (p) { return '"' + p + '": "' + String.fromCharCode(8230) + '"'; }).join(', ') + ' }, ' : '') + '"wait": true }';
     var apiUrl = location.origin + '/agents/' + encodeURIComponent(agentName) + '/workflows/' + encodeURIComponent(w.id) + '/run';
-    return '<details class="workflow-section workflow-starts' + (startsCompact(w) ? ' wf-starts-compact' : '') + '"><summary class="workflow-section-title">Run options</summary><div class="workflow-section-content">' +
+    return '<div class="workflow-starts' + (startsCompact(w) ? ' wf-starts-compact' : '') + '"><div class="workflow-section-content">' +
       wfStartSection('run-' + w.id, 'Run now',
         'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
         (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
@@ -961,7 +1003,7 @@ ${consoleShellScript}
         '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
         '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
           'Optional: <code>"wait": true</code> answers with the result; <code>"notify": true</code> sends the result to the messaging app; <code>"callback_url"</code> posts it to your app when the run ends. Leave them out to get the run' + String.fromCharCode(8217) + 's id back at once.</p>') +
-    '</div></details>';
+    '</div></div>';
   }
 
   // What starts a workflow and what it's doing, as chips under its title:
@@ -986,11 +1028,73 @@ ${consoleShellScript}
     return chips.join('');
   }
 
+  // Which workflow is open in the list, and each one's chosen tab: kept
+  // across redraws (a running run's refresh, a save), and in the URL.
+  var openWorkflowId = new URLSearchParams(location.search).get('workflow') || null;
+  var workflowTabs = {};
+
+  function workflowLastRun(w) {
+    return (w.recentRuns || []).slice().sort(function (a, b) { return String(b.started_at).localeCompare(String(a.started_at)); })[0] || null;
+  }
+
+  function workflowNeedsDecision(w) {
+    return (w.recentRuns || []).some(function (r) { return r.status === 'awaiting_approval'; }) || (w.schedules || []).some(function (x) { return x.waiting; });
+  }
+
+  // How it starts, in a few words for its row.
+  function workflowStartsSummary(w) {
+    var parts = [];
+    var schedules = (w.schedules || []).filter(function (x) { return x.status !== 'cancelled'; });
+    if (schedules.length) parts.push(schedules[0].describe.charAt(0).toUpperCase() + schedules[0].describe.slice(1) + (schedules.length > 1 ? ' +' + (schedules.length - 1) : ''));
+    if (w.webhooks || w.webhooksWaiting || w.webhooksOff) parts.push('Webhook');
+    return parts.length ? parts.join(' ' + String.fromCharCode(183) + ' ') : 'When started';
+  }
+
+  function workflowLastRunHtml(r) {
+    if (!r) return '<span class="hint">No runs yet</span>';
+    var pill = r.status === 'done' ? '<span class="le-pill good">Done</span>'
+      : r.status === 'error' ? '<span class="le-pill bad">Failed</span>'
+      : r.status === 'awaiting_approval' ? '<span class="le-pill ask">Waiting for a decision</span>'
+      : '<span class="le-pill accent">Running</span>';
+    var when = new Date(r.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return pill + '<span class="hint">' + escapeHtml(when) + '</span>';
+  }
+
+  // Opens one workflow's row (closing the one open before), or closes it.
+  function setWorkflowOpen(card, open) {
+    var list = card.parentNode;
+    if (open && list) {
+      var others = list.querySelectorAll('.wf-row.is-open');
+      for (var i = 0; i < others.length; i++) if (others[i] !== card) setWorkflowOpen(others[i], false);
+    }
+    card.classList.toggle('is-open', open);
+    card.querySelector('.wf-row-head').setAttribute('aria-expanded', String(open));
+    card.querySelector('.wf-row-body').hidden = !open;
+    if (open) openWorkflowId = card.dataset.workflow;
+    else if (openWorkflowId === card.dataset.workflow) openWorkflowId = null;
+    try {
+      var url = new URL(location.href);
+      if (openWorkflowId) url.searchParams.set('workflow', openWorkflowId); else url.searchParams.delete('workflow');
+      history.replaceState(history.state, '', url);
+    } catch (e) { /* the list still works without it */ }
+  }
+
+  function showWorkflowTab(card, key) {
+    workflowTabs[card.dataset.workflow] = key;
+    var tabs = card.querySelectorAll('.wf-tab');
+    for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute('aria-selected', String(tabs[i].dataset.tab === key));
+    var panels = card.querySelectorAll('.wf-panel');
+    for (var j = 0; j < panels.length; j++) panels[j].hidden = panels[j].dataset.panel !== key;
+  }
+
   function renderWorkflowsHtml(name, workflows) {
     if (!workflows.length) {
       return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Describe a job in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
     }
-    return workflows.map(function (w) {
+    // Those that need someone first: waiting for a decision, then failed.
+    var rank = function (w) { return workflowNeedsDecision(w) ? 0 : (workflowLastRun(w) || {}).status === 'error' ? 1 : 2; };
+    var sorted = workflows.map(function (w, i) { return { w: w, i: i }; }).sort(function (a, b) { return rank(a.w) - rank(b.w) || a.i - b.i; }).map(function (x) { return x.w; });
+    return '<div class="wf-list-box">' + sorted.map(function (w) {
       var paramNames = Object.keys(w.parameters || {});
       var params = paramNames.map(function (p) {
         var spec = w.parameters[p];
@@ -1012,21 +1116,32 @@ ${consoleShellScript}
           (values ? '<div><div class="workflow-run-entry-label">Parameters</div><div class="workflow-run-params">' + values + '</div></div>' : '') +
           (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result workflow-markdown">' + formattedOutcome + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><div class="schedule-result-full workflow-markdown workflow-markdown-full">' + formattedOutcome + '</div></details></div>' : '') + '</li>';
       }).join('');
-      return '<article class="workflow-card wf-card" data-workflow="' + escapeHtml(w.id) + '">' +
-        '<header class="wf-card-head"><div class="wf-card-title">' +
-            '<h3>' + escapeHtml(w.title) + '</h3>' +
-            (w.description ? '<p>' + escapeHtml(w.description) + '</p>' : '') +
-            '<div class="wf-chips">' + workflowStatusChips(w) + '</div></div>' +
-          '<div class="wf-card-actions"><button type="button" class="workflow-edit">Edit</button><button type="button" class="wf-remove workflow-forget">Remove</button></div>' +
-        '</header>' +
-        (w.originalRequest ? '<details class="workflow-section" open><summary class="workflow-section-title">Original message</summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></div></details>' : '') +
-        '<details class="workflow-section" open><summary class="workflow-section-title">Instructions <span class="workflow-section-meta">' + escapeHtml(w.id) + ' skill</span></summary><div class="workflow-section-content"><div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div></div></details>' +
-        workflowStartsHtml(w, name, params) +
-        (runs ? '<details class="workflow-section workflow-runs"' + ((w.recentRuns || []).some(function (r) { return r.status === 'running' || r.status === 'awaiting_approval'; }) ? ' open' : '') + '><summary class="workflow-section-title">Recent runs<span class="workflow-section-meta">' + w.recentRuns.length + '</span></summary><div class="workflow-section-content"><ul class="schedule-history">' + runs + '</ul></div></details>'
-          : '<div class="wf-empty">No runs yet.</div>') +
-        '<div class="hint workflow-result"></div>' +
+      var last = workflowLastRun(w);
+      var tab = workflowTabs[w.id] || 'instructions';
+      var open = openWorkflowId === w.id;
+      var panel = function (key, html) { return '<div class="wf-panel" data-panel="' + key + '"' + (tab === key ? '' : ' hidden') + '>' + html + '</div>'; };
+      var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '" aria-selected="' + (tab === key) + '">' + label + '</button>'; };
+      return '<article class="workflow-card wf-row' + (open ? ' is-open' : '') + '" data-workflow="' + escapeHtml(w.id) + '">' +
+        '<div class="wf-row-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
+          '<span class="wf-row-caret" aria-hidden="true"></span>' +
+          '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong>' + (w.description ? '<span class="wf-row-desc">' + escapeHtml(w.description) + '</span>' : '') + '</div>' +
+          '<span class="wf-row-starts">' + escapeHtml(workflowStartsSummary(w)) + '</span>' +
+          '<span class="wf-row-last">' + workflowLastRunHtml(last) + '</span>' +
+          '<span class="wf-row-actions"><button type="button" class="workflow-row-run">Run</button><button type="button" class="workflow-edit">Edit</button></span>' +
+        '</div>' +
+        '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
+          '<div class="wf-chips">' + workflowStatusChips(w) + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('instructions', 'Instructions') + tabBtn('starts', 'How it starts') + tabBtn('runs', 'Runs' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
+          panel('instructions',
+            '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
+            (w.originalRequest ? '<details class="wf-original"><summary>Original message</summary><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></details>' : '')) +
+          panel('starts', workflowStartsHtml(w, name, params)) +
+          panel('runs', runs ? '<ul class="schedule-history">' + runs + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') +
+          '<div class="hint workflow-result"></div>' +
+          '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span><button type="button" class="wf-remove workflow-forget">Remove</button></div>' +
+        '</div>' +
         '</article>';
-    }).join('');
+    }).join('') + '</div>';
   }
 
   // The Overview's Workflows tile: how many, the next scheduled run, and
@@ -1065,6 +1180,7 @@ ${consoleShellScript}
       return;
     }
     pendingWorkflowFocus = null;
+    setWorkflowOpen(card, true);
     card.scrollIntoView({ block: 'start' });
     card.classList.add('workflow-focus');
     setTimeout(function () { card.classList.remove('workflow-focus'); }, 2500);
@@ -1556,6 +1672,27 @@ ${consoleShellScript}
     var id = card.dataset.workflow;
     var result = card.querySelector('.workflow-result');
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
+    var head = card.querySelector('.wf-row-head');
+    head.addEventListener('click', function (ev) {
+      if (ev.target.closest('button')) return;
+      setWorkflowOpen(card, !card.classList.contains('is-open'));
+    });
+    head.addEventListener('keydown', function (ev) {
+      if (ev.target !== head || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+      ev.preventDefault();
+      setWorkflowOpen(card, !card.classList.contains('is-open'));
+    });
+    var tabs = card.querySelectorAll('.wf-tab');
+    for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
+    // Run: one with values to fill in opens on its run form; one without
+    // starts at once, and shows its runs.
+    card.querySelector('.workflow-row-run').addEventListener('click', function () {
+      setWorkflowOpen(card, true);
+      var first = card.querySelector('.workflow-params input');
+      if (first) { showWorkflowTab(card, 'starts'); first.focus(); return; }
+      showWorkflowTab(card, 'runs');
+      card.querySelector('.workflow-run').click();
+    });
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // A schedule opens its own row in the Schedules tab.
     var scheduleLinks = card.querySelectorAll('.workflow-schedule-link');
