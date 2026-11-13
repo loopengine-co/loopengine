@@ -221,6 +221,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .hook-steps { margin: 6px 0; padding-left: 20px; display: grid; gap: 8px; font-size: 13px; }
   .hook-steps .hook-url { margin: 4px 0 0; }
   .workflow-param-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+  .wp-sections { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -4px; }
+  .wp-sections button { height: 28px; padding: 0 10px; font-size: 12.5px; }
   .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .workflow-param-row .wp-name { width: 160px; font-family: var(--le-mono, monospace); }
   .workflow-param-row .wp-desc { flex: 1; min-width: 200px; }
@@ -1139,6 +1141,15 @@ ${consoleShellScript}
       '<button type="button" class="delete-btn wp-remove">Remove</button></div>';
   }
 
+  // Sections the editor adds to a workflow's instructions, for what isn't
+  // a step: rules that always hold, cases that need a different answer,
+  // and worked examples. Each starts as a template to fill in.
+  var WORKFLOW_SECTIONS = {
+    policies: { label: 'Policies', text: 'Policies (always follow these):\\n- [A rule with its real numbers, e.g. Orders lost for over 15 days are reshipped, not refunded.] (edit this)' },
+    cases: { label: 'Special cases', text: 'Special cases (check these before acting; when one applies, follow it over the steps):\\n- When [what you would notice]: [what to do, and what not to do or promise]. (edit this)' },
+    example: { label: 'Example', text: 'Example (follow its judgment and tone, not its exact words):\\nSituation: [what came in, and what the lookups showed] (edit this)\\nGood result: [what the agent should write or do] (edit this)' },
+  };
+
   function workflowEditorHtml(w) {
     var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
     return '<form class="add-source workflow-editor-form">' +
@@ -1146,8 +1157,10 @@ ${consoleShellScript}
         '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
       '<label>Description <span class="hint">(one line on what this job is; the agent uses it to recognise the job when you ask in Chat)</span>' +
         '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
-      '<label>Instructions <span class="hint">(what the agent does, step by step; $name puts in a parameter&#39;s value. Chat uses them too.)</span>' +
-        '<textarea name="instructions" maxlength="12000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></label>' +
+      '<label>Instructions <span class="hint">(everything the agent needs for this job: its steps, and the policies, special cases and examples it follows. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span>' +
+        '<textarea name="instructions" maxlength="30000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></label>' +
+      '<div class="wp-sections"><span class="hint">Add a section:</span>' +
+        Object.keys(WORKFLOW_SECTIONS).map(function (k) { return '<button type="button" class="wp-section" data-section="' + k + '">' + escapeHtml(WORKFLOW_SECTIONS[k].label) + '</button>'; }).join('') + '</div>' +
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
@@ -1183,7 +1196,7 @@ ${consoleShellScript}
     // in the card. Closing it any way (Esc, the backdrop, x, Cancel)
     // discards the edits.
     var dialog = document.createElement('dialog');
-    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, the steps the agent follows and the values each run is given.</p>', workflowEditorHtml(w));
+    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (its steps, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
     dialog = dialog.firstChild;
     dialog.classList.add('workflow-editor-dialog');
     document.body.appendChild(dialog);
@@ -1203,6 +1216,19 @@ ${consoleShellScript}
     form.querySelector('.wp-add').addEventListener('click', function () {
       rows.insertAdjacentHTML('beforeend', workflowParamRowHtml('', null));
       rows.lastElementChild.querySelector('.wp-name').focus();
+    });
+    form.querySelector('.wp-sections').addEventListener('click', function (ev) {
+      var section = WORKFLOW_SECTIONS[ev.target.dataset && ev.target.dataset.section];
+      if (!section) return;
+      var area = form.instructions;
+      var before = area.value.replace(/\\s+$/, '');
+      area.value = (before ? before + '\\n\\n' : '') + section.text;
+      // Select the first placeholder to type over.
+      var start = area.value.indexOf('[', before.length);
+      area.focus();
+      if (start >= 0) area.setSelectionRange(start, area.value.indexOf(']', start) + 1);
+      area.scrollTop = area.scrollHeight;
+      check();
     });
     form.querySelector('.wp-cancel').addEventListener('click', close);
     form.addEventListener('submit', function (ev) {
