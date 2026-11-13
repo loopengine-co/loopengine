@@ -223,6 +223,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-param-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
   .wp-sections { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -4px; }
   .wp-sections button { height: 28px; padding: 0 10px; font-size: 12.5px; }
+  .wp-sections .wp-preview { margin-left: auto; }
+  .wp-long-note { margin: -6px 0 0; }
+  .wp-preview-text { max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--le-surface, #f6f7f9); font-family: var(--font-mono); font-size: 12.5px; }
   .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .workflow-param-row .wp-name { width: 160px; font-family: var(--le-mono, monospace); }
   .workflow-param-row .wp-desc { flex: 1; min-width: 200px; }
@@ -1174,8 +1177,11 @@ ${consoleShellScript}
         '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
       '<label>Instructions <span class="hint">(everything the agent needs for this job: its steps, and the policies, special cases and examples it follows. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span>' +
         '<textarea name="instructions" maxlength="30000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></label>' +
+      '<p class="hint wp-long-note">Don' + String.fromCharCode(8217) + 't write long values, like an email or a thread, into the instructions: each run adds a parameter you haven' + String.fromCharCode(8217) + 't written as $name at the end, under its description.</p>' +
       '<div class="wp-sections"><span class="hint">Add a section:</span>' +
-        Object.keys(WORKFLOW_SECTIONS).map(function (k) { return '<button type="button" class="wp-section" data-section="' + k + '">' + escapeHtml(WORKFLOW_SECTIONS[k].label) + '</button>'; }).join('') + '</div>' +
+        Object.keys(WORKFLOW_SECTIONS).map(function (k) { return '<button type="button" class="wp-section" data-section="' + k + '">' + escapeHtml(WORKFLOW_SECTIONS[k].label) + '</button>'; }).join('') +
+        '<button type="button" class="wp-preview">Preview</button></div>' +
+      '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
@@ -1199,7 +1205,7 @@ ${consoleShellScript}
     var missing = Object.keys(used).filter(function (n) { return !declared[n]; });
     var unused = Object.keys(declared).filter(function (n) { return !used[n]; });
     if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't a parameter: add ' + (missing.length > 1 ? 'them' : 'it') + ', or the text stays as written.');
-    if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't used in the instructions: its value is passed as an input.');
+    if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't written in the instructions: each run adds ' + (unused.length > 1 ? 'them' : 'it') + ' at the end, under ' + (unused.length > 1 ? 'their descriptions' : 'its description') + '.');
     form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
   }
 
@@ -1236,34 +1242,23 @@ ${consoleShellScript}
       var section = WORKFLOW_SECTIONS[ev.target.dataset && ev.target.dataset.section];
       if (!section) return;
       var area = form.instructions;
-      // Above the inputs at the end ($history alone on a line, maybe in
-      // its <history> tags), which stay last.
       var lines = area.value.replace(/\\s+$/, '').split('\\n');
-      var cut = lines.length, hasInput = false;
-      while (cut > 0) {
-        var t = lines[cut - 1].trim();
-        if (/^[$][a-z_][a-z0-9_]*$/.test(t)) hasInput = true;
-        else if (t !== '' && !/^<[/]?[a-z_][a-z0-9_]*>$/.test(t)) break;
-        cut--;
-      }
-      if (!hasInput) cut = lines.length;
       // The section's heading, if the instructions already have it.
       var at = -1;
-      for (var k = 0; k < cut && at < 0; k++) {
+      for (var k = 0; k < lines.length && at < 0; k++) {
         var h = lines[k].trim().toLowerCase();
         if (h.indexOf(section.match) === 0 && h.charAt(h.length - 1) === ':') at = k;
       }
       var before, after, added;
       if (at >= 0) {
-        var end = workflowSectionEnd(lines, at, cut);
+        var end = workflowSectionEnd(lines, at, lines.length);
         added = (section.gap && end > at ? '\\n' : '') + section.item;
         before = lines.slice(0, end + 1).join('\\n');
         after = lines.slice(end + 1).join('\\n').replace(/^\\s+/, '');
         area.value = before + '\\n' + added + (after ? '\\n\\n' + after : '');
       } else {
-        before = lines.slice(0, cut).join('\\n').replace(/\\s+$/, '');
-        after = lines.slice(cut).join('\\n').trim();
-        area.value = (before ? before + '\\n\\n' : '') + section.heading + '\\n' + section.item + (after ? '\\n\\n' + after : '');
+        before = area.value.replace(/\\s+$/, '');
+        area.value = (before ? before + '\\n\\n' : '') + section.heading + '\\n' + section.item;
       }
       // Select the first placeholder to type over.
       var start = area.value.indexOf('[', before.length);
@@ -1271,6 +1266,27 @@ ${consoleShellScript}
       if (start >= 0) area.setSelectionRange(start, area.value.indexOf(']', start) + 1);
       check();
     });
+    var previewBox = form.querySelector('.wp-preview-box');
+    function showPreview() {
+      var parameters = {};
+      var list = rows.querySelectorAll('.workflow-param-row');
+      for (var i = 0; i < list.length; i++) {
+        var pname = list[i].querySelector('.wp-name').value.trim();
+        if (pname) parameters[pname] = { description: list[i].querySelector('.wp-desc').value.trim() };
+      }
+      var out = form.querySelector('.wp-preview-text');
+      previewBox.hidden = false;
+      out.textContent = 'Loading' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/preview', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters }),
+      }).then(function (r) {
+        out.textContent = r.ok ? r.body.message : (r.body.error || 'Could not preview');
+      });
+    }
+    form.querySelector('.wp-preview').addEventListener('click', showPreview);
+    // A preview shown goes stale as the instructions change: hide it.
+    form.addEventListener('input', function () { previewBox.hidden = true; });
     form.querySelector('.wp-cancel').addEventListener('click', close);
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
