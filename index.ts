@@ -292,7 +292,7 @@ export { WORKFLOW_EXAMPLE_MESSAGES, type WorkflowExampleMessage } from './core/s
 export { createTrigger, updateTrigger, rotateTrigger, listTriggers, findTriggerByToken, publicTrigger, checkTriggerSettings, verifySenderSignature, parsePayload, valueAt, deliveryId, passesFilter, paramsFromPayload, recordDelivery as recordTriggerDelivery, FileTriggerStore, getTriggerStore, setTriggerStore, TriggerError, type WorkflowTrigger, type PublicTrigger, type TriggerSettings, type TriggerVerify, type TriggerFilter, type TriggerSender, type SignatureAlgorithm, type TriggerDelivery, type TriggerOutcome, type TriggerStore } from './core/workflow-triggers.js'
 export { checkCallbackUrl, callbackSecret, signCallback, deliverCallback, runCallbackPayload, isPrivateAddress, CallbackUrlError, type CallbackDelivery, type RunCallbackEvent } from './core/run-callbacks.js'
 export { WorkflowRunner, FileRunStore, getRunStore, setRunStore, listRuns, getRun, isUnderWay, RunError, type WorkflowRun, type WorkflowRunStatus, type RunStore, type ExecuteRun, type RunOutcome, type StartRunInput } from './core/workflow-runs.js'
-export { readWorkflows, readWorkflow, setWorkflowFields, clearWorkflowFields, validateParams, workflowRunMessage, migrateWorkflowsFile, WorkflowParamsError, type Workflow, type WorkflowFields, type WorkflowParameter } from './core/workflows.js'
+export { readWorkflows, readWorkflow, setWorkflowFields, clearWorkflowFields, validateParams, workflowRunMessage, workflowPreviewMessage, migrateWorkflowsFile, WorkflowParamsError, type Workflow, type WorkflowFields, type WorkflowParameter } from './core/workflows.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
 export { playgroundHtml } from './web/playground.js'
 
