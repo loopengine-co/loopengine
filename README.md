@@ -484,16 +484,8 @@ scaffolded project mounted at `/workspace` instead of baking agents in.
 
 ## License
 
-LoopEngine is under the [Functional Source License, Version 1.1, MIT
-Future License](LICENSE) (FSL-1.1-MIT). In short:
+LoopEngine is open source under the [MIT License](LICENSE): use, change,
+self-host and redistribute it for anything, commercial use included.
 
-- You can use, change and self-host it for anything, including running
-  your own business on it, except offering it to others as a competing
-  commercial product or service, such as a hosted LoopEngine.
-- Each version becomes MIT-licensed two years after its release.
-- Versions up to and including 0.3.12 were released under MIT and stay
-  under MIT.
-
-The license text is what applies; this summary isn't legal advice.
 Third-party software included in LoopEngine keeps its own license: see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -3,7 +3,7 @@
   "version": "0.3.49",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
-  "license": "FSL-1.1-MIT",
+  "license": "MIT",
   "homepage": "https://loopengine.co",
   "repository": {
     "type": "git",
