@@ -134,7 +134,7 @@ export const GOAL_PLAN_PROMPT = `You plan workflows for a confirmed goal brief i
 Rules:
 1. Levers first, capabilities second. Choose what moves this focus's measure (the playbook's levers, or your own new idea when the context calls for one), then map each to what the workspace has. Never start from what the connected tools could do.
 2. Every workflow serves the brief's focus directly and moves its measure. Workflows that only support it (reporting, onboarding for an acquisition goal, support) go in leftOut with a reason, not in workflows.
-3. One lever per workflow; no two workflows on the same lever. Never propose a lever already saved under the goal (built, proposed or dismissed): those are listed in the request.
+3. One lever per workflow, named in a few generic words (no business, product, person, place or site names: "list in app marketplaces", not "list Wick & Ember on Shopify"); no two workflows on the same lever. Never propose a lever already saved under the goal (built, proposed or dismissed): those are listed in the request.
 4. Three to five workflows for an "in" goal, ordered by impact against effort, quickest useful one first; startsAfter when one depends on another. Their humanMinutesPerWeek together stay within three quarters of the brief's weeklyHours, so the plan survives a busy week.
 4b. Work on a finite list (submitting to a set of directories, a one-time audit) is a setup task, or a workflow that says when it stops; never a weekly job that runs out of things to do.
 5. Specific to this context: name the person's own communities, systems, products and channels in each request. A request anyone could use unchanged is wrong.
@@ -200,7 +200,7 @@ const PLAN_TOOL: ToolSchema = {
           properties: {
             title: { type: 'string' },
             leverId: { type: 'string', description: "the playbook lever's id; empty for a new idea" },
-            lever: { type: 'string', description: 'the lever in a few words' },
+            lever: { type: 'string', description: 'the lever in a few generic words, with no names of the business, its products, people, places or sites' },
             focus: { type: 'string', enum: focusEnum },
             mechanism: { type: 'string', description: 'why it moves the measure, one sentence' },
             request: { type: 'string', description: 'the workflow request, specific to this context' },

@@ -44,6 +44,12 @@ export interface GoalWorkflow {
   /** How much the person changed the suggested request before building it
    * (edits to the built workflow's instructions later don't count). */
   edited?: EditAmount
+  /** Whether Build made its agent. */
+  agentCreated?: boolean
+  /** Why it was discarded, when the person said. */
+  discardReason?: DiscardReason
+  /** What the daily check has reported about the built workflow. */
+  signals?: { kept14d?: true; lastUsedAt?: string; removed?: true }
   /** Which generation suggested it (1 on create). */
   round: number
 }
@@ -70,6 +76,9 @@ export class GoalError extends Error {}
 
 export type EditAmount = 'none' | 'light' | 'heavy'
 
+export const DISCARD_REASONS = ['not-relevant', 'too-much-work', 'already-doing-it', 'other'] as const
+export type DiscardReason = (typeof DISCARD_REASONS)[number]
+
 export interface GoalsDeps {
   /** The project folder goals/ lives in. */
   projectDir: () => string
@@ -80,6 +89,8 @@ export interface GoalsDeps {
   agentExists: (name: string) => boolean
   /** Makes an agent with these instructions (the workspace's default model). */
   createAgent: (name: string, instructions: string) => Promise<void>
+  /** Whether a built workflow still exists, and its runs since a time. */
+  workflowActivity?: (agent: string, workflowId: string, sinceIso: string) => Promise<{ exists: boolean; runs: number; done: number }>
 }
 
 const MAX_GOAL_CHARS = 1000
@@ -130,24 +141,54 @@ export function deleteGoal(deps: GoalsDeps, id: string): void {
   unlinkSync(goalFile(deps, id))
 }
 
-// ---- What the person says about their business (all goals share it).
+// ---- What the person says about their business, its kind, and whether
+// it shares anonymous lever stats (all goals share these): goals/about.json.
 
-export function readAbout(deps: GoalsDeps): string {
-  const file = join(goalsDir(deps), 'about.json')
+export const BUSINESS_KINDS = ['ecommerce', 'saas', 'agency', 'local', 'creator', 'nonprofit', 'other'] as const
+export type BusinessKind = (typeof BUSINESS_KINDS)[number]
+
+export interface GoalSettings {
+  about: string
+  businessKind?: BusinessKind
+  /** Sharing anonymous lever stats with loopengine.co: unset means the
+   * default (on for a LoopEngine Cloud workspace, off elsewhere). */
+  shareLeverStats?: boolean
+}
+
+export function readGoalSettings(deps: GoalsDeps): GoalSettings {
   try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8')) as { about?: unknown }
-    return typeof parsed.about === 'string' ? parsed.about : ''
+    const raw = JSON.parse(readFileSync(join(goalsDir(deps), 'about.json'), 'utf8')) as Record<string, unknown>
+    return {
+      about: typeof raw.about === 'string' ? raw.about : '',
+      ...(BUSINESS_KINDS.includes(raw.businessKind as BusinessKind) ? { businessKind: raw.businessKind as BusinessKind } : {}),
+      ...(typeof raw.shareLeverStats === 'boolean' ? { shareLeverStats: raw.shareLeverStats } : {}),
+    }
   } catch {
-    return ''
+    return { about: '' }
   }
 }
 
-export function writeAbout(deps: GoalsDeps, about: unknown): string {
-  if (typeof about !== 'string') throw new GoalError('about must be text')
-  const text = about.trim().slice(0, 2000)
+export function writeGoalSettings(deps: GoalsDeps, input: { about?: unknown; businessKind?: unknown; shareLeverStats?: unknown }): GoalSettings {
+  const current = readGoalSettings(deps)
+  if (input.about !== undefined && typeof input.about !== 'string') throw new GoalError('about must be text')
+  if (input.businessKind !== undefined && input.businessKind !== null && !BUSINESS_KINDS.includes(input.businessKind as BusinessKind)) throw new GoalError(`businessKind must be one of ${BUSINESS_KINDS.join(', ')}`)
+  if (input.shareLeverStats !== undefined && typeof input.shareLeverStats !== 'boolean') throw new GoalError('shareLeverStats must be true or false')
+  const next: GoalSettings = {
+    about: typeof input.about === 'string' ? input.about.trim().slice(0, 2000) : current.about,
+    ...(input.businessKind === null ? {} : input.businessKind !== undefined ? { businessKind: input.businessKind as BusinessKind } : current.businessKind ? { businessKind: current.businessKind } : {}),
+    ...(input.shareLeverStats !== undefined ? { shareLeverStats: input.shareLeverStats as boolean } : current.shareLeverStats !== undefined ? { shareLeverStats: current.shareLeverStats } : {}),
+  }
   mkdirSync(goalsDir(deps), { recursive: true })
-  writeFileSync(join(goalsDir(deps), 'about.json'), `${JSON.stringify({ about: text }, null, 2)}\n`)
-  return text
+  writeFileSync(join(goalsDir(deps), 'about.json'), `${JSON.stringify(next, null, 2)}\n`)
+  return next
+}
+
+export function readAbout(deps: GoalsDeps): string {
+  return readGoalSettings(deps).about
+}
+
+export function writeAbout(deps: GoalsDeps, about: unknown): string {
+  return writeGoalSettings(deps, { about }).about
 }
 
 // ---- Planning.
@@ -203,7 +244,7 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
       // The planner is told what's there; anything it repeats anyway is dropped.
       const fresh = plan.workflows.map((w) => toWorkflow(w, round, deps)).filter((w, i, all) =>
         !latest.workflows.some((old) => sameLever(old, w)) && all.findIndex((x) => sameLever(x, w)) === i)
-      write(deps, {
+      const updated: Goal = {
         ...latest,
         brief: plan.brief,
         setup: [...new Set([...latest.setup, ...plan.setup])],
@@ -214,7 +255,9 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
         rounds: round,
         workflows: [...latest.workflows, ...fresh],
         updatedAt: now(),
-      } as Goal)
+      } as Goal
+      write(deps, updated)
+      fresh.forEach((w, i) => recordLeverEvent(deps, updated, w, 'suggested', { position: i + 1, round }))
     } catch (err) {
       const latest = getGoal(deps, planning.id)
       write(deps, { ...latest, status: 'failed', error: err instanceof Error ? err.message : String(err), updatedAt: now() })
@@ -256,23 +299,33 @@ function updateWorkflow(deps: GoalsDeps, goal: Goal, workflowId: string, change:
   return write(deps, { ...goal, workflows: goal.workflows.map((w) => (w.id === workflowId ? change(w) : w)), updatedAt: now() })
 }
 
-export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string, action: unknown): Goal {
+export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string, action: unknown, reason?: unknown): Goal {
   const goal = getGoal(deps, id)
   const w = findWorkflow(goal, workflowId)
   if (action === 'save') {
     if (w.state !== 'suggested') throw new GoalError('Only a suggestion can be saved.')
+    recordLeverEvent(deps, goal, w, 'saved')
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'saved' }))
   }
   if (action === 'discard') {
     if (w.state === 'discarded') return goal
     if (w.state === 'built') throw new GoalError('This one is built: remove the workflow from its agent instead.')
+    recordLeverEvent(deps, goal, w, 'discarded')
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'discarded', restoreTo: x.state as 'suggested' | 'saved' }))
   }
   if (action === 'restore') {
     if (w.state !== 'discarded') return goal
-    return updateWorkflow(deps, goal, workflowId, ({ restoreTo, ...x }) => ({ ...x, state: restoreTo ?? 'suggested' }))
+    recordLeverEvent(deps, goal, w, 'restored')
+    return updateWorkflow(deps, goal, workflowId, ({ restoreTo, discardReason: _r, ...x }) => ({ ...x, state: restoreTo ?? 'suggested' }))
   }
-  throw new GoalError('action must be save, discard or restore')
+  if (action === 'reason') {
+    if (w.state !== 'discarded') throw new GoalError('Only a discarded workflow has a reason.')
+    if (!DISCARD_REASONS.includes(reason as DiscardReason)) throw new GoalError(`reason must be one of ${DISCARD_REASONS.join(', ')}`)
+    if (w.discardReason === reason) return goal
+    recordLeverEvent(deps, goal, w, 'discard_reason', { reason: reason as string })
+    return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, discardReason: reason as DiscardReason }))
+  }
+  throw new GoalError('action must be save, discard, restore or reason')
 }
 
 /** Build workflow: makes the suggested agent when there is none by that
@@ -288,7 +341,7 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
     await deps.createAgent(w.agent.name, w.agent.instructions || `You help with: ${w.title}.`)
     createdAgent = true
   }
-  if (w.agent.isNew) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, agent: { name: x.agent.name, isNew: false } }))
+  if (w.agent.isNew || createdAgent) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, agent: { name: x.agent.name, isNew: false }, ...(createdAgent ? { agentCreated: true } : {}) }))
   const params = new URLSearchParams({ agent: w.agent.name, description: w.request, goal: id, goalWorkflow: workflowId })
   return { goal, agent: w.agent.name, createdAgent, url: `/workflows/new?${params}` }
 }
@@ -301,7 +354,8 @@ export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input
   if (typeof input.agent !== 'string' || typeof input.workflowId !== 'string') throw new GoalError('agent and workflowId are required')
   const built = { agent: input.agent, workflowId: input.workflowId, title: typeof input.title === 'string' ? input.title : input.workflowId, at: now() }
   const edited = typeof input.description === 'string' ? editAmount(w.request, input.description) : undefined
-  if (edited && edited !== 'none') recordLeverEvent(deps, goal, w, { type: 'edited', amount: edited })
+  recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
+  if (edited && edited !== 'none') recordLeverEvent(deps, goal, w, 'edited', { amount: edited })
   return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'built', built, agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}) }))
 }
 
@@ -325,28 +379,71 @@ export function editAmount(before: string, after: string): EditAmount {
 // they're sent to loopengine.co. Never the goal's or the workflow's text:
 // the lever, its focus, the playbook version and what happened.
 
+export type LeverEventType = 'suggested' | 'saved' | 'discarded' | 'discard_reason' | 'restored' | 'built' | 'edited' | 'kept_14d' | 'used' | 'removed'
+
 export interface LeverEvent {
   id: string
-  type: 'edited'
+  type: LeverEventType
   at: string
   goal: string
   goalWorkflow: string
   leverId?: string
-  /** The lever's label (for a new idea, the planner's own). */
+  /** The lever's label (for a new idea, the planner's own, generic). */
   lever: string
   focus: GoalFocus | 'other'
   playbookVersion?: number
-  amount: Exclude<EditAmount, 'none'>
+  /** Per type: position and round (suggested), reason (discard_reason),
+   * newAgent (built), amount (edited), runs and done (used), days (removed). */
+  detail: Record<string, string | number | boolean>
 }
 
-export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalWorkflow, event: Pick<LeverEvent, 'type' | 'amount'>): LeverEvent {
+export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalWorkflow, type: LeverEventType, detail: LeverEvent['detail'] = {}): LeverEvent {
   const full: LeverEvent = {
-    id: newId('e'), at: now(), goal: goal.id, goalWorkflow: w.id, ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
-    ...(goal.playbookVersion !== undefined ? { playbookVersion: goal.playbookVersion } : {}), ...event,
+    id: newId('e'), type, at: now(), goal: goal.id, goalWorkflow: w.id, ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
+    ...(goal.playbookVersion !== undefined ? { playbookVersion: goal.playbookVersion } : {}), detail,
   }
   mkdirSync(goalsDir(deps), { recursive: true })
   appendFileSync(join(goalsDir(deps), 'lever-events.jsonl'), `${JSON.stringify(full)}\n`)
   return full
+}
+
+// ---- The daily check of built workflows: kept after 14 days, how much
+// they're used (weekly), and removed.
+
+const DAY = 24 * 60 * 60 * 1000
+
+export async function checkBuiltWorkflows(deps: GoalsDeps, nowMs = Date.now()): Promise<void> {
+  if (!deps.workflowActivity) return
+  for (const goal of listGoals(deps)) {
+    for (const w of goal.workflows) {
+      if (w.state !== 'built' || !w.built || w.signals?.removed) continue
+      const builtAt = Date.parse(w.built.at)
+      const lastUsed = w.signals?.lastUsedAt ? Date.parse(w.signals.lastUsedAt) : builtAt
+      const since = new Date(lastUsed).toISOString()
+      let activity: { exists: boolean; runs: number; done: number }
+      try {
+        activity = await deps.workflowActivity(w.built.agent, w.built.workflowId, since)
+      } catch {
+        continue
+      }
+      const signals = { ...w.signals }
+      const latest = getGoal(deps, goal.id)
+      if (!activity.exists) {
+        recordLeverEvent(deps, latest, w, 'removed', { days: Math.floor((nowMs - builtAt) / DAY) })
+        signals.removed = true
+      } else {
+        if (!signals.kept14d && nowMs - builtAt >= 14 * DAY) {
+          recordLeverEvent(deps, latest, w, 'kept_14d')
+          signals.kept14d = true
+        }
+        if (nowMs - lastUsed >= 7 * DAY) {
+          recordLeverEvent(deps, latest, w, 'used', { runs: activity.runs, done: activity.done })
+          signals.lastUsedAt = new Date(nowMs).toISOString()
+        }
+      }
+      updateWorkflow(deps, latest, w.id, (x) => ({ ...x, signals }))
+    }
+  }
 }
 
 export function readLeverEvents(deps: GoalsDeps): LeverEvent[] {

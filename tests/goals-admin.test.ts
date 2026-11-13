@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  createGoal, editAmount, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, prepareBuild, readAbout, readLeverEvents, setWorkflowState,
+  checkBuiltWorkflows, createGoal, editAmount, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
   type GoalsDeps,
 } from '#web/goals-admin.js'
 
@@ -164,18 +164,78 @@ describe('how much a built workflow was edited', () => {
   it('records how much the request was changed at Build, and an event only when it was', async () => {
     const untouched = await built(SUGGESTION)
     expect(getGoal(untouched.deps, untouched.id).workflows[0]!.edited).toBe('none')
-    expect(readLeverEvents(untouched.deps)).toEqual([])
+    expect(readLeverEvents(untouched.deps).map((e) => e.type)).toEqual(['suggested', 'saved', 'built'])
 
     const changed = await built(SUGGESTION.replace('Reddit and Hacker News', 'r/AI_Agents and r/nocode'))
     expect(getGoal(changed.deps, changed.id).workflows[0]!.edited).toBe('light')
-    const [event] = readLeverEvents(changed.deps)
-    expect(event).toMatchObject({ type: 'edited', amount: 'light', lever: 'answer posts', focus: 'new-signups', goalWorkflow: changed.wid })
+    const event = readLeverEvents(changed.deps).find((e) => e.type === 'built')
+    expect(event).toMatchObject({ type: 'built', detail: { newAgent: false } })
+    expect(readLeverEvents(changed.deps).find((e) => e.type === 'edited')).toMatchObject({ detail: { amount: 'light' }, lever: 'answer posts', focus: 'new-signups', goalWorkflow: changed.wid })
     // Never the text itself.
-    expect(JSON.stringify(event)).not.toContain('r/AI_Agents')
+    expect(JSON.stringify(readLeverEvents(changed.deps))).not.toContain('r/AI_Agents')
 
     // Without the submitted request, nothing is known about edits.
     const unknown = await built()
     expect(getGoal(unknown.deps, unknown.id).workflows[0]!.edited).toBeUndefined()
+  })
+})
+
+describe('lever events', () => {
+  it('records a workflow’s life: suggested with its place, saved, discarded with why, restored, built', async () => {
+    const { deps } = setup([[wf('A'), wf('B'), wf('C', { agent: 'new-agent', newAgent: { name: 'new-agent', instructions: 'Does C.' } })]])
+    const { id } = createGoal(deps, { goal: 'Grow users to 100' })
+    await goalPlanning(id)
+    const [a, b, c] = getGoal(deps, id).workflows
+    setWorkflowState(deps, id, a!.id, 'discard')
+    setWorkflowState(deps, id, a!.id, 'reason', 'too-much-work')
+    expect(() => setWorkflowState(deps, id, a!.id, 'reason', 'boring')).toThrow(/reason must be one of/)
+    setWorkflowState(deps, id, a!.id, 'restore')
+    setWorkflowState(deps, id, c!.id, 'save')
+    await prepareBuild(deps, id, c!.id)
+    markBuilt(deps, id, c!.id, { agent: 'new-agent', workflowId: 'c' })
+    const events = readLeverEvents(deps)
+    expect(events.filter((e) => e.type === 'suggested').map((e) => [e.lever, e.detail])).toEqual([['a', { position: 1, round: 1 }], ['b', { position: 2, round: 1 }], ['c', { position: 3, round: 1 }]])
+    expect(events.filter((e) => e.type !== 'suggested').map((e) => [e.type, e.lever, e.detail])).toEqual([
+      ['discarded', 'a', {}], ['discard_reason', 'a', { reason: 'too-much-work' }], ['restored', 'a', {}],
+      ['saved', 'c', {}], ['built', 'c', { newAgent: true }],
+    ])
+    expect(b).toBeDefined()
+  })
+
+  it('checks built workflows daily: kept after 14 days, used weekly, removed once', async () => {
+    const { deps } = setup([[wf('A')]])
+    const { id } = createGoal(deps, { goal: 'Grow users to 100' })
+    await goalPlanning(id)
+    const [a] = getGoal(deps, id).workflows
+    setWorkflowState(deps, id, a!.id, 'save')
+    markBuilt(deps, id, a!.id, { agent: 'growth-agent', workflowId: 'a' })
+    const builtAt = Date.parse(getGoal(deps, id).workflows[0]!.built!.at)
+    const day = 24 * 60 * 60 * 1000
+    let exists = true
+    deps.workflowActivity = async () => ({ exists, runs: 6, done: 5 })
+    const types = () => readLeverEvents(deps).filter((e) => ['kept_14d', 'used', 'removed'].includes(e.type)).map((e) => `${e.type}${e.detail.runs !== undefined ? `:${e.detail.runs}/${e.detail.done}` : ''}${e.detail.days !== undefined ? `:${e.detail.days}d` : ''}`)
+    await checkBuiltWorkflows(deps, builtAt + 3 * day)
+    expect(types()).toEqual([])
+    await checkBuiltWorkflows(deps, builtAt + 8 * day)
+    expect(types()).toEqual(['used:6/5'])
+    await checkBuiltWorkflows(deps, builtAt + 10 * day)
+    await checkBuiltWorkflows(deps, builtAt + 15 * day)
+    expect(types()).toEqual(['used:6/5', 'kept_14d', 'used:6/5'])
+    exists = false
+    await checkBuiltWorkflows(deps, builtAt + 20 * day)
+    await checkBuiltWorkflows(deps, builtAt + 21 * day)
+    expect(types()).toEqual(['used:6/5', 'kept_14d', 'used:6/5', 'removed:20d'])
+  })
+
+  it('keeps the business’s kind and the sharing choice with what it says about itself', () => {
+    const { deps } = setup([])
+    writeGoalSettings(deps, { about: 'A candle shop', businessKind: 'ecommerce' })
+    writeGoalSettings(deps, { shareLeverStats: false })
+    expect(readGoalSettings(deps)).toEqual({ about: 'A candle shop', businessKind: 'ecommerce', shareLeverStats: false })
+    expect(readAbout(deps)).toBe('A candle shop')
+    expect(() => writeGoalSettings(deps, { businessKind: 'spaceships' })).toThrow(/businessKind must be one of/)
+    writeGoalSettings(deps, { businessKind: null })
+    expect(readGoalSettings(deps).businessKind).toBeUndefined()
   })
 })
 

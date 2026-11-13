@@ -54,6 +54,11 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-state.saved { background: var(--accent-soft); color: var(--accent-ink); }
   .gl-state.built { background: var(--good-soft); color: var(--good); }
   .gl-setup { margin: 0; padding-left: 18px; font-size: 13.5px; display: grid; gap: 4px; }
+  .gl-select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .gl-share { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; line-height: 1.45; }
+  .gl-share input { margin-top: 2px; }
+  .gl-discarded-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 10px; background: var(--surface); font-size: 13.5px; }
+  .gl-discarded-note .gl-btn { height: 28px; font-size: 12.5px; }
   .gl-empty { font-size: 13.5px; color: var(--ink-muted); margin: 0; }
   .gl-status { font-size: 13.5px; color: var(--ink-muted); }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
@@ -81,7 +86,9 @@ ${consoleShellScript}
   var ELLIPSIS = String.fromCharCode(8230);
   var ARROW = String.fromCharCode(8594);
   var FOCUS = [['new-signups', 'Getting new signups or customers'], ['activation', 'Getting new users started'], ['retention', 'Keeping users'], ['faster-support', 'Faster support'], ['revenue-recovery', 'Recovering revenue'], ['ops-hygiene', 'Smoother operations'], ['other', 'Something else']];
-  var state = { goals: [], about: '', current: null, showDiscarded: false, error: '', poll: null, startedAt: 0 };
+  var KINDS = [['', 'Choose one'], ['ecommerce', 'Online store'], ['saas', 'Software or app'], ['agency', 'Agency or services'], ['local', 'Local business'], ['creator', 'Creator or media'], ['nonprofit', 'Nonprofit'], ['other', 'Something else']];
+  var REASONS = [['not-relevant', 'Not relevant'], ['too-much-work', 'Too much work'], ['already-doing-it', 'Already doing it']];
+  var state = { goals: [], about: '', settings: {}, current: null, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -107,6 +114,7 @@ ${consoleShellScript}
       if (!r.ok) { page.innerHTML = '<p class="error">Could not load goals: ' + esc(r.body.error || 'unknown error') + '</p>'; return; }
       state.goals = r.body.goals || [];
       state.about = r.body.about || '';
+      state.settings = r.body.settings || {};
       var id = selectId || new URLSearchParams(location.search).get('goal') || (state.goals[0] && state.goals[0].id);
       state.current = state.goals.filter(function (g) { return g.id === id; })[0] || null;
       render();
@@ -136,7 +144,10 @@ ${consoleShellScript}
       '<label for="glGoal"><strong>What do you want to achieve?</strong></label>' +
       '<textarea id="glGoal" placeholder="e.g. Grow my LoopEngine Cloud users to 100"></textarea>' +
       '<details' + (state.about ? '' : ' open') + '><summary class="hint">About your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)') + '</summary>' +
-        '<textarea id="glAbout" style="margin-top:8px" placeholder="What you sell, to whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea></details>' +
+        '<textarea id="glAbout" style="margin-top:8px" placeholder="What you sell, to whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
+        '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
+        (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '') +
+      '</details>' +
       '<div class="gl-row"><button type="button" class="gl-btn" id="glSubmit">Suggest workflows</button><span class="hint" id="glSubmitStatus"></span></div>' +
     '</div>';
   }
@@ -185,6 +196,9 @@ ${consoleShellScript}
       (g.status === 'failed' ? '<p class="error">' + esc(g.error || 'Planning failed.') + '</p>' : '') +
       (g.setup && g.setup.length ? '<div><strong style="font-size:13.5px">Before you start</strong><ol class="gl-setup">' + g.setup.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></div>' : '') +
     '</div>' +
+    (state.justDiscarded ? '<div class="gl-discarded-note" data-discarded="' + esc(state.justDiscarded.id) + '"><span>Discarded <strong>' + esc(state.justDiscarded.title) + '</strong>. Why?</span>' +
+      REASONS.map(function (r) { return '<button type="button" class="gl-btn plain" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
+      '<button type="button" class="gl-link" data-undo="1">Undo</button></div>' : '') +
     '<div class="gl-section"><h3>Suggestions <span class="gl-count">' + suggested.length + '</span></h3>' +
       (suggested.length ? suggested.map(workflowHtml).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
       '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">New ideas only: nothing you’ve saved, built or discarded comes back.</span></div>' +
@@ -224,6 +238,10 @@ ${consoleShellScript}
         render();
       });
     });
+    var kind = document.getElementById('glKind');
+    if (kind) kind.addEventListener('change', function () { saveSettings({ businessKind: kind.value || null }); });
+    var share = document.getElementById('glShare');
+    if (share) share.addEventListener('change', function () { saveSettings({ shareLeverStats: share.checked }); });
     var links = page.querySelectorAll('[data-goal]');
     for (var i = 0; i < links.length; i++) links[i].addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -264,6 +282,26 @@ ${consoleShellScript}
     });
     var cards = page.querySelectorAll('[data-wf]');
     for (var c = 0; c < cards.length; c++) wireCard(cards[c], base);
+    var note = page.querySelector('[data-discarded]');
+    if (note) {
+      var wid = note.getAttribute('data-discarded');
+      var send = function (body) {
+        state.justDiscarded = null;
+        api('PATCH', base + '/workflows/' + encodeURIComponent(wid), body).then(function (r) {
+          if (r.ok) replaceGoal(r.body.goal);
+          render();
+        });
+      };
+      var reasons = note.querySelectorAll('[data-reason]');
+      for (var q = 0; q < reasons.length; q++) reasons[q].addEventListener('click', function (ev) { send({ action: 'reason', reason: ev.currentTarget.getAttribute('data-reason') }); });
+      note.querySelector('[data-undo]').addEventListener('click', function () { send({ action: 'restore' }); });
+    }
+  }
+
+  function saveSettings(body) {
+    api('PUT', '/goals/about', body).then(function (r) {
+      if (r.ok && r.body.settings) { state.settings.businessKind = r.body.settings.businessKind; state.settings.shareLeverStats = r.body.settings.shareLeverStats; }
+    });
   }
 
   function wireCard(card, base) {
@@ -285,6 +323,9 @@ ${consoleShellScript}
       api('PATCH', base + '/workflows/' + encodeURIComponent(id), { action: act }).then(function (r) {
         if (!r.ok) { status.textContent = r.body.error || 'Could not do that.'; btn.disabled = false; return; }
         replaceGoal(r.body.goal);
+        // Ask why, once, right after a discard.
+        var title = card.querySelector('.gl-wf-title');
+        state.justDiscarded = act === 'discard' ? { id: id, title: title ? title.textContent.trim() : '' } : null;
         render();
       });
     });

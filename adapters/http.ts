@@ -119,7 +119,8 @@ import { workflowPageHtml } from '#web/workflow-page.js'
 import { goalsPageHtml } from '#web/goals-page.js'
 import { setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
 import { startPlaybookSync } from '#core/playbook-sync.js'
-import { GoalError, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, setWorkflowState, writeAbout, type GoalsDeps } from '#web/goals-admin.js'
+import { GoalError, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
+import { sharesLeverStats, startLeverEventsSync } from '#web/lever-events-sync.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
 import { WORKFLOW_EXAMPLES } from '#core/system-agents/workflow-examples.js'
@@ -1002,6 +1003,11 @@ const goalsDeps: GoalsDeps = {
   modelCall: goalModelCall,
   context: async (about) => goalContextFrom({ about, agents: await workflowAgentInfo(), apps: workflowApps() }),
   agentExists: (name) => Boolean(getEntry(name)),
+  workflowActivity: async (agent, workflowId, sinceIso) => {
+    if (!getEntry(agent) || !readWorkflow(agentDir(agent), workflowId)) return { exists: false, runs: 0, done: 0 }
+    const runs = (await listRuns(agent, { workflowId, limit: 500 })).filter((r) => r.started_at >= sinceIso)
+    return { exists: true, runs: runs.length, done: runs.filter((r) => r.status === 'done').length }
+  },
   createAgent: async (name, instructions) => {
     let model: AgentModelConfig | undefined
     try {
@@ -1023,16 +1029,25 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
   // /goals/<id>/workflows/<wid>[/build|/built]
   const [, , id, sub, wid, action] = pathname.split('/')
   try {
-    if (!id && req.method === 'GET') return json(200, { goals: listGoals(goalsDeps), about: readAbout(goalsDeps) })
+    if (!id && req.method === 'GET') {
+      const settings = readGoalSettings(goalsDeps)
+      return json(200, { goals: listGoals(goalsDeps), about: settings.about, settings: { ...settings, shareLeverStats: sharesLeverStats(projectDir()), cloud: Boolean(process.env.LOOPENGINE_TRUSTED_PROXY_SECRET) } })
+    }
     if (!id && req.method === 'POST') return json(200, { goal: createGoal(goalsDeps, await readJsonBody(req)) })
-    if (id === 'about' && req.method === 'PUT') return json(200, { about: writeAbout(goalsDeps, (await readJsonBody(req)).about) })
+    if (id === 'about' && req.method === 'PUT') {
+      const settings = writeGoalSettings(goalsDeps, await readJsonBody(req))
+      return json(200, { about: settings.about, settings: { ...settings, shareLeverStats: sharesLeverStats(projectDir()) } })
+    }
     if (id && !sub && req.method === 'GET') return json(200, { goal: getGoal(goalsDeps, id) })
     if (id && !sub && req.method === 'DELETE') {
       deleteGoal(goalsDeps, id)
       return json(200, { deleted: true })
     }
     if (id && sub === 'generate' && req.method === 'POST') return json(200, { goal: generateMore(goalsDeps, id, await readJsonBody(req)) })
-    if (id && sub === 'workflows' && wid && !action && req.method === 'PATCH') return json(200, { goal: setWorkflowState(goalsDeps, id, wid, (await readJsonBody(req)).action) })
+    if (id && sub === 'workflows' && wid && !action && req.method === 'PATCH') {
+      const body = await readJsonBody(req)
+      return json(200, { goal: setWorkflowState(goalsDeps, id, wid, body.action, body.reason) })
+    }
     if (id && sub === 'workflows' && wid && action === 'build' && req.method === 'POST') return json(200, await prepareBuild(goalsDeps, id, wid))
     if (id && sub === 'workflows' && wid && action === 'built' && req.method === 'POST') return json(200, { goal: markBuilt(goalsDeps, id, wid, await readJsonBody(req)) })
     return json(404, { error: 'not found' })
@@ -5305,6 +5320,12 @@ server.listen(port, () => {
   // Cloud workspace fetches daily (core/playbook-sync.ts).
   setPlaybookProjectDir(projectDir())
   startPlaybookSync(projectDir(), (m) => console.log(m))
+  // Lever events: built goal workflows checked daily (kept, used,
+  // removed), and sent to loopengine.co while sharing is on.
+  const checkGoals = () => void checkBuiltWorkflows(goalsDeps).catch((err) => console.error('[loopengine] checking goal workflows failed:', err))
+  checkGoals()
+  setInterval(checkGoals, 24 * 60 * 60 * 1000).unref()
+  startLeverEventsSync(projectDir(), (m) => console.log(m))
   // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.
   // Workflows from before they were skills move into their skills first,
   // so their schedules run them.
