@@ -1143,12 +1143,27 @@ ${consoleShellScript}
 
   // Sections the editor adds to a workflow's instructions, for what isn't
   // a step: rules that always hold, cases that need a different answer,
-  // and worked examples. Each starts as a template to fill in.
+  // and worked examples. Each starts as a template to fill in; once the
+  // instructions have the section, the button adds another item to it.
   var WORKFLOW_SECTIONS = {
-    policies: { label: 'Policies', text: 'Policies (always follow these):\\n- [A rule with its real numbers, e.g. Orders lost for over 15 days are reshipped, not refunded.] (edit this)' },
-    cases: { label: 'Special cases', text: 'Special cases (check these before acting; when one applies, follow it over the steps):\\n- When [what you would notice]: [what to do, and what not to do or promise]. (edit this)' },
-    example: { label: 'Example', text: 'Example (follow its judgment and tone, not its exact words):\\nSituation: [what came in, and what the lookups showed] (edit this)\\nGood result: [what the agent should write or do] (edit this)' },
+    policies: { label: 'Policies', match: 'policies', heading: 'Policies (always follow these):', item: '- [A rule with its real numbers, e.g. Orders lost for over 15 days are reshipped, not refunded.] (edit this)' },
+    cases: { label: 'Special cases', match: 'special cases', heading: 'Special cases (check these before acting; when one applies, follow it over the steps):', item: '- When [what you would notice]: [what to do, and what not to do or promise]. (edit this)' },
+    example: { label: 'Example', match: 'example', heading: 'Examples (follow their judgment and tone, not their exact words):', item: 'Situation: [what came in, and what the lookups showed] (edit this)\\nGood result: [what the agent should write or do] (edit this)', gap: true },
   };
+
+  // Where a section ends: its items, and the lines that carry them on
+  // (an example's Situation and Good result), blank lines between items
+  // included, up to the next part of the instructions.
+  function workflowSectionEnd(lines, from, cut) {
+    var end = from;
+    for (var j = from + 1; j < cut; j++) {
+      var t = lines[j].trim();
+      if (t === '') continue;
+      if (/^[-*]/.test(t) || /^(situation|good result)/i.test(t) || lines[j - 1].trim() !== '') { end = j; continue; }
+      break;
+    }
+    return end;
+  }
 
   function workflowEditorHtml(w) {
     var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
@@ -1221,13 +1236,39 @@ ${consoleShellScript}
       var section = WORKFLOW_SECTIONS[ev.target.dataset && ev.target.dataset.section];
       if (!section) return;
       var area = form.instructions;
-      var before = area.value.replace(/\\s+$/, '');
-      area.value = (before ? before + '\\n\\n' : '') + section.text;
+      // Above the inputs at the end ($history alone on a line, maybe in
+      // its <history> tags), which stay last.
+      var lines = area.value.replace(/\\s+$/, '').split('\\n');
+      var cut = lines.length, hasInput = false;
+      while (cut > 0) {
+        var t = lines[cut - 1].trim();
+        if (/^[$][a-z_][a-z0-9_]*$/.test(t)) hasInput = true;
+        else if (t !== '' && !/^<[/]?[a-z_][a-z0-9_]*>$/.test(t)) break;
+        cut--;
+      }
+      if (!hasInput) cut = lines.length;
+      // The section's heading, if the instructions already have it.
+      var at = -1;
+      for (var k = 0; k < cut && at < 0; k++) {
+        var h = lines[k].trim().toLowerCase();
+        if (h.indexOf(section.match) === 0 && h.charAt(h.length - 1) === ':') at = k;
+      }
+      var before, after, added;
+      if (at >= 0) {
+        var end = workflowSectionEnd(lines, at, cut);
+        added = (section.gap && end > at ? '\\n' : '') + section.item;
+        before = lines.slice(0, end + 1).join('\\n');
+        after = lines.slice(end + 1).join('\\n').replace(/^\\s+/, '');
+        area.value = before + '\\n' + added + (after ? '\\n\\n' + after : '');
+      } else {
+        before = lines.slice(0, cut).join('\\n').replace(/\\s+$/, '');
+        after = lines.slice(cut).join('\\n').trim();
+        area.value = (before ? before + '\\n\\n' : '') + section.heading + '\\n' + section.item + (after ? '\\n\\n' + after : '');
+      }
       // Select the first placeholder to type over.
       var start = area.value.indexOf('[', before.length);
       area.focus();
       if (start >= 0) area.setSelectionRange(start, area.value.indexOf(']', start) + 1);
-      area.scrollTop = area.scrollHeight;
       check();
     });
     form.querySelector('.wp-cancel').addEventListener('click', close);
