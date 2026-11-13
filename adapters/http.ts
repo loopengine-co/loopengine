@@ -100,7 +100,7 @@ import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js
 import { NotifierFileError } from '#core/notifier-file.js'
 import { decidePath, verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { agentApprovers, agentTelegramWebhookInfo, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, type TwoWayApp } from '#web/notifier-admin.js'
+import { agentApprovers, agentMessagingIdentities, agentTelegramWebhookInfo, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, type TwoWayApp } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, outcomeText, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
 import { handleJobMessage, isJobMessage, settleJobThread, type JobDeps, type JobTurn } from '#core/messaging/jobs.js'
@@ -4877,6 +4877,14 @@ const server = createServer(async (req, res) => {
 
     // Backs the console's Approvals section and polling clients — see
     // handleNotifierGet/handlePendingGet above.
+    // Messaging tab: which bot each saved app connects as.
+    const identitiesMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/notifier\/identities$/)
+    if (identitiesMatch) {
+      const entry = getEntry(decodeURIComponent(identitiesMatch[1]))
+      if (!entry) { res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unknown agent' })); return }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(await agentMessagingIdentities(entry.config)))
+      return
+    }
     const notifierMatch = pathname.match(/^\/agents\/([^/]+)\/notifier$/)
     if (notifierMatch && req.method === 'GET') {
       handleNotifierGet(res, decodeURIComponent(notifierMatch[1]))

@@ -298,6 +298,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .msg-conn.is-primary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .msg-conn > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; cursor: pointer; }
   .msg-conn-title { font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
+  .msg-conn-bot { font-weight: 500; font-size: 12.5px; color: var(--ink-muted); font-family: var(--font-mono); }
   .le-channel-icon { width: 18px; height: 18px; flex: none; }
   .msg-conn-blurb { flex-basis: 100%; margin: 0; }
   .msg-conn > form.add-source { border: 0; background: none; box-shadow: none; padding: 0 0 14px; margin: 0; }
@@ -2588,6 +2589,24 @@ ${consoleShellScript}
         : 'No messaging app is primary yet, so saving this one makes it primary.') + '</p></div>';
   }
 
+  // Which bot each saved app connects as (@username on Telegram, the bot
+  // and its workspace on Slack), next to the app's name once the apps
+  // answer, so a slow one doesn't hold up the tab.
+  function showMessagingIdentities(name, content) {
+    fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/notifier/identities').then(function (r) {
+      if (currentName !== name || !r.ok) return;
+      var label = {
+        telegram: r.body.telegram && '@' + r.body.telegram.username,
+        slack: r.body.slack && r.body.slack.bot + (r.body.slack.team ? ' in ' + r.body.slack.team : ''),
+      };
+      Object.keys(label).forEach(function (channel) {
+        var title = label[channel] && content.querySelector('details.msg-conn[data-channel="' + channel + '"] .msg-conn-title');
+        if (!title || title.querySelector('.msg-conn-bot')) return;
+        title.insertAdjacentHTML('beforeend', '<span class="msg-conn-bot">' + escapeHtml(label[channel]) + '</span>');
+      });
+    }).catch(function () { /* the tab works without the names */ });
+  }
+
   // One app's section: its status in the summary, then its own form.
   function renderConnectionSection(n, channel) {
     var saved = connectionFor(n, channel);
@@ -3010,6 +3029,7 @@ ${consoleShellScript}
       });
       wireApprovalsHandlers(name);
       wireApproversHandlers(name, results[0].body);
+      showMessagingIdentities(name, content);
       var pendingEl = detail.querySelector('#pendingContent');
       var pending = (results[1].ok && results[1].body.pending) || [];
       if (pendingEl) {

@@ -16,4 +16,4 @@ export {
   verifySlackRequest,
   type SlackInteraction,
 } from './interactions.js'
-export { listSlackChannelMembers, listSlackChannels, slackAppManifest, type SlackChannel, type SlackMember } from './setup.js'
+export { listSlackChannelMembers, listSlackChannels, slackAppManifest, slackBotIdentity, type SlackBotIdentity, type SlackChannel, type SlackMember } from './setup.js'

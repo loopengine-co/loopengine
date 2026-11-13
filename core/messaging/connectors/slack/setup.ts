@@ -39,6 +39,32 @@ export async function listSlackChannels(botToken: string): Promise<SlackChannel[
   return channels.sort((a, b) => Number(b.isMember) - Number(a.isMember) || a.name.localeCompare(b.name))
 }
 
+export interface SlackBotIdentity {
+  /** The bot's name in the workspace, e.g. "loopengine". */
+  bot: string
+  /** The Slack workspace it's installed in, e.g. "Everymarket". */
+  team?: string
+}
+
+const slackBots = new Map<string, { identity: SlackBotIdentity; at: number }>()
+
+/** Who a bot token belongs to (auth.test, which needs no extra scope),
+ * remembered for an hour. Undefined when Slack doesn't say. */
+export async function slackBotIdentity(botToken: string): Promise<SlackBotIdentity | undefined> {
+  const cached = slackBots.get(botToken)
+  if (cached && Date.now() - cached.at < 60 * 60 * 1000) return cached.identity
+  try {
+    const res = await fetch('https://slack.com/api/auth.test', { method: 'POST', headers: { Authorization: `Bearer ${botToken}` }, signal: AbortSignal.timeout(5000) })
+    const body = (await res.json()) as { ok: boolean; user?: string; team?: string }
+    if (!body.ok || !body.user) return cached?.identity
+    const identity: SlackBotIdentity = { bot: body.user, ...(body.team ? { team: body.team } : {}) }
+    slackBots.set(botToken, { identity, at: Date.now() })
+    return identity
+  } catch {
+    return cached?.identity
+  }
+}
+
 export interface SlackMember {
   id: string
   /** Display name, else real name, else the Slack handle. */

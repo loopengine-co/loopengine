@@ -32,12 +32,12 @@ export { formatArgs, formatChange, labelFor } from '#core/messaging/format-args.
 export { decideReply, proposeEdit, describeChange, type ReplyDecision, type DecisionRequest } from '#core/messaging/decide.js'
 export { recordThread, findThread, findThreadByPending, recordJobThread, findJobThread, findJobThreadBySession, type ThreadLink, type JobThread } from '#core/messaging/threads.js'
 export type { InboundMessage, MessagingConnector, ThreadMessage, MessagingChoice, MessagingAction } from '#core/messaging/connector.js'
-export { parseSlackEvent, createSlackConnector, verifySlackRequest, parseSlackInteraction, openSlackAnswerModal, replyInSlack, replyPrivatelyInSlack, slackOutcomeText, listSlackChannels, listSlackChannelMembers, slackAppManifest, toSlackMrkdwn, slackArgs, slackEscape, type SlackEvent, type SlackInteraction, type SlackChannel } from '#core/messaging/connectors/slack/index.js'
+export { parseSlackEvent, createSlackConnector, verifySlackRequest, parseSlackInteraction, openSlackAnswerModal, replyInSlack, replyPrivatelyInSlack, slackOutcomeText, listSlackChannels, listSlackChannelMembers, slackAppManifest, slackBotIdentity, toSlackMrkdwn, slackArgs, slackEscape, type SlackEvent, type SlackInteraction, type SlackChannel } from '#core/messaging/connectors/slack/index.js'
 export { createDecisionToken, verifyDecisionToken, decidePath, decideLinkMaker, decisionLinkTtlMs, type DecisionKind } from '#core/approval-links.js'
 export { renderDecidePage, renderDecideGonePage, renderDecideInvalidPage, type DecidePageItem } from './web/decide-page.js'
 export { sendTestWebhook, publicBaseUrl } from '#core/http-notify-triggers/webhook.js'
 export { describeAgentNotifier, saveAgentNotifier, removeAgentNotifier, setAgentPrimaryNotifier, testAgentNotifier, listAgentPending, slackCredentialsFor, slackConversationsOn, slackClickAllowed, agentApprovers, setAgentApprovers, listAgentSlackMembers, listAgentSlackChannels, announceToNotifier, type DefaultWebhook } from './web/notifier-admin.js'
-export { clickAllowed, conversationsOn, jobsOn, jobAllowed, connectionPublicUrl, telegramCredentialsFor, telegramHomeChat, listAgentTelegramPeople, setupAgentTelegramWebhook, agentTelegramWebhookInfo, type TwoWayApp } from './web/notifier-admin.js'
+export { clickAllowed, conversationsOn, jobsOn, jobAllowed, connectionPublicUrl, telegramCredentialsFor, telegramHomeChat, listAgentTelegramPeople, setupAgentTelegramWebhook, agentTelegramWebhookInfo, agentMessagingIdentities, type TwoWayApp } from './web/notifier-admin.js'
 export {
   createTelegramConnector, parseTelegramUpdate, verifyTelegramRequest, telegramCallbackData, answerTelegramClick, editTelegramMessage, telegramBotUsername,
   setTelegramWebhook, telegramWebhookInfo, callTelegram, recordTelegramMessage, readTelegramThread, telegramRootOf, telegramPeople, toTelegramHtml, telegramEscape, telegramArgs,

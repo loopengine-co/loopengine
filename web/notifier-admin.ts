@@ -19,7 +19,7 @@ import { TelegramNotifier, sendTestTelegramMessage } from '../core/http-notify-t
 import type { HttpNotifierConfig } from '../core/agent-config.js'
 import { listDeliveries } from '../core/notifier-deliveries.js'
 import { NOTIFIER_CHANNELS, NOTIFIER_SECRET_VARS, PRIMARY_CHANNELS, NOTIFIER_SLACK_SIGNING_SECRET_VAR, NOTIFIER_TELEGRAM_WEBHOOK_SECRET_VAR, NotifierFileError, notifierConfigFromFile, readActiveConnections, readMessagingConnections, readNotifierFile, removeMessagingConnection, removeNotifierFile, setPrimaryConnection, writeNotifierFile, type MessagingApprover, type MessagingConnections, type NotifierFile, type NotifierFileChannel } from '../core/notifier-file.js'
-import { listSlackChannelMembers, listSlackChannels, slackAppManifest, type SlackChannel, type SlackMember } from '../core/messaging/connectors/slack/index.js'
+import { listSlackChannelMembers, listSlackChannels, slackAppManifest, slackBotIdentity, type SlackChannel, type SlackMember } from '../core/messaging/connectors/slack/index.js'
 import { telegramBotUsername, telegramPeople, setTelegramWebhook, telegramWebhookInfo, type TelegramPerson } from '../core/messaging/connectors/telegram/index.js'
 import { setAgentEnvVar } from './env-admin.js'
 
@@ -249,6 +249,19 @@ export async function agentTelegramWebhookInfo(config: AgentConfig): Promise<{ u
     pointsHere: Boolean(info.url?.endsWith(`/hooks/telegram/${encodeURIComponent(config.name)}`)),
     ...(botUsername ? { botUsername } : {}),
   }
+}
+
+/** Which bot each saved app connects as, for the Messaging tab: the
+ * Telegram bot's @username, the Slack bot's name and workspace. An app
+ * with no token saved, or that doesn't answer, is left out. */
+export async function agentMessagingIdentities(config: AgentConfig): Promise<{ telegram?: { username: string }; slack?: { bot: string; team?: string } }> {
+  const telegramToken = telegramCredentialsFor(config).botToken
+  const slackToken = slackCredentialsFor(config).botToken
+  const [username, slack] = await Promise.all([
+    telegramToken ? telegramBotUsername(telegramToken).catch(() => undefined) : undefined,
+    slackToken ? slackBotIdentity(slackToken) : undefined,
+  ])
+  return { ...(username ? { telegram: { username } } : {}), ...(slack ? { slack } : {}) }
 }
 
 /** The people in the agent's Slack channel, for picking approvers. */
