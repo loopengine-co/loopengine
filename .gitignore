@@ -10,3 +10,4 @@ dist
 *.log
 .env
 .DS_Store
+tests/evals/results/
