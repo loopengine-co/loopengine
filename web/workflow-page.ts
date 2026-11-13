@@ -107,6 +107,9 @@ ${consoleShellScript}
   // didn't fit the agent it was planned for.
   var state = { description: new URLSearchParams(location.search).get('description') || '', planned: null, agent: new URLSearchParams(location.search).get('agent') || '', agents: [], examples: [], messages: [], ready: false, canInstall: false, exQuery: '', exCat: 'All', exPage: 1 };
   var EX_PAGE = 6;
+  // Opened from a goal's saved workflow (/goals): build it straight away,
+  // and link the created workflow back to the goal.
+  var fromGoal = { goal: new URLSearchParams(location.search).get('goal') || '', workflow: new URLSearchParams(location.search).get('goalWorkflow') || '' };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -546,7 +549,9 @@ ${consoleShellScript}
       var body = { plan: p, agent: agent, description: state.description, workflowContext: p.context };
       post('/workflows/create', body).then(function (r) {
         if (!r.ok) { renderPlan(r.body.error || 'Could not create it.'); return; }
-        renderDone(r.body);
+        if (!fromGoal.goal || !fromGoal.workflow) { renderDone(r.body); return; }
+        post('/goals/' + encodeURIComponent(fromGoal.goal) + '/workflows/' + encodeURIComponent(fromGoal.workflow) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow })
+          .then(function () { renderDone(r.body); }, function () { renderDone(r.body); });
       }).catch(function (err) { renderPlan(err.message); });
     });
   }
@@ -578,9 +583,10 @@ ${consoleShellScript}
       (c.keptDecisions.length ? '<p class="hint" style="margin:0"><strong>Kept as they were:</strong> ' + c.keptDecisions.map(function (k) { return '<code>' + esc(k.tool) + '</code> stays ' + esc(LABELS[k.has]) + ' (the workflow wanted ' + esc(LABELS[k.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
       (items.length ? '<h3>Left to do</h3><ul class="wf-list">' + items.map(function (it) { return '<li>' + (it.href ? '<a href="' + esc(it.href) + '">' + esc(it.label) + '</a>' : esc(it.label)) + '</li>'; }).join('') + '</ul>' : '<p class="hint" style="margin:0">Nothing left to set up.</p>') +
       '<div class="wf-actions"><a class="wf-btn" href="' + agentHref + '">Open ' + esc(agentLabel(c.agent)) + '</a><a class="wf-btn plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a>' +
-        '<button type="button" class="wf-btn plain" id="wfAnother">Build another</button></div>' +
+        (fromGoal.goal ? '<a class="wf-btn plain" href="/goals?goal=' + encodeURIComponent(fromGoal.goal) + '">Back to your goal</a>' : '<button type="button" class="wf-btn plain" id="wfAnother">Build another</button>') + '</div>' +
       '</div>';
-    document.getElementById('wfAnother').addEventListener('click', function () { state.description = ''; state.planned = null; renderDescribe(); });
+    var another = document.getElementById('wfAnother');
+    if (another) another.addEventListener('click', function () { state.description = ''; state.planned = null; renderDescribe(); });
     wireWebhookDone(c);
   }
 
@@ -654,6 +660,9 @@ ${consoleShellScript}
       state.examples = d.examples || [];
       state.messages = d.messages || [];
       renderDescribe();
+      // From a goal: the request and agent are filled in, so start building.
+      var buildBtn = document.getElementById('wfPlan');
+      if (fromGoal.goal && state.ready && state.agent && state.description && buildBtn && !buildBtn.disabled) buildBtn.click();
     })
     .catch(function (err) { page.innerHTML = '<p class="error">Could not load: ' + esc(err.message) + '</p>'; });
 })();

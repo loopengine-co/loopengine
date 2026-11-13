@@ -525,6 +525,8 @@ export function getPlanJob(id: string): PlanJob | undefined {
 export interface CreatedWorkflow {
   agent: string
   workflow: string
+  /** The workflow's skill id. */
+  workflowId: string
   abilities: { installed: string[]; failed: { name: string; error: string }[] }
   /** Rules left as the agent already had them. */
   keptDecisions: WorkflowConflict[]
@@ -753,6 +755,7 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
   return {
     agent: agent.name,
     workflow: plan.name,
+    workflowId: plan.id,
     abilities: { installed, failed },
     keptDecisions: ruled.kept,
     // Its notes point at the workflow's instructions, where the rules and

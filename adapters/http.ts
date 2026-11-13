@@ -45,7 +45,7 @@ import { createSessionStore } from '../core/session-store.js'
 import { createCheckpointStore, type TurnCheckpoint } from '#core/durable-approvals.js'
 import { runAgent, resumeAgent, loadRules, loadDefaultTools, loadSubagentAsTools, systemTools, systemSkillsDir } from '#core/run-agent.js'
 import type { AgentConfig, AgentModelConfig, ToolDefinition } from '#core/agent-config.js'
-import type { Message, ModelContentBlock, RunAgentResult } from '#core/run-agent.js'
+import type { Message, ModelCall, ModelContentBlock, RunAgentResult } from '#core/run-agent.js'
 import { SkillGarden } from '../core/skillgarden/index.js'
 import { playgroundHtml } from '../web/playground.js'
 import { agentsConfigPageHtml } from '../web/agents-config-page.js'
@@ -116,6 +116,8 @@ import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromCo
 import { abilityDetails } from '#web/ability-details-admin.js'
 import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, noteForExistingAgent, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
+import { goalsPageHtml } from '#web/goals-page.js'
+import { GoalError, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, setWorkflowState, writeAbout, type GoalsDeps } from '#web/goals-admin.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
 import { WORKFLOW_EXAMPLES } from '#core/system-agents/workflow-examples.js'
@@ -967,6 +969,76 @@ async function handleInterviews(req: IncomingMessage, res: ServerResponse, pathn
     if (err instanceof InterviewError) return json(message === 'No such interview' || message === 'No such candidate' ? 404 : 400, { error: message })
     console.error('[loopengine] interview failed:', err)
     return json(502, { error: `The interviewer couldn't answer: ${message}` })
+  }
+}
+
+// Goals (web/goals-admin.ts): a goal, the workflows the goal planner
+// suggests for it, saving, discarding and building them.
+// The goal planner's model: gpt-6.1-sol when an OpenAI key is set (it
+// plans best in the evals, tests/evals/), else an agent's model with its
+// key, else any provider with a key, so a workspace with no agents yet
+// can still plan.
+async function goalModelCall(): Promise<ModelCall> {
+  const candidates: AgentModelConfig[] = []
+  if (process.env.OPENAI_API_KEY) candidates.push({ provider: 'openai', model: 'gpt-6.1-sol' } as AgentModelConfig)
+  try {
+    const picked = pickInterviewModel(interviewAgents())
+    if (picked) candidates.push(picked.model as AgentModelConfig)
+  } catch {}
+  if (process.env.ANTHROPIC_API_KEY) candidates.push({ provider: 'anthropic', model: 'claude-opus-5-5' } as AgentModelConfig)
+  if (process.env.DEEPSEEK_API_KEY) candidates.push({ provider: 'deepseek', model: 'deepseek-v4-flash' } as AgentModelConfig)
+  for (const model of candidates) {
+    try {
+      return (await synthesizeCreateModelCall({ ...model, maxTokens: 16000 } as AgentModelConfig))()
+    } catch {}
+  }
+  throw new GoalError('No model is ready to plan with: add a key under Models (an OpenAI key plans with gpt-6.1-sol).')
+}
+
+const goalsDeps: GoalsDeps = {
+  projectDir: () => projectDir(),
+  modelCall: goalModelCall,
+  context: async (about) => goalContextFrom({ about, agents: await workflowAgentInfo(), apps: workflowApps() }),
+  agentExists: (name) => Boolean(getEntry(name)),
+  createAgent: async (name, instructions) => {
+    let model: AgentModelConfig | undefined
+    try {
+      model = pickInterviewModel(interviewAgents())?.model as AgentModelConfig | undefined
+    } catch {}
+    if (!model && process.env.OPENAI_API_KEY) model = { provider: 'openai', model: 'gpt-6-luna' } as AgentModelConfig
+    const parsed = parseAgentTemplateOptions({ systemPrompt: instructions, ...(model ? { model } : {}) })
+    if (!parsed.ok) throw new GoalError(parsed.error)
+    const indexPath = await scaffoldAgent(projectDir(), name, parsed.value)
+    registerAgent(await loadAgentModule(indexPath, indexPath))
+  },
+}
+
+async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  // /goals, /goals/about, /goals/<id>, /goals/<id>/generate,
+  // /goals/<id>/workflows/<wid>[/build|/built]
+  const [, , id, sub, wid, action] = pathname.split('/')
+  try {
+    if (!id && req.method === 'GET') return json(200, { goals: listGoals(goalsDeps), about: readAbout(goalsDeps) })
+    if (!id && req.method === 'POST') return json(200, { goal: createGoal(goalsDeps, await readJsonBody(req)) })
+    if (id === 'about' && req.method === 'PUT') return json(200, { about: writeAbout(goalsDeps, (await readJsonBody(req)).about) })
+    if (id && !sub && req.method === 'GET') return json(200, { goal: getGoal(goalsDeps, id) })
+    if (id && !sub && req.method === 'DELETE') {
+      deleteGoal(goalsDeps, id)
+      return json(200, { deleted: true })
+    }
+    if (id && sub === 'generate' && req.method === 'POST') return json(200, { goal: generateMore(goalsDeps, id, await readJsonBody(req)) })
+    if (id && sub === 'workflows' && wid && !action && req.method === 'PATCH') return json(200, { goal: setWorkflowState(goalsDeps, id, wid, (await readJsonBody(req)).action) })
+    if (id && sub === 'workflows' && wid && action === 'build' && req.method === 'POST') return json(200, await prepareBuild(goalsDeps, id, wid))
+    if (id && sub === 'workflows' && wid && action === 'built' && req.method === 'POST') return json(200, { goal: markBuilt(goalsDeps, id, wid, await readJsonBody(req)) })
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (err instanceof GoalError || err instanceof AgentNameError || err instanceof AgentExistsError || err instanceof AgentModelError) return json(message === 'No such goal' ? 404 : 400, { error: message })
+    console.error('[loopengine] goals failed:', err)
+    return json(500, { error: message })
   }
 }
 
@@ -4551,6 +4623,15 @@ const server = createServer(async (req, res) => {
       return
     }
     // "Find your first agent": the page, and its routes.
+    // The Goals page (a browser asking for a page), and its API.
+    if (req.method === 'GET' && pathname === '/goals' && String(req.headers.accept ?? '').includes('text/html')) {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(goalsPageHtml)
+      return
+    }
+    if (pathname === '/goals' || pathname.startsWith('/goals/')) {
+      await handleGoals(req, res, pathname)
+      return
+    }
     if (req.method === 'GET' && pathname === '/interview') {
       res.writeHead(200, { 'content-type': 'text/html' }).end(interviewPageHtml)
       return

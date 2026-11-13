@@ -57,12 +57,13 @@ export interface GoalBrief {
   approvals: string
 }
 
-/** A workflow already saved under the goal, for generating more. */
+/** A workflow already under the goal (suggested, saved, built or
+ * discarded), for generating more without repeats. */
 export interface SavedGoalWorkflow {
   title: string
   lever: string
   leverId?: string
-  state: 'proposed' | 'built' | 'dismissed'
+  state: 'suggested' | 'saved' | 'built' | 'discarded' | 'proposed' | 'dismissed'
 }
 
 export interface GoalNeed { name: string; kind: string; connected: boolean }
@@ -77,7 +78,10 @@ export interface PlannedGoalWorkflow {
   mechanism: string
   /** The request the workflow planner would be given. */
   request: string
+  /** The agent it goes into: an existing agent's name, or the new agent's. */
   agent: string
+  /** Set when no agent fits and the plan suggests making one. */
+  newAgent?: { name: string; instructions: string }
   needs: GoalNeed[]
   humanMinutesPerWeek: number
   startsAfter?: string
@@ -104,6 +108,8 @@ export interface GoalPipelineInput {
   goal: string
   context: GoalContext
   saved?: SavedGoalWorkflow[]
+  /** The focus the person chose, instead of the one the brief reads. */
+  focus?: GoalFocus | 'other'
 }
 
 // ---------- prompts ----------
@@ -133,7 +139,7 @@ Rules:
 8. The measure must be readable. When measureSourceConnected is false, setup says how the number will be read: connecting that source (name it, e.g. "connect Clerk's user.created webhook so signups and their ref are recorded"), or, when it can't be connected, a light manual record the person updates weekly (kept with the Records ability). Always record a baseline: the number today. Tag what workflows produce (ref=<channel>) so each one's effect can be told apart.
 8b. Every qualifier in the brief is covered by at least one workflow that addresses it directly; list it in that workflow's covers.
 9. "partial" scope: at most three workflows, only ones that help the person pursue the goal, and say so in the message ("helps you pursue", never "achieves"). "out" scope: no workflows; the message says plainly why, and offers a smaller or related goal.
-10. Use the agent names given; propose a new agent name only when no agent fits.
+10. agent: an existing agent's exact name when its work fits. When none fits, or there are no agents yet, suggest a new one: agent and newAgent.name the same short lowercase name with hyphens (e.g. "community-agent"), and newAgent.instructions two or three sentences on what it does and how it behaves. Group workflows that belong together in one agent rather than one agent each.
 
 Call save_plan once.`
 
@@ -195,6 +201,7 @@ const PLAN_TOOL: ToolSchema = {
             mechanism: { type: 'string', description: 'why it moves the measure, one sentence' },
             request: { type: 'string', description: 'the workflow request, specific to this context' },
             agent: { type: 'string' },
+            newAgent: { type: 'object', properties: { name: { type: 'string' }, instructions: { type: 'string' } }, required: ['name', 'instructions'], description: 'only when no existing agent fits' },
             needs: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, kind: { type: 'string' }, connected: { type: 'boolean' } }, required: ['name', 'kind', 'connected'] } },
             humanMinutesPerWeek: { type: 'number' },
             startsAfter: { type: 'string' },
@@ -280,6 +287,11 @@ function savedText(saved: SavedGoalWorkflow[] | undefined): string {
   return 'Already saved under this goal (never propose these levers again):\n' + saved.map((s) => `- ${s.title} (lever: ${s.lever}${s.leverId ? `, ${s.leverId}` : ''}; ${s.state})`).join('\n')
 }
 
+/** A suggested agent's name as a folder name: lowercase, hyphens. */
+export function agentName(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+}
+
 const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v.trim() : fallback)
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((x) => x.trim()) : [])
 const focusOf = (v: unknown): GoalBrief['focus'] => (typeof v === 'string' && (focusEnum as string[]).includes(v) ? (v as GoalBrief['focus']) : 'other')
@@ -315,6 +327,8 @@ function parsePlan(raw: Record<string, unknown>): Omit<GoalPlan, 'brief' | 'crit
     if (!title || !request) return []
     // Some models put the playbook id in lever and leave leverId empty.
     const leverId = str(x.leverId) || (KNOWN_LEVER_IDS.has(str(x.lever)) ? str(x.lever) : '')
+    const na = x.newAgent && typeof x.newAgent === 'object' ? (x.newAgent as Record<string, unknown>) : undefined
+    const newAgentName = na ? agentName(str(na.name) || str(x.agent)) : ''
     const needs = (Array.isArray(x.needs) ? x.needs : []).flatMap((n): GoalNeed[] => {
       if (!n || typeof n !== 'object') return []
       const y = n as Record<string, unknown>
@@ -328,7 +342,8 @@ function parsePlan(raw: Record<string, unknown>): Omit<GoalPlan, 'brief' | 'crit
       focus: focusOf(x.focus),
       mechanism: str(x.mechanism),
       request,
-      agent: str(x.agent),
+      agent: newAgentName || str(x.agent),
+      ...(newAgentName ? { newAgent: { name: newAgentName, instructions: str(na!.instructions) } } : {}),
       needs,
       humanMinutesPerWeek: typeof x.humanMinutesPerWeek === 'number' ? x.humanMinutesPerWeek : 0,
       ...(str(x.startsAfter) ? { startsAfter: str(x.startsAfter) } : {}),
@@ -361,7 +376,8 @@ export async function critiqueGoalPlan(modelCall: ModelCall, input: GoalPipeline
 
 /** Brief, plan, critique, and one revision when the critique fails. */
 export async function runGoalPipeline(modelCall: ModelCall, input: GoalPipelineInput): Promise<GoalPlan> {
-  const brief = await readGoalBrief(modelCall, input.goal, input.context)
+  const read = await readGoalBrief(modelCall, input.goal, input.context)
+  const brief = input.focus ? { ...read, focus: input.focus } : read
   let plan = await draftGoalPlan(modelCall, input, brief)
   let review = await critiqueGoalPlan(modelCall, input, brief, plan)
   let revised = false
