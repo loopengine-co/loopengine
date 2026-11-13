@@ -542,7 +542,7 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
         messages.push({ role: 'user', content: 'Save the plan now: call save_plan with the whole plan, using what you have found. Note anything you assumed in gaps.' })
         continue
       }
-      return { reply: text || 'The planner stopped without a plan.' }
+      return { reply: text || 'Stopped before the workflow was drafted.' }
     }
     const results: ModelContentBlock[] = []
     let plan: WorkflowPlan | undefined
@@ -587,7 +587,7 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
     if (plan) return { plan }
     messages.push({ role: 'user', content: results })
   }
-  return { reply: 'The planner ran out of steps before saving a plan. Try describing the workflow more briefly.' }
+  return { reply: 'Ran out of steps before the workflow was drafted. Try describing it more briefly.' }
 }
 
 /** A plan as a starter template, for creating it as a new agent. */

@@ -1442,7 +1442,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
     // A planning job's progress (the page checks every few seconds).
     if (action === 'plan' && jobId && req.method === 'GET') {
       const job = getPlanJob(jobId)
-      return job ? json(200, job) : json(404, { error: 'No such planning job (it may have expired); plan it again.' })
+      return job ? json(200, job) : json(404, { error: 'This draft is no longer available (it may have expired); build it again.' })
     }
     if (action === 'plan' && !jobId && req.method === 'POST') {
       if (!picked) return json(409, { error: 'No model is ready to plan with: set one on an agent (Overview → Model) and add its key under Models.' })

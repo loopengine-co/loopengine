@@ -88,7 +88,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Build a workflow</h1><p>Describe what you want done, or start from an example. You get a plan to check before anything is created.</p></div>
+        <div><h1>Build a workflow</h1><p>Describe what you want done, or start from an example. You get a draft to check before anything is created.</p></div>
       </div>
     </div>
   </div>
@@ -136,10 +136,10 @@ ${consoleShellScript}
   // ---- 1. Describe it ----
   function renderDescribe(error) {
     page.innerHTML =
-      (state.ready ? '' : '<p class="error">Planning needs a model: set one on an agent (Overview ' + String.fromCharCode(8594) + ' Model) and add its key under <a href="/config?section=models">Models</a>.</p>') +
+      (state.ready ? '' : '<p class="error">Building needs a model: set one on an agent (Overview ' + String.fromCharCode(8594) + ' Model) and add its key under <a href="/config?section=models">Models</a>.</p>') +
       '<div class="wf-card">' + agentPickerHtml() + '<label for="wfText"><strong>Your workflow</strong> <span class="hint">what starts it, the steps in order, and where you want to choose or approve</span></label>' +
       '<textarea id="wfText" placeholder="Every Monday, find blog ideas on the web, ask me on Slack to pick one, draft it, and let me review it before it goes up.">' + esc(state.description) + '</textarea>' +
-      '<div class="wf-actions"><button type="button" class="wf-btn" id="wfPlan"' + (state.ready ? '' : ' disabled') + '>Plan it</button>' +
+      '<div class="wf-actions"><button type="button" class="wf-btn" id="wfPlan"' + (state.ready ? '' : ' disabled') + '>Build</button>' +
         '<span class="hint" id="wfStatus">It looks at the agent and your abilities first; this can take a few minutes.</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '') +
       '</div>' +
@@ -159,10 +159,10 @@ ${consoleShellScript}
       if (!state.agent) { document.getElementById('wfStatus').textContent = 'Choose the agent it goes into first.'; return; }
       var btn = document.getElementById('wfPlan');
       btn.disabled = true;
-      document.getElementById('wfStatus').textContent = 'Planning' + ELLIPSIS + ' looking at ' + agentLabel(state.agent) + ' and your abilities. This can take a few minutes; keep this page open.';
+      document.getElementById('wfStatus').textContent = 'Building' + ELLIPSIS + ' looking at ' + agentLabel(state.agent) + ' and your abilities. This can take a few minutes; keep this page open.';
       var started = Date.now();
       post('/workflows/plan', { description: state.description, agent: state.agent }).then(function (r) {
-        if (!r.ok) { renderDescribe(r.body.error || 'Could not plan it.'); return; }
+        if (!r.ok) { renderDescribe(r.body.error || 'Could not build it.'); return; }
         waitForPlan(r.body.id, started);
       }).catch(function (err) { renderDescribe(err.message); });
     });
@@ -182,7 +182,7 @@ ${consoleShellScript}
   function examplesHtml() {
     if (!state.examples.length && !state.messages.length) return '';
     return '<div class="wf-card" id="examples"><h2>Start from an example</h2>' +
-      '<p class="hint" style="margin:0">Ready-made ones open the plan straight away. The rest fill in the description above, for you to change and plan.</p>' +
+      '<p class="hint" style="margin:0">Ready-made ones open the draft straight away. The rest fill in the description above, for you to change and build.</p>' +
       '<input type="search" class="wf-ex-search" id="wfExSearch" placeholder="Search examples, e.g. invoices, GitHub, Shopify" aria-label="Search examples" value="' + esc(state.exQuery) + '">' +
       '<div class="wf-ex-cats" id="wfExCats" role="group" aria-label="Filter examples"></div>' +
       '<div class="wf-ex-grid" id="wfExList"></div>' +
@@ -228,7 +228,7 @@ ${consoleShellScript}
         '<p>' + String.fromCharCode(8220) + esc(e.message) + String.fromCharCode(8221) + '</p>' +
         (e.apps.length ? '<div class="wf-ex-apps">' + e.apps.map(function (a) { return '<span>' + esc(a) + '</span>'; }).join('') + '</div>' : '') +
         (e.asksFirst.length ? '<p class="wf-ex-asks"><strong>Asks you before:</strong> ' + esc(e.asksFirst.join('; ')) + '</p>' : '') +
-        '<button type="button" class="wf-btn plain" data-example="' + esc(e.id) + '">' + (e.ready ? 'Use this plan' : 'Use this') + '</button>' +
+        '<button type="button" class="wf-btn plain" data-example="' + esc(e.id) + '">' + (e.ready ? 'Use this draft' : 'Use this') + '</button>' +
         '</div>';
     }).join('') : '<p class="hint">No examples match ' + String.fromCharCode(8220) + esc(state.exQuery.trim()) + String.fromCharCode(8221) + (state.exCat === 'All' ? '' : ' in ' + esc(state.exCat)) + '. Describe it in your own words above instead.</p>';
     var pager = document.getElementById('wfExPager');
@@ -272,7 +272,7 @@ ${consoleShellScript}
     var text = document.getElementById('wfText');
     text.focus();
     var status = document.getElementById('wfStatus');
-    if (status) status.textContent = 'Change it to fit what you need, then plan it.';
+    if (status) status.textContent = 'Change it to fit what you need, then build it.';
   }
 
   function openExample(id) {
@@ -304,14 +304,14 @@ ${consoleShellScript}
       fetch('/workflows/plan/' + encodeURIComponent(id), { cache: 'no-store' })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
         .then(function (r) {
-          if (!r.ok) { renderDescribe(r.body.error || 'Could not plan it.'); return; }
+          if (!r.ok) { renderDescribe(r.body.error || 'Could not build it.'); return; }
           if (r.body.status === 'planning') {
             var status = document.getElementById('wfStatus');
-            if (status) status.textContent = 'Planning' + ELLIPSIS + ' ' + Math.round((Date.now() - started) / 1000) + 's so far. It looks at the agent and your abilities first; keep this page open.';
+            if (status) status.textContent = 'Building' + ELLIPSIS + ' ' + Math.round((Date.now() - started) / 1000) + 's so far. It looks at the agent and your abilities first; keep this page open.';
             waitForPlan(id, started);
             return;
           }
-          if (r.body.status === 'failed') { renderDescribe(r.body.error || 'Could not plan it.'); return; }
+          if (r.body.status === 'failed') { renderDescribe(r.body.error || 'Could not build it.'); return; }
           state.planned = r.body.result;
           renderPlan();
         })
@@ -462,7 +462,7 @@ ${consoleShellScript}
       (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
       (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
       '<div class="wf-card"><h3 style="margin:0">Goes into ' + esc(agentLabel(agent)) + '</h3>' +
-        '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">Short facts the job needs that the agent' + String.fromCharCode(8217) + 's own instructions don' + String.fromCharCode(8217) + 't say, like your company' + String.fromCharCode(8217) + 's name or who signs messages. They go at the top of this workflow' + String.fromCharCode(8217) + 's instructions. The planner leaves this empty when the agent already knows enough. Longer rules, special cases and examples go with the steps, below.</span></label>' +
+        '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">Short facts the job needs that the agent' + String.fromCharCode(8217) + 's own instructions don' + String.fromCharCode(8217) + 't say, like your company' + String.fromCharCode(8217) + 's name or who signs messages. They go at the top of this workflow' + String.fromCharCode(8217) + 's instructions. It' + String.fromCharCode(8217) + 's left empty when the agent already knows enough. Longer rules, special cases and examples go with the steps, below.</span></label>' +
           '<textarea id="wfContext" placeholder="Nothing extra needed. Add facts the agent must know for this job, one per line, e.g. your company name, who signs messages, or a limit it must keep to.">' + esc(context) + '</textarea></div>' +
         (conflicts.length ? '<p class="hint" style="margin:0"><strong>Kept as they are:</strong> ' + conflicts.map(function (c) { return '<code>' + esc(c.tool) + '</code> stays ' + esc(LABELS[c.has]) + ' (the workflow wants ' + esc(LABELS[c.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
         '<p class="hint" style="margin:0">It keeps every decision the agent already has.</p>' +

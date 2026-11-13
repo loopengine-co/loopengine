@@ -466,7 +466,7 @@ export async function planWorkflow(description: unknown, agentName: unknown, mod
   const agent = agents.find((a) => a.name === agentName)
   if (!agent) throw new WorkflowError(typeof agentName === 'string' && agentName ? `There's no agent named ${agentName}.` : 'Choose the agent the workflow goes into.')
   const result = await planWorkflowWithModel(modelCall, text, tools, agentBrief(agent))
-  if (!result.plan) throw new WorkflowError(result.reply || 'The planner did not produce a plan; try describing the steps more plainly.')
+  if (!result.plan) throw new WorkflowError(result.reply || 'Could not draft this workflow; try describing the steps more plainly.')
   const plan = result.plan
   resolveConnections(plan, agents)
   resolveAppAbilities(plan, tools.appForSpec)
