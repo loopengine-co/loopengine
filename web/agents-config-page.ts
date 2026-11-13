@@ -25,6 +25,7 @@
 // dist/adapters/ alongside http.js, no asset-copy step needed. Plain string
 // concatenation, not a nested template literal, for the same
 // backtick/${}-escaping reason playground.ts's own header comment explains.
+import { WORKFLOW_SECTIONS_CSS, WORKFLOW_SECTIONS_SCRIPT } from './workflow-sections.js'
 import { devUiCss } from './dev-ui-styles.js'
 import { MESSAGING_ICONS } from './messaging-icons.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
@@ -84,9 +85,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-chip.accent { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
   .wf-card-actions { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
   .wf-card-actions button { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
-  .wf-card-actions .wf-remove { border-color: transparent; background: transparent; color: var(--bad); }
-  .wf-card-actions .wf-remove:hover:not(:disabled) { background: var(--bad-soft); }
-  .wf-card-actions .wf-remove[data-confirming="1"] { height: auto; min-height: 32px; padding: 6px 12px; background: var(--bad-soft); text-align: left; white-space: normal; }
+  .wf-card-actions .workflow-edit { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+  .wf-card-actions .workflow-edit:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+  .wf-card-actions .wf-remove { border-color: var(--bad); background: var(--bad); color: var(--bg); }
+  .wf-card-actions .wf-remove:hover:not(:disabled) { background: var(--bad); filter: brightness(1.08); }
+  .wf-card-actions .wf-remove[data-confirming="1"] { height: auto; min-height: 32px; padding: 6px 12px; text-align: left; white-space: normal; }
   .wf-empty { padding: 12px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); }
   .wf-card > .workflow-result:empty { display: none; }
   .wf-card > .workflow-result { padding: 10px 20px; border-top: 1px solid var(--line); }
@@ -221,9 +224,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .hook-steps { margin: 6px 0; padding-left: 20px; display: grid; gap: 8px; font-size: 13px; }
   .hook-steps .hook-url { margin: 4px 0 0; }
   .workflow-param-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
-  .wp-sections { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -4px; }
-  .wp-sections button { height: 28px; padding: 0 10px; font-size: 12.5px; }
-  .wp-sections .wp-preview { margin-left: auto; }
+  ${WORKFLOW_SECTIONS_CSS}
+  .workflow-editor-form .wp-sections { margin-top: -4px; }
+  .wp-instructions-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .wp-instructions-head label { flex: 1 1 260px; }
   .wp-long-note { margin: -6px 0 0; }
   .wp-preview-text { max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--le-surface, #f6f7f9); font-family: var(--font-mono); font-size: 12.5px; }
   .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -1144,29 +1148,7 @@ ${consoleShellScript}
       '<button type="button" class="delete-btn wp-remove">Remove</button></div>';
   }
 
-  // Sections the editor adds to a workflow's instructions, for what isn't
-  // a step: rules that always hold, cases that need a different answer,
-  // and worked examples. Each starts as a template to fill in; once the
-  // instructions have the section, the button adds another item to it.
-  var WORKFLOW_SECTIONS = {
-    policies: { label: 'Policies', match: 'policies', heading: 'Policies (always follow these):', item: '- [A rule with its real numbers, e.g. Orders lost for over 15 days are reshipped, not refunded.] (edit this)' },
-    cases: { label: 'Special cases', match: 'special cases', heading: 'Special cases (check these before acting; when one applies, follow it over the steps):', item: '- When [what you would notice]: [what to do, and what not to do or promise]. (edit this)' },
-    example: { label: 'Example', match: 'example', heading: 'Examples (follow their judgment and tone, not their exact words):', item: 'Situation: [what came in, and what the lookups showed] (edit this)\\nGood result: [what the agent should write or do] (edit this)', gap: true },
-  };
-
-  // Where a section ends: its items, and the lines that carry them on
-  // (an example's Situation and Good result), blank lines between items
-  // included, up to the next part of the instructions.
-  function workflowSectionEnd(lines, from, cut) {
-    var end = from;
-    for (var j = from + 1; j < cut; j++) {
-      var t = lines[j].trim();
-      if (t === '') continue;
-      if (/^[-*]/.test(t) || /^(situation|good result)/i.test(t) || lines[j - 1].trim() !== '') { end = j; continue; }
-      break;
-    }
-    return end;
-  }
+  ${WORKFLOW_SECTIONS_SCRIPT}
 
   function workflowEditorHtml(w) {
     var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
@@ -1175,13 +1157,13 @@ ${consoleShellScript}
         '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
       '<label>Description <span class="hint">(one line on what this job is; the agent uses it to recognise the job when you ask in Chat)</span>' +
         '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
-      '<label>Instructions <span class="hint">(everything the agent needs for this job: its steps, and the policies, special cases and examples it follows. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span>' +
-        '<textarea name="instructions" maxlength="30000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></label>' +
+      '<div class="body-field"><div class="wp-instructions-head"><label for="wpInstructions">Instructions <span class="hint">(everything the agent needs for this job: its steps, and the policies, special cases and examples it follows. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span></label>' +
+        '<button type="button" class="wp-preview">Preview</button></div>' +
+        '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
+        '<textarea id="wpInstructions" name="instructions" maxlength="30000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></div>' +
       '<p class="hint wp-long-note">Don' + String.fromCharCode(8217) + 't write long values, like an email or a thread, into the instructions: each run adds a parameter you haven' + String.fromCharCode(8217) + 't written as $name at the end, under its description.</p>' +
       '<div class="wp-sections"><span class="hint">Add a section:</span>' +
-        Object.keys(WORKFLOW_SECTIONS).map(function (k) { return '<button type="button" class="wp-section" data-section="' + k + '">' + escapeHtml(WORKFLOW_SECTIONS[k].label) + '</button>'; }).join('') +
-        '<button type="button" class="wp-preview">Preview</button></div>' +
-      '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
+        workflowSectionButtonsHtml() + '</div>' +
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
@@ -1239,32 +1221,7 @@ ${consoleShellScript}
       rows.lastElementChild.querySelector('.wp-name').focus();
     });
     form.querySelector('.wp-sections').addEventListener('click', function (ev) {
-      var section = WORKFLOW_SECTIONS[ev.target.dataset && ev.target.dataset.section];
-      if (!section) return;
-      var area = form.instructions;
-      var lines = area.value.replace(/\\s+$/, '').split('\\n');
-      // The section's heading, if the instructions already have it.
-      var at = -1;
-      for (var k = 0; k < lines.length && at < 0; k++) {
-        var h = lines[k].trim().toLowerCase();
-        if (h.indexOf(section.match) === 0 && h.charAt(h.length - 1) === ':') at = k;
-      }
-      var before, after, added;
-      if (at >= 0) {
-        var end = workflowSectionEnd(lines, at, lines.length);
-        added = (section.gap && end > at ? '\\n' : '') + section.item;
-        before = lines.slice(0, end + 1).join('\\n');
-        after = lines.slice(end + 1).join('\\n').replace(/^\\s+/, '');
-        area.value = before + '\\n' + added + (after ? '\\n\\n' + after : '');
-      } else {
-        before = area.value.replace(/\\s+$/, '');
-        area.value = (before ? before + '\\n\\n' : '') + section.heading + '\\n' + section.item;
-      }
-      // Select the first placeholder to type over.
-      var start = area.value.indexOf('[', before.length);
-      area.focus();
-      if (start >= 0) area.setSelectionRange(start, area.value.indexOf(']', start) + 1);
-      check();
+      if (addWorkflowSection(form.instructions, ev.target.dataset && ev.target.dataset.section)) check();
     });
     var previewBox = form.querySelector('.wp-preview-box');
     function showPreview() {

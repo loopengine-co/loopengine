@@ -8,6 +8,7 @@
 // pages; like them, its inline script avoids backslashes and template
 // placeholders, since it lives inside a template literal.
 import { devUiCss } from './dev-ui-styles.js'
+import { WORKFLOW_SECTIONS_CSS, WORKFLOW_SECTIONS_SCRIPT } from './workflow-sections.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
 export const workflowPageHtml: string = `<!doctype html>
@@ -61,6 +62,8 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-gaps { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: var(--radius); padding: 10px 14px; }
   .wf-gaps ul, .wf-list { margin: 4px 0 0; padding-left: 18px; }
   .wf-gaps li, .wf-list li { margin: 3px 0; font-size: 13px; }
+  .wf textarea.wf-skill-edit { min-height: min(50vh, 420px); font-family: var(--font-mono); font-size: 12.5px; }
+  ${WORKFLOW_SECTIONS_CSS}
   .wf-skill { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; max-height: 280px; overflow: auto; }
   .wf-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .wf-btn { display: inline-block; padding: 7px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; background: var(--accent); color: var(--on-accent); border: 0; cursor: pointer; }
@@ -459,20 +462,27 @@ ${consoleShellScript}
       (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
       (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
       '<div class="wf-card"><h3 style="margin:0">Goes into ' + esc(agentLabel(agent)) + '</h3>' +
-        '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">The agent keeps its own instructions. These go at the top of this workflow' + String.fromCharCode(8217) + 's instructions, read on every run of it. Edit them, or clear them if the agent already knows.</span></label>' +
-          '<textarea id="wfContext">' + esc(context) + '</textarea></div>' +
+        '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">Short facts the job needs that the agent' + String.fromCharCode(8217) + 's own instructions don' + String.fromCharCode(8217) + 't say, like your company' + String.fromCharCode(8217) + 's name or who signs messages. They go at the top of this workflow' + String.fromCharCode(8217) + 's instructions. The planner leaves this empty when the agent already knows enough. Longer rules, special cases and examples go with the steps, below.</span></label>' +
+          '<textarea id="wfContext" placeholder="Nothing extra needed. Add facts the agent must know for this job, one per line, e.g. your company name, who signs messages, or a limit it must keep to.">' + esc(context) + '</textarea></div>' +
         (conflicts.length ? '<p class="hint" style="margin:0"><strong>Kept as they are:</strong> ' + conflicts.map(function (c) { return '<code>' + esc(c.tool) + '</code> stays ' + esc(LABELS[c.has]) + ' (the workflow wants ' + esc(LABELS[c.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
         '<p class="hint" style="margin:0">It keeps every decision the agent already has.</p>' +
         (misfit && !fitPending ? '<p class="hint" style="margin:0">You chose to add it here, though it' + String.fromCharCode(8217) + 's not this agent' + String.fromCharCode(8217) + 's usual work.</p>' : '') +
       '</div>' +
       needsHtml(reqs) +
-      '<details class="wf-card"><summary><strong>The steps the agent follows</strong> <span class="hint">(saved as its skill <code>' + esc(p.id) + '</code>)</span></summary><div class="wf-skill">' + esc(p.skill.body) + '</div></details>' +
+      '<div class="wf-card"><label for="wfSkill"><strong>The steps the agent follows</strong> <span class="hint">(saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit)</span></label>' +
+        '<textarea id="wfSkill" class="wf-skill-edit">' + esc(p.skill.body) + '</textarea>' +
+        '<div class="wp-sections"><span class="hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +
+        '<p class="hint" style="margin:0">Long inputs, like an email or a thread, aren' + String.fromCharCode(8217) + 't written here: each run adds them at the end, under their descriptions.</p></div>' +
       '<div class="wf-actions"><button type="button" class="wf-btn" id="wfCreate"' + (blocked ? ' disabled' : '') + '>Create it</button><button type="button" class="wf-btn plain" id="wfBack">' + (state.planned.example ? 'Back to the examples' : 'Change the description') + '</button>' +
         '<span class="hint" id="wfStatus">' + (fitPending ? 'Choose where it goes, above, first.' : '') + '</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '');
+    document.querySelector('.wp-sections').addEventListener('click', function (ev) {
+      addWorkflowSection(document.getElementById('wfSkill'), ev.target.dataset && ev.target.dataset.section);
+    });
     var fitOk = document.getElementById('wfFitOk');
     if (fitOk) fitOk.addEventListener('click', function () {
       p.context = document.getElementById('wfContext').value;
+      p.skill.body = document.getElementById('wfSkill').value;
       state.planned.fitOk = true;
       renderPlan();
     });
@@ -490,6 +500,7 @@ ${consoleShellScript}
       if (status) status.textContent = 'Checking' + ELLIPSIS;
       // Kept as edited while it re-renders.
       p.context = document.getElementById('wfContext').value;
+      p.skill.body = document.getElementById('wfSkill').value;
       var notifyBox = document.getElementById('wfNotify');
       if (notifyBox) p.notify = { on: notifyBox.checked, reason: (p.notify && p.notify.reason) || '' };
       var hookBox = document.getElementById('wfWebhook');
@@ -528,6 +539,7 @@ ${consoleShellScript}
         if (p.trigger.kind === 'webhook') p.trigger.kind = 'on_request';
       }
       p.context = document.getElementById('wfContext').value;
+      p.skill.body = document.getElementById('wfSkill').value;
       var btn = document.getElementById('wfCreate');
       btn.disabled = true;
       document.getElementById('wfStatus').textContent = 'Creating' + ELLIPSIS + ' installing abilities can take a minute.';
@@ -538,6 +550,8 @@ ${consoleShellScript}
       }).catch(function (err) { renderPlan(err.message); });
     });
   }
+
+  ${WORKFLOW_SECTIONS_SCRIPT}
 
   // A ready-made example's standing instructions, for the workflow: its
   // rules and facts, without the opening paragraph that says who the
