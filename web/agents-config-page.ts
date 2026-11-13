@@ -149,7 +149,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-starts > .workflow-section-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .workflow-starts.wf-starts-compact > .workflow-section-content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .workflow-starts.wf-starts-compact .wf-start-api { grid-column: 1 / -1; }
-  .workflow-starts.wf-starts-compact .wf-start-run:has(.workflow-param-long) { grid-column: 1 / -1; }
   @media (max-width: 900px) { .workflow-starts.wf-starts-compact > .workflow-section-content { grid-template-columns: minmax(0, 1fr); } }
   .workflow-starts .wf-start { align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
   .workflow-starts .wf-start:first-of-type { padding-top: 14px; border-top: 1px solid var(--line); }
@@ -275,9 +274,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .workflow-param-row .wp-name { width: 160px; font-family: var(--le-mono, monospace); }
   .workflow-param-row .wp-desc { flex: 1; min-width: 200px; }
-  .workflow-param { display: flex; flex-direction: column; gap: 3px; font-size: 12px; min-width: 180px; }
-  .workflow-param-long { flex: 1 1 100%; }
-  .workflow-param-long textarea { width: 100%; box-sizing: border-box; min-height: 96px; resize: vertical; font: inherit; font-size: 13px; line-height: 1.45; }
+  .workflow-param { display: flex; flex-direction: column; gap: 3px; flex: 1 1 220px; font-size: 12px; min-width: 180px; }
+  .workflow-param textarea { width: 100%; box-sizing: border-box; resize: none; overflow-y: hidden; max-height: 18em; font: inherit; font-size: 13px; line-height: 1.45; }
   .advanced-part { font-size: 17px; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
   .advanced-part#advanced-tools { margin-top: 0; padding-top: 0; border-top: 0; }
   .approvals-nudge { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 24px; font-size: 13px; }
@@ -1083,6 +1081,17 @@ ${consoleShellScript}
 
   function showWorkflowTab(card, key) {
     workflowTabs[card.dataset.workflow] = key;
+    // Run now's boxes grow with what's typed or pasted, up to their
+    // max-height, then scroll.
+    var growBoxes = card.querySelectorAll('.workflow-params textarea');
+    for (var g = 0; g < growBoxes.length; g++) {
+      growBoxes[g].addEventListener('input', function (ev) {
+        var box = ev.currentTarget;
+        box.style.height = 'auto';
+        box.style.height = box.scrollHeight + 2 + 'px';
+        box.style.overflowY = box.scrollHeight + 2 > box.clientHeight + 4 ? 'auto' : 'hidden';
+      });
+    }
     var tabs = card.querySelectorAll('.wf-tab');
     for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute('aria-selected', String(tabs[i].dataset.tab === key));
     var panels = card.querySelectorAll('.wf-panel');
@@ -1100,12 +1109,10 @@ ${consoleShellScript}
       var paramNames = Object.keys(w.parameters || {});
       var params = paramNames.map(function (p) {
         var spec = w.parameters[p];
-        // One the instructions don't write as $name is added at the end of
-        // the run, like an email or a thread: room for several lines.
-        var written = new RegExp('[$]' + p + '(?![a-z0-9_])').test(w.instructions || '');
-        var attrs = ' name="' + escapeHtml(p) + '"' + (spec.required ? ' required' : '') + ' placeholder="' + escapeHtml(spec.description || '') + '"';
-        return '<label class="workflow-param' + (written ? '' : ' workflow-param-long') + '">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">(optional)</span>') +
-          (written ? '<input' + attrs + '>' : '<textarea rows="5"' + attrs + '></textarea>') + '</label>';
+        // One line to start, growing as an email or a thread is pasted in
+        // (wireWorkflowCard sizes it).
+        return '<label class="workflow-param">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">(optional)</span>') +
+          '<textarea rows="1" name="' + escapeHtml(p) + '"' + (spec.required ? ' required' : '') + ' placeholder="' + escapeHtml(spec.description || '') + '"></textarea></label>';
       }).join('');
       var runs = (w.recentRuns || []).map(function (r) {
         var pill = r.status === 'done' ? '<span class="le-pill good">Done</span>'
@@ -1231,7 +1238,7 @@ ${consoleShellScript}
   // or a webhook secret or a run's values being typed.
   function workflowInputInUse() {
     if (document.querySelector('dialog[open]')) return true;
-    var inputs = detail.querySelectorAll('.workflow-hooks input, .workflow-params input, .workflow-params textarea');
+    var inputs = detail.querySelectorAll('.workflow-hooks input, .workflow-params textarea');
     for (var i = 0; i < inputs.length; i++) if (inputs[i].value || inputs[i] === document.activeElement) return true;
     return false;
   }
@@ -1694,7 +1701,7 @@ ${consoleShellScript}
     // starts at once, and shows its runs.
     card.querySelector('.workflow-row-run').addEventListener('click', function () {
       setWorkflowOpen(card, true);
-      var first = card.querySelector('.workflow-params input, .workflow-params textarea');
+      var first = card.querySelector('.workflow-params textarea');
       if (first) { showWorkflowTab(card, 'starts'); first.focus(); return; }
       showWorkflowTab(card, 'runs');
       card.querySelector('.workflow-run').click();
@@ -1754,7 +1761,7 @@ ${consoleShellScript}
     card.querySelector('.workflow-run').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
       var params = {};
-      var inputs = card.querySelectorAll('.workflow-params input, .workflow-params textarea');
+      var inputs = card.querySelectorAll('.workflow-params textarea');
       for (var i = 0; i < inputs.length; i++) {
         var value = inputs[i].value.trim();
         if (!value && inputs[i].required) { result.textContent = 'Fill in ' + inputs[i].name + ' first.'; inputs[i].focus(); return; }
