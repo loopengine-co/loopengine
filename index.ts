@@ -371,3 +371,12 @@ export { createTrackedApprover, listApprovals, decideApproval, findApproval } fr
 
 export { scaffoldAgent, scaffoldSubagent, AgentNameError, AgentExistsError, AgentNotFoundError, AgentModelError } from './bin/cli.js'
 export type { AgentTemplateOptions } from './bin/cli.js'
+
+// Goals (web/goals-admin.ts, web/goals-page.ts) and the goal planner's
+// playbook, kept current on Cloud by core/playbook-sync.ts: a project's
+// own adapters/http.ts imports these.
+export { goalsPageHtml } from './web/goals-page.js'
+export { GoalError, createGoal, deleteGoal, editAmount, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, readLeverEvents, setWorkflowState, writeAbout, type Goal, type GoalWorkflow, type GoalsDeps, type LeverEvent } from './web/goals-admin.js'
+export { runGoalPipeline, type GoalPlan, type GoalContext } from './core/system-agents/goal-planner.js'
+export { LEVERS, PLAYBOOK_VERSION, activePlaybook, setPlaybookProjectDir, type Lever } from './core/system-agents/goal-playbooks.js'
+export { startPlaybookSync, syncPlaybook, playbookSyncConfig } from './core/playbook-sync.js'

@@ -76,6 +76,8 @@
     "dist/core/ability-skills.js",
     "dist/core/ability-skills.d.ts",
     "dist/core/ability-dependencies.js",
+    "dist/core/playbook-sync.js",
+    "dist/core/playbook-sync.d.ts",
     "dist/core/ability-dependencies.d.ts",
     "dist/core/mcp-oauth.js",
     "dist/core/mcp-oauth.d.ts",
@@ -149,7 +151,7 @@
   ],
   "scripts": {
     "eval:goals": "tsx --env-file-if-exists=.env tests/evals/run-goal-evals.ts",
-    "build": "tsc; s=$?; chmod +x dist/bin/cli.js; rm -rf dist/core/system-skills; cp -r core/system-skills dist/core/system-skills; cp models.yaml dist/models.yaml; tsx scripts/write-dist-package-json.ts; exit $s",
+    "build": "tsc; s=$?; chmod +x dist/bin/cli.js; rm -rf dist/core/system-skills; cp -r core/system-skills dist/core/system-skills; cp models.yaml dist/models.yaml; cp core/system-agents/playbook.json dist/core/system-agents/playbook.json; tsx scripts/write-dist-package-json.ts; exit $s",
     "prepublishOnly": "npm run build",
     "start": "node --env-file-if-exists=.env dist/adapters/http.js",
     "test": "vitest run"

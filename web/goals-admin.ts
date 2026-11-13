@@ -12,7 +12,7 @@
 // Generate more is given every workflow in every state, so nothing comes
 // back twice. Building one makes its suggested agent first when there is
 // none by that name, then hands the request to Build a workflow.
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import type { ModelCall } from '../core/run-agent.js'
@@ -41,6 +41,9 @@ export interface GoalWorkflow {
   restoreTo?: Exclude<GoalWorkflowState, 'discarded'>
   /** Set once built: the agent and the workflow (skill id) it became. */
   built?: { agent: string; workflowId: string; title: string; at: string }
+  /** How much the person changed the suggested request before building it
+   * (edits to the built workflow's instructions later don't count). */
+  edited?: EditAmount
   /** Which generation suggested it (1 on create). */
   round: number
 }
@@ -55,6 +58,8 @@ export interface Goal {
   message: string
   status: 'planning' | 'ready' | 'failed'
   error?: string
+  /** The playbook version the latest suggestions came from. */
+  playbookVersion?: number
   rounds: number
   workflows: GoalWorkflow[]
   createdAt: string
@@ -62,6 +67,8 @@ export interface Goal {
 }
 
 export class GoalError extends Error {}
+
+export type EditAmount = 'none' | 'light' | 'heavy'
 
 export interface GoalsDeps {
   /** The project folder goals/ lives in. */
@@ -201,6 +208,7 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
         brief: plan.brief,
         setup: [...new Set([...latest.setup, ...plan.setup])],
         message: plan.message,
+        playbookVersion: plan.playbookVersion,
         status: 'ready',
         error: undefined,
         rounds: round,
@@ -285,12 +293,68 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
   return { goal, agent: w.agent.name, createdAgent, url: `/workflows/new?${params}` }
 }
 
-/** Build a workflow's Create it, linking the new workflow back. */
-export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input: { agent?: unknown; workflowId?: unknown; title?: unknown }): Goal {
+/** Build a workflow's Create it, linking the new workflow back.
+ * `description` is the request as the person submitted it at Build. */
+export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input: { agent?: unknown; workflowId?: unknown; title?: unknown; description?: unknown }): Goal {
   const goal = getGoal(deps, id)
+  const w = findWorkflow(goal, workflowId)
   if (typeof input.agent !== 'string' || typeof input.workflowId !== 'string') throw new GoalError('agent and workflowId are required')
   const built = { agent: input.agent, workflowId: input.workflowId, title: typeof input.title === 'string' ? input.title : input.workflowId, at: now() }
-  return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'built', built, agent: { name: input.agent as string, isNew: false } }))
+  const edited = typeof input.description === 'string' ? editAmount(w.request, input.description) : undefined
+  if (edited && edited !== 'none') recordLeverEvent(deps, goal, w, { type: 'edited', amount: edited })
+  return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'built', built, agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}) }))
+}
+
+// ---- Edits: how much the person changed a suggested request at Build.
+
+const words = (text: string) => new Set(text.toLowerCase().replace(/[^a-z0-9$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2))
+
+/** none (same words), light (mostly the same: names, a schedule, tone)
+ * or heavy (a different request), by how many words the two share. */
+export function editAmount(before: string, after: string): EditAmount {
+  const a = words(before)
+  const b = words(after)
+  if (!a.size && !b.size) return 'none'
+  let shared = 0
+  for (const w of a) if (b.has(w)) shared++
+  const similarity = shared / (a.size + b.size - shared)
+  return similarity >= 0.95 ? 'none' : similarity >= 0.55 ? 'light' : 'heavy'
+}
+
+// ---- Lever events, kept in the project (goals/lever-events.jsonl) until
+// they're sent to loopengine.co. Never the goal's or the workflow's text:
+// the lever, its focus, the playbook version and what happened.
+
+export interface LeverEvent {
+  id: string
+  type: 'edited'
+  at: string
+  goal: string
+  goalWorkflow: string
+  leverId?: string
+  /** The lever's label (for a new idea, the planner's own). */
+  lever: string
+  focus: GoalFocus | 'other'
+  playbookVersion?: number
+  amount: Exclude<EditAmount, 'none'>
+}
+
+export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalWorkflow, event: Pick<LeverEvent, 'type' | 'amount'>): LeverEvent {
+  const full: LeverEvent = {
+    id: newId('e'), at: now(), goal: goal.id, goalWorkflow: w.id, ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
+    ...(goal.playbookVersion !== undefined ? { playbookVersion: goal.playbookVersion } : {}), ...event,
+  }
+  mkdirSync(goalsDir(deps), { recursive: true })
+  appendFileSync(join(goalsDir(deps), 'lever-events.jsonl'), `${JSON.stringify(full)}\n`)
+  return full
+}
+
+export function readLeverEvents(deps: GoalsDeps): LeverEvent[] {
+  try {
+    return readFileSync(join(goalsDir(deps), 'lever-events.jsonl'), 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as LeverEvent)
+  } catch {
+    return []
+  }
 }
 
 // ---- The workspace as the planner sees it.

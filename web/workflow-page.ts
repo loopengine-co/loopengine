@@ -550,7 +550,7 @@ ${consoleShellScript}
       post('/workflows/create', body).then(function (r) {
         if (!r.ok) { renderPlan(r.body.error || 'Could not create it.'); return; }
         if (!fromGoal.goal || !fromGoal.workflow) { renderDone(r.body); return; }
-        post('/goals/' + encodeURIComponent(fromGoal.goal) + '/workflows/' + encodeURIComponent(fromGoal.workflow) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow })
+        post('/goals/' + encodeURIComponent(fromGoal.goal) + '/workflows/' + encodeURIComponent(fromGoal.workflow) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow, description: state.description })
           .then(function () { renderDone(r.body); }, function () { renderDone(r.body); });
       }).catch(function (err) { renderPlan(err.message); });
     });

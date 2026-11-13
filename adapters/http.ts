@@ -117,6 +117,8 @@ import { abilityDetails } from '#web/ability-details-admin.js'
 import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, noteForExistingAgent, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { goalsPageHtml } from '#web/goals-page.js'
+import { setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
+import { startPlaybookSync } from '#core/playbook-sync.js'
 import { GoalError, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, setWorkflowState, writeAbout, type GoalsDeps } from '#web/goals-admin.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -5299,6 +5301,10 @@ const port = Number(process.env.PORT ?? 8787)
 server.listen(port, () => {
   console.log(`agent API listening on :${port}`)
   void warmAgentTools()
+  // The goal planner's playbook: the bundled one, plus the latest one a
+  // Cloud workspace fetches daily (core/playbook-sync.ts).
+  setPlaybookProjectDir(projectDir())
+  startPlaybookSync(projectDir(), (m) => console.log(m))
   // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.
   // Workflows from before they were skills move into their skills first,
   // so their schedules run them.

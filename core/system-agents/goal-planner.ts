@@ -17,9 +17,11 @@
 // workflow planner (workflow-planner.ts) would be given on Build.
 import type { Message, ModelCall } from '#core/run-agent.js'
 import type { ToolSchema } from '#core/agent-config.js'
-import { GOAL_FOCUSES, LEVERS, leversFor, type GoalFocus } from './goal-playbooks.js'
+import { GOAL_FOCUSES, activePlaybook, leversFor, type GoalFocus } from './goal-playbooks.js'
 
-const KNOWN_LEVER_IDS = new Set(LEVERS.map((l) => l.id))
+// The prompt lists at most this many of a focus's levers, so a growing
+// playbook never makes a long prompt. (Later: the best-ranked first.)
+const MAX_LEVERS_IN_PROMPT = 10
 
 /** What LoopEngine knows about the person: the workspace, the website,
  * what they said. `kind` uses the playbook's vocabulary of needs (email,
@@ -102,6 +104,8 @@ export interface GoalPlan {
   /** What to tell the person, e.g. why nothing can be planned. */
   message: string
   critique: { passed: boolean; issues: string[]; revised: boolean }
+  /** The playbook version the plan was made with. */
+  playbookVersion: number
 }
 
 export interface GoalPipelineInput {
@@ -277,7 +281,7 @@ export function contextText(context: GoalContext): string {
 
 function leversText(focus: GoalBrief['focus']): string {
   if (focus === 'other') return 'Playbook levers: none for this focus; use your own ideas, each marked as a new idea.'
-  return 'Playbook levers for this focus (id: name; why; fits when; not when; needs; minutes a week):\n' + leversFor(focus).map((l) =>
+  return 'Playbook levers for this focus (id: name; why; fits when; not when; needs; minutes a week):\n' + leversFor(focus).slice(0, MAX_LEVERS_IN_PROMPT).map((l) =>
     `- ${l.id}: ${l.name}. ${l.mechanism} Fits when: ${l.fitsWhen.join('; ')}. Not when: ${l.notWhen.join('; ')}. Needs: ${[...(l.needs.anyOf?.length ? [`one of ${l.needs.anyOf.join('/')}`] : []), ...(l.needs.plus ?? [])].join(' + ')}. About ${l.humanMinutesPerWeek} min/week. Template: ${l.template}`,
   ).join('\n')
 }
@@ -318,7 +322,9 @@ function briefText(brief: GoalBrief): string {
   return `Confirmed brief:\n- scope: ${brief.scope} (${brief.scopeReason})\n- reading: ${brief.reading}\n- focus: ${brief.focus}\n- measure: ${brief.measure}\n- measure source: ${brief.measureSource} (${brief.measureSourceConnected ? 'connected' : 'not connected'})\n- qualifiers: ${brief.qualifiers.join('; ') || 'none'}\n- audience: ${brief.audience}\n- weekly review time: ${brief.weeklyHours} hours\n- approvals: ${brief.approvals}`
 }
 
-function parsePlan(raw: Record<string, unknown>): Omit<GoalPlan, 'brief' | 'critique'> {
+function parsePlan(raw: Record<string, unknown>): Omit<GoalPlan, 'brief' | 'critique' | 'playbookVersion'> {
+  const { levers } = activePlaybook()
+  const KNOWN_LEVER_IDS = new Set(levers.map((l) => l.id))
   const workflows = (Array.isArray(raw.workflows) ? raw.workflows : []).flatMap((w): PlannedGoalWorkflow[] => {
     if (!w || typeof w !== 'object') return []
     const x = w as Record<string, unknown>
@@ -338,7 +344,7 @@ function parsePlan(raw: Record<string, unknown>): Omit<GoalPlan, 'brief' | 'crit
       title,
       ...(leverId ? { leverId } : {}),
       // An empty label falls back to the playbook lever's name, else the title.
-      lever: (leverId && (str(x.lever) === leverId || !str(x.lever)) ? LEVERS.find((l) => l.id === leverId)?.name : str(x.lever)) || title,
+      lever: (leverId && (str(x.lever) === leverId || !str(x.lever)) ? levers.find((l) => l.id === leverId)?.name : str(x.lever)) || title,
       focus: focusOf(x.focus),
       mechanism: str(x.mechanism),
       request,
@@ -355,7 +361,7 @@ function parsePlan(raw: Record<string, unknown>): Omit<GoalPlan, 'brief' | 'crit
   return { setup: strings(raw.setup), workflows, leftOut: strings(raw.leftOut), assumptions: strings(raw.assumptions), message: str(raw.message) }
 }
 
-export async function draftGoalPlan(modelCall: ModelCall, input: GoalPipelineInput, brief: GoalBrief, issues: string[] = []): Promise<Omit<GoalPlan, 'brief' | 'critique'>> {
+export async function draftGoalPlan(modelCall: ModelCall, input: GoalPipelineInput, brief: GoalBrief, issues: string[] = []): Promise<Omit<GoalPlan, 'brief' | 'critique' | 'playbookVersion'>> {
   const user = [
     contextText(input.context),
     briefText(brief),
@@ -367,7 +373,7 @@ export async function draftGoalPlan(modelCall: ModelCall, input: GoalPipelineInp
   return parsePlan(await callTool(modelCall, GOAL_PLAN_PROMPT, user, PLAN_TOOL))
 }
 
-export async function critiqueGoalPlan(modelCall: ModelCall, input: GoalPipelineInput, brief: GoalBrief, plan: Omit<GoalPlan, 'brief' | 'critique'>): Promise<{ passed: boolean; issues: string[] }> {
+export async function critiqueGoalPlan(modelCall: ModelCall, input: GoalPipelineInput, brief: GoalBrief, plan: Omit<GoalPlan, 'brief' | 'critique' | 'playbookVersion'>): Promise<{ passed: boolean; issues: string[] }> {
   const user = [contextText(input.context), briefText(brief), savedText(input.saved), `The plan:\n${JSON.stringify(plan, null, 2)}`].join('\n\n')
   const raw = await callTool(modelCall, GOAL_CRITIQUE_PROMPT, user, REVIEW_TOOL)
   const issues = strings(raw.issues)
@@ -386,5 +392,5 @@ export async function runGoalPipeline(modelCall: ModelCall, input: GoalPipelineI
     revised = true
     review = await critiqueGoalPlan(modelCall, input, brief, plan)
   }
-  return { brief, ...plan, critique: { ...review, revised } }
+  return { brief, ...plan, critique: { ...review, revised }, playbookVersion: activePlaybook().version }
 }

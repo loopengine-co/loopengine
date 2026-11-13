@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  createGoal, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, prepareBuild, readAbout, setWorkflowState,
+  createGoal, editAmount, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, prepareBuild, readAbout, readLeverEvents, setWorkflowState,
   type GoalsDeps,
 } from '#web/goals-admin.js'
 
@@ -139,6 +139,43 @@ describe('a goal and its workflows', () => {
     const { deps } = setup([])
     expect(() => createGoal(deps, { goal: 'hi' })).toThrow(/what you want to achieve/)
     expect(() => getGoal(deps, '../etc')).toThrow(/No such goal/)
+  })
+})
+
+describe('how much a built workflow was edited', () => {
+  const SUGGESTION = 'Every weekday at 9:00, find up to 5 posts on Reddit and Hacker News where someone asks how to automate customer emails, and send me drafted replies in Telegram. Never post anything yourself.'
+
+  it('tells no edit, a light one and a heavy one apart, by the words they share', () => {
+    expect(editAmount(SUGGESTION, SUGGESTION)).toBe('none')
+    expect(editAmount(SUGGESTION, SUGGESTION.replace('Reddit and Hacker News', 'r/AI_Agents').replace('9:00', '8:00'))).toBe('light')
+    expect(editAmount(SUGGESTION, 'Each Friday, write a newsletter about our product updates and email it to all subscribers.')).toBe('heavy')
+  })
+
+  async function built(description?: string) {
+    const { deps } = setup([[wf('Answer posts', { request: SUGGESTION })]])
+    const { id } = createGoal(deps, { goal: 'Grow users to 100' })
+    await goalPlanning(id)
+    const [w] = getGoal(deps, id).workflows
+    setWorkflowState(deps, id, w!.id, 'save')
+    markBuilt(deps, id, w!.id, { agent: 'growth-agent', workflowId: 'answer-posts', ...(description !== undefined ? { description } : {}) })
+    return { deps, id, wid: w!.id }
+  }
+
+  it('records how much the request was changed at Build, and an event only when it was', async () => {
+    const untouched = await built(SUGGESTION)
+    expect(getGoal(untouched.deps, untouched.id).workflows[0]!.edited).toBe('none')
+    expect(readLeverEvents(untouched.deps)).toEqual([])
+
+    const changed = await built(SUGGESTION.replace('Reddit and Hacker News', 'r/AI_Agents and r/nocode'))
+    expect(getGoal(changed.deps, changed.id).workflows[0]!.edited).toBe('light')
+    const [event] = readLeverEvents(changed.deps)
+    expect(event).toMatchObject({ type: 'edited', amount: 'light', lever: 'answer posts', focus: 'new-signups', goalWorkflow: changed.wid })
+    // Never the text itself.
+    expect(JSON.stringify(event)).not.toContain('r/AI_Agents')
+
+    // Without the submitted request, nothing is known about edits.
+    const unknown = await built()
+    expect(getGoal(unknown.deps, unknown.id).workflows[0]!.edited).toBeUndefined()
   })
 })
 

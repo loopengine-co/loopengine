@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
-import { GOAL_FOCUSES, LEVERS, leversFor } from '#core/system-agents/goal-playbooks.js'
+import { GOAL_FOCUSES, LEVERS, PLAYBOOK_VERSION, leversFor, parsePlaybook } from '#core/system-agents/goal-playbooks.js'
 import { runGoalPipeline, type GoalPlan, type PlannedGoalWorkflow } from '#core/system-agents/goal-planner.js'
 import { GOAL_EVAL_SET } from './evals/goal-eval-set.js'
 import { scoreGoalPlan } from './evals/goal-scoring.js'
@@ -33,7 +33,7 @@ function workflow(over: Partial<PlannedGoalWorkflow> = {}): PlannedGoalWorkflow 
 function plan(workflows: PlannedGoalWorkflow[], over: Partial<GoalPlan> = {}): GoalPlan {
   return {
     brief: { scope: 'in', scopeReason: '', reading: 'literal', focus: 'new-signups', measure: 'signups', measureSource: 'Clerk signup webhooks', measureSourceConnected: false, qualifiers: [], audience: '', weeklyHours: 3, approvals: '' },
-    setup: ['Connect Clerk’s user.created webhook so signups and their ref are recorded; note today’s count as the baseline', 'Tag links with ref'], workflows, leftOut: [], assumptions: [], message: '', critique: { passed: true, issues: [], revised: false }, ...over,
+    setup: ['Connect Clerk’s user.created webhook so signups and their ref are recorded; note today’s count as the baseline', 'Tag links with ref'], workflows, leftOut: [], assumptions: [], message: '', critique: { passed: true, issues: [], revised: false }, playbookVersion: 1, ...over,
   }
 }
 
@@ -47,6 +47,22 @@ describe('playbook v1', () => {
       expect(l.fitsWhen.length).toBeGreaterThan(0)
     }
     for (const focus of GOAL_FOCUSES) expect(leversFor(focus).length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('loads from playbook.json, versioned', () => {
+    expect(PLAYBOOK_VERSION).toBe(1)
+    expect(LEVERS.length).toBeGreaterThanOrEqual(20)
+  })
+
+  it('names the lever at fault when playbook.json is malformed', () => {
+    const lever = (over: Record<string, unknown> = {}) => ({ ...LEVERS[0], ...over })
+    expect(() => parsePlaybook({})).toThrow(/expected \{ "levers"/)
+    expect(() => parsePlaybook({ levers: [lever({ focus: 'growth' })] })).toThrow(/new-signups.answer-intent-posts: focus must be one of/)
+    expect(() => parsePlaybook({ levers: [lever({ id: 'activation.x' })] })).toThrow(/must start with "new-signups."/)
+    expect(() => parsePlaybook({ levers: [lever(), lever()] })).toThrow(/used twice/)
+    expect(() => parsePlaybook({ levers: [lever({ template: '' })] })).toThrow(/"template" must be non-empty text/)
+    expect(() => parsePlaybook({ levers: [lever({ needs: { anyOf: 'email' } })] })).toThrow(/needs.anyOf/)
+    expect(parsePlaybook({ version: 2, levers: [lever()] })).toMatchObject({ version: 2, levers: [{ id: 'new-signups.answer-intent-posts' }] })
   })
 })
 
