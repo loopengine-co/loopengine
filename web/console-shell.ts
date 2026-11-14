@@ -30,9 +30,9 @@ const BRAND_MARK =
 
 export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label="Console navigation">
   <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
-  <div class="le-nav-label"><span>Goals</span><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
+  <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
   <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
-  <div class="le-nav-label"><span>Agents</span><a href="/agents?new=1">+ New</a></div>
+  <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">Agents</a><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
   <nav class="le-foot" aria-label="Settings">
@@ -125,6 +125,8 @@ export const consoleShellScript: string = `<script>
   // ---- Goals, listed above the agents: each opens its goal on the Goals
   // page; + New opens a new one. The Goals page reloads the list when it
   // adds or removes one (leShell.reloadGoals).
+  var agentsHead = document.querySelector('[data-le-nav-head="agents"]');
+  if (agentsHead && page === 'agents') agentsHead.setAttribute('aria-current', 'page');
   var goalList = document.getElementById('leGoalList');
   function reloadGoals() {
     if (!goalList) return Promise.resolve();
@@ -134,7 +136,9 @@ export const consoleShellScript: string = `<script>
         var goals = data.goals || [];
         var current = page === 'goals' ? new URLSearchParams(location.search).get('goal') : null;
         var newLink = document.querySelector('[data-le-goal-new]');
-        var creating = page === 'goals' && !current;
+        var creating = page === 'goals' && !current && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
+        var head = document.querySelector('[data-le-nav-head="goals"]');
+        if (head) { if (page === 'goals' && !current && !creating) head.setAttribute('aria-current', 'page'); else head.removeAttribute('aria-current'); }
         if (newLink) { if (creating) newLink.setAttribute('aria-current', 'page'); else newLink.removeAttribute('aria-current'); }
         goalList.innerHTML = goals.length ? goals.map(function (g) {
           return '<li><a class="le-agent-item le-goal-item" href="/goals?goal=' + enc(g.id) + '" title="' + esc(g.goal) + '"' + (g.id === current ? ' aria-current="page"' : '') + '>' +

@@ -1,4 +1,6 @@
-// The console's Goals page (/goals): type a goal, get suggested workflows
+// The console's Goals page: /goals lists the goals made so far, /goals?new=1
+// (and the workspace's front page, /) starts one, and /goals?goal=<id>
+// opens one. Type a goal, get suggested workflows
 // (each with the agent it would go into), save the ones worth keeping,
 // generate more, and build a saved one, which makes its agent first when
 // it doesn't exist (web/goals-admin.ts behind /goals/*). Same shell and
@@ -57,6 +59,19 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-discarded-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 10px; background: var(--surface); font-size: 13.5px; }
   .gl-discarded-note .gl-btn { height: 28px; font-size: 12.5px; }
   .gl-empty { font-size: 13.5px; color: var(--ink-muted); margin: 0; }
+  .gl-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+  .gl-list li + li { border-top: 1px solid var(--line); }
+  .gl-list a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 12px 16px; text-decoration: none; color: var(--ink); }
+  .gl-list a:hover { background: var(--surface); }
+  .gl-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .gl-list-goal { font-size: 14.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gl-list-meta { grid-column: 1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
+  .gl-list-date { grid-row: 1 / span 2; grid-column: 2; font-size: 12px; color: var(--ink-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .gl-new-btn { display: inline-flex; align-items: center; text-decoration: none; }
+  .gl-new-btn[hidden] { display: none; }
+  .gl-state.planning { background: var(--warn-soft); color: var(--warn); }
+  .gl-state.failed { background: var(--bad-soft); color: var(--bad); }
+  @media (max-width: 520px) { .gl-list a { grid-template-columns: minmax(0, 1fr); } .gl-list-date { grid-row: auto; grid-column: 1; } }
   .gl-status { font-size: 13.5px; color: var(--ink-muted); }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
@@ -69,8 +84,9 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1 id="glTitle">New goal</h1><p id="glLead">Say what you want to achieve. LoopEngine suggests workflows that move it, each with the agent it would go into. Save the ones worth keeping, generate more, and build them when you’re ready.</p></div>
+        <div><h1 id="glTitle">Goals</h1><p id="glLead">Say what you want to achieve. LoopEngine suggests workflows that move it, each with the agent it would go into. Save the ones worth keeping, generate more, and build them when you’re ready.</p></div>
       </div>
+      <a class="gl-btn gl-new-btn" id="glNewBtn" href="/goals?new=1" hidden>New goal</a>
     </div>
   </div>
   <div class="le-scroll"><div class="le-page"><div class="gl" id="glPage"><p class="hint">Loading&hellip;</p></div></div></div>
@@ -85,7 +101,10 @@ ${consoleShellScript}
   var FOCUS = [['new-signups', 'Getting new signups or customers'], ['activation', 'Getting new users started'], ['retention', 'Keeping users'], ['faster-support', 'Faster support'], ['revenue-recovery', 'Recovering revenue'], ['ops-hygiene', 'Smoother operations'], ['other', 'Something else']];
   var KINDS = [['', 'Choose one'], ['ecommerce', 'Online store'], ['saas', 'Software or app'], ['agency', 'Agency or services'], ['local', 'Local business'], ['creator', 'Creator or media'], ['nonprofit', 'Nonprofit'], ['other', 'Something else']];
   var REASONS = [['not-relevant', 'Not relevant'], ['too-much-work', 'Too much work'], ['already-doing-it', 'Already doing it']];
-  var state = { goals: [], about: '', settings: {}, current: null, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
+  // Which view: the list (/goals), a new goal (?new=1, or the front page)
+  // or one goal (?goal=).
+  var startNew = location.pathname === '/' || new URLSearchParams(location.search).has('new');
+  var state = { goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -103,6 +122,8 @@ ${consoleShellScript}
   function setUrl(id) {
     var url = new URL(location.href);
     if (id) url.searchParams.set('goal', id); else url.searchParams.delete('goal');
+    url.searchParams.delete('new');
+    if (url.pathname === '/') url.pathname = '/goals';
     history.replaceState(null, '', url);
   }
 
@@ -112,8 +133,6 @@ ${consoleShellScript}
       state.goals = r.body.goals || [];
       state.about = r.body.about || '';
       state.settings = r.body.settings || {};
-      // A goal from the sidebar (?goal=), else a new one (+ New, or the
-      // workspace's front page).
       var id = selectId || new URLSearchParams(location.search).get('goal');
       state.current = state.goals.filter(function (g) { return g.id === id; })[0] || null;
       render();
@@ -140,6 +159,24 @@ ${consoleShellScript}
     state.goals = state.goals.map(function (g) { return g.id === goal.id ? goal : g; });
     if (!state.goals.some(function (g) { return g.id === goal.id; })) state.goals.unshift(goal);
     state.current = goal;
+  }
+
+  function listHtml() {
+    var count = function (g, s) { return g.workflows.filter(function (w) { return w.state === s; }).length; };
+    return '<ul class="gl-list">' + state.goals.map(function (g) {
+      var parts = [];
+      if (g.status === 'planning') parts.push('<span class="gl-state planning">Suggesting' + ELLIPSIS + '</span>');
+      if (g.status === 'failed') parts.push('<span class="gl-state failed">Failed</span>');
+      var suggested = count(g, 'suggested'), saved = count(g, 'saved'), built = count(g, 'built');
+      if (suggested) parts.push(suggested + ' suggested');
+      if (saved) parts.push(saved + ' saved');
+      if (built) parts.push('<span class="gl-state built">' + built + ' built</span>');
+      if (!parts.length) parts.push('No workflows kept yet');
+      var date = g.createdAt ? new Date(g.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      return '<li><a href="/goals?goal=' + encodeURIComponent(g.id) + '"><span class="gl-list-goal" title="' + esc(g.goal) + '">' + esc(g.goal) + '</span>' +
+        '<span class="gl-list-date">' + esc(date) + '</span>' +
+        '<span class="gl-list-meta">' + parts.join(' <span aria-hidden="true">' + String.fromCharCode(183) + '</span> ') + '</span></a></li>';
+    }).join('') + '</ul>';
   }
 
   function newGoalHtml() {
@@ -217,9 +254,13 @@ ${consoleShellScript}
   function render() {
     var title = document.getElementById('glTitle');
     var lead = document.getElementById('glLead');
-    if (title) title.textContent = state.current ? 'Goal' : 'New goal';
-    if (lead) lead.style.display = state.current ? 'none' : '';
-    page.innerHTML = (state.current ? goalHtml(state.current) : newGoalHtml()) + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '');
+    var newBtn = document.getElementById('glNewBtn');
+    // The list, unless there are no goals yet: then the new-goal form.
+    var listing = !state.current && !state.creating && state.goals.length > 0;
+    if (title) title.textContent = state.current ? 'Goal' : listing ? 'Goals' : 'New goal';
+    if (lead) lead.style.display = state.current || listing ? 'none' : '';
+    if (newBtn) newBtn.hidden = !listing;
+    page.innerHTML = (state.current ? goalHtml(state.current) : listing ? listHtml() : newGoalHtml()) + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '');
     state.error = '';
     wire();
     watch();
@@ -238,6 +279,7 @@ ${consoleShellScript}
         if (!r.ok) { state.error = r.body.error || 'Could not start.'; render(); return; }
         state.about = aboutBox ? aboutBox.value.trim() : state.about;
         state.startedAt = Date.now();
+        state.creating = false;
         replaceGoal(r.body.goal);
         setUrl(r.body.goal.id);
         reloadSidebar();

@@ -125,9 +125,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-row .workflow-starts > .workflow-section-content { padding: 0; }
   .wf-row .workflow-result:empty { display: none; }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
-  .wf-row-foot .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
-  .wf-row-foot .wf-remove[data-confirming="1"] { height: auto; min-height: 30px; padding: 6px 12px; text-align: left; white-space: normal; }
+  .wf-row-actions .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
+  .wf-row-actions .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   @media (max-width: 760px) {
     .wf-row-head { grid-template-columns: 14px minmax(0, 1fr) auto; row-gap: 6px; }
     .wf-row-starts, .wf-row-last { white-space: normal; }
@@ -986,7 +985,7 @@ ${consoleShellScript}
     var apiUrl = location.origin + '/agents/' + encodeURIComponent(agentName) + '/workflows/' + encodeURIComponent(w.id) + '/run';
     return '<div class="workflow-starts' + (startsCompact(w) ? ' wf-starts-compact' : '') + '"><div class="workflow-section-content">' +
       wfStartSection('run-' + w.id, 'Run now',
-        'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under Recent runs as it goes.',
+        'Starts a run right away, from here' + (paramNames.length ? ', with the values you fill in' : '') + '. It shows under History as it goes.',
         (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
         '<div class="workflow-run-controls">' +
           '<label class="workflow-run-notify" title="Sends the completed result through this agent' + String.fromCharCode(8217) + 's configured notifier"><input type="checkbox" class="workflow-run-notify-toggle"> Send result to messaging app</label>' +
@@ -1141,18 +1140,18 @@ ${consoleShellScript}
           '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong>' + (w.description ? '<span class="wf-row-desc">' + escapeHtml(w.description) + '</span>' : '') + '</div>' +
           '<span class="wf-row-starts">' + escapeHtml(workflowStartsSummary(w)) + '</span>' +
           '<span class="wf-row-last">' + workflowLastRunHtml(last) + '</span>' +
-          '<span class="wf-row-actions"><button type="button" class="workflow-row-run">Run</button><button type="button" class="workflow-edit">Edit</button></span>' +
+          '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit</button><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></span>' +
         '</div>' +
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           '<div class="wf-chips">' + workflowStatusChips(w) + '</div>' +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('instructions', 'Instructions') + tabBtn('starts', 'How it starts') + tabBtn('runs', 'Runs' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('instructions', 'Instructions') + tabBtn('starts', 'Run') + tabBtn('runs', 'History' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
           panel('instructions',
             '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
             (w.originalRequest ? '<details class="wf-original"><summary>Original message</summary><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></details>' : '')) +
           panel('starts', workflowStartsHtml(w, name, params)) +
           panel('runs', runs ? '<ul class="schedule-history">' + runs + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') +
           '<div class="hint workflow-result"></div>' +
-          '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span><button type="button" class="wf-remove workflow-forget">Remove</button></div>' +
+          '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span></div>' +
         '</div>' +
         '</article>';
     }).join('') + '</div>';
@@ -1698,15 +1697,6 @@ ${consoleShellScript}
     });
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
-    // Run: one with values to fill in opens on its run form; one without
-    // starts at once, and shows its runs.
-    card.querySelector('.workflow-row-run').addEventListener('click', function () {
-      setWorkflowOpen(card, true);
-      var first = card.querySelector('.workflow-params textarea');
-      if (first) { showWorkflowTab(card, 'starts'); first.focus(); return; }
-      showWorkflowTab(card, 'runs');
-      card.querySelector('.workflow-run').click();
-    });
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // A schedule opens its own row in the Schedules tab.
     var scheduleLinks = card.querySelectorAll('.workflow-schedule-link');
@@ -1777,13 +1767,13 @@ ${consoleShellScript}
         btn.disabled = false;
         notifyToggle.disabled = false;
         if (!r.ok) { result.textContent = r.body.error || 'Could not start it.'; return; }
-        result.textContent = 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; the result shows under Recent runs.' + (notifyResult ? ' The result will also be sent to the messaging app when it finishes.' : '');
+        result.textContent = 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; the result shows under History.' + (notifyResult ? ' The result will also be sent to the messaging app when it finishes.' : '');
         setTimeout(function () { loadWorkflowsSection(name); }, 800);
       });
     });
     card.querySelector('.workflow-forget').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
-      if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again: its schedules and webhooks go; its instructions stay as a skill for Chat'; return; }
+      if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
       fetchJsonRetryOnce(base, { method: 'DELETE' }).then(function () { loadWorkflowsSection(name); });
     });
   }
