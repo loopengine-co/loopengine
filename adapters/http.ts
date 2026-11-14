@@ -1684,6 +1684,14 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
   } catch {}
   const rules = loadRules(entry.config)
   const scope = { tenant: 'default', environment: process.env.LOOPENGINE_ENV ?? 'production', agent: agentName }
+  // Its webhooks for the contract: whose events, which ones, and what
+  // fills each input.
+  const triggers = await listTriggers(agentName).catch(() => [])
+  let messaging: string | null = null
+  try {
+    const n = describeAgentNotifier(entry.config, defaultWebhook)
+    messaging = n.source === 'none' ? null : (n.primary ?? n.channel ?? null)
+  } catch {}
   const escape = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return {
     workflows: workflows.map((w) => ({
@@ -1691,9 +1699,14 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
       tools: names
         .filter((n) => w.gather.some((g) => g.tool === n) || new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(w.instructions))
         .map((n) => ({ name: n, decision: rules.resolve(n, {}, scope)[0] })),
+      triggers: triggers.filter((t) => t.workflow_id === w.id).map((t) => ({
+        name: t.name, sender: t.verify?.sender ?? 'custom', enabled: t.enabled, waiting: !t.enabled && !!t.verify && !t.verify.secret,
+        ...(t.filter ? { filter: t.filter } : {}), ...(t.mapping ? { mapping: t.mapping } : {}), ...(t.notify ? { notify: true } : {}), ...(t.callback_url ? { callback: true } : {}),
+      })),
     })),
     policies: readWorkspacePolicies(process.cwd()),
     agentModel: modelLabelOf(entry.config),
+    messaging,
   }
 }
 

@@ -124,16 +124,20 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-original summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-muted); margin-bottom: 6px; }
   .wf-row .workflow-starts > .workflow-section-content { padding: 0; }
   .wf-row .workflow-result:empty { display: none; }
+  .wf-cb { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 13px; line-height: 1.5; }
+  .wf-cb-k { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent-ink); padding-top: 1px; }
+  .wf-cb-v { display: grid; gap: 3px; min-width: 0; }
+  .wf-cb-line { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; overflow-wrap: anywhere; }
+  .wf-cb-line code { font-size: 12px; }
+  .wf-cb-indent { padding-left: 14px; }
+  .wf-cb-tools { flex: 1 1 260px; min-width: 0; }
+  .wf-cb-decision { font-size: 11.5px; font-weight: 700; padding: 0 8px; border-radius: 999px; white-space: nowrap; }
+  .wf-cb-decision.allow { background: var(--good-soft); color: var(--good); }
+  .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
+  .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
+  .wf-cb-first { font-size: 11px; color: var(--ink-muted); font-style: italic; }
+  @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
   .wf-sub { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
-  .wf-contract { display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .wf-contract-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 10px 12px; font-size: 13px; }
-  .wf-contract-row + .wf-contract-row { border-top: 1px solid var(--line); }
-  .wf-contract-k { font-weight: 600; color: var(--ink-muted); }
-  .wf-contract-v { display: grid; gap: 4px; min-width: 0; }
-  .wf-contract-pre { margin: 0; padding: 6px 8px; border-radius: 6px; background: var(--surface); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .wf-contract-text { white-space: pre-wrap; }
-  .wf-tools { display: flex; flex-wrap: wrap; gap: 6px 12px; }
-  .wf-tool { display: inline-flex; align-items: center; gap: 6px; }
   .wf-scores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .wf-score { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
   .wf-score-k { font-size: 11.5px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .04em; }
@@ -155,7 +159,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wp-model-row { display: flex; gap: 8px; flex-wrap: wrap; }
   .wp-model-row input { flex: 1 1 200px; }
   .wp-mono { font-family: var(--font-mono); font-size: 12.5px; }
-  @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wf-contract-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+  @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
   .wf-row-actions .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
   .wf-row-actions .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
@@ -1133,32 +1137,56 @@ ${consoleShellScript}
   // ---- A workflow in three parts: its contract (what the system holds it
   // to: how it starts, its inputs, lookups, tools, model and result), its
   // brief (what the agent reads) and its evidence (how it's doing). ----
-  var workflowsMeta = { policies: '', agentModel: '' };
+  var workflowsMeta = { policies: '', agentModel: '', messaging: null };
   var RSQ = String.fromCharCode(8217);
   var DOT = ' ' + String.fromCharCode(183) + ' ';
 
-  function decisionPillHtml(decision) {
-    return decision === 'allow' ? '<span class="le-pill good">Runs on its own</span>' : decision === 'deny' ? '<span class="le-pill bad">Never runs</span>' : '<span class="le-pill ask">Asks you first</span>';
+  // The contract as one block: trigger, inputs, tools, result, model.
+  // Tools are grouped by what they may do; one marked "looked up first" is
+  // called by the server before the agent starts.
+  var SENDER_LABELS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'Your app' };
+  var ARROW_L = String.fromCharCode(8592);
+  function contractLinesHtml(lines) {
+    return lines.map(function (l) { return '<div class="wf-cb-line">' + l + '</div>'; }).join('');
   }
-
-  function contractRowHtml(label, html) {
-    return '<div class="wf-contract-row"><span class="wf-contract-k">' + label + '</span><div class="wf-contract-v">' + html + '</div></div>';
-  }
-
   function workflowContractHtml(w, name, params) {
+    var trigger = [];
+    (w.schedules || []).filter(function (x) { return x.status !== 'cancelled'; }).forEach(function (x) {
+      var values = x.params ? Object.keys(x.params).map(function (k) { return escapeHtml(k) + ' = ' + escapeHtml(x.params[k]); }).join(', ') : '';
+      trigger.push('schedule, ' + escapeHtml(x.describe) + (values ? ' <span class="hint">(' + values + ')</span>' : '') + (x.status === 'paused' ? ' <span class="le-pill warn">Paused</span>' : ''));
+    });
+    (w.triggers || []).forEach(function (t) {
+      trigger.push(escapeHtml(SENDER_LABELS[t.sender] || t.sender) + ' webhook' + (t.filter ? ', <code>' + escapeHtml(t.filter.values.join(' | ')) + '</code>' : '') +
+        (t.waiting ? ' <span class="le-pill ask">Needs its signing secret</span>' : !t.enabled ? ' <span class="le-pill warn">Off</span>' : ''));
+      Object.keys(t.mapping || {}).forEach(function (param) { trigger.push('<span class="wf-cb-indent"><code>' + escapeHtml(param) + '</code> ' + ARROW_L + ' <code>' + escapeHtml(t.mapping[param]) + '</code></span>'); });
+    });
+    trigger.push('<span class="hint">by hand (Run now) or from an app (API)</span>');
     var names = Object.keys(w.parameters || {});
-    var given = names.length ? names.map(function (n) {
+    var inputs = names.length ? names.map(function (n) {
       var spec = w.parameters[n];
-      return '<div><code>' + escapeHtml(n) + '</code>' + (spec.required ? ' <span class="hint">required</span>' : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '') + '</div>';
-    }).join('') : '<span class="hint">Nothing: every run is the same.</span>';
-    var gathered = (w.gather || []).length ? '<pre class="wf-contract-pre">' + escapeHtml(w.gatherText || '') + '</pre><span class="hint">Run before the agent starts; what they return arrives with its inputs.</span>' : '<span class="hint">Nothing. The agent looks up what it needs itself.</span>';
-    var tools = (w.tools || []).length ? '<div class="wf-tools">' + w.tools.map(function (t) { return '<span class="wf-tool"><code>' + escapeHtml(t.name) + '</code> ' + decisionPillHtml(t.decision) + '</span>'; }).join('') + '</div><span class="hint">The tools its instructions and lookups name. Change what they may do in Permissions.</span>' : '<span class="hint">Its instructions don' + RSQ + 't name any of the agent' + RSQ + 's tools.</span>';
-    var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : 'The agent' + RSQ + 's model' + (workflowsMeta.agentModel ? ' <span class="hint">(' + escapeHtml(workflowsMeta.agentModel) + ')</span>' : '');
-    var result = w.output ? '<div class="wf-contract-text">' + escapeHtml(w.output) + '</div>' : '<span class="hint">Not set: the agent ends with a reply in its own words.</span>';
-    return '<h4 class="wf-sub">How it starts</h4>' + workflowStartsHtml(w, name, params) +
-      '<h4 class="wf-sub">What it' + RSQ + 's held to</h4>' +
-      '<div class="wf-contract">' + contractRowHtml('Each run is given', given) + contractRowHtml('Looked up first', gathered) + contractRowHtml('Tools', tools) + contractRowHtml('Model', model) + contractRowHtml('Result', result) + '</div>' +
-      '<p class="hint" style="margin:0">Change these with Edit.</p>';
+      return '<code>' + escapeHtml(n) + '</code>' + (spec.required ? ' (required)' : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '');
+    }) : ['<span class="hint">none: every run is the same</span>'];
+    var first = {};
+    (w.gather || []).forEach(function (g) { first[g.tool] = true; });
+    var groups = { allow: [], ask: [], deny: [] };
+    (w.tools || []).forEach(function (t) { (groups[t.decision] || groups.ask).push(t.name); });
+    var tools = [];
+    [['allow', 'runs on its own'], ['ask', 'asks you first'], ['deny', 'never runs']].forEach(function (g) {
+      if (!groups[g[0]].length) return;
+      tools.push('<span class="wf-cb-tools">' + groups[g[0]].map(function (n) { return '<code>' + escapeHtml(n) + '</code>' + (first[n] ? ' <span class="wf-cb-first">looked up first</span>' : ''); }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
+    });
+    if (!tools.length) tools.push('<span class="hint">none named in its instructions</span>');
+    var result = [];
+    if (w.output) result.push(escapeHtml(w.output));
+    result.push('returned to whoever starts it <span class="hint">(Run now, or the app' + RSQ + 's API call)</span>');
+    var notified = (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.notify; });
+    if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report <span class="hint">(for the schedules and webhooks set to send it)</span>');
+    if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's callback address');
+    var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
+    var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
+    return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('model', [model]) + '</div>' +
+      '<p class="hint" style="margin:0">Change the inputs, lookups, result and model with Edit; what tools may do in Permissions; triggers below.</p>' +
+      '<h4 class="wf-sub">Run it, or set up its triggers</h4>' + workflowStartsHtml(w, name, params);
   }
 
   function workflowBriefHtml(w) {
@@ -1377,7 +1405,7 @@ ${consoleShellScript}
       if (currentName !== name) return;
       if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
       var workflows = r.body.workflows || [];
-      workflowsMeta = { policies: r.body.policies || '', agentModel: r.body.agentModel || '' };
+      workflowsMeta = { policies: r.body.policies || '', agentModel: r.body.agentModel || '', messaging: r.body.messaging || null };
       fillWorkflowsCard(workflows);
       leShell.setCount('workflows', workflows.length);
       workflowsById = {};
@@ -1425,7 +1453,7 @@ ${consoleShellScript}
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
-      '<label>Looked up first <span class="hint">(optional: lookups every run needs, done before the agent starts, so it can' + String.fromCharCode(8217) + 't skip them. One per line: a tool, then name=value for its input, e.g. <code>get_order_details order_number=$order_number</code>. Only tools that run on their own are run.)</span>' +
+      '<label>Look up first <span class="hint">(optional: tools the server calls before the agent starts, for lookups every run needs, so the agent can' + String.fromCharCode(8217) + 't skip them; they show as looked up first in the contract' + String.fromCharCode(8217) + 's tools. One per line: a tool, then name=value for its input, e.g. <code>get_order_details order_number=$order_number</code>. Only tools that run on their own are run.)</span>' +
         '<textarea name="gather" rows="3" spellcheck="false" class="wp-mono">' + escapeHtml(w.gatherText || '') + '</textarea></label>' +
       '<label>Result <span class="hint">(optional: what its final reply must be, e.g. The draft only, then a line Flag: reason if a person must act. Empty: a reply in its own words.)</span>' +
         '<textarea name="output" rows="2" maxlength="2000">' + escapeHtml(w.output || '') + '</textarea></label>' +

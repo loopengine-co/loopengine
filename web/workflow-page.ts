@@ -44,6 +44,18 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; background: var(--bg); }
   .wf-card h2 { margin: 0; font-size: 18px; }
   .wf-card h3 { margin: 6px 0 0; font-size: 14px; }
+  .wf-cb { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 13px; line-height: 1.5; }
+  .wf-cb-k { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent-ink); padding-top: 1px; }
+  .wf-cb-v { display: grid; gap: 3px; min-width: 0; }
+  .wf-cb-line { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; overflow-wrap: anywhere; }
+  .wf-cb-indent { padding-left: 14px; }
+  .wf-cb-tools { flex: 1 1 260px; min-width: 0; }
+  .wf-cb-decision { font-size: 11.5px; font-weight: 700; padding: 0 8px; border-radius: 999px; white-space: nowrap; }
+  .wf-cb-decision.allow { background: var(--good-soft); color: var(--good); }
+  .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
+  .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
+  .wf-cb-first { font-size: 11px; color: var(--ink-muted); font-style: italic; }
+  @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
   .wf-part { display: grid; gap: 2px; margin-top: 8px; }
   .wf-part h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-ink); }
   .wf-mono { font-family: var(--font-mono); font-size: 12.5px; }
@@ -451,6 +463,39 @@ ${consoleShellScript}
       '<div class="wf-model-row"><select id="wfModelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' + PROVIDERS.map(function (x) { return '<option value="' + x + '"' + (m.provider === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>' +
       '<input id="wfModelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + esc(m.model || '') + '"></div>';
   }
+  // The plan's contract as one block, the way the workflow's Contract tab
+  // shows it once created: trigger, inputs, tools, result, model.
+  function planContractBlockHtml(p) {
+    var line = function (h) { return '<div class="wf-cb-line">' + h + '</div>'; };
+    var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + lines.map(line).join('') + '</div>'; };
+    var trigger = [];
+    var w = p.webhook;
+    if (p.trigger.kind === 'schedule') trigger.push('schedule, ' + esc(p.trigger.description));
+    if (w) {
+      trigger.push(esc(SENDERS[w.sender] || w.sender) + ' webhook' + (w.filter ? ', <code>' + esc(w.filter.values.join(' | ')) + '</code>' : ''));
+      Object.keys(w.mapping || {}).forEach(function (k) { trigger.push('<span class="wf-cb-indent"><code>' + esc(k) + '</code> ' + String.fromCharCode(8592) + ' <code>' + esc(w.mapping[k]) + '</code></span>'); });
+    }
+    trigger.push('<span class="hint">by hand (Run now) or from an app (API)</span>');
+    var names = Object.keys(p.parameters || {});
+    var inputs = names.length ? names.map(function (n) { return '<code>' + esc(n) + '</code>' + (p.parameters[n].required ? ' (required)' : ''); }) : ['<span class="hint">none: every run is the same</span>'];
+    var first = {};
+    if (typeof p.gatherText === 'string') p.gatherText.split(String.fromCharCode(10)).forEach(function (l) { var t = l.trim().split(' ')[0]; if (t) first[t] = true; });
+    else (p.gather || []).forEach(function (g) { first[g.tool] = true; });
+    var groups = { allow: [], ask: [], deny: [] };
+    p.rules.forEach(function (r) { (groups[r.decision] || groups.ask).push(r.tool); });
+    var tools = [];
+    [['allow', 'runs on its own'], ['ask', 'asks you first'], ['deny', 'never runs']].forEach(function (g) {
+      if (!groups[g[0]].length) return;
+      tools.push('<span class="wf-cb-tools">' + groups[g[0]].map(function (n) { return '<code>' + esc(n) + '</code>' + (first[n] ? ' <span class="wf-cb-first">looked up first</span>' : ''); }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
+    });
+    if (!tools.length) tools.push('<span class="hint">none</span>');
+    var result = [];
+    if (p.output) result.push(esc(p.output));
+    result.push(p.notify && p.notify.on ? 'a report through the agent' + String.fromCharCode(8217) + 's messaging app' : 'returned to whoever starts it');
+    var model = p.model && p.model.provider ? esc(p.model.provider + ' ' + p.model.model) : '<span class="hint">the agent' + String.fromCharCode(8217) + 's model</span>';
+    return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('model', [model]) + '</div>';
+  }
+
   // Reads what was edited on the plan into it, before it's re-rendered or created.
   function readPlanEdits(p) {
     p.context = contextValue();
@@ -488,6 +533,7 @@ ${consoleShellScript}
       '</div>' +
       '<div class="wf-part"><h3>Contract</h3><span class="hint">What the system holds it to: how it starts, what it' + String.fromCharCode(8217) + 's given, what it may use, its model and its result.</span></div>' +
       '<div class="wf-card">' +
+        planContractBlockHtml(p) +
         '<p class="hint" style="margin:0"><strong>Starts:</strong> ' + esc(p.trigger.description) + (p.trigger.kind === 'schedule' ? ' (created paused; you turn it on)' : '') + '</p>' +
         webhookPlanHtml(p) +
         (p.trigger.kind === 'schedule' || p.trigger.kind === 'webhook'
@@ -498,7 +544,6 @@ ${consoleShellScript}
         '<h3>What it will use</h3>' +
         '<p class="hint" style="margin:0">The tools for each part of the job, and where you decide. The agent works out the order for each case from its instructions, below.</p>' +
         '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th>Part of the job</th><th>Uses</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
-        (p.rules.length ? '<h3>Permissions it sets</h3><ul class="wf-list">' + p.rules.map(function (r) { return '<li><code>' + esc(r.tool) + '</code> ' + pill(r.decision) + '</li>'; }).join('') + '</ul>' : '') +
         (p.abilities.length ? '<h3>Abilities it uses</h3><ul class="wf-list">' + p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; }).join('') + '</ul>' + (state.canInstall ? '' : '<p class="hint">Installing abilities needs LOOPENGINE_ADMIN_AUTH set; otherwise they head the checklist.</p>') : '') +
         (p.skills && p.skills.length ? '<h3>Skills it comes with</h3><ul class="wf-list">' + p.skills.map(function (sk) { return '<li><code>' + esc(sk.id) + '</code> <span class="hint">' + esc(sk.description) + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">An agent that already has one keeps its own.</p>' : '') +
         (p.keys.length ? '<h3>Keys it needs</h3><p class="hint" style="margin:0">' + p.keys.map(esc).join(', ') + ' ' + DASH + ' you add them after, from the checklist.</p>' : '') +
