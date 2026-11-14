@@ -472,7 +472,7 @@ ${consoleShellScript}
         (misfit && !fitPending ? '<p class="hint" style="margin:0">You chose to add it here, though it' + String.fromCharCode(8217) + 's not this agent' + String.fromCharCode(8217) + 's usual work.</p>' : '') +
       '</div>' +
       needsHtml(reqs) +
-      '<div class="wf-card"><label for="wfSkill"><strong>Instructions</strong> <span class="hint">(what the agent gets done, the rules it keeps, and what it needs to know about your business. Fill in the parts marked (edit this): the agent can' + String.fromCharCode(8217) + 't know them. Saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit.)</span></label>' +
+      '<div class="wf-card"><label for="wfSkill"><strong>Instructions</strong> <span class="hint">(what the agent gets done, the rules it keeps, and what it needs to know about your business. Add your policies and special cases with the buttons below: the agent only knows what' + String.fromCharCode(8217) + 's written here. Saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit.)</span></label>' +
         '<textarea id="wfSkill" class="wf-skill-edit">' + esc(p.skill.body) + '</textarea>' +
         '<div class="wp-sections"><span class="hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +
         '<p class="hint" style="margin:0">Long inputs, like an email or a thread, aren' + String.fromCharCode(8217) + 't written here: each run adds them at the end, under their descriptions.</p></div>' +

@@ -93,12 +93,13 @@ describe('workflow examples', () => {
 
   it('split a plan the way the planner is told to', () => {
     // The planner writes a brief, not a script: the job, its rules, and
-    // the policies and special cases the person fills in, all in the
-    // skill (context stays empty).
+    // the policies and special cases it was told (none made up, no
+    // placeholders), all in the skill (context stays empty).
     expect(WORKFLOW_PLANNER_PROMPT).toMatch(/written as a brief to a capable colleague, not a script/)
     expect(WORKFLOW_PLANNER_PROMPT).toMatch(/"Rules:" lines/)
     expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Numbered steps only where the order truly matters/)
     expect(WORKFLOW_PLANNER_PROMPT).toMatch(/context: leave it empty/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Never make one up, and write no placeholders/)
   })
 
   it('becomes a template with its skills, settings and notes', () => {
