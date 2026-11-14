@@ -15,7 +15,7 @@
 // agent is the person's click, after they've read the plan
 // (web/workflow-admin.ts).
 import type { ToolSchema } from '#core/agent-config.js'
-import { gatherFrom, type GatherStep, type WorkflowModel, type WorkflowParameter } from '#core/workflows.js'
+import type { WorkflowModel, WorkflowParameter } from '#core/workflows.js'
 import type { TriggerSender } from '#core/workflow-triggers.js'
 import type { Message, ModelCall, ModelContentBlock } from '#core/run-agent.js'
 import type { StarterTemplate, TemplateApp, TemplateSkill } from './templates.js'
@@ -95,11 +95,6 @@ export interface WorkflowPlan {
   skill: { description: string; body: string }
   /** What the agent receives when the workflow starts. */
   startMessage: string
-  /** Its contract: lookups every run needs, done before the agent starts
-   * (tools its rules allow, input from its parameters). */
-  gather?: GatherStep[]
-  /** The same, as edited on the review screen (one per line). */
-  gatherText?: string
   /** What its final reply must be, when an app or person reads it. */
   output?: string
   /** A model for this workflow only, chosen on the review screen. */
@@ -216,13 +211,12 @@ How to plan:
    - custom: whatever the person's app sends; say in setup what to post (JSON with these fields) and use the paths you described. Set "header" when the person names the signature header.
    Every required parameter should come from the payload through mapping; parameters are the only way event details reach the run.
 6. Notify (scheduled and webhook workflows): whether each run's result is sent to the person through the agent's messaging app. true when the result is for them and no step already delivers it ("tell me", "send me", "let me know", a summary or findings that no step posts or emails). false when a step already sends it (posting to a channel, emailing a report): it would arrive twice. false when the work itself is the outcome (answering emails, filing tasks), where a message every run is noise; questions and approvals reach them either way. Say why in one short sentence.
-7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). A parameter holding long text (an email, a message thread, a log) is different: don't write $name for it anywhere. Each run adds it at the end, in a block under its description, so give it a description that says what it is ("The customer's latest email", "Earlier messages in the thread, oldest first"), and in the skill call it by what it is ("the customer's latest email, at the end"). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
+7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). A parameter holding long text (an email, a message thread, a log) is different: don't write $name for it anywhere. Each run lists it with the inputs, above the skill, in a block under its description, so give it a description that says what it is ("The customer's latest email", "Earlier messages in the thread, oldest first"), and in the skill call it by what it is ("the customer's latest email, above"). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
 8. context: leave it empty. Rules and facts the job needs go in the skill: rules under "Rules:", business facts under "Policies". A setting the job can't run without (the sheet, the repository, the channel) and the request doesn't give is asked for in gaps, not written as a placeholder.
 9. fit: whether this job is the kind of work the agent does, judged from its name, description and instructions (not its tools or apps: missing ones get added). matches false only when the job is clearly a different line of work (a customer support agent asked to run payroll); a related or broader job still matches, and so does any job for an agent with no description or instructions yet. reason: one short sentence the person reads, naming what the agent does and what the job is ("Support desk answers customers' questions; this workflow runs payroll."); empty when it matches. Plan the workflow fully either way.
 10. Messaging: questions, approvals and results reach the person through the agent's messaging app when they're not in Chat. You don't set it up; if the agent has none, plan as usual and the person sets it up before Create. If the person names a different app ("send them to me in Slack") than the agent's messaging app, say in gaps that results will arrive in the agent's app, and that they can change it on the agent's Messaging tab.
-11. gather: lookups every run needs before any judgment, done before the agent starts so it can't skip them: a reading tool the agent has or gets (its permission allow), with its whole input from the run's parameters ({ "tool": "get_order_details", "input": { "order_number": "$order_number" } }). Only when the request says the lookup always happens ("always check the order", "using the order details, shipments and refunds") and its input is known before the run. Not a lookup that depends on what the agent finds, and nothing that sends, writes or asks. Then the skill says those facts arrive with the inputs ("The order's details, shipments and refunds are looked up first and arrive with the inputs."), instead of telling it to look them up. Empty for most workflows.
-12. output: what the final reply must be, when an app or a person reads it ("The draft reply only, with nothing before or after it", "A line Decision: approve, partial or reject, then the reason"). Only when the request or the trigger makes the format matter: an app shows or parses it, or a person acts on it. Empty otherwise.
-13. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Leave out a setting its description calls optional unless the workflow uses what it's for (a setting only for posting, in a workflow that never posts). Not for MCP servers: their keys are asked for on the plan.
+11. output: what the final reply must be, when an app or a person reads it ("The draft reply only, with nothing before or after it", "A line Decision: approve, partial or reject, then the reason"). Only when the request or the trigger makes the format matter: an app shows or parses it, or a person acts on it. Empty otherwise.
+12. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Leave out a setting its description calls optional unless the workflow uses what it's for (a setting only for posting, in a workflow that never posts). Not for MCP servers: their keys are asked for on the plan.
 
 Then call save_plan once, with the whole plan. Don't ask the person questions: if something is unclear, plan the most reasonable version and note the assumption in gaps.`
 
@@ -299,7 +293,6 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
             additionalProperties: { type: 'object', properties: { description: { type: 'string' }, required: { type: 'boolean' } } },
           },
           context: { type: 'string', description: 'leave empty: rules and facts go in the skill' },
-          gather: { type: 'array', description: 'lookups every run needs, done before the agent starts; usually empty', items: { type: 'object', properties: { tool: { type: 'string' }, input: { type: 'object', additionalProperties: { type: 'string' } } }, required: ['tool', 'input'] } },
           output: { type: 'string', description: 'what the final reply must be, when an app or person reads it; empty otherwise' },
           fit: { type: 'object', properties: { matches: { type: 'boolean' }, reason: { type: 'string' } }, required: ['matches', 'reason'] },
           gaps: { type: 'array', items: { type: 'string' } },
@@ -412,7 +405,6 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     ...(webhook ? { webhook } : {}),
     notify: planNotify(r.notify),
     context: str(r.context, 6000) ?? '',
-    ...(gatherFrom(r.gather).length ? { gather: gatherFrom(r.gather) } : {}),
     ...(str(r.output, 2000) ? { output: str(r.output, 2000) } : {}),
     ...(r.fit ? { fit: planFit(r.fit) } : {}),
     gaps: [...gaps, ...planned.notes].slice(0, 12),

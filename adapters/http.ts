@@ -85,7 +85,7 @@ import {
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
-import { WorkflowParamsError, gatherFromText, readWorkflow, readWorkflows, readWorkspacePolicies, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type GatheredResult, type Workflow } from '#core/workflows.js'
+import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
 import { EvidenceError, addEvalCase, readEvals, removeEvalCase, runFeedbackFrom, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
@@ -1672,7 +1672,7 @@ const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_0
 // A failed run answers 502 { runId, error }. Wrong or missing params are
 // a 400 before anything runs.
 // An agent's workflows for the console, each with its contract's tools:
-// the agent's tools its instructions or lookups name, and the permission
+// the agent's tools its instructions name, and the permission
 // each has. Also the workspace's shared policies and the agent's model.
 async function workflowsView(agentName: string): Promise<Record<string, unknown>> {
   const entry = getEntry(agentName)!
@@ -1697,7 +1697,7 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
     workflows: workflows.map((w) => ({
       ...w,
       tools: names
-        .filter((n) => w.gather.some((g) => g.tool === n) || new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(w.instructions))
+        .filter((n) => new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(w.instructions))
         .map((n) => ({ name: n, decision: rules.resolve(n, {}, scope)[0] })),
       triggers: triggers.filter((t) => t.workflow_id === w.id).map((t) => ({
         name: t.name, sender: t.verify?.sender ?? 'custom', enabled: t.enabled, waiting: !t.enabled && !!t.verify && !t.verify.secret,
@@ -1838,15 +1838,7 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
         : saved.parameters
       const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : saved.title
       const output = typeof body.output === 'string' ? body.output.trim() : saved.output
-      let gather = saved.gather
-      if (typeof body.gather === 'string') {
-        try {
-          gather = gatherFromText(body.gather)
-        } catch (err) {
-          return json(400, { error: err instanceof Error ? err.message : String(err) })
-        }
-      }
-      return json(200, { message: workflowPreviewMessage({ ...saved, title, startMessage: '', steps: instructions, instructions, parameters, gather, ...(output ? { output } : { output: undefined }) }, readWorkspacePolicies(process.cwd())) })
+      return json(200, { message: workflowPreviewMessage({ ...saved, title, startMessage: '', steps: instructions, instructions, parameters, ...(output ? { output } : { output: undefined }) }, readWorkspacePolicies(process.cwd())) })
     }
     if (id && !action && req.method === 'PUT') {
       updateWorkflow(dir, id, await readJsonBody(req))
@@ -2131,38 +2123,10 @@ function modelLabelOf(config: AgentConfig): string {
   return [config.model?.provider, config.model?.model].filter(Boolean).join(' ')
 }
 
-// A workflow's lookups done before its agent starts (its contract's
-// gather): each a tool its rules allow, run with its input, $parameters
-// filled in. One that isn't allowed, is missing or fails is reported in
-// the run's inputs, and the run goes ahead.
-async function runGather(agent: string, workflow: Workflow, params: Record<string, string>, sessionId: string): Promise<GatheredResult[]> {
-  const entry = getEntry(agent)
-  if (!entry || !workflow.gather.length) return []
-  const rules = loadRules(entry.config)
-  const scope = { tenant: 'default', environment: process.env.LOOPENGINE_ENV ?? 'production', agent }
-  const declared = Object.keys(workflow.parameters)
-  const results: GatheredResult[] = []
-  for (const step of workflow.gather) {
-    const input = Object.fromEntries(Object.entries(step.input).map(([k, v]) => [k, substituteParameters(v, params, { declared })]))
-    try {
-      const tool = await resolveAgentTool(entry.config, step.tool)
-      if (!tool) throw new Error(`${agent} has no tool ${step.tool}`)
-      if (rules.resolve(step.tool, input, scope)[0] !== 'allow') throw new Error(`its permission isn't allow, so it isn't run before the agent starts`)
-      const output = await tool.execute(input, { agentName: agent, tenant: 'default', sessionId, env: createAgentEnv(agent, agentDirFor(entry.config)) })
-      const text = typeof output === 'string' ? output : JSON.stringify(output)
-      results.push({ tool: step.tool, result: text.length > 30000 ? `${text.slice(0, 30000)}\n[cut off at 30000 characters]` : text })
-    } catch (err) {
-      results.push({ tool: step.tool, error: err instanceof Error ? err.message : String(err) })
-    }
-  }
-  return results
-}
-
-// A workflow run's first message: the workspace's policies, its
-// instructions and output, its inputs and what its lookups returned.
-async function composeWorkflowMessage(agent: string, workflow: Workflow, params: Record<string, string>): Promise<string> {
-  const gathered = await runGather(agent, workflow, params, `gather-${Date.now().toString(36)}`)
-  return workflowRunMessage(workflow, params, { policies: readWorkspacePolicies(process.cwd()), gathered })
+// A workflow run's first message: its inputs, its instructions, the
+// workspace's policies and its result format.
+async function composeWorkflowMessage(_agent: string, workflow: Workflow, params: Record<string, string>): Promise<string> {
+  return workflowRunMessage(workflow, params, { policies: readWorkspacePolicies(process.cwd()) })
 }
 
 // One unattended agent turn: a scheduled task firing, or a workflow run

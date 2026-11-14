@@ -54,7 +54,6 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-cb-decision.allow { background: var(--good-soft); color: var(--good); }
   .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
   .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
-  .wf-cb-first { font-size: 11px; color: var(--ink-muted); font-style: italic; }
   @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
   .wf-part { display: grid; gap: 2px; margin-top: 8px; }
   .wf-part h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-ink); }
@@ -443,20 +442,12 @@ ${consoleShellScript}
       '</div>';
   }
 
-  // The contract's own settings on the plan: lookups done before the
-  // agent starts, the result's format, and a model for this workflow.
+  // The contract's own settings on the plan: the result's format, and a
+  // model for this workflow.
   var PROVIDERS = ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'];
-  function gatherText(steps) {
-    return (steps || []).map(function (g) {
-      return [g.tool].concat(Object.keys(g.input || {}).map(function (k) { var v = String(g.input[k]); return k + '=' + (/[ "]/.test(v) || !v ? JSON.stringify(v) : v); })).join(' ');
-    }).join(String.fromCharCode(10));
-  }
   function contractExtrasHtml(p) {
     var m = p.model || {};
-    return '<h3>Looked up first</h3>' +
-      '<p class="hint" style="margin:0">Lookups every run needs, done before the agent starts so it can' + String.fromCharCode(8217) + 't skip them. One per line: a tool, then name=value for its input. Only tools that run on their own are run.</p>' +
-      '<textarea id="wfGather" class="wf-mono" rows="3" spellcheck="false" placeholder="get_order_details order_number=$order_number">' + esc(typeof p.gatherText === 'string' ? p.gatherText : gatherText(p.gather)) + '</textarea>' +
-      '<h3>Result</h3>' +
+    return '<h3>Result</h3>' +
       '<p class="hint" style="margin:0">What its final reply must be, when an app or a person reads it. Empty: a reply in its own words.</p>' +
       '<textarea id="wfOutput" rows="2" placeholder="The draft only, then a line Flag: reason if a person must act.">' + esc(p.output || '') + '</textarea>' +
       '<h3>Model</h3>' +
@@ -478,15 +469,12 @@ ${consoleShellScript}
     trigger.push('<span class="hint">by hand (Run now) or from an app (API)</span>');
     var names = Object.keys(p.parameters || {});
     var inputs = names.length ? names.map(function (n) { return '<code>' + esc(n) + '</code>' + (p.parameters[n].required ? ' (required)' : ''); }) : ['<span class="hint">none: every run is the same</span>'];
-    var first = {};
-    if (typeof p.gatherText === 'string') p.gatherText.split(String.fromCharCode(10)).forEach(function (l) { var t = l.trim().split(' ')[0]; if (t) first[t] = true; });
-    else (p.gather || []).forEach(function (g) { first[g.tool] = true; });
     var groups = { allow: [], ask: [], deny: [] };
     p.rules.forEach(function (r) { (groups[r.decision] || groups.ask).push(r.tool); });
     var tools = [];
     [['allow', 'runs on its own'], ['ask', 'asks you first'], ['deny', 'never runs']].forEach(function (g) {
       if (!groups[g[0]].length) return;
-      tools.push('<span class="wf-cb-tools">' + groups[g[0]].map(function (n) { return '<code>' + esc(n) + '</code>' + (first[n] ? ' <span class="wf-cb-first">looked up first</span>' : ''); }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
+      tools.push('<span class="wf-cb-tools">' + groups[g[0]].map(function (n) { return '<code>' + esc(n) + '</code>'; }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
     });
     if (!tools.length) tools.push('<span class="hint">none</span>');
     var result = [];
@@ -500,8 +488,6 @@ ${consoleShellScript}
   function readPlanEdits(p) {
     p.context = contextValue();
     p.skill.body = document.getElementById('wfSkill').value;
-    var g = document.getElementById('wfGather');
-    if (g) p.gatherText = g.value;
     var o = document.getElementById('wfOutput');
     if (o) p.output = o.value;
     var prov = document.getElementById('wfModelProvider');
@@ -562,7 +548,7 @@ ${consoleShellScript}
       '<div class="wf-card"><label for="wfSkill"><strong>Instructions</strong> <span class="hint">(what the agent gets done, the rules it keeps, and what it needs to know about your business. Add your policies and special cases with the buttons below: the agent only knows what' + String.fromCharCode(8217) + 's written here. Saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit.)</span></label>' +
         '<textarea id="wfSkill" class="wf-skill-edit">' + esc(p.skill.body) + '</textarea>' +
         '<div class="wp-sections"><span class="hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +
-        '<p class="hint" style="margin:0">Long inputs, like an email or a thread, aren' + String.fromCharCode(8217) + 't written here: each run adds them at the end, under their descriptions.</p></div>' +
+        '<p class="hint" style="margin:0">Each run lists its inputs above these instructions, long ones like an email or a thread in their own blocks, so the instructions refer to them by name.</p></div>' +
       (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
       (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
       '<div class="wf-part"><h3>Evidence</h3><span class="hint">Builds up once it runs.</span></div>' +

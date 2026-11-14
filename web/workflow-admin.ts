@@ -16,7 +16,7 @@ import { planParameters, planWebhook, planWorkflowWithModel, workflowTemplate, t
 import { createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
-import { clearWorkflowFields, gatherFromText, gatherToText, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowModel } from '../core/workflows.js'
+import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowModel } from '../core/workflows.js'
 import { readEvals, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
 import { cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
@@ -632,7 +632,6 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
   const contract = contractFields({
     ...(plan.model !== undefined ? { model: plan.model } : {}),
     ...(plan.output !== undefined ? { output: plan.output } : {}),
-    ...(typeof plan.gatherText === 'string' ? { gather: plan.gatherText } : plan.gather ? { gather: plan.gather } : {}),
   })
   const markWorkflow = (agentDir: string, context = '') => setWorkflowFields(agentDir, plan.id, {
     title: plan.name,
@@ -792,8 +791,6 @@ export interface AgentWorkflowView extends Workflow {
   webhooksWaiting: number
   /** Its webhooks turned off. */
   webhooksOff: number
-  /** Its lookups done first, as the editor writes them. */
-  gatherText: string
   /** Its evidence: live scores from its runs, and its eval cases and rounds. */
   scores: WorkflowScores
   evals: WorkflowEvals
@@ -883,7 +880,7 @@ export async function listAgentWorkflows(agentName: string, agentDir: string): P
     const ownRuns = runs.filter((r) => r.workflow_id === w.id)
     return {
       ...w, schedules, recentRuns, webhooks, webhooksWaiting, webhooksOff: own.length - webhooks - webhooksWaiting, ...(schedules[0] ? { schedule: schedules[0] } : {}),
-      gatherText: gatherToText(w.gather), scores: workflowScores(ownRuns), evals: readEvals(agentDir, w.id),
+      scores: workflowScores(ownRuns), evals: readEvals(agentDir, w.id),
     }
   })
 }
@@ -923,10 +920,10 @@ export async function prepareWorkflowRun(agentName: string, agentDir: string, id
  * matter is kept. A body with `start_message` (and no `instructions`) is
  * still taken, as before. */
 /** The contract fields an edit gives: `model` ({ provider, model }, or
- * null for the agent's), `output` (text) and `gather` (the editor's text,
- * one lookup per line, or an array). Left out, each keeps what's saved. */
-export function contractFields(input: Record<string, unknown>): { model?: WorkflowModel | null; output?: string | null; gather?: Workflow['gather'] | null } {
-  const fields: { model?: WorkflowModel | null; output?: string | null; gather?: Workflow['gather'] | null } = {}
+ * null for the agent's) and `output` (text). Left out, each keeps what's
+ * saved. */
+export function contractFields(input: Record<string, unknown>): { model?: WorkflowModel | null; output?: string | null } {
+  const fields: { model?: WorkflowModel | null; output?: string | null } = {}
   if (input.model !== undefined) {
     const m = input.model as Record<string, unknown> | null | string
     if (m === null || m === '') fields.model = null
@@ -937,13 +934,6 @@ export function contractFields(input: Record<string, unknown>): { model?: Workfl
     if (input.output !== null && typeof input.output !== 'string') throw new WorkflowError('The result format must be text.')
     if (typeof input.output === 'string' && input.output.length > 2000) throw new WorkflowError('The result format is too long: keep it under 2000 characters.')
     fields.output = typeof input.output === 'string' ? input.output : null
-  }
-  if (input.gather !== undefined) {
-    try {
-      fields.gather = typeof input.gather === 'string' ? gatherFromText(input.gather) : Array.isArray(input.gather) ? (input.gather as Workflow['gather']) : null
-    } catch (err) {
-      throw new WorkflowError(err instanceof Error ? err.message : String(err))
-    }
   }
   return fields
 }

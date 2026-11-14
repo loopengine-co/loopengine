@@ -1,8 +1,8 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { gatherFromText, gatherToText, readWorkflow, readWorkspacePolicies, setWorkflowFields, workflowRunMessage, writeWorkspacePolicies } from '#core/workflows.js'
+import { readWorkflow, readWorkspacePolicies, setWorkflowFields, workflowRunMessage, writeWorkspacePolicies } from '#core/workflows.js'
 import { addEvalCase, judgeEvalResult, readEvals, removeEvalCase, runFeedbackFrom, startEvalRound, workflowScores } from '#web/workflow-evidence.js'
 import type { WorkflowRun } from '#core/workflow-runs.js'
 import type { ModelCall } from '#core/run-agent.js'
@@ -19,35 +19,28 @@ const run = (over: Partial<WorkflowRun> = {}): WorkflowRun => ({
 })
 
 describe('a workflow contract', () => {
-  it('keeps its model, result format and lookups, and a later edit without them keeps them', () => {
+  it('keeps its model and result format, a later edit without them keeps them, and drops an old lookups key', () => {
     const dir = agentWithWorkflow()
-    setWorkflowFields(dir, 'reply', { instructions: 'Draft a reply for order $order_number.', model: { provider: 'openai', model: 'gpt-6.1-sol' }, output: 'The draft only.', gather: [{ tool: 'get_order_details', input: { order_number: '$order_number' } }] })
-    expect(readWorkflow(dir, 'reply')).toMatchObject({ model: { provider: 'openai', model: 'gpt-6.1-sol' }, output: 'The draft only.', gather: [{ tool: 'get_order_details', input: { order_number: '$order_number' } }] })
+    writeFileSync(join(dir, 'skills', 'reply', 'SKILL.md'), '---\nname: reply\ndescription: Draft a reply\nworkflow: true\ngather:\n  - tool: get_order_details\n    input: { order_number: $order_number }\n---\n\nDraft a reply.\n')
+    setWorkflowFields(dir, 'reply', { instructions: 'Draft a reply for order $order_number.', model: { provider: 'openai', model: 'gpt-6.1-sol' }, output: 'The draft only.' })
+    expect(readWorkflow(dir, 'reply')).toMatchObject({ model: { provider: 'openai', model: 'gpt-6.1-sol' }, output: 'The draft only.' })
+    expect(readFileSync(join(dir, 'skills', 'reply', 'SKILL.md'), 'utf8')).not.toContain('gather')
     setWorkflowFields(dir, 'reply', { instructions: 'Draft a short reply for order $order_number.' })
     expect(readWorkflow(dir, 'reply')).toMatchObject({ model: { model: 'gpt-6.1-sol' }, output: 'The draft only.' })
-    setWorkflowFields(dir, 'reply', { instructions: 'Draft a reply.', model: null, output: '', gather: null })
+    setWorkflowFields(dir, 'reply', { instructions: 'Draft a reply.', model: null, output: '' })
     const cleared = readWorkflow(dir, 'reply')!
     expect(cleared.model).toBeUndefined()
     expect(cleared.output).toBeUndefined()
-    expect(cleared.gather).toEqual([])
   })
 
-  it('writes lookups one per line, and reads them back', () => {
-    const steps = gatherFromText('get_order_details order_number=$order_number\nsearch_notes query="late parcel" limit=5\n')
-    expect(steps).toEqual([{ tool: 'get_order_details', input: { order_number: '$order_number' } }, { tool: 'search_notes', input: { query: 'late parcel', limit: '5' } }])
-    expect(gatherFromText(gatherToText(steps))).toEqual(steps)
-    expect(() => gatherFromText('get_order_details order_number')).toThrow(/name=value/)
-  })
-
-  it('puts the policies above the instructions, the result format after them, and lookups with the inputs', () => {
+  it('orders a run: inputs, instructions, shared policies, then the result format', () => {
     const dir = agentWithWorkflow()
-    setWorkflowFields(dir, 'reply', { instructions: 'Draft a reply for order $order_number.', output: 'The draft only.' })
-    const message = workflowRunMessage(readWorkflow(dir, 'reply')!, { order_number: 'EM-1' }, { policies: 'Refunds within 30 days.', gathered: [{ tool: 'get_order_details', result: '{"status":"shipped"}' }, { tool: 'get_refunds', error: 'timeout' }] })
+    setWorkflowFields(dir, 'reply', { instructions: 'Draft a reply for order $order_number.', output: 'The draft only.', parameters: { order_number: { description: 'The order', required: true } } })
+    const message = workflowRunMessage(readWorkflow(dir, 'reply')!, { order_number: 'EM-1' }, { policies: 'Refunds within 30 days.' })
     const at = (text: string) => message.indexOf(text)
-    expect(at('Refunds within 30 days.')).toBeLessThan(at('Draft a reply for order EM-1.'))
-    expect(at('Draft a reply for order EM-1.')).toBeLessThan(at('The draft only.'))
-    expect(at('The draft only.')).toBeLessThan(at('<get_order_details_result>'))
-    expect(message).toContain('Looked up before this run, get_refunds failed: timeout')
+    expect(at('order_number: EM-1')).toBeLessThan(at('Draft a reply for order EM-1.'))
+    expect(at('Draft a reply for order EM-1.')).toBeLessThan(at('Refunds within 30 days.'))
+    expect(at('Refunds within 30 days.')).toBeLessThan(at('The draft only.'))
   })
 
   it('keeps the workspace policies in policies.md', () => {

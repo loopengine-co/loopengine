@@ -135,7 +135,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-cb-decision.allow { background: var(--good-soft); color: var(--good); }
   .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
   .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
-  .wf-cb-first { font-size: 11px; color: var(--ink-muted); font-style: italic; }
   @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
   .wf-sub { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
   .wf-scores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
@@ -1142,8 +1141,7 @@ ${consoleShellScript}
   var DOT = ' ' + String.fromCharCode(183) + ' ';
 
   // The contract as one block: trigger, inputs, tools, result, model.
-  // Tools are grouped by what they may do; one marked "looked up first" is
-  // called by the server before the agent starts.
+  // Tools are grouped by what they may do.
   var SENDER_LABELS = { stripe: 'Stripe', github: 'GitHub', shopify: 'Shopify', standard: 'Standard Webhooks', custom: 'Your app' };
   var ARROW_L = String.fromCharCode(8592);
   function contractLinesHtml(lines) {
@@ -1166,14 +1164,12 @@ ${consoleShellScript}
       var spec = w.parameters[n];
       return '<code>' + escapeHtml(n) + '</code>' + (spec.required ? ' (required)' : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '');
     }) : ['<span class="hint">none: every run is the same</span>'];
-    var first = {};
-    (w.gather || []).forEach(function (g) { first[g.tool] = true; });
     var groups = { allow: [], ask: [], deny: [] };
     (w.tools || []).forEach(function (t) { (groups[t.decision] || groups.ask).push(t.name); });
     var tools = [];
     [['allow', 'runs on its own'], ['ask', 'asks you first'], ['deny', 'never runs']].forEach(function (g) {
       if (!groups[g[0]].length) return;
-      tools.push('<span class="wf-cb-tools">' + groups[g[0]].map(function (n) { return '<code>' + escapeHtml(n) + '</code>' + (first[n] ? ' <span class="wf-cb-first">looked up first</span>' : ''); }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
+      tools.push('<span class="wf-cb-tools">' + groups[g[0]].map(function (n) { return '<code>' + escapeHtml(n) + '</code>'; }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
     });
     if (!tools.length) tools.push('<span class="hint">none named in its instructions</span>');
     var result = [];
@@ -1185,7 +1181,7 @@ ${consoleShellScript}
     var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
     var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
     return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('model', [model]) + '</div>' +
-      '<p class="hint" style="margin:0">Change the inputs, lookups, result and model with Edit; what tools may do in Permissions; triggers below.</p>' +
+      '<p class="hint" style="margin:0">Change the inputs, result and model with Edit; what tools may do in Permissions; triggers below.</p>' +
       '<h4 class="wf-sub">Run it, or set up its triggers</h4>' + workflowStartsHtml(w, name, params);
   }
 
@@ -1446,15 +1442,13 @@ ${consoleShellScript}
         '<button type="button" class="wp-preview">Preview</button></div>' +
         '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
         '<textarea id="wpInstructions" name="instructions" maxlength="30000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></div>' +
-      '<p class="hint wp-long-note">Don' + String.fromCharCode(8217) + 't write long values, like an email or a thread, into the instructions: each run adds a parameter you haven' + String.fromCharCode(8217) + 't written as $name at the end, under its description.</p>' +
+      '<p class="hint wp-long-note">Each run lists its inputs above the instructions, long ones like an email or a thread in their own blocks, so refer to those by name (the customer' + String.fromCharCode(8217) + 's email, above) instead of writing $name. Short ones, like an order number, can be written as $name.</p>' +
       '<div class="wp-sections"><span class="hint">Add a section:</span>' +
         workflowSectionButtonsHtml() + '</div>' +
       '<h4 class="wf-editor-part">Contract <span class="hint">what the system holds it to</span></h4>' +
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
-      '<label>Look up first <span class="hint">(optional: tools the server calls before the agent starts, for lookups every run needs, so the agent can' + String.fromCharCode(8217) + 't skip them; they show as looked up first in the contract' + String.fromCharCode(8217) + 's tools. One per line: a tool, then name=value for its input, e.g. <code>get_order_details order_number=$order_number</code>. Only tools that run on their own are run.)</span>' +
-        '<textarea name="gather" rows="3" spellcheck="false" class="wp-mono">' + escapeHtml(w.gatherText || '') + '</textarea></label>' +
       '<label>Result <span class="hint">(optional: what its final reply must be, e.g. The draft only, then a line Flag: reason if a person must act. Empty: a reply in its own words.)</span>' +
         '<textarea name="output" rows="2" maxlength="2000">' + escapeHtml(w.output || '') + '</textarea></label>' +
       '<div class="body-field">Model <span class="hint">(optional: a model for this workflow only; empty uses the agent' + String.fromCharCode(8217) + 's' + (workflowsMeta.agentModel ? ', ' + escapeHtml(workflowsMeta.agentModel) : '') + ')</span>' +
@@ -1481,7 +1475,7 @@ ${consoleShellScript}
     var missing = Object.keys(used).filter(function (n) { return !declared[n]; });
     var unused = Object.keys(declared).filter(function (n) { return !used[n]; });
     if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't a parameter: add ' + (missing.length > 1 ? 'them' : 'it') + ', or the text stays as written.');
-    if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't written in the instructions: each run adds ' + (unused.length > 1 ? 'them' : 'it') + ' at the end, under ' + (unused.length > 1 ? 'their descriptions' : 'its description') + '.');
+    if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't written in the instructions: each run adds ' + (unused.length > 1 ? 'them' : 'it') + ' with the inputs, above the instructions.');
     form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
   }
 
@@ -1530,7 +1524,7 @@ ${consoleShellScript}
       out.textContent = 'Loading' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, gather: form.gather.value }),
+        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value }),
       }).then(function (r) {
         out.textContent = r.ok ? r.body.message : (r.body.error || 'Could not preview');
       });
@@ -1555,7 +1549,7 @@ ${consoleShellScript}
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, gather: form.gather.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
+        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         close();
