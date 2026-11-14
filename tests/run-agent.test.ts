@@ -1640,3 +1640,28 @@ describe('runAgent usage events', () => {
     expect(events[0]).toMatchObject({ agent: 'test-agent', tenant: 'default', sessionId: 's-u', provider: 'anthropic', model: 'claude-test', inputTokens: 101, outputTokens: 10 })
   })
 })
+
+describe('runAgent in a test run (evalMode)', () => {
+  it('runs allowed tools, skips the rest without asking, and still reaches a result', async () => {
+    let call = 0
+    const modelCall: ModelCall = vi.fn(async () => {
+      call++
+      if (call === 1) return toolUseResponse({ id: 't1', name: 'lookup', input: {} }, { id: 't2', name: 'send', input: { to: 'ann' } })
+      return textResponse('drafted, and would have sent it')
+    })
+    const ran: string[] = []
+    const tool = (name: string): ToolDefinition => ({ name, description: name, input_schema: { type: 'object', properties: {} }, execute: async () => { ran.push(name); return `${name} ok` } })
+    const requestApproval = vi.fn(async () => true)
+    const config = baseConfig({
+      tools: [tool('lookup'), tool('send')],
+      rules: [{ scopePattern: 'default/production/test-agent', tool: 'lookup', decision: 'allow' }, { scopePattern: 'default/production/test-agent', tool: 'send', decision: 'ask' }],
+    })
+
+    const result = await runAgent(config, modelCall, 'go', [], { evalMode: true, approver: { requestApproval } })
+
+    expect(result.text).toBe('drafted, and would have sent it')
+    expect(ran).toEqual(['lookup'])
+    expect(requestApproval).not.toHaveBeenCalled()
+    expect(toolResults(result.history).find((r) => r.tool_use_id === 't2')?.content).toMatch(/not run: this is a test run/)
+  })
+})

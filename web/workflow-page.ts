@@ -44,6 +44,11 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; background: var(--bg); }
   .wf-card h2 { margin: 0; font-size: 18px; }
   .wf-card h3 { margin: 6px 0 0; font-size: 14px; }
+  .wf-part { display: grid; gap: 2px; margin-top: 8px; }
+  .wf-part h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-ink); }
+  .wf-mono { font-family: var(--font-mono); font-size: 12.5px; }
+  .wf-model-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wf-model-row input { flex: 1 1 200px; }
   .wf-steps { width: 100%; border-collapse: collapse; }
   .wf-steps td, .wf-steps th { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; font-size: 13px; }
   .wf-steps th { font-size: 12px; color: var(--ink-muted); font-weight: 600; border-top: 0; }
@@ -426,6 +431,39 @@ ${consoleShellScript}
       '</div>';
   }
 
+  // The contract's own settings on the plan: lookups done before the
+  // agent starts, the result's format, and a model for this workflow.
+  var PROVIDERS = ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'];
+  function gatherText(steps) {
+    return (steps || []).map(function (g) {
+      return [g.tool].concat(Object.keys(g.input || {}).map(function (k) { var v = String(g.input[k]); return k + '=' + (/[ "]/.test(v) || !v ? JSON.stringify(v) : v); })).join(' ');
+    }).join(String.fromCharCode(10));
+  }
+  function contractExtrasHtml(p) {
+    var m = p.model || {};
+    return '<h3>Looked up first</h3>' +
+      '<p class="hint" style="margin:0">Lookups every run needs, done before the agent starts so it can' + String.fromCharCode(8217) + 't skip them. One per line: a tool, then name=value for its input. Only tools that run on their own are run.</p>' +
+      '<textarea id="wfGather" class="wf-mono" rows="3" spellcheck="false" placeholder="get_order_details order_number=$order_number">' + esc(typeof p.gatherText === 'string' ? p.gatherText : gatherText(p.gather)) + '</textarea>' +
+      '<h3>Result</h3>' +
+      '<p class="hint" style="margin:0">What its final reply must be, when an app or a person reads it. Empty: a reply in its own words.</p>' +
+      '<textarea id="wfOutput" rows="2" placeholder="The draft only, then a line Flag: reason if a person must act.">' + esc(p.output || '') + '</textarea>' +
+      '<h3>Model</h3>' +
+      '<div class="wf-model-row"><select id="wfModelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' + PROVIDERS.map(function (x) { return '<option value="' + x + '"' + (m.provider === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>' +
+      '<input id="wfModelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + esc(m.model || '') + '"></div>';
+  }
+  // Reads what was edited on the plan into it, before it's re-rendered or created.
+  function readPlanEdits(p) {
+    p.context = contextValue();
+    p.skill.body = document.getElementById('wfSkill').value;
+    var g = document.getElementById('wfGather');
+    if (g) p.gatherText = g.value;
+    var o = document.getElementById('wfOutput');
+    if (o) p.output = o.value;
+    var prov = document.getElementById('wfModelProvider');
+    var name = document.getElementById('wfModelName');
+    if (prov && name) p.model = prov.value && name.value.trim() ? { provider: prov.value, model: name.value.trim() } : null;
+  }
+
   function renderPlan(error) {
     var p = state.planned.plan;
     var agent = state.planned.agent || state.agent;
@@ -446,6 +484,10 @@ ${consoleShellScript}
         : '') +
       '<div class="wf-card">' +
         '<h2>' + esc(p.name) + '</h2><p style="margin:0">' + esc(p.summary) + '</p>' +
+        '<p class="hint" style="margin:0">A workflow has three parts: its <strong>contract</strong>, what the system holds it to; its <strong>brief</strong>, what the agent reads on every run; and its <strong>evidence</strong>, which builds up as it runs.</p>' +
+      '</div>' +
+      '<div class="wf-part"><h3>Contract</h3><span class="hint">What the system holds it to: how it starts, what it' + String.fromCharCode(8217) + 's given, what it may use, its model and its result.</span></div>' +
+      '<div class="wf-card">' +
         '<p class="hint" style="margin:0"><strong>Starts:</strong> ' + esc(p.trigger.description) + (p.trigger.kind === 'schedule' ? ' (created paused; you turn it on)' : '') + '</p>' +
         webhookPlanHtml(p) +
         (p.trigger.kind === 'schedule' || p.trigger.kind === 'webhook'
@@ -461,9 +503,8 @@ ${consoleShellScript}
         (p.skills && p.skills.length ? '<h3>Skills it comes with</h3><ul class="wf-list">' + p.skills.map(function (sk) { return '<li><code>' + esc(sk.id) + '</code> <span class="hint">' + esc(sk.description) + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">An agent that already has one keeps its own.</p>' : '') +
         (p.keys.length ? '<h3>Keys it needs</h3><p class="hint" style="margin:0">' + p.keys.map(esc).join(', ') + ' ' + DASH + ' you add them after, from the checklist.</p>' : '') +
         (p.needsApprovals ? '<p class="hint" style="margin:0">When it needs your approval or an answer, it asks you in Chat if you' + String.fromCharCode(8217) + 're running it there. Otherwise it sends the request to the app on its Messaging tab: Slack, Telegram, email or another you choose.</p>' : '') +
+        contractExtrasHtml(p) +
       '</div>' +
-      (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
-      (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
       '<div class="wf-card"><h3 style="margin:0">Goes into ' + esc(agentLabel(agent)) + '</h3>' +
         (context ? '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">Short facts the job needs that the agent' + String.fromCharCode(8217) + 's own instructions don' + String.fromCharCode(8217) + 't say, like your company' + String.fromCharCode(8217) + 's name or who signs messages. They go at the top of this workflow' + String.fromCharCode(8217) + 's instructions. It' + String.fromCharCode(8217) + 's left empty when the agent already knows enough. Longer rules, special cases and examples go in the instructions, below.</span></label>' +
           '<textarea id="wfContext">' + esc(context) + '</textarea></div>' : '') +
@@ -472,10 +513,19 @@ ${consoleShellScript}
         (misfit && !fitPending ? '<p class="hint" style="margin:0">You chose to add it here, though it' + String.fromCharCode(8217) + 's not this agent' + String.fromCharCode(8217) + 's usual work.</p>' : '') +
       '</div>' +
       needsHtml(reqs) +
+      '<div class="wf-part"><h3>Brief</h3><span class="hint">What the agent reads on every run: the job, its rules, and what it needs to know about your business.</span></div>' +
       '<div class="wf-card"><label for="wfSkill"><strong>Instructions</strong> <span class="hint">(what the agent gets done, the rules it keeps, and what it needs to know about your business. Add your policies and special cases with the buttons below: the agent only knows what' + String.fromCharCode(8217) + 's written here. Saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit.)</span></label>' +
         '<textarea id="wfSkill" class="wf-skill-edit">' + esc(p.skill.body) + '</textarea>' +
         '<div class="wp-sections"><span class="hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +
         '<p class="hint" style="margin:0">Long inputs, like an email or a thread, aren' + String.fromCharCode(8217) + 't written here: each run adds them at the end, under their descriptions.</p></div>' +
+      (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
+      (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
+      '<div class="wf-part"><h3>Evidence</h3><span class="hint">Builds up once it runs.</span></div>' +
+      '<div class="wf-card"><ul class="wf-list">' +
+        '<li><strong>History:</strong> every run, its result, and the approvals you gave or refused.</li>' +
+        '<li><strong>Eval cases:</strong> save a good run as a case, then run the cases after each change to the instructions or model; a different model scores each result.</li>' +
+        '<li><strong>Feedback:</strong> an app can report the text it actually used, so you see how much results get edited.</li>' +
+      '</ul><p class="hint" style="margin:0">All on the workflow' + String.fromCharCode(8217) + 's Evidence tab, once it' + String.fromCharCode(8217) + 's created.</p></div>' +
       '<div class="wf-actions"><button type="button" class="wf-btn" id="wfCreate"' + (blocked ? ' disabled' : '') + '>Create it</button><button type="button" class="wf-btn plain" id="wfBack">' + (state.planned.example ? 'Back to the examples' : 'Change the description') + '</button>' +
         '<span class="hint" id="wfStatus">' + (fitPending ? 'Choose where it goes, above, first.' : '') + '</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '');
@@ -484,8 +534,7 @@ ${consoleShellScript}
     });
     var fitOk = document.getElementById('wfFitOk');
     if (fitOk) fitOk.addEventListener('click', function () {
-      p.context = contextValue();
-      p.skill.body = document.getElementById('wfSkill').value;
+      readPlanEdits(p);
       state.planned.fitOk = true;
       renderPlan();
     });
@@ -502,8 +551,7 @@ ${consoleShellScript}
       var status = document.getElementById('wfRecheckStatus');
       if (status) status.textContent = 'Checking' + ELLIPSIS;
       // Kept as edited while it re-renders.
-      p.context = contextValue();
-      p.skill.body = document.getElementById('wfSkill').value;
+      readPlanEdits(p);
       var notifyBox = document.getElementById('wfNotify');
       if (notifyBox) p.notify = { on: notifyBox.checked, reason: (p.notify && p.notify.reason) || '' };
       var hookBox = document.getElementById('wfWebhook');
@@ -541,8 +589,7 @@ ${consoleShellScript}
         delete p.webhook;
         if (p.trigger.kind === 'webhook') p.trigger.kind = 'on_request';
       }
-      p.context = contextValue();
-      p.skill.body = document.getElementById('wfSkill').value;
+      readPlanEdits(p);
       var btn = document.getElementById('wfCreate');
       btn.disabled = true;
       document.getElementById('wfStatus').textContent = 'Creating' + ELLIPSIS + ' installing abilities can take a minute.';

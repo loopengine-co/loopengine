@@ -214,6 +214,12 @@ export interface RunAgentOptions {
    * that genuinely has an answering mechanism (adapters/http.ts, for both
    * its routes) should pass this. */
   onQuestionPending?: (question: PendingQuestion) => void
+  /** A test run (a workflow's eval cases, web/workflow-evals.ts): tools
+   * its rules allow run as usual; any other call, and the schedule tools,
+   * aren't run and aren't asked about. The model is told so and carries
+   * on, so the run still reaches a result instead of stopping at a
+   * denial. */
+  evalMode?: boolean
   /** This call's own default QuestionHandler — question-side sibling of
    * `approver` above, same precedence (`AgentConfig.httpNotifier`, when it
    * covers `'question'` on the `http` channel, still wins outright over
@@ -595,6 +601,8 @@ interface TurnContext {
   toolContext: ToolContext
   /** AgentConfig.model's provider/model, for usage events (core/usage.ts). */
   modelLabel: { provider?: string; model?: string }
+  /** RunAgentOptions.evalMode: what's checked, and the tools never run. */
+  evalMode?: { rules: RuleSet; neverRun: Set<ToolDefinition> }
 }
 
 async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, options: RunAgentOptions): Promise<TurnContext> {
@@ -809,6 +817,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     questionHandler,
     httpNotifier,
     modelLabel: { provider: config.model?.provider, model: config.model?.model },
+    ...(options.evalMode ? { evalMode: { rules, neverRun: new Set<ToolDefinition>(scheduleTools) } } : {}),
     toolContext: {
       agentName: config.name,
       tenant: scope.tenant,
@@ -827,7 +836,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
  * fresh in each case) but mutated here via pushMessage, same as the
  * single function this was split out of always did. */
 async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
-  const { modelCall, log, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel } = ctx
+  const { modelCall, log, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel, evalMode } = ctx
 
   function pushMessage(message: Message): void {
     messages.push(message)
@@ -1000,6 +1009,19 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
         seenSkills.add(block.input!.skill as string)
         resultBlocks.push({ type: 'tool_result', tool_use_id: block.id!, content: body })
         continue
+      }
+
+      // A test run: a call its rules don't allow (or a schedule tool) isn't
+      // run or asked about; the model hears what happened and carries on.
+      if (evalMode) {
+        const tool = toolsByName.get(block.name!)
+        const blocked = tool && (evalMode.neverRun.has(tool) || (!systemToolInstances.has(tool) && evalMode.rules.resolve(block.name!, block.input ?? {}, scope)[0] !== 'allow'))
+        if (blocked) {
+          const note = "not run: this is a test run, and this call would need approval (or isn't allowed) in a real one. Assume it would have been approved as you asked, carry on, and say in your result that you would have made it."
+          resultBlocks.push({ type: 'tool_result', tool_use_id: block.id!, content: note })
+          log({ type: 'tool:result', id: block.id!, tool: block.name!, args: block.input ?? {}, detailText: 'test run', statusText: 'Not run (test run).' })
+          continue
+        }
       }
 
       // Checked before the systemToolInstances bypass just below (which

@@ -15,7 +15,7 @@
 // agent is the person's click, after they've read the plan
 // (web/workflow-admin.ts).
 import type { ToolSchema } from '#core/agent-config.js'
-import type { WorkflowParameter } from '#core/workflows.js'
+import { gatherFrom, type GatherStep, type WorkflowModel, type WorkflowParameter } from '#core/workflows.js'
 import type { TriggerSender } from '#core/workflow-triggers.js'
 import type { Message, ModelCall, ModelContentBlock } from '#core/run-agent.js'
 import type { StarterTemplate, TemplateApp, TemplateSkill } from './templates.js'
@@ -95,6 +95,15 @@ export interface WorkflowPlan {
   skill: { description: string; body: string }
   /** What the agent receives when the workflow starts. */
   startMessage: string
+  /** Its contract: lookups every run needs, done before the agent starts
+   * (tools its rules allow, input from its parameters). */
+  gather?: GatherStep[]
+  /** The same, as edited on the review screen (one per line). */
+  gatherText?: string
+  /** What its final reply must be, when an app or person reads it. */
+  output?: string
+  /** A model for this workflow only, chosen on the review screen. */
+  model?: WorkflowModel | null
   /** Values a run is given, filled into $name in the start message and
    * steps (core/workflows.ts). Empty when every run is the same. */
   parameters: Record<string, WorkflowParameter>
@@ -211,7 +220,9 @@ How to plan:
 8. context: leave it empty. Rules and facts the job needs go in the skill: rules under "Rules:", business facts under "Policies". A setting the job can't run without (the sheet, the repository, the channel) and the request doesn't give is asked for in gaps, not written as a placeholder.
 9. fit: whether this job is the kind of work the agent does, judged from its name, description and instructions (not its tools or apps: missing ones get added). matches false only when the job is clearly a different line of work (a customer support agent asked to run payroll); a related or broader job still matches, and so does any job for an agent with no description or instructions yet. reason: one short sentence the person reads, naming what the agent does and what the job is ("Support desk answers customers' questions; this workflow runs payroll."); empty when it matches. Plan the workflow fully either way.
 10. Messaging: questions, approvals and results reach the person through the agent's messaging app when they're not in Chat. You don't set it up; if the agent has none, plan as usual and the person sets it up before Create. If the person names a different app ("send them to me in Slack") than the agent's messaging app, say in gaps that results will arrive in the agent's app, and that they can change it on the agent's Messaging tab.
-11. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Leave out a setting its description calls optional unless the workflow uses what it's for (a setting only for posting, in a workflow that never posts). Not for MCP servers: their keys are asked for on the plan.
+11. gather: lookups every run needs before any judgment, done before the agent starts so it can't skip them: a reading tool the agent has or gets (its permission allow), with its whole input from the run's parameters ({ "tool": "get_order_details", "input": { "order_number": "$order_number" } }). Only when the request says the lookup always happens ("always check the order", "using the order details, shipments and refunds") and its input is known before the run. Not a lookup that depends on what the agent finds, and nothing that sends, writes or asks. Then the skill says those facts arrive with the inputs ("The order's details, shipments and refunds are looked up first and arrive with the inputs."), instead of telling it to look them up. Empty for most workflows.
+12. output: what the final reply must be, when an app or a person reads it ("The draft reply only, with nothing before or after it", "A line Decision: approve, partial or reject, then the reason"). Only when the request or the trigger makes the format matter: an app shows or parses it, or a person acts on it. Empty otherwise.
+13. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Leave out a setting its description calls optional unless the workflow uses what it's for (a setting only for posting, in a workflow that never posts). Not for MCP servers: their keys are asked for on the plan.
 
 Then call save_plan once, with the whole plan. Don't ask the person questions: if something is unclear, plan the most reasonable version and note the assumption in gaps.`
 
@@ -288,6 +299,8 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
             additionalProperties: { type: 'object', properties: { description: { type: 'string' }, required: { type: 'boolean' } } },
           },
           context: { type: 'string', description: 'leave empty: rules and facts go in the skill' },
+          gather: { type: 'array', description: 'lookups every run needs, done before the agent starts; usually empty', items: { type: 'object', properties: { tool: { type: 'string' }, input: { type: 'object', additionalProperties: { type: 'string' } } }, required: ['tool', 'input'] } },
+          output: { type: 'string', description: 'what the final reply must be, when an app or person reads it; empty otherwise' },
           fit: { type: 'object', properties: { matches: { type: 'boolean' }, reason: { type: 'string' } }, required: ['matches', 'reason'] },
           gaps: { type: 'array', items: { type: 'string' } },
         },
@@ -399,6 +412,8 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     ...(webhook ? { webhook } : {}),
     notify: planNotify(r.notify),
     context: str(r.context, 6000) ?? '',
+    ...(gatherFrom(r.gather).length ? { gather: gatherFrom(r.gather) } : {}),
+    ...(str(r.output, 2000) ? { output: str(r.output, 2000) } : {}),
     ...(r.fit ? { fit: planFit(r.fit) } : {}),
     gaps: [...gaps, ...planned.notes].slice(0, 12),
   }

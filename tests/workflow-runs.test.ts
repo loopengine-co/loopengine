@@ -24,7 +24,7 @@ describe('workflow runs', () => {
     expect(run).toMatchObject({ status: 'running', workflow_id: 'refund-check', params: { order_number: 'EM20-1' }, source: 'api' })
     await runner.idle()
 
-    expect(execute).toHaveBeenCalledWith('cs', 'Check the refund request for order EM20-1.', run.session_id)
+    expect(execute).toHaveBeenCalledWith('cs', 'Check the refund request for order EM20-1.', run.session_id, { workflowId: 'refund-check' })
     expect(await getRun('cs', run.run_id)).toMatchObject({ status: 'done', result: 'Refunded $84.', finished_at: expect.any(String) })
   })
 

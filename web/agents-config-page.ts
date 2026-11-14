@@ -124,6 +124,38 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-original summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-muted); margin-bottom: 6px; }
   .wf-row .workflow-starts > .workflow-section-content { padding: 0; }
   .wf-row .workflow-result:empty { display: none; }
+  .wf-sub { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
+  .wf-contract { display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .wf-contract-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 10px 12px; font-size: 13px; }
+  .wf-contract-row + .wf-contract-row { border-top: 1px solid var(--line); }
+  .wf-contract-k { font-weight: 600; color: var(--ink-muted); }
+  .wf-contract-v { display: grid; gap: 4px; min-width: 0; }
+  .wf-contract-pre { margin: 0; padding: 6px 8px; border-radius: 6px; background: var(--surface); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .wf-contract-text { white-space: pre-wrap; }
+  .wf-tools { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+  .wf-tool { display: inline-flex; align-items: center; gap: 6px; }
+  .wf-scores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .wf-score { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+  .wf-score-k { font-size: 11.5px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .wf-score-v { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .wf-evals-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .wf-evals-bar button, .wf-case-actions button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-cases { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .wf-case { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; font-size: 13px; }
+  .wf-case-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .wf-case-head .wf-link { margin-left: auto; }
+  .wf-case textarea { width: 100%; box-sizing: border-box; min-height: 90px; margin-top: 6px; font: inherit; font-size: 13px; }
+  .wf-case-actions { display: flex; gap: 8px; margin: 6px 0; }
+  .wf-case summary { cursor: pointer; color: var(--ink-muted); font-size: 12.5px; }
+  .wf-link { background: none; border: 0; padding: 0; height: auto; color: var(--accent-ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .wf-link.wf-case-remove { color: var(--bad); }
+  .wf-run-evidence { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .wf-editor-part { margin: 8px 0 0; font-size: 13px; font-weight: 700; padding-top: 10px; border-top: 1px solid var(--line); }
+  .wf-editor-part:first-of-type { border-top: 0; padding-top: 0; }
+  .wp-model-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wp-model-row input { flex: 1 1 200px; }
+  .wp-mono { font-family: var(--font-mono); font-size: 12.5px; }
+  @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wf-contract-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
   .wf-row-actions .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
   .wf-row-actions .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
@@ -1098,6 +1130,101 @@ ${consoleShellScript}
     for (var j = 0; j < panels.length; j++) panels[j].hidden = panels[j].dataset.panel !== key;
   }
 
+  // ---- A workflow in three parts: its contract (what the system holds it
+  // to: how it starts, its inputs, lookups, tools, model and result), its
+  // brief (what the agent reads) and its evidence (how it's doing). ----
+  var workflowsMeta = { policies: '', agentModel: '' };
+  var RSQ = String.fromCharCode(8217);
+  var DOT = ' ' + String.fromCharCode(183) + ' ';
+
+  function decisionPillHtml(decision) {
+    return decision === 'allow' ? '<span class="le-pill good">Runs on its own</span>' : decision === 'deny' ? '<span class="le-pill bad">Never runs</span>' : '<span class="le-pill ask">Asks you first</span>';
+  }
+
+  function contractRowHtml(label, html) {
+    return '<div class="wf-contract-row"><span class="wf-contract-k">' + label + '</span><div class="wf-contract-v">' + html + '</div></div>';
+  }
+
+  function workflowContractHtml(w, name, params) {
+    var names = Object.keys(w.parameters || {});
+    var given = names.length ? names.map(function (n) {
+      var spec = w.parameters[n];
+      return '<div><code>' + escapeHtml(n) + '</code>' + (spec.required ? ' <span class="hint">required</span>' : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '') + '</div>';
+    }).join('') : '<span class="hint">Nothing: every run is the same.</span>';
+    var gathered = (w.gather || []).length ? '<pre class="wf-contract-pre">' + escapeHtml(w.gatherText || '') + '</pre><span class="hint">Run before the agent starts; what they return arrives with its inputs.</span>' : '<span class="hint">Nothing. The agent looks up what it needs itself.</span>';
+    var tools = (w.tools || []).length ? '<div class="wf-tools">' + w.tools.map(function (t) { return '<span class="wf-tool"><code>' + escapeHtml(t.name) + '</code> ' + decisionPillHtml(t.decision) + '</span>'; }).join('') + '</div><span class="hint">The tools its instructions and lookups name. Change what they may do in Permissions.</span>' : '<span class="hint">Its instructions don' + RSQ + 't name any of the agent' + RSQ + 's tools.</span>';
+    var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : 'The agent' + RSQ + 's model' + (workflowsMeta.agentModel ? ' <span class="hint">(' + escapeHtml(workflowsMeta.agentModel) + ')</span>' : '');
+    var result = w.output ? '<div class="wf-contract-text">' + escapeHtml(w.output) + '</div>' : '<span class="hint">Not set: the agent ends with a reply in its own words.</span>';
+    return '<h4 class="wf-sub">How it starts</h4>' + workflowStartsHtml(w, name, params) +
+      '<h4 class="wf-sub">What it' + RSQ + 's held to</h4>' +
+      '<div class="wf-contract">' + contractRowHtml('Each run is given', given) + contractRowHtml('Looked up first', gathered) + contractRowHtml('Tools', tools) + contractRowHtml('Model', model) + contractRowHtml('Result', result) + '</div>' +
+      '<p class="hint" style="margin:0">Change these with Edit.</p>';
+  }
+
+  function workflowBriefHtml(w) {
+    var policies = workflowsMeta.policies;
+    return '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
+      (policies
+        ? '<details class="wf-original"><summary>Shared policies, read by every workflow</summary><div class="workflow-steps-text">' + escapeHtml(policies) + '</div><p class="hint" style="margin:6px 0 0">Change them in <a href="/config?section=settings">Settings</a>.</p></details>'
+        : '<p class="hint" style="margin:0">No shared policies yet. Rules every workflow should follow, like your refund window or who signs messages, go in <a href="/config?section=settings">Settings</a>, so you write them once.</p>') +
+      (w.originalRequest ? '<details class="wf-original"><summary>Original message</summary><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></details>' : '');
+  }
+
+  function scoreTileHtml(label, value, detail) {
+    return '<div class="wf-score"><span class="wf-score-k">' + label + '</span><strong class="wf-score-v">' + value + '</strong>' + (detail ? '<span class="hint">' + detail + '</span>' : '') + '</div>';
+  }
+
+  function workflowEvidenceHtml(w, runsHtml) {
+    var s = w.scores || { runs: 0, done: 0, failed: 0, approvals: { approved: 0, refused: 0 }, feedback: { count: 0, good: 0, bad: 0, edits: { none: 0, light: 0, heavy: 0 } } };
+    var evals = w.evals || { cases: [], rounds: [] };
+    var round = evals.rounds[0];
+    var decided = s.approvals.approved + s.approvals.refused;
+    var f = s.feedback;
+    var tiles = '<div class="wf-scores">' +
+      scoreTileHtml('Runs', String(s.runs), s.runs ? s.done + ' done' + DOT + s.failed + ' failed' : 'none yet') +
+      scoreTileHtml('Approvals', decided ? Math.round(100 * s.approvals.approved / decided) + '%' : String.fromCharCode(8212), decided ? s.approvals.approved + ' approved' + DOT + s.approvals.refused + ' refused' : 'none asked yet') +
+      scoreTileHtml('Feedback', f.count ? String(f.count) : String.fromCharCode(8212), f.count ? (f.good + f.bad ? f.good + ' good' + DOT + f.bad + ' bad' + DOT : '') + f.edits.none + ' unedited' + DOT + f.edits.light + ' light' + DOT + f.edits.heavy + ' heavy edits' : 'none reported yet') +
+      scoreTileHtml('Evals', round && typeof round.average === 'number' ? round.average.toFixed(1) + ' / 5' : String.fromCharCode(8212), round ? new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + DOT + evals.cases.length + ' case' + (evals.cases.length === 1 ? '' : 's') : (evals.cases.length ? 'not run yet' : 'no cases yet')) +
+      '</div>';
+    var feedbackHint = f.count ? '' : '<p class="hint" style="margin:0">An app reports what happened to a result with <code>POST /agents/' + escapeHtml(currentName || '') + '/runs/&lt;runId&gt;/feedback</code> and <code>{"final": "the text it sent"}</code> or <code>{"verdict": "good"}</code>.</p>';
+    var latest = {};
+    (round ? round.cases : []).forEach(function (c) { latest[c.caseId] = c; });
+    var running = evals.running;
+    var cases = evals.cases.map(function (c, i) {
+      var last = latest[c.id];
+      var values = Object.keys(c.params || {}).map(function (k) { var v = String(c.params[k]); return escapeHtml(k) + ': ' + escapeHtml(v.length > 60 ? v.slice(0, 60) + String.fromCharCode(8230) : v); }).join(DOT);
+      return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '"><div class="wf-case-head"><strong>Case ' + (i + 1) + '</strong>' +
+        (last ? (typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>') : '') +
+        '<span class="hint">' + (values || 'no inputs') + '</span><button type="button" class="wf-link wf-case-remove">Remove</button></div>' +
+        (last ? '<p class="hint" style="margin:0">' + escapeHtml(last.reason || last.error || '') + '</p>' : '') +
+        '<details><summary>Good result' + (last && last.result ? ' and its latest result' : '') + '</summary>' +
+          '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '">' + escapeHtml(c.reference) + '</textarea>' +
+          '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>' +
+          (last && last.result ? '<div class="workflow-run-entry-label">Latest result</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div>' : '') +
+        '</details></li>';
+    }).join('');
+    return tiles + feedbackHint +
+      '<h4 class="wf-sub">Eval cases</h4>' +
+      '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Running ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Run evals') + '</button>' +
+        '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: tools that need approval aren' + RSQ + 't run, and nobody is asked anything.') + '</span></div>' +
+      (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save a good run from History below as a case, edit its result into the right answer if needed, then run the cases after each change to the instructions or model.</p>') +
+      '<h4 class="wf-sub">History</h4>' +
+      (runsHtml ? '<ul class="schedule-history">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>');
+  }
+
+  // A run's evidence line: its feedback, and saving it as an eval case.
+  function runEvidenceHtml(w, r) {
+    var parts = [];
+    if (r.feedback) {
+      var fb = r.feedback;
+      parts.push('<span class="hint">Feedback: ' + [fb.verdict ? escapeHtml(fb.verdict) : '', fb.edit ? (fb.edit === 'none' ? 'used unedited' : escapeHtml(fb.edit) + ' edits') : '', fb.note ? escapeHtml(fb.note) : ''].filter(Boolean).join(DOT) + '</span>');
+    }
+    if ((r.decisions || []).length) parts.push('<span class="hint">' + r.decisions.map(function (d) { return escapeHtml(d.tool) + (d.approved ? ' approved' : ' refused'); }).join(DOT) + '</span>');
+    var saved = ((w.evals && w.evals.cases) || []).some(function (c) { return c.fromRun === r.run_id; });
+    if (r.status === 'done' && r.result) parts.push(saved ? '<span class="hint">Saved as an eval case</span>' : '<button type="button" class="wf-link wf-save-case" data-run="' + escapeHtml(r.run_id) + '">Save as eval case</button>');
+    return parts.length ? '<div class="wf-run-evidence">' + parts.join('') + '</div>' : '';
+  }
+
   function renderWorkflowsHtml(name, workflows) {
     if (!workflows.length) {
       return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Describe a job in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
@@ -1127,10 +1254,11 @@ ${consoleShellScript}
           '<span class="workflow-run-time">' + escapeHtml(new Date(r.started_at).toLocaleString()) + '</span>' +
           '<span class="workflow-run-source hint">' + escapeHtml(source) + '</span></div>' +
           (values ? '<div><div class="workflow-run-entry-label">Parameters</div><div class="workflow-run-params">' + values + '</div></div>' : '') +
-          (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result workflow-markdown">' + formattedOutcome + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><div class="schedule-result-full workflow-markdown workflow-markdown-full">' + formattedOutcome + '</div></details></div>' : '') + '</li>';
+          (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result workflow-markdown">' + formattedOutcome + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><div class="schedule-result-full workflow-markdown workflow-markdown-full">' + formattedOutcome + '</div></details></div>' : '') +
+          runEvidenceHtml(w, r) + '</li>';
       }).join('');
       var last = workflowLastRun(w);
-      var tab = workflowTabs[w.id] || 'instructions';
+      var tab = workflowTabs[w.id] || 'brief';
       var open = openWorkflowId === w.id;
       var panel = function (key, html) { return '<div class="wf-panel" data-panel="' + key + '"' + (tab === key ? '' : ' hidden') + '>' + html + '</div>'; };
       var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '" aria-selected="' + (tab === key) + '">' + label + '</button>'; };
@@ -1144,12 +1272,10 @@ ${consoleShellScript}
         '</div>' +
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           '<div class="wf-chips">' + workflowStatusChips(w) + '</div>' +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('instructions', 'Instructions') + tabBtn('starts', 'Run') + tabBtn('runs', 'History' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
-          panel('instructions',
-            '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
-            (w.originalRequest ? '<details class="wf-original"><summary>Original message</summary><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></details>' : '')) +
-          panel('starts', workflowStartsHtml(w, name, params)) +
-          panel('runs', runs ? '<ul class="schedule-history">' + runs + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('contract', 'Contract') + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
+          panel('contract', workflowContractHtml(w, name, params)) +
+          panel('brief', workflowBriefHtml(w)) +
+          panel('evidence', workflowEvidenceHtml(w, runs)) +
           '<div class="hint workflow-result"></div>' +
           '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span></div>' +
         '</div>' +
@@ -1251,6 +1377,7 @@ ${consoleShellScript}
       if (currentName !== name) return;
       if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
       var workflows = r.body.workflows || [];
+      workflowsMeta = { policies: r.body.policies || '', agentModel: r.body.agentModel || '' };
       fillWorkflowsCard(workflows);
       leShell.setCount('workflows', workflows.length);
       workflowsById = {};
@@ -1262,7 +1389,7 @@ ${consoleShellScript}
       for (var i = 0; i < cards.length; i++) wireWorkflowCard(name, cards[i]);
       openPendingWorkflowEdit();
       // Keep a running run's status current while the Overview is open.
-      var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }); });
+      var running = workflows.some(function (w) { return (w.recentRuns || []).some(function (x) { return x.status === 'running'; }) || (w.evals && w.evals.running); });
       if (running && currentTab === 'workflows') workflowsRefreshTimer = setTimeout(function () { if (!workflowEditing && !workflowInputInUse()) loadWorkflowsSection(name); }, 3000);
     });
   }
@@ -1286,6 +1413,7 @@ ${consoleShellScript}
         '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
       '<label>Description <span class="hint">(one line on what this job is; the agent uses it to recognise the job when you ask in Chat)</span>' +
         '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
+      '<h4 class="wf-editor-part">Brief <span class="hint">what the agent reads on every run</span></h4>' +
       '<div class="body-field"><div class="wp-instructions-head"><label for="wpInstructions">Instructions <span class="hint">(everything the agent needs for this job: what to get done, the rules it keeps, and your policies, special cases and examples. It handles each case on its own judgment, so describe the job rather than every step. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span></label>' +
         '<button type="button" class="wp-preview">Preview</button></div>' +
         '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
@@ -1293,9 +1421,18 @@ ${consoleShellScript}
       '<p class="hint wp-long-note">Don' + String.fromCharCode(8217) + 't write long values, like an email or a thread, into the instructions: each run adds a parameter you haven' + String.fromCharCode(8217) + 't written as $name at the end, under its description.</p>' +
       '<div class="wp-sections"><span class="hint">Add a section:</span>' +
         workflowSectionButtonsHtml() + '</div>' +
+      '<h4 class="wf-editor-part">Contract <span class="hint">what the system holds it to</span></h4>' +
       '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
         '<div class="workflow-param-rows">' + rows + '</div>' +
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
+      '<label>Looked up first <span class="hint">(optional: lookups every run needs, done before the agent starts, so it can' + String.fromCharCode(8217) + 't skip them. One per line: a tool, then name=value for its input, e.g. <code>get_order_details order_number=$order_number</code>. Only tools that run on their own are run.)</span>' +
+        '<textarea name="gather" rows="3" spellcheck="false" class="wp-mono">' + escapeHtml(w.gatherText || '') + '</textarea></label>' +
+      '<label>Result <span class="hint">(optional: what its final reply must be, e.g. The draft only, then a line Flag: reason if a person must act. Empty: a reply in its own words.)</span>' +
+        '<textarea name="output" rows="2" maxlength="2000">' + escapeHtml(w.output || '') + '</textarea></label>' +
+      '<div class="body-field">Model <span class="hint">(optional: a model for this workflow only; empty uses the agent' + String.fromCharCode(8217) + 's' + (workflowsMeta.agentModel ? ', ' + escapeHtml(workflowsMeta.agentModel) : '') + ')</span>' +
+        '<div class="wp-model-row"><select name="modelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' +
+          ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'].map(function (p) { return '<option value="' + p + '"' + (w.model && w.model.provider === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') +
+        '</select><input name="modelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + escapeHtml((w.model && w.model.model) || '') + '"></div></div>' +
       '<p class="hint workflow-editor-check" style="margin:0"></p>' +
       '<div class="hint workflow-editor-result"></div>' +
       '<div class="ed-actions"><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary">Save</button></div></form>';
@@ -1365,7 +1502,7 @@ ${consoleShellScript}
       out.textContent = 'Loading' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters }),
+        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, gather: form.gather.value }),
       }).then(function (r) {
         out.textContent = r.ok ? r.body.message : (r.body.error || 'Could not preview');
       });
@@ -1390,7 +1527,7 @@ ${consoleShellScript}
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters }),
+        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, gather: form.gather.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         close();
@@ -1698,6 +1835,27 @@ ${consoleShellScript}
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
+    // Evidence: save a run as an eval case, change or remove a case, run them.
+    card.querySelector('.wf-row-body').addEventListener('click', function (ev) {
+      var btn = ev.target.closest('.wf-save-case, .wf-case-remove, .wf-case-save, .wf-evals-run');
+      if (!btn) return;
+      var caseEl = btn.closest('[data-case]');
+      var request;
+      if (btn.classList.contains('wf-save-case')) request = [base + '/evals/cases', { method: 'POST', body: { runId: btn.dataset.run } }];
+      else if (btn.classList.contains('wf-case-remove')) {
+        if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
+        request = [base + '/evals/cases/' + encodeURIComponent(caseEl.dataset.case), { method: 'DELETE' }];
+      } else if (btn.classList.contains('wf-case-save')) request = [base + '/evals/cases/' + encodeURIComponent(caseEl.dataset.case), { method: 'PUT', body: { reference: caseEl.querySelector('.wf-case-ref').value } }];
+      else request = [base + '/evals/run', { method: 'POST', body: {} }];
+      btn.disabled = true;
+      var opts = { method: request[1].method, headers: { 'content-type': 'application/json' } };
+      if (request[1].body) opts.body = JSON.stringify(request[1].body);
+      fetchJsonRetryOnce(request[0], opts).then(function (r) {
+        if (!r.ok) { btn.disabled = false; result.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't work.'; return; }
+        workflowTabs[id] = 'evidence';
+        loadWorkflowsSection(name);
+      });
+    });
     // A schedule opens its own row in the Schedules tab.
     var scheduleLinks = card.querySelectorAll('.workflow-schedule-link');
     for (var sl = 0; sl < scheduleLinks.length; sl++) {

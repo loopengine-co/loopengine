@@ -1016,6 +1016,7 @@ ${consoleShellScript}
       rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
+      '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
   }
@@ -1168,6 +1169,54 @@ ${consoleShellScript}
     });
   }
 
+  // ---- Shared policies: the business's rules every workflow run reads,
+  // above its own instructions (policies.md in the project). ----
+  function renderPolicies(p) {
+    var box = document.getElementById('policiesBox');
+    if (!box) return;
+    var intro = '<p style="margin:0 0 10px">Rules every workflow follows, written once: your refund window, delivery promises, tone, who signs messages. Each run reads them above its own instructions, and a workflow' + String.fromCharCode(8217) + 's own instructions win where they say more.</p>';
+    if (!p.canSave) {
+      box.innerHTML = intro + (p.policies ? '<pre class="hint" style="white-space:pre-wrap;margin:0">' + escapeHtml(p.policies) + '</pre>' : '<p class="hint">None yet.</p>') + '<p class="hint">Set LOOPENGINE_ADMIN_AUTH to change them here, or edit policies.md in the project.</p>';
+      return;
+    }
+    box.innerHTML = intro +
+      '<form id="policiesForm" style="display:flex;flex-direction:column;gap:10px;max-width:720px">' +
+        '<label for="policiesText" class="hint">One rule per line, with its real numbers</label>' +
+        '<textarea id="policiesText" rows="8" placeholder="- Refunds within 30 days of delivery.&#10;- Parcels lost over 15 days are reshipped, not refunded.&#10;- Sign customer emails: Everymarket Support">' + escapeHtml(p.policies || '') + '</textarea>' +
+        '<div><button type="submit" class="primary">Save</button></div>' +
+        '<div id="policiesMsg" class="hint"></div>' +
+      '</form>';
+    var form = document.getElementById('policiesForm');
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var msg = document.getElementById('policiesMsg');
+      var btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      msg.textContent = 'Saving' + String.fromCharCode(8230);
+      fetch('/config/policies', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ policies: document.getElementById('policiesText').value }) })
+        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+        .then(function (r) {
+          btn.disabled = false;
+          msg.innerHTML = r.ok ? 'Saved. Every workflow' + String.fromCharCode(8217) + 's next run reads them.' : '<span class="error">' + escapeHtml(r.body.error || 'Could not save') + '</span>';
+        })
+        .catch(function (err) { btn.disabled = false; msg.innerHTML = '<span class="error">' + escapeHtml(err.message) + '</span>'; });
+    });
+  }
+
+  function loadPolicies() {
+    if (!document.getElementById('policiesBox')) return;
+    fetch('/config/policies', { cache: 'no-store' })
+      .then(function (r) {
+        if (r.status === 404) throw new Error('this server' + String.fromCharCode(8217) + 's template is older; update it (Updates, below) to set shared policies here');
+        return r.json();
+      })
+      .then(renderPolicies)
+      .catch(function (err) {
+        var box = document.getElementById('policiesBox');
+        if (box) box.innerHTML = '<p class="hint">Shared policies aren' + String.fromCharCode(8217) + 't available: ' + escapeHtml(err.message) + '.</p>';
+      });
+  }
+
   function loadTimeZone() {
     if (!document.getElementById('timeZoneBox')) return;
     fetch('/config/time-zone', { cache: 'no-store' })
@@ -1310,6 +1359,7 @@ ${consoleShellScript}
         content.innerHTML = renderSettings(d);
         loadedSections.settings = true;
         loadTimeZone();
+        loadPolicies();
         loadAbilitySources();
         loadUpgrade();
       })

@@ -85,7 +85,8 @@ import {
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
-import { WorkflowParamsError, readWorkflow, readWorkflows, validateParams, workflowPreviewMessage, workflowRunMessage } from '#core/workflows.js'
+import { WorkflowParamsError, gatherFromText, readWorkflow, readWorkflows, readWorkspacePolicies, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type GatheredResult, type Workflow } from '#core/workflows.js'
+import { EvidenceError, addEvalCase, readEvals, removeEvalCase, runFeedbackFrom, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, checkCallbackUrl, deliverCallback, runCallbackPayload, type RunCallbackEvent } from '#core/run-callbacks.js'
@@ -1670,6 +1671,111 @@ const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_0
 // { runId, running: true } if it's still going after WORKFLOW_WAIT_MS.
 // A failed run answers 502 { runId, error }. Wrong or missing params are
 // a 400 before anything runs.
+// An agent's workflows for the console, each with its contract's tools:
+// the agent's tools its instructions or lookups name, and the permission
+// each has. Also the workspace's shared policies and the agent's model.
+async function workflowsView(agentName: string): Promise<Record<string, unknown>> {
+  const entry = getEntry(agentName)!
+  const workflows = await listAgentWorkflows(agentName, agentDir(agentName))
+  let names: string[] = []
+  try {
+    const all = [...(entry.config.tools ?? (await loadDefaultTools(entry.config))), ...(await loadSubagentAsTools(entry.config)), ...(await loadGatewayToolsFromDir(agentDir(agentName)))]
+    names = [...new Set(all.map((t) => t.name))]
+  } catch {}
+  const rules = loadRules(entry.config)
+  const scope = { tenant: 'default', environment: process.env.LOOPENGINE_ENV ?? 'production', agent: agentName }
+  const escape = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return {
+    workflows: workflows.map((w) => ({
+      ...w,
+      tools: names
+        .filter((n) => w.gather.some((g) => g.tool === n) || new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(w.instructions))
+        .map((n) => ({ name: n, decision: rules.resolve(n, {}, scope)[0] })),
+    })),
+    policies: readWorkspacePolicies(process.cwd()),
+    agentModel: modelLabelOf(entry.config),
+  }
+}
+
+// A judge for eval results: a model other than the one being tested
+// (models favour their own writing), from the providers with a key.
+async function evalJudge(tested: AgentConfig): Promise<{ call: ModelCall; label: string }> {
+  const candidates: AgentModelConfig[] = []
+  if (process.env.OPENAI_API_KEY) candidates.push({ provider: 'openai', model: 'gpt-6.1-sol' } as AgentModelConfig)
+  if (process.env.ANTHROPIC_API_KEY) candidates.push({ provider: 'anthropic', model: 'claude-opus-5-5' } as AgentModelConfig)
+  if (process.env.DEEPSEEK_API_KEY) candidates.push({ provider: 'deepseek', model: 'deepseek-v4-flash' } as AgentModelConfig)
+  const others = candidates.filter((m) => m.provider !== tested.model?.provider)
+  for (const model of others.length ? others : candidates.filter((m) => m.model !== tested.model?.model)) {
+    try {
+      return { call: (await synthesizeCreateModelCall({ ...model, maxTokens: 2000 } as AgentModelConfig))(), label: `${model.provider} ${model.model}` }
+    } catch {}
+  }
+  throw new EvidenceError("No judge model is ready: add a key for a provider other than this workflow's under Models.")
+}
+
+// A workflow's eval cases (web/workflow-evidence.ts): list them, add one
+// (from a past run, or inputs and a good result), change or remove one,
+// and run them all as a test run, each result scored by a judge.
+async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, agentName: string, id: string, part: string | undefined, caseId: string | undefined): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  if (!getEntry(agentName)) return json(404, { error: `unknown agent '${agentName}'` })
+  const dir = agentDir(agentName)
+  const workflow = readWorkflow(dir, id)
+  if (!workflow) return json(404, { error: `No workflow ${id}.` })
+  try {
+    if (!part && req.method === 'GET') return json(200, readEvals(dir, id))
+    if (part === 'cases' && !caseId && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const run = typeof body.runId === 'string' ? await getRun(agentName, body.runId) : undefined
+      if (typeof body.runId === 'string' && (!run || run.workflow_id !== id)) return json(404, { error: 'No such run of this workflow.' })
+      const params = body.params && typeof body.params === 'object' ? validateParams(workflow, body.params) : undefined
+      addEvalCase(dir, id, { ...(run ? { run } : {}), ...(params ? { params } : {}), reference: body.reference })
+      return json(201, readEvals(dir, id))
+    }
+    if (part === 'cases' && caseId && req.method === 'PUT') {
+      updateEvalCase(dir, id, caseId, (await readJsonBody(req)).reference)
+      return json(200, readEvals(dir, id))
+    }
+    if (part === 'cases' && caseId && req.method === 'DELETE') {
+      removeEvalCase(dir, id, caseId)
+      return json(200, readEvals(dir, id))
+    }
+    if (part === 'run' && req.method === 'POST') {
+      const tested = await runModel(agentName, id)
+      const judge = await evalJudge(tested.config)
+      const round = startEvalRound({
+        agentDir: dir,
+        workflowId: id,
+        instructions: workflow.instructions,
+        model: modelLabelOf(tested.config),
+        judgeLabel: judge.label,
+        judge: judge.call,
+        runCase: async (params) => {
+          const current = readWorkflow(dir, id) ?? workflow
+          const message = await composeWorkflowMessage(agentName, current, params)
+          const { config, modelCall } = await runModel(agentName, id)
+          const result = await runAgent(config, modelCall, message, [], {
+            tenant: 'default',
+            sessionId: `eval-${randomUUID().slice(0, 8)}`,
+            evalMode: true,
+            approver: { requestApproval: async () => false },
+            questionHandler: { requestQuestion: async () => NO_HUMAN_ANSWER },
+          })
+          return result.text
+        },
+      })
+      void round.catch((err) => console.error(`[loopengine] eval round for ${agentName}/${id} failed:`, err))
+      return json(202, readEvals(dir, id))
+    }
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const known = err instanceof EvidenceError || err instanceof WorkflowParamsError
+    return json(known ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
 async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, agentName: string, id: string | undefined, action: string | undefined): Promise<void> {
   const json = (status: number, body: unknown): void => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
@@ -1677,7 +1783,7 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   if (!getEntry(agentName)) return json(404, { error: `unknown agent '${agentName}'` })
   const dir = agentDir(agentName)
   try {
-    if (!id && req.method === 'GET') return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
+    if (!id && req.method === 'GET') return json(200, await workflowsView(agentName))
     if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
     if (id && action === 'run' && req.method === 'POST') {
       const body = await readJsonBody(req)
@@ -1690,7 +1796,7 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
           return json(400, { error: err instanceof CallbackUrlError ? err.message : String(err) })
         }
       }
-      const prepared = await prepareWorkflowRun(agentName, dir, id, body.params)
+      const prepared = await prepareWorkflowRun(agentName, dir, id, body.params, (w, p) => composeWorkflowMessage(agentName, w, p))
       const run = await workflowRunner.start({
         agent: agentName, workflow_id: id, params: prepared.params, source: body.source === 'console' ? 'console' : 'api', message: prepared.message,
         ...(body.notify === true ? { notify: true } : {}), ...(callbackUrl ? { callback_url: callbackUrl } : {}),
@@ -1718,11 +1824,20 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
         ? Object.fromEntries(Object.entries(raw).filter(([name]) => /^[a-z_][a-z0-9_]*$/.test(name)).map(([name, p]) => [name, { description: typeof p?.description === 'string' ? p.description : '', required: false }]))
         : saved.parameters
       const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : saved.title
-      return json(200, { message: workflowPreviewMessage({ ...saved, title, startMessage: '', steps: instructions, instructions, parameters }) })
+      const output = typeof body.output === 'string' ? body.output.trim() : saved.output
+      let gather = saved.gather
+      if (typeof body.gather === 'string') {
+        try {
+          gather = gatherFromText(body.gather)
+        } catch (err) {
+          return json(400, { error: err instanceof Error ? err.message : String(err) })
+        }
+      }
+      return json(200, { message: workflowPreviewMessage({ ...saved, title, startMessage: '', steps: instructions, instructions, parameters, gather, ...(output ? { output } : { output: undefined }) }, readWorkspacePolicies(process.cwd())) })
     }
     if (id && !action && req.method === 'PUT') {
       updateWorkflow(dir, id, await readJsonBody(req))
-      return json(200, { workflows: await listAgentWorkflows(agentName, dir) })
+      return json(200, await workflowsView(agentName))
     }
     if (id && !action && req.method === 'DELETE') {
       const { cancelled } = await forgetWorkflow(agentName, dir, id)
@@ -1986,15 +2101,68 @@ function handleEnvGet(res: ServerResponse, agentName: string): void {
 
 const NO_HUMAN_ANSWER = 'No human is available to answer — this is an unattended run. Use your own best judgement and proceed without waiting for a response.'
 
-// One unattended agent turn: a scheduled task firing, or a workflow run
-// started by hand or by an app (core/workflow-runs.ts).
-async function executeUnattendedRun(agent: string, message: string, rawSessionId: string): Promise<{ kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }> {
+// The agent's config and model call for a run: a workflow with its own
+// model (its contract) runs on that one, the agent's other settings kept.
+async function runModel(agent: string, workflowId?: string): Promise<{ config: AgentConfig; modelCall: ModelCall }> {
   const entry = getEntry(agent)
   if (!entry) throw new Error(`no agent named "${agent}" in this project`)
+  const own = workflowId ? readWorkflow(agentDir(agent), workflowId)?.model : undefined
+  if (!own || (own.provider === entry.config.model?.provider && own.model === entry.config.model?.model)) return { config: entry.config, modelCall: entry.createModelCall() }
+  const { reasoningEffort: _effort, ...base } = (entry.config.model ?? {}) as AgentModelConfig & { reasoningEffort?: unknown }
+  const model = { ...base, provider: own.provider, model: own.model } as AgentModelConfig
+  return { config: { ...entry.config, model }, modelCall: (await synthesizeCreateModelCall(model))() }
+}
+
+/** "provider model", for evidence. */
+function modelLabelOf(config: AgentConfig): string {
+  return [config.model?.provider, config.model?.model].filter(Boolean).join(' ')
+}
+
+// A workflow's lookups done before its agent starts (its contract's
+// gather): each a tool its rules allow, run with its input, $parameters
+// filled in. One that isn't allowed, is missing or fails is reported in
+// the run's inputs, and the run goes ahead.
+async function runGather(agent: string, workflow: Workflow, params: Record<string, string>, sessionId: string): Promise<GatheredResult[]> {
+  const entry = getEntry(agent)
+  if (!entry || !workflow.gather.length) return []
+  const rules = loadRules(entry.config)
+  const scope = { tenant: 'default', environment: process.env.LOOPENGINE_ENV ?? 'production', agent }
+  const declared = Object.keys(workflow.parameters)
+  const results: GatheredResult[] = []
+  for (const step of workflow.gather) {
+    const input = Object.fromEntries(Object.entries(step.input).map(([k, v]) => [k, substituteParameters(v, params, { declared })]))
+    try {
+      const tool = await resolveAgentTool(entry.config, step.tool)
+      if (!tool) throw new Error(`${agent} has no tool ${step.tool}`)
+      if (rules.resolve(step.tool, input, scope)[0] !== 'allow') throw new Error(`its permission isn't allow, so it isn't run before the agent starts`)
+      const output = await tool.execute(input, { agentName: agent, tenant: 'default', sessionId, env: createAgentEnv(agent, agentDirFor(entry.config)) })
+      const text = typeof output === 'string' ? output : JSON.stringify(output)
+      results.push({ tool: step.tool, result: text.length > 30000 ? `${text.slice(0, 30000)}\n[cut off at 30000 characters]` : text })
+    } catch (err) {
+      results.push({ tool: step.tool, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  return results
+}
+
+// A workflow run's first message: the workspace's policies, its
+// instructions and output, its inputs and what its lookups returned.
+async function composeWorkflowMessage(agent: string, workflow: Workflow, params: Record<string, string>): Promise<string> {
+  const gathered = await runGather(agent, workflow, params, `gather-${Date.now().toString(36)}`)
+  return workflowRunMessage(workflow, params, { policies: readWorkspacePolicies(process.cwd()), gathered })
+}
+
+// One unattended agent turn: a scheduled task firing, or a workflow run
+// started by hand or by an app (core/workflow-runs.ts), on the workflow's
+// own model when it has one.
+async function executeUnattendedRun(agent: string, message: string, rawSessionId: string, options: { workflowId?: string } = {}): Promise<{ kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }> {
+  const entry = getEntry(agent)
+  if (!entry) throw new Error(`no agent named "${agent}" in this project`)
+  const { config, modelCall } = await runModel(agent, options.workflowId)
   const tenant = 'default'
   const environment = process.env.LOOPENGINE_ENV ?? 'production'
   const outcome = await sessions.withSession(`${tenant}:${environment}:${agent}:${rawSessionId}`, async (history) => {
-    const result = await runAgent(entry.config, entry.createModelCall(), message, history, {
+    const result = await runAgent(config, modelCall, message, history, {
       tenant,
       sessionId: rawSessionId,
       channel: 'http',
@@ -2073,7 +2241,7 @@ const scheduler = new Scheduler({
   fire: fireScheduledTask,
   resolveWorkflowMessage: (agent, workflowId, params) => {
     const workflow = getEntry(agent) ? readWorkflow(agentDir(agent), workflowId) : undefined
-    return workflow && workflowRunMessage(workflow, validateParams(workflow, params))
+    return workflow && composeWorkflowMessage(agent, workflow, validateParams(workflow, params))
   },
   onSettled: announceScheduledRun,
 })
@@ -3388,6 +3556,8 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
     | { kind: 'validation-error'; error: string }
     | { kind: 'resolved'; checkpoint: TurnCheckpoint }
 
+  // The approval decided, for its workflow run's record (live scores).
+  let decided: { sessionId: string; tool: string } | undefined
   const outcome = await checkpoints.withCheckpoint(pendingId, async (checkpoint): Promise<{ checkpoint: TurnCheckpoint | undefined; result: ResolveOutcome }> => {
     if (!checkpoint) return { checkpoint: undefined, result: { kind: 'unknown' } }
     const item = checkpoint.outstanding[pendingId]
@@ -3395,6 +3565,7 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
     // doc comment for why this stays optional/back-compat rather than
     // required.
     if (item.kind === 'question') return { checkpoint, result: { kind: 'wrong-kind' } }
+    decided = { sessionId: checkpoint.sessionId, tool: item.tool }
 
     let resultBlock: ModelContentBlock
     if (decision === 'deny') {
@@ -3459,6 +3630,7 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
     const updated: TurnCheckpoint = { ...checkpoint, resultsSoFar, outstanding, closed: Object.keys(outstanding).length === 0 }
     return { checkpoint: updated, result: { kind: 'resolved', checkpoint: updated } }
   })
+  if (outcome.kind === 'resolved' && decided) void workflowRunner.recordDecision(decided.sessionId, { tool: decided.tool, approved: decision === 'approve' })
 
   if (outcome.kind === 'unknown') {
     // Unknown pendingId, or its checkpoint was already closed — a
@@ -3582,7 +3754,10 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
     // answerable via the REST endpoints, still times out on its own"
     // safety net createTrackedApprover(sessionId) (no onPending) already
     // gives a resumed approval just above.
-    const result = await resumeAgent(entry.config, entry.createModelCall(), history, finalCheckpoint.resultsSoFar, {
+    // A workflow run resumes on the model it started on.
+    const resumedRun = await workflowRunner.forSession(finalCheckpoint.sessionId)
+    const resumed = await runModel(finalCheckpoint.agent, resumedRun?.workflow_id)
+    const result = await resumeAgent(resumed.config, resumed.modelCall, history, finalCheckpoint.resultsSoFar, {
       tenant: finalCheckpoint.tenant,
       sessionId: finalCheckpoint.sessionId,
       channel: 'http',
@@ -4273,7 +4448,7 @@ async function handleWorkflowHook(req: IncomingMessage, res: ServerResponse, tok
     return json(404, { error: 'not found' })
   }
   try {
-    const prepared = await prepareWorkflowRun(trigger.agent, agentDir(trigger.agent), trigger.workflow_id, paramsFromPayload(trigger, payload))
+    const prepared = await prepareWorkflowRun(trigger.agent, agentDir(trigger.agent), trigger.workflow_id, paramsFromPayload(trigger, payload), (w, p) => composeWorkflowMessage(trigger.agent, w, p))
     const run = await workflowRunner.start({
       agent: trigger.agent, workflow_id: trigger.workflow_id, params: prepared.params, source: 'webhook', trigger_id: trigger.trigger_id, message: prepared.message,
       ...(trigger.notify ? { notify: true } : {}), ...(trigger.callback_url ? { callback_url: trigger.callback_url } : {}),
@@ -4687,6 +4862,26 @@ const server = createServer(async (req, res) => {
         .end(JSON.stringify(run ?? { error: `no run ${agentRunMatch[2]} for ${agentName}` }))
       return
     }
+    // Feedback on a finished workflow run, from the app that used its
+    // result or a person: the text actually used, and/or good or bad.
+    const runFeedbackMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/runs\/([A-Za-z0-9_-]+)\/feedback$/)
+    if (runFeedbackMatch) {
+      const agentName = decodeURIComponent(runFeedbackMatch[1])
+      const run = getEntry(agentName) ? await getRun(agentName, runFeedbackMatch[2]) : undefined
+      const reply = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      if (!run) return void reply(404, { error: `no run ${runFeedbackMatch[2]} for ${agentName}` })
+      try {
+        const feedback = runFeedbackFrom(run, await readJsonBody(req))
+        return void reply(200, await getRunStore().update(run.run_id, (r) => r && { ...r, feedback }))
+      } catch (err) {
+        return void reply(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+    const evalsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/evals(?:\/(run|cases))?(?:\/([a-z0-9]+))?$/)
+    if (evalsMatch) {
+      await handleWorkflowEvals(req, res, decodeURIComponent(evalsMatch[1]), evalsMatch[2], evalsMatch[3], evalsMatch[4])
+      return
+    }
     const triggersMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/triggers(?:\/([A-Za-z0-9_-]+))?(?:\/(rotate))?$/)
     if (triggersMatch) {
       await handleWorkflowTriggers(req, res, decodeURIComponent(triggersMatch[1]), triggersMatch[2], triggersMatch[3], triggersMatch[4])
@@ -4813,6 +5008,26 @@ const server = createServer(async (req, res) => {
         return
       }
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }))
+      return
+    }
+    // Settings → Shared policies (web/global-config.ts): the business's
+    // rules every workflow run reads (policies.md in the project).
+    if (req.method === 'GET' && pathname === '/config/policies') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))
+      return
+    }
+    if (req.method === 'PUT' && pathname === '/config/policies') {
+      if (!secretsProtected) {
+        res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Refusing to change settings without LOOPENGINE_ADMIN_AUTH configured: set it first, or edit policies.md in the project.' }))
+        return
+      }
+      const body = await readJsonBody(req)
+      if (typeof body.policies !== 'string') {
+        res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'policies must be text.' }))
+        return
+      }
+      writeWorkspacePolicies(process.cwd(), body.policies)
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))
       return
     }
     // Settings → Time zone (web/global-config.ts): what "9:00" means in

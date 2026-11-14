@@ -16,7 +16,8 @@ import { planParameters, planWebhook, planWorkflowWithModel, workflowTemplate, t
 import { createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
-import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow } from '../core/workflows.js'
+import { clearWorkflowFields, gatherFromText, gatherToText, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowModel } from '../core/workflows.js'
+import { readEvals, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
 import { cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
 import { wallTimeAt, workspaceTimeZone } from '../core/time-zone.js'
@@ -627,11 +628,18 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
   // One text, as the editor shows it: the start message, then the steps.
   const instructions = plan.skill.body.trim().startsWith(plan.startMessage.trim()) ? plan.skill.body : `${plan.startMessage.trim()}\n\n${plan.skill.body.trim()}`
   const originalRequest = typeof input.description === 'string' ? input.description.trim() : ''
+  // Its contract as planned, or as edited on the review screen.
+  const contract = contractFields({
+    ...(plan.model !== undefined ? { model: plan.model } : {}),
+    ...(plan.output !== undefined ? { output: plan.output } : {}),
+    ...(typeof plan.gatherText === 'string' ? { gather: plan.gatherText } : plan.gather ? { gather: plan.gather } : {}),
+  })
   const markWorkflow = (agentDir: string, context = '') => setWorkflowFields(agentDir, plan.id, {
     title: plan.name,
     instructions: withWorkflowContext(instructions, plan.startMessage, context),
     parameters,
     ...(originalRequest ? { originalRequest } : {}),
+    ...contract,
   })
   const agents = await deps.agentInfo()
   const agent = agents.find((a) => a.name === agentName)
@@ -784,6 +792,11 @@ export interface AgentWorkflowView extends Workflow {
   webhooksWaiting: number
   /** Its webhooks turned off. */
   webhooksOff: number
+  /** Its lookups done first, as the editor writes them. */
+  gatherText: string
+  /** Its evidence: live scores from its runs, and its eval cases and rounds. */
+  scores: WorkflowScores
+  evals: WorkflowEvals
 }
 
 const RECENT_RUNS = 5
@@ -867,7 +880,11 @@ export async function listAgentWorkflows(agentName: string, agentDir: string): P
     const webhooks = own.filter((t) => t.enabled).length
     // Made by the planner, waiting for the sender's signing secret.
     const webhooksWaiting = own.filter((t) => !t.enabled && t.verify && !t.verify.secret).length
-    return { ...w, schedules, recentRuns, webhooks, webhooksWaiting, webhooksOff: own.length - webhooks - webhooksWaiting, ...(schedules[0] ? { schedule: schedules[0] } : {}) }
+    const ownRuns = runs.filter((r) => r.workflow_id === w.id)
+    return {
+      ...w, schedules, recentRuns, webhooks, webhooksWaiting, webhooksOff: own.length - webhooks - webhooksWaiting, ...(schedules[0] ? { schedule: schedules[0] } : {}),
+      gatherText: gatherToText(w.gather), scores: workflowScores(ownRuns), evals: readEvals(agentDir, w.id),
+    }
   })
 }
 
@@ -882,7 +899,7 @@ function sameParams(a: Record<string, string> | undefined, b: Record<string, str
  * (runs with other parameters go ahead), and works out the message it
  * starts with — the workflow's start message and steps as they are now.
  * The server starts it (core/workflow-runs.ts). */
-export async function prepareWorkflowRun(agentName: string, agentDir: string, id: string, rawParams?: unknown): Promise<{ workflow: Workflow; params: Record<string, string>; message: string }> {
+export async function prepareWorkflowRun(agentName: string, agentDir: string, id: string, rawParams?: unknown, compose?: (workflow: Workflow, params: Record<string, string>) => Promise<string>): Promise<{ workflow: Workflow; params: Record<string, string>; message: string }> {
   const workflow = readWorkflow(agentDir, id)
   if (!workflow) throw new WorkflowError(`No workflow ${id} in ${agentName}.`)
   let params: Record<string, string>
@@ -895,7 +912,9 @@ export async function prepareWorkflowRun(agentName: string, agentDir: string, id
   if (runs.some((r) => isUnderWay(r) && sameParams(r.params, params))) {
     throw new WorkflowError(`${workflow.title} is already running${Object.keys(params).length ? ' with these parameters' : ''}, or waiting for a decision.`)
   }
-  return { workflow, params, message: workflowRunMessage(workflow, params) }
+  // The server composes it with the workspace's policies and the
+  // workflow's lookups (adapters/http.ts); without, just the workflow.
+  return { workflow, params, message: compose ? await compose(workflow, params) : workflowRunMessage(workflow, params) }
 }
 
 /** Changes a workflow from the console's editor: its title, its
@@ -903,6 +922,32 @@ export async function prepareWorkflowRun(agentName: string, agentDir: string, id
  * and label are folded into), and its parameters. The skill's other front
  * matter is kept. A body with `start_message` (and no `instructions`) is
  * still taken, as before. */
+/** The contract fields an edit gives: `model` ({ provider, model }, or
+ * null for the agent's), `output` (text) and `gather` (the editor's text,
+ * one lookup per line, or an array). Left out, each keeps what's saved. */
+export function contractFields(input: Record<string, unknown>): { model?: WorkflowModel | null; output?: string | null; gather?: Workflow['gather'] | null } {
+  const fields: { model?: WorkflowModel | null; output?: string | null; gather?: Workflow['gather'] | null } = {}
+  if (input.model !== undefined) {
+    const m = input.model as Record<string, unknown> | null | string
+    if (m === null || m === '') fields.model = null
+    else if (typeof m === 'object' && typeof m.provider === 'string' && typeof m.model === 'string' && m.provider.trim() && m.model.trim()) fields.model = { provider: m.provider.trim(), model: m.model.trim() }
+    else throw new WorkflowError("model must be { provider, model }, or null for the agent's own.")
+  }
+  if (input.output !== undefined) {
+    if (input.output !== null && typeof input.output !== 'string') throw new WorkflowError('The result format must be text.')
+    if (typeof input.output === 'string' && input.output.length > 2000) throw new WorkflowError('The result format is too long: keep it under 2000 characters.')
+    fields.output = typeof input.output === 'string' ? input.output : null
+  }
+  if (input.gather !== undefined) {
+    try {
+      fields.gather = typeof input.gather === 'string' ? gatherFromText(input.gather) : Array.isArray(input.gather) ? (input.gather as Workflow['gather']) : null
+    } catch (err) {
+      throw new WorkflowError(err instanceof Error ? err.message : String(err))
+    }
+  }
+  return fields
+}
+
 export function updateWorkflow(agentDir: string, id: string, input: Record<string, unknown>): Workflow {
   if (!readWorkflow(agentDir, id)) throw new WorkflowError(`No workflow ${id}.`)
   const text = (value: unknown, field: string, max: number): string => {
@@ -927,7 +972,7 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
     const s = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : {}
     parameters[name] = { description: text(s.description, `The description of "${name}"`, 300), required: s.required === true }
   }
-  const named = { ...(title ? { title } : {}), ...(description ? { description: description.replace(/\s+/g, ' ') } : {}) }
+  const named = { ...(title ? { title } : {}), ...(description ? { description: description.replace(/\s+/g, ' ') } : {}), ...contractFields(input) }
   setWorkflowFields(agentDir, id, instructions !== undefined ? { ...named, instructions, parameters } : { ...named, startMessage, ...(trigger ? { trigger } : {}), parameters })
   return readWorkflow(agentDir, id)!
 }

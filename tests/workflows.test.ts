@@ -364,6 +364,7 @@ describe('workflows are skills with a start message', () => {
       steps: '1. Look up order $order_number.\n2. Weigh this: $customer_note',
       // An older workflow's start message, in front of its steps.
       instructions: 'Check the refund request for order $order_number.\n\n1. Look up order $order_number.\n2. Weigh this: $customer_note',
+      gather: [],
     }])
     expect(readWorkflow(dir, 'plain-skill')).toBeUndefined()
     expect(readWorkflow(dir, '../escape')).toBeUndefined()

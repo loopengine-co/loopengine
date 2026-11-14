@@ -54,12 +54,28 @@ export interface WorkflowRun {
   callback_url?: string
   /** Each callback delivery, oldest first (the latest 10). */
   callbacks?: CallbackDelivery[]
+  /** Each approval decided while it ran, oldest first. */
+  decisions?: { tool: string; approved: boolean; at: string }[]
+  /** What the app or person reported after it ended
+   * (POST /agents/:name/runs/:id/feedback): the text actually used, how
+   * much it was edited from the result, and a verdict. */
+  feedback?: RunFeedback
+}
+
+export interface RunFeedback {
+  verdict?: 'good' | 'bad'
+  /** How far the text actually used is from the result. */
+  edit?: 'none' | 'light' | 'heavy'
+  final?: string
+  note?: string
+  at: string
 }
 
 export type RunOutcome = { kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }
 
-/** Runs the agent once: what a scheduled task's fire does. */
-export type ExecuteRun = (agent: string, message: string, sessionId: string) => Promise<RunOutcome>
+/** Runs the agent once: what a scheduled task's fire does. A workflow's
+ * run says which workflow, for its own model. */
+export type ExecuteRun = (agent: string, message: string, sessionId: string, options?: { workflowId?: string }) => Promise<RunOutcome>
 
 const MAX_FINISHED_PER_AGENT = 500
 const SESSION_PREFIX = 'run-'
@@ -242,7 +258,7 @@ export class WorkflowRunner {
     await getRunStore().put(run)
     await this.prune(input.agent)
     try {
-      const outcome = await this.execute(run.agent, run.message, run.session_id)
+      const outcome = await this.execute(run.agent, run.message, run.session_id, { workflowId: run.workflow_id })
       if (outcome.kind === 'pending') this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
       else await this.finish(run.run_id, { status: 'done', result: outcome.text })
       return outcome
@@ -264,7 +280,7 @@ export class WorkflowRunner {
 
   private async run(run: WorkflowRun): Promise<void> {
     try {
-      const outcome = await this.execute(run.agent, run.message, run.session_id)
+      const outcome = await this.execute(run.agent, run.message, run.session_id, { workflowId: run.workflow_id })
       if (outcome.kind === 'pending') {
         this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
         return
@@ -291,6 +307,19 @@ export class WorkflowRunner {
       return
     }
     await this.finish(run.run_id, { status: 'done', result: outcome.text })
+  }
+
+  /** The run a session belongs to, if it's a workflow run's. */
+  async forSession(sessionId: string): Promise<WorkflowRun | undefined> {
+    if (!sessionId.startsWith(SESSION_PREFIX) && !sessionId.startsWith(SCHEDULE_SESSION_PREFIX)) return undefined
+    return (await getRunStore().list()).find((r) => r.session_id === sessionId)
+  }
+
+  /** Records an approval decided in a run's session. */
+  async recordDecision(sessionId: string, decision: { tool: string; approved: boolean }): Promise<void> {
+    const run = await this.forSession(sessionId)
+    if (!run) return
+    await getRunStore().update(run.run_id, (r) => r && { ...r, decisions: [...(r.decisions ?? []), { ...decision, at: new Date().toISOString() }].slice(-50) })
   }
 
   /** On startup: a run a restart cut off can't continue, so it's an
