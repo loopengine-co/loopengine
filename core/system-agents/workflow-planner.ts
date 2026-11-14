@@ -2,12 +2,13 @@
 // described in plain words, into a plan for a LoopEngine agent. Each step
 // is matched to a real tool (a public or workspace ability's, or the
 // built-in system_ask_user), the points where a person decides become
-// checkpoints (a question, or a tool set to "ask"), the steps in order
-// become a skill, and the trigger a schedule or a webhook (an outside
-// service's events start runs). A workflow always goes into an agent the
-// person picked first: the plan builds on that agent's tools and apps,
-// and names any app or messaging it still needs, for the person to add
-// before it's created.
+// checkpoints (a question, or a tool set to "ask"), the job becomes a
+// skill (a brief: what to get done, its rules, and the business policies
+// and special cases the person fills in, not a script of the steps), and
+// the trigger a schedule or a webhook (an outside service's events start
+// runs). A workflow always goes into an agent the person picked first:
+// the plan builds on that agent's tools and apps, and names any app or
+// messaging it still needs, for the person to add before it's created.
 //
 // Like the interviewer (./interviewer.ts), it only reads (agents,
 // abilities, connections) and records the plan: creating or changing an
@@ -88,7 +89,9 @@ export interface WorkflowPlan {
   keys: string[]
   /** Whether a person must be reachable (a question or an approval). */
   needsApprovals: boolean
-  /** The steps in order, as the agent's instructions. */
+  /** The agent's instructions for the job (a brief: the job, its rules,
+   * and the policies and special cases the person fills in), saved as
+   * its skill. */
   skill: { description: string; body: string }
   /** What the agent receives when the workflow starts. */
   startMessage: string
@@ -176,7 +179,7 @@ LoopEngine agents call tools. Tools come from abilities (installable packages: p
 
 How to plan:
 1. Look before you plan: start from what the agent has and every ability that can be added (both in the request), then ability_details for any ability you might use (its exact tool names and the settings it needs), and list_connections. list_agents shows the other agents, for a connected service one of them has.
-2. Split the workflow into steps, in order. For each step:
+2. Split the work into steps, to find what does each part (the order they usually happen in). For each step:
    - something to fetch or do: kind "tool", with the exact tool name and where it comes from. A step about a named service (Reddit, X, Gmail, Shopify, GitHub...) uses that service's own tools: its ability when the request lists one, else its app from the request's list of apps, even when the agent can already search or scrape the web. They read the service directly, see what web search can't, and give each action its own permission. Web search and scraping are for the open web, or for a service nothing else covers. Pick the source in this order:
      a. A tool the agent already has, its apps' turned-on tools included: use it, nothing to install. A tool one of its apps can turn on (listed in the request) is planned the same way, with "mcp" set to that app's id: Create turns it on.
      b. An ability from the request's lists: an official one or one of the workspace's own. Set "ability" to its install spec (the npm name, or a workspace ability's spec) and use the exact tool name from ability_details.
@@ -186,7 +189,11 @@ How to plan:
    - the agent's own work (writing, summarising, choosing): kind "other".
    - nothing found can do it: set "missing" to what's needed, and add it to gaps.
 3. Rules: every tool the workflow uses gets one. Reading and searching: allow. Anything a person should see first (sending, publishing, paying, creating something others see): ask. Never set deny unless asked.
-4. Skill: the steps in order, as numbered instructions. Each step says what to get done, naming the tool to use. It doesn't say how to call it: no argument values, query strings or field names unless the step goes wrong without them (the filter that picks the right items, the field that keeps a reply in its thread). Leave judgment to the agent: what to look up, how to word things, how to handle an ordinary odd case. Spell out only the hard edges: when to stop and ask, what never to do, and what to do when something is missing or fails. Parameters are not argument values: write $name wherever its value is used. Write it so the agent keeps going after each answer or decision.
+4. Skill: the agent's instructions for this job, written as a brief to a capable colleague, not a script. The agent is a model that reads every run and handles each case on its own judgment, so tell it what the job is and what it must know, not each move. In this order, plain text, no markdown headings, a blank line between parts:
+   - The job, in a few sentences: what comes in, what a good result is, and who it's for or where it goes. Name the tools it uses for each part of the work ("Look up order $order_number with get_order_details, its shipments and refunds"), as what to check or do, not as a sequence. Say what to do when something is missing, fails or doesn't fit.
+   - "Rules:" lines starting "- ": the hard edges only. What must always happen (lookups that must come before a reply, an approval before something is sent) and what must never happen (promising what the data doesn't show, sending instead of drafting). Not ordinary judgment like tone or length: the agent does that well on its own.
+   - For work that needs judgment about the business (answering customers, deciding what to refund, triaging, qualifying leads, writing in the company's name): "Policies (always follow these):" with one or two "- [the business rule, with its real numbers] (edit this)" lines, and "Special cases (check these before acting; when one applies, follow it over the rest):" with one or two "- When [what you would notice]: [what to do]. (edit this)" lines, naming the cases this kind of job really meets. The person fills these in: they are what the agent can't know. Leave both out for mechanical work (exporting, syncing, a scheduled report with nothing to decide).
+   Numbered steps only where the order truly matters and the job is a fixed procedure ("export the orders, then email the file"); even then, keep the rules and the job's purpose. It doesn't say how to call a tool: no argument values, query strings or field names unless the work goes wrong without them (the filter that picks the right items, the field that keeps a reply in its thread). Parameters are not argument values: write $name wherever its value is used. Write it so the agent keeps going after each answer or decision. The plan's steps (above) are for you and the person, to pick tools and checkpoints; the skill doesn't repeat them one by one.
 5. Trigger: how a run starts. startMessage is what the agent receives when it starts.
    - schedule: a time or interval ("every Monday at 9" is every "7d", at "09:00", weekday 1).
    - webhook: when something happens in another service that can call a URL ("when a Stripe dispute comes in", "when a GitHub issue is opened", "when a Shopify order is paid", "when our app sends a new signup"). Fill in "webhook" (below). Prefer it over polling on a schedule whenever the service sends webhooks. The sender gets no result back.
@@ -200,8 +207,8 @@ How to plan:
    - custom: whatever the person's app sends; say in setup what to post (JSON with these fields) and use the paths you described. Set "header" when the person names the signature header.
    Every required parameter should come from the payload through mapping; parameters are the only way event details reach the run.
 6. Notify (scheduled and webhook workflows): whether each run's result is sent to the person through the agent's messaging app. true when the result is for them and no step already delivers it ("tell me", "send me", "let me know", a summary or findings that no step posts or emails). false when a step already sends it (posting to a channel, emailing a report): it would arrive twice. false when the work itself is the outcome (answering emails, filing tasks), where a message every run is noise; questions and approvals reach them either way. Say why in one short sentence.
-7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). A parameter holding long text (an email, a message thread, a log) is different: don't write $name for it anywhere. Each run adds it at the end, in a block under its description, so give it a description that says what it is ("The customer's latest email", "Earlier messages in the thread, oldest first"), and in the steps call it by what it is ("the customer's latest email, at the end"). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
-8. context: rules and facts this workflow needs that the agent's instructions don't already say, read at the top of the workflow on every run: facts the person must fill in, as "[...] (edit this)" ("Our repository on GitHub: [owner/name] (edit this)."), and rules that always hold for this job ("Never refund more than $refund_limit yourself."). Don't repeat the agent's instructions, the steps, the tools or the schedule. Under 10 lines; empty when there's nothing to add.
+7. Parameters: if the job is about something that changes from run to run (an order, a ticket, an alert, a customer, a date range), declare it as a parameter: a short snake_case name, a one-line description, and required when a run makes no sense without it. Write $name wherever its value goes, in startMessage and in the skill ("Check the refund request for order $order_number."). A parameter holding long text (an email, a message thread, a log) is different: don't write $name for it anywhere. Each run adds it at the end, in a block under its description, so give it a description that says what it is ("The customer's latest email", "Earlier messages in the thread, oldest first"), and in the skill call it by what it is ("the customer's latest email, at the end"). Apps and people fill them in when they start a run. A scheduled job that finds its own work ("check the inbox every 10 minutes", "last week's sales") needs none. Don't make fixed settings, such as the repository or the channel, parameters: write them into the skill.
+8. context: leave it empty. Rules and facts the job needs go in the skill: rules under "Rules:", business facts under "Policies", facts the person must fill in as "[...] (edit this)" there too.
 9. fit: whether this job is the kind of work the agent does, judged from its name, description and instructions (not its tools or apps: missing ones get added). matches false only when the job is clearly a different line of work (a customer support agent asked to run payroll); a related or broader job still matches, and so does any job for an agent with no description or instructions yet. reason: one short sentence the person reads, naming what the agent does and what the job is ("Support desk answers customers' questions; this workflow runs payroll."); empty when it matches. Plan the workflow fully either way.
 10. Messaging: questions, approvals and results reach the person through the agent's messaging app when they're not in Chat. You don't set it up; if the agent has none, plan as usual and the person sets it up before Create. If the person names a different app ("send them to me in Slack") than the agent's messaging app, say in gaps that results will arrive in the agent's app, and that they can change it on the agent's Messaging tab.
 11. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Leave out a setting its description calls optional unless the workflow uses what it's for (a setting only for posting, in a workflow that never posts). Not for MCP servers: their keys are asked for on the plan.
@@ -280,7 +287,7 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
             description: 'Values each run is given, by snake_case name; use $name in startMessage and the skill. Leave out when every run is the same.',
             additionalProperties: { type: 'object', properties: { description: { type: 'string' }, required: { type: 'boolean' } } },
           },
-          context: { type: 'string', description: "rules and facts this workflow needs that the agent's instructions don't say; empty when none" },
+          context: { type: 'string', description: 'leave empty: rules and facts go in the skill' },
           fit: { type: 'object', properties: { matches: { type: 'boolean' }, reason: { type: 'string' } }, required: ['matches', 'reason'] },
           gaps: { type: 'array', items: { type: 'string' } },
         },
@@ -524,7 +531,7 @@ export async function planWorkflowWithModel(modelCall: ModelCall, description: s
       const message = err instanceof Error ? err.message : String(err)
       if (retries < 3 && /JSON|Unterminated|Unexpected end/i.test(message)) {
         retries++
-        messages.push({ role: 'user', content: 'Your last reply was cut off before it finished. Call save_plan again, shorter: one line per step, and a skill body under 1500 characters.' })
+        messages.push({ role: 'user', content: 'Your last reply was cut off before it finished. Call save_plan again, shorter: one line per step, and a skill under 1500 characters.' })
         continue
       }
       throw err

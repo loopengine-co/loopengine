@@ -1287,7 +1287,7 @@ ${consoleShellScript}
         '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
       '<label>Description <span class="hint">(one line on what this job is; the agent uses it to recognise the job when you ask in Chat)</span>' +
         '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
-      '<div class="body-field"><div class="wp-instructions-head"><label for="wpInstructions">Instructions <span class="hint">(everything the agent needs for this job: its steps, and the policies, special cases and examples it follows. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span></label>' +
+      '<div class="body-field"><div class="wp-instructions-head"><label for="wpInstructions">Instructions <span class="hint">(everything the agent needs for this job: what to get done, the rules it keeps, and your policies, special cases and examples. It handles each case on its own judgment, so describe the job rather than every step. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span></label>' +
         '<button type="button" class="wp-preview">Preview</button></div>' +
         '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
         '<textarea id="wpInstructions" name="instructions" maxlength="30000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></div>' +
@@ -1329,7 +1329,7 @@ ${consoleShellScript}
     // in the card. Closing it any way (Esc, the backdrop, x, Cancel)
     // discards the edits.
     var dialog = document.createElement('dialog');
-    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (its steps, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
+    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (the job, its rules, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
     dialog = dialog.firstChild;
     dialog.classList.add('workflow-editor-dialog');
     document.body.appendChild(dialog);

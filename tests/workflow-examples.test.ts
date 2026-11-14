@@ -92,10 +92,13 @@ describe('workflow examples', () => {
   })
 
   it('split a plan the way the planner is told to', () => {
-    // The planner writes a workflow's rules and facts the same way: the
-    // standing rules, not the steps.
-    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/context: rules and facts this workflow needs/)
-    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Don't repeat the agent's instructions, the steps, the tools or the schedule/)
+    // The planner writes a brief, not a script: the job, its rules, and
+    // the policies and special cases the person fills in, all in the
+    // skill (context stays empty).
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/written as a brief to a capable colleague, not a script/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/"Rules:" lines/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Numbered steps only where the order truly matters/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/context: leave it empty/)
   })
 
   it('becomes a template with its skills, settings and notes', () => {

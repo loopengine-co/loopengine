@@ -1,10 +1,10 @@
-// The Policies, Special cases and Example buttons, shared by the workflow
-// editor (web/agents-config-page.ts) and the plan review screen
+// The Rules, Policies, Special cases and Example buttons, shared by the
+// workflow editor (web/agents-config-page.ts) and the plan review screen
 // (web/workflow-page.ts): browser code, put into each page's script.
 //
-// They add what isn't a step to a workflow's instructions: rules that
-// always hold, cases that need a different answer, and worked examples.
-// Each starts as a template to fill in, at the end of the instructions
+// They add the parts of a workflow's instructions the agent can't work
+// out for itself: hard limits, the business's rules, cases that need a
+// different answer, and worked examples. Each starts as a template to fill in, at the end of the instructions
 // (a run adds its long inputs after them); once the instructions have the
 // section, a click adds another item to it.
 /** The buttons' look, in the theme's accent, for each page's styles. */
@@ -16,8 +16,9 @@ export const WORKFLOW_SECTIONS_CSS = `
 
 export const WORKFLOW_SECTIONS_SCRIPT = String.raw`
   var WORKFLOW_SECTIONS = {
+    rules: { label: 'Rules', match: 'rules', heading: 'Rules:', item: '- [Something that must always or never happen, e.g. Never send anything, only draft.] (edit this)' },
     policies: { label: 'Policies', match: 'policies', heading: 'Policies (always follow these):', item: '- [A rule with its real numbers, e.g. Orders lost for over 15 days are reshipped, not refunded.] (edit this)' },
-    cases: { label: 'Special cases', match: 'special cases', heading: 'Special cases (check these before acting; when one applies, follow it over the steps):', item: '- When [what you would notice]: [what to do, and what not to do or promise]. (edit this)' },
+    cases: { label: 'Special cases', match: 'special cases', heading: 'Special cases (check these before acting; when one applies, follow it over the rest):', item: '- When [what you would notice]: [what to do, and what not to do or promise]. (edit this)' },
     example: { label: 'Example', match: 'example', heading: 'Examples (follow their judgment and tone, not their exact words):', item: 'Situation: [what came in, and what the lookups showed] (edit this)\nGood result: [what the agent should write or do] (edit this)', gap: true },
   };
 
