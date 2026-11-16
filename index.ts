@@ -377,7 +377,7 @@ export type { AgentTemplateOptions } from './bin/cli.js'
 // playbook, kept current on Cloud by core/playbook-sync.ts: a project's
 // own adapters/http.ts imports these.
 export { goalsPageHtml } from './web/goals-page.js'
-export { GoalError, acceptJob, assignJob, assignmentMessage, goalView, type AssignmentView, checkBuiltWorkflows, createGoal, deleteGoal, editAmount, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeAbout, writeGoalSettings, type Goal, type GoalJob, type GoalJobState, type JobDoer, type GoalWorkflow, type GoalsDeps, type LeverEvent, migrateGoal } from './web/goals-admin.js'
+export { GoalError, acceptJob, assignJob, assignmentMessage, chainedRuns, chainConditionMet, checkChain, editJob, MAX_CHAIN_DEPTH, type ChainStep, goalView, type AssignmentView, checkBuiltWorkflows, createGoal, deleteGoal, editAmount, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeAbout, writeGoalSettings, type Goal, type GoalJob, type GoalJobState, type JobDoer, type GoalWorkflow, type GoalsDeps, type LeverEvent, migrateGoal } from './web/goals-admin.js'
 export { sendLeverEvents, sharesLeverStats, startLeverEventsSync } from './web/lever-events-sync.js'
 export { runGoalPipeline, type GoalPlan, type GoalContext } from './core/system-agents/goal-planner.js'
 export { LEVERS, PLAYBOOK_VERSION, activePlaybook, setPlaybookProjectDir, type Lever } from './core/system-agents/goal-playbooks.js'

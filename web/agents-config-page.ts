@@ -1271,7 +1271,7 @@ ${consoleShellScript}
           : r.status === 'awaiting_approval' ? '<span class="le-pill ask">Waiting for a decision</span>'
           : '<span class="le-pill accent">Running</span>';
         var values = r.params ? Object.keys(r.params).map(function (k) { return '<span><strong>' + escapeHtml(k) + '</strong>: ' + escapeHtml(r.params[k]) + '</span>'; }).join('') : '';
-        var source = r.source === 'console' ? 'Manual run' : r.source === 'api' ? 'App / API' : r.source === 'schedule' ? 'Scheduled' + (r.task_name ? ' · ' + r.task_name : '') : 'Webhook';
+        var source = r.source === 'console' ? 'Manual run' : r.source === 'api' ? 'App / API' : r.source === 'schedule' ? 'Scheduled' + (r.task_name ? ' · ' + r.task_name : '') : r.source === 'chain' ? 'After another workflow, in a goal' + String.fromCharCode(8217) + 's job' : 'Webhook';
         var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
         var formattedOutcome = outcome ? renderMarkdownPreview(outcome) : '';
         return '<li class="workflow-run-entry"><div class="workflow-run-entry-head">' + pill +

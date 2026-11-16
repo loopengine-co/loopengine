@@ -120,7 +120,7 @@ import { workflowPageHtml } from '#web/workflow-page.js'
 import { goalsPageHtml } from '#web/goals-page.js'
 import { setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
 import { startPlaybookSync } from '#core/playbook-sync.js'
-import { GoalError, acceptJob, assignJob, goalView, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
+import { GoalError, acceptJob, assignJob, chainedRuns, editJob, goalView, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
 import { sharesLeverStats, startLeverEventsSync } from '#web/lever-events-sync.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -1026,6 +1026,10 @@ const goalsDeps: GoalsDeps = {
     const run = await workflowRunner.start({ agent, workflow_id: '', source: 'assignment', message, job })
     return { runId: run.run_id }
   },
+  workflowInfo: (agent, workflowId) => {
+    const w = getEntry(agent) ? readWorkflow(agentDir(agent), workflowId) : undefined
+    return w && { title: w.title, parameters: w.parameters }
+  },
   assignmentRun: async (agent, runId) => {
     const run = await getRun(agent, runId)
     return run && { status: run.status, ...(run.result ? { result: run.result } : {}), ...(run.error ? { error: run.error } : {}) }
@@ -1061,11 +1065,13 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
     if (id && sub === 'generate' && req.method === 'POST') return json(200, await view(generateMore(goalsDeps, id, await readJsonBody(req))))
     if (id && jobs && wid && !action && req.method === 'PATCH') {
       const body = await readJsonBody(req)
+      // A recurring job's workflows and chain; else what the person did with it.
+      if (body.action === 'link' || body.action === 'unlink' || body.action === 'chain') return json(200, await view(editJob(goalsDeps, id, wid, body)))
       return json(200, await view(setWorkflowState(goalsDeps, id, wid, body.action, body.reason)))
     }
     if (id && jobs && wid && action === 'assign' && req.method === 'POST') return json(200, await view(await assignJob(goalsDeps, id, wid, await readJsonBody(req))))
     if (id && jobs && wid && action === 'accept' && req.method === 'POST') return json(200, await view(await acceptJob(goalsDeps, id, wid)))
-    if (id && jobs && wid && action === 'build' && req.method === 'POST') return json(200, await prepareBuild(goalsDeps, id, wid))
+    if (id && jobs && wid && action === 'build' && req.method === 'POST') return json(200, await prepareBuild(goalsDeps, id, wid, { another: (await readJsonBody(req)).another === true }))
     if (id && jobs && wid && action === 'built' && req.method === 'POST') return json(200, { goal: markBuilt(goalsDeps, id, wid, await readJsonBody(req)) })
     return json(404, { error: 'not found' })
   } catch (err) {
@@ -2178,9 +2184,33 @@ async function executeUnattendedRun(agent: string, message: string, rawSessionId
 // A run started over the API with "notify" or "callback_url" reports
 // when it ends (and, to its callback, when it stops for a decision): its
 // result through the agent's notifier, and its record to the URL.
+// A job's chain (web/goals-admin.ts): when a workflow run finishes, start
+// the runs its jobs' chains say follow it, each on its own agent with its
+// inputs filled in. One that can't start (a missing input, the same run
+// already under way) is logged and skipped.
+async function startChainedRuns(run: WorkflowRun): Promise<void> {
+  let next: ReturnType<typeof chainedRuns> = []
+  try {
+    next = chainedRuns(goalsDeps, run)
+  } catch (err) {
+    console.error('[loopengine] reading job chains failed:', err)
+    return
+  }
+  for (const c of next) {
+    try {
+      if (!getEntry(c.agent)) throw new Error(`no agent ${c.agent}`)
+      const prepared = await prepareWorkflowRun(c.agent, agentDir(c.agent), c.workflowId, c.params, (w, p) => composeWorkflowMessage(c.agent, w, p))
+      await workflowRunner.start({ agent: c.agent, workflow_id: c.workflowId, params: prepared.params, source: 'chain', message: prepared.message, job: { goal: c.goal, job: c.job }, chained_from: run.run_id, chain_depth: c.depth })
+    } catch (err) {
+      console.error(`[loopengine] chained run ${c.agent}/${c.workflowId} after ${run.agent}/${run.workflow_id} didn't start:`, err instanceof Error ? err.message : err)
+    }
+  }
+}
+
 async function reportWorkflowRun(run: WorkflowRun): Promise<void> {
   const event: RunCallbackEvent | undefined = run.status === 'done' ? 'run.done' : run.status === 'error' ? 'run.failed' : run.status === 'awaiting_approval' ? 'run.awaiting_approval' : undefined
   if (!event) return
+  if (run.status === 'done') void startChainedRuns(run)
   // For a host's run observer (core/run-events.ts); a failed run isn't reported.
   if (run.status !== 'error') reportRun({ agent: run.agent, source: 'workflow', id: run.run_id, via: run.source, usedTool: true })
   const entry = getEntry(run.agent)

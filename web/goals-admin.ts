@@ -15,6 +15,14 @@
 //   done       a once job whose result the person accepted, or marked done
 //   discarded  the person said no; never suggested again unless restored
 //
+// A recurring job can be done by several workflows, on any agents, and
+// say what happens when one finishes: its chain. Each step is "after this
+// workflow's run finishes (and its result says so), run that one", with
+// that one's inputs taken from the result or from the first run's inputs.
+// The server starts the next run itself (adapters/http.ts, when a run
+// ends); each keeps its own agent, permissions, approvals and evidence.
+// A chain can't loop, and stops after MAX_CHAIN_DEPTH runs.
+//
 // An assigned once job keeps every try: each is a run of its agent
 // (core/workflow-runs.ts, source "assignment"), with the person's note
 // when they asked again. Accepting keeps the latest result on the job.
@@ -39,6 +47,23 @@ export type GoalJobState = 'suggested' | 'saved' | 'active' | 'done' | 'discarde
 export type JobDoer =
   | { type: 'workflow'; agent: string; workflowId: string; title: string; at: string }
   | { type: 'assignment'; agent: string; runId: string; at: string; note?: string }
+
+/** A step in a job's chain: after a workflow's run finishes, maybe start
+ * another. */
+export interface ChainStep {
+  id: string
+  after: { agent: string; workflowId: string }
+  /** always; or only when the result contains a text, or has a line that
+   * starts with it (case doesn't matter). */
+  when: { kind: 'always' } | { kind: 'contains' | 'line_starts'; text: string }
+  run: { agent: string; workflowId: string }
+  /** Each input of the next run: "result" (the run it follows ended
+   * with), or "input:<name>" (one of that run's inputs). */
+  with: Record<string, string>
+}
+
+/** Runs a chain may start one after another, after the first. */
+export const MAX_CHAIN_DEPTH = 5
 
 /** An assignment try as the page shows it: its run's state and result. */
 export interface AssignmentView {
@@ -80,6 +105,8 @@ export interface GoalJob {
   doneAt?: string
   /** The accepted result of a once job's assignment. */
   result?: string
+  /** For a recurring job done by several workflows: what runs after what. */
+  chain?: ChainStep[]
   /** How much the person changed the suggested request before building it
    * (edits to the built workflow's instructions later don't count). */
   edited?: EditAmount
@@ -137,6 +164,9 @@ export interface GoalsDeps {
   /** Starts a once job's assignment: one unattended run of the agent with
    * this message; returns its run id. */
   startAssignment?: (agent: string, message: string, job: { goal: string; job: string }) => Promise<{ runId: string }>
+  /** A workflow on an agent, when it exists: its title and inputs (for
+   * linking it to a job and checking a chain). */
+  workflowInfo?: (agent: string, workflowId: string) => { title: string; parameters: Record<string, { required: boolean }> } | undefined
   /** An assignment run's state, for the page. */
   assignmentRun?: (agent: string, runId: string) => Promise<{ status: AssignmentView['status']; result?: string; error?: string } | undefined>
 }
@@ -413,11 +443,12 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
  * workflow, with the request and the agent filled in and the goal to link
  * the result back to; a once job opens Chat with the agent, the request
  * ready to send. */
-export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: string): Promise<{ goal: Goal; agent: string; createdAgent: boolean; url: string }> {
+export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: string, opts: { another?: boolean } = {}): Promise<{ goal: Goal; agent: string; createdAgent: boolean; url: string }> {
   let goal = getGoal(deps, id)
   const w = findWorkflow(goal, workflowId)
-  if (w.state === 'active') throw new GoalError('A workflow already does this job.')
-  if (w.state !== 'saved') throw new GoalError('Save it first.')
+  if (w.state === 'active' && w.kind === 'once') throw new GoalError('This job is assigned already.')
+  if (w.state === 'active' && !opts.another) throw new GoalError('A workflow already does this job: add another workflow to it instead.')
+  if (w.state !== 'saved' && w.state !== 'active') throw new GoalError('Save it first.')
   let createdAgent = false
   if (!deps.agentExists(w.agent.name)) {
     await deps.createAgent(w.agent.name, w.agent.instructions || `You help with: ${w.title}.`)
@@ -425,7 +456,8 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
   }
   if (w.agent.isNew || createdAgent) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, agent: { name: x.agent.name, isNew: false }, ...(createdAgent ? { agentCreated: true } : {}) }))
   if (w.kind === 'once') return { goal, agent: w.agent.name, createdAgent, url: `/playground?${new URLSearchParams({ agent: w.agent.name, message: w.request })}` }
-  const params = new URLSearchParams({ agent: w.agent.name, description: w.request, goal: id, goalJob: workflowId })
+  // Another workflow for an active job starts from a blank description.
+  const params = new URLSearchParams({ agent: w.agent.name, description: opts.another ? '' : w.request, goal: id, goalJob: workflowId })
   return { goal, agent: w.agent.name, createdAgent, url: `/workflows/new?${params}` }
 }
 
@@ -437,9 +469,124 @@ export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input
   if (typeof input.agent !== 'string' || typeof input.workflowId !== 'string') throw new GoalError('agent and workflowId are required')
   const doer: Extract<JobDoer, { type: 'workflow' }> = { type: 'workflow', agent: input.agent, workflowId: input.workflowId, title: typeof input.title === 'string' ? input.title : input.workflowId, at: now() }
   const edited = typeof input.description === 'string' ? editAmount(w.request, input.description) : undefined
-  recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
-  if (edited && edited !== 'none') recordLeverEvent(deps, goal, w, 'edited', { amount: edited })
+  // Another workflow added to an active job isn't a new build of its lever.
+  const first = !w.doers.some((d) => d.type === 'workflow')
+  if (first) recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
+  if (first && edited && edited !== 'none') recordLeverEvent(deps, goal, w, 'edited', { amount: edited })
   return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'active', doers: [...x.doers.filter((d) => !(d.type === 'workflow' && d.agent === doer.agent && d.workflowId === doer.workflowId)), doer], agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}) }))
+}
+
+// ---- A recurring job's workflows and its chain.
+
+type WorkflowRef = { agent: string; workflowId: string }
+const sameRef = (a: WorkflowRef, b: WorkflowRef) => a.agent === b.agent && a.workflowId === b.workflowId
+const refText = (r: WorkflowRef) => `${r.agent}/${r.workflowId}`
+
+function refFrom(raw: unknown, what: string): WorkflowRef {
+  const r = (raw ?? {}) as Record<string, unknown>
+  if (typeof r.agent !== 'string' || !r.agent || typeof r.workflowId !== 'string' || !r.workflowId) throw new GoalError(`${what} needs an agent and a workflowId`)
+  return { agent: r.agent, workflowId: r.workflowId }
+}
+
+/** Checks a chain against the job's workflows: each step joins two of
+ * them, its condition and inputs make sense, every required input of the
+ * next run is filled, and nothing loops. Returns it tidied, with ids. */
+export function checkChain(deps: GoalsDeps, job: GoalJob, raw: unknown): ChainStep[] {
+  if (!Array.isArray(raw)) throw new GoalError('chain must be a list of steps')
+  if (raw.length > 10) throw new GoalError('A job keeps at most 10 steps.')
+  const flows = job.doers.filter((d): d is Extract<JobDoer, { type: 'workflow' }> => d.type === 'workflow')
+  const doing = (r: WorkflowRef) => flows.some((d) => sameRef(d, r))
+  const steps = raw.map((item, i): ChainStep => {
+    const x = (item ?? {}) as Record<string, unknown>
+    const n = `Step ${i + 1}`
+    const after = refFrom(x.after, `${n}: "after"`)
+    const run = refFrom(x.run, `${n}: "run"`)
+    if (!doing(after) || !doing(run)) throw new GoalError(`${n}: both workflows must do this job (add them to it first).`)
+    if (sameRef(after, run)) throw new GoalError(`${n}: a workflow can't follow itself.`)
+    const w = (x.when ?? { kind: 'always' }) as Record<string, unknown>
+    const when: ChainStep['when'] = w.kind === 'always' ? { kind: 'always' }
+      : (w.kind === 'contains' || w.kind === 'line_starts') && typeof w.text === 'string' && w.text.trim() ? { kind: w.kind, text: w.text.trim().slice(0, 200) }
+      : (() => { throw new GoalError(`${n}: "when" is always, contains or line_starts with a text.`) })()
+    const target = deps.workflowInfo?.(run.agent, run.workflowId)
+    if (!target) throw new GoalError(`${n}: ${refText(run)} isn't a workflow (any more).`)
+    const source = deps.workflowInfo?.(after.agent, after.workflowId)
+    if (!source) throw new GoalError(`${n}: ${refText(after)} isn't a workflow (any more).`)
+    const withRaw = x.with && typeof x.with === 'object' && !Array.isArray(x.with) ? (x.with as Record<string, unknown>) : {}
+    const mapping: Record<string, string> = {}
+    for (const [param, from] of Object.entries(withRaw)) {
+      if (typeof from !== 'string' || !from) continue
+      if (!target.parameters[param]) throw new GoalError(`${n}: ${target.title} has no input "${param}".`)
+      if (from !== 'result' && !(from.startsWith('input:') && source.parameters[from.slice(6)])) throw new GoalError(`${n}: "${param}" comes from "result" or "input:<one of ${source.title}'s inputs>".`)
+      mapping[param] = from
+    }
+    const missing = Object.entries(target.parameters).filter(([p, spec]) => spec.required && !mapping[p]).map(([p]) => p)
+    if (missing.length) throw new GoalError(`${n}: say where ${target.title}'s ${missing.join(', ')} come${missing.length > 1 ? '' : 's'} from.`)
+    return { id: typeof x.id === 'string' && /^c-[a-z0-9-]+$/.test(x.id) ? x.id : newId('c'), after, when, run, with: mapping }
+  })
+  // No loops: follow every step from each workflow.
+  const next = (r: WorkflowRef) => steps.filter((st) => sameRef(st.after, r)).map((st) => st.run)
+  const visit = (r: WorkflowRef, path: string[]): void => {
+    if (path.includes(refText(r))) throw new GoalError(`The chain loops: ${[...path, refText(r)].join(' → ')}.`)
+    for (const n of next(r)) visit(n, [...path, refText(r)])
+  }
+  for (const st of steps) visit(st.after, [])
+  return steps
+}
+
+/** Adds a workflow (already on its agent) to a recurring job, removes one
+ * (and its chain steps), or saves the job's chain. */
+export function editJob(deps: GoalsDeps, id: string, jobId: string, body: { action?: unknown; agent?: unknown; workflowId?: unknown; chain?: unknown }): Goal {
+  const goal = getGoal(deps, id)
+  const job = findWorkflow(goal, jobId)
+  if (job.kind === 'once') throw new GoalError('A one-off job is assigned, not done by workflows.')
+  if (body.action === 'link') {
+    const ref = refFrom(body, 'Adding a workflow')
+    const info = deps.workflowInfo?.(ref.agent, ref.workflowId)
+    if (!info) throw new GoalError(`${ref.agent} has no workflow ${ref.workflowId}.`)
+    if (job.state !== 'saved' && job.state !== 'active') throw new GoalError('Save it first.')
+    if (job.doers.some((d) => d.type === 'workflow' && sameRef(d, ref))) return goal
+    if (job.state === 'saved') recordLeverEvent(deps, goal, job, 'built', { newAgent: false })
+    return updateWorkflow(deps, goal, jobId, (x) => ({ ...x, state: 'active', doers: [...x.doers, { type: 'workflow', ...ref, title: info.title, at: now() }] }))
+  }
+  if (body.action === 'unlink') {
+    const ref = refFrom(body, 'Removing a workflow')
+    return updateWorkflow(deps, goal, jobId, (x) => {
+      const doers = x.doers.filter((d) => !(d.type === 'workflow' && sameRef(d, ref)))
+      const chain = (x.chain ?? []).filter((st) => !sameRef(st.after, ref) && !sameRef(st.run, ref))
+      return { ...x, doers, ...(chain.length ? { chain } : { chain: undefined }), state: doers.length ? x.state : 'saved' }
+    })
+  }
+  if (body.action === 'chain') {
+    const chain = checkChain(deps, job, body.chain)
+    return updateWorkflow(deps, goal, jobId, (x) => ({ ...x, chain: chain.length ? chain : undefined }))
+  }
+  throw new GoalError('action must be link, unlink or chain')
+}
+
+/** Whether a finished run's result meets a step's condition. */
+export function chainConditionMet(when: ChainStep['when'], result: string): boolean {
+  if (when.kind === 'always') return true
+  const text = when.text.toLowerCase()
+  if (when.kind === 'contains') return result.toLowerCase().includes(text)
+  return result.split('\n').some((line) => line.trim().toLowerCase().startsWith(text))
+}
+
+/** The runs to start after a workflow run finished: every step, in any
+ * active job's chain, that follows its workflow and whose condition its
+ * result meets, with the next run's inputs filled in. None past
+ * MAX_CHAIN_DEPTH. */
+export function chainedRuns(deps: GoalsDeps, run: { run_id: string; agent: string; workflow_id: string; status: string; result?: string; params?: Record<string, string>; chain_depth?: number }): { goal: string; job: string; step: string; agent: string; workflowId: string; params: Record<string, string>; depth: number }[] {
+  if (run.status !== 'done' || !run.workflow_id) return []
+  const depth = (run.chain_depth ?? 0) + 1
+  if (depth > MAX_CHAIN_DEPTH) return []
+  const from = { agent: run.agent, workflowId: run.workflow_id }
+  const result = run.result ?? ''
+  return listGoals(deps).flatMap((goal) => goal.jobs.flatMap((job) => job.state !== 'active' || !job.chain ? [] : job.chain
+    .filter((st) => sameRef(st.after, from) && chainConditionMet(st.when, result))
+    .map((st) => ({
+      goal: goal.id, job: job.id, step: st.id, agent: st.run.agent, workflowId: st.run.workflowId, depth,
+      params: Object.fromEntries(Object.entries(st.with).map(([param, src]) => [param, src === 'result' ? result : run.params?.[src.slice(6)] ?? ''])),
+    }))))
 }
 
 // ---- A once job assigned to its agent: one unattended run with the goal

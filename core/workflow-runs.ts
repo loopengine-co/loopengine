@@ -28,11 +28,16 @@ export interface WorkflowRun {
   workflow_id: string
   params?: Record<string, string>
   /** Who started it: the console's Run now, an app over the API, a
-   * schedule, an outside service through a webhook trigger, or a goal's
-   * one-off job assigned to the agent (workflow_id is then empty). */
-  source: 'console' | 'api' | 'schedule' | 'webhook' | 'assignment'
-  /** For an assignment: the goal and the job it's for. */
+   * schedule, an outside service through a webhook trigger, a goal's
+   * one-off job assigned to the agent (workflow_id is then empty), or
+   * another run it follows in a job's chain. */
+  source: 'console' | 'api' | 'schedule' | 'webhook' | 'assignment' | 'chain'
+  /** For an assignment or a chained run: the goal and the job it's for. */
   job?: { goal: string; job: string }
+  /** For a chained run: the run it follows, and how many runs came before
+   * it in the chain (1 for the step after the first run). */
+  chained_from?: string
+  chain_depth?: number
   /** The webhook trigger that started it, for source "webhook"
    * (core/workflow-triggers.ts). */
   trigger_id?: string
@@ -194,6 +199,8 @@ export interface StartRunInput {
   callback_url?: string
   trigger_id?: string
   job?: { goal: string; job: string }
+  chained_from?: string
+  chain_depth?: number
 }
 
 export class WorkflowRunner {
@@ -230,6 +237,7 @@ export class WorkflowRunner {
       ...(input.callback_url ? { callback_url: input.callback_url } : {}),
       ...(input.trigger_id ? { trigger_id: input.trigger_id } : {}),
       ...(input.job ? { job: input.job } : {}),
+      ...(input.chained_from ? { chained_from: input.chained_from, chain_depth: input.chain_depth ?? 1 } : {}),
       status: 'running',
       started_at: new Date().toISOString(),
       message: input.message,

@@ -67,7 +67,15 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-how-agent { font-size: 12.5px; color: var(--ink-muted); }
   .gl-how-agent strong { color: var(--ink); font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
   .gl-how-meta { grid-column: 1; font-size: 12.5px; color: var(--ink-muted); }
-  .gl-how-open { grid-column: 2; grid-row: 1 / span 2; font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+  .gl-how-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 10px; align-items: center; }
+  .gl-how-open { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+  .gl-chain { display: grid; gap: 4px; }
+  .gl-step { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; justify-content: space-between; font-size: 13px; padding: 6px 10px; border-left: 2px solid var(--accent); background: var(--surface); border-radius: 0 6px 6px 0; }
+  .gl-panel { display: grid; gap: 8px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+  .gl-panel[hidden] { display: none; }
+  .gl-input { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .gl-input[hidden] { display: none; }
+  .gl-step-inputs { display: grid; gap: 6px; }
   .gl-how-open:hover { text-decoration: underline; }
   .gl-waiting { color: var(--warn); font-weight: 600; }
   [data-attn][hidden] { display: none; }
@@ -129,7 +137,7 @@ ${consoleShellScript}
   // Which view: the list (/goals), a new goal (?new=1, or the front page)
   // or one goal (?goal=).
   var startNew = location.pathname === '/' || new URLSearchParams(location.search).has('new');
-  var state = { goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
+  var state = { flows: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -303,12 +311,31 @@ ${consoleShellScript}
   // tools, runs) is on the workflow itself: Open.
   function howHtml(w) {
     var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
+    var titleOf = function (r) { var d = flows.filter(function (x) { return x.agent === r.agent && x.workflowId === r.workflowId; })[0]; return d ? d.title : r.workflowId; };
+    var whenText = function (wh) { return wh.kind === 'always' ? '' : wh.kind === 'contains' ? ', when its result contains ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221) : ', when its result has a line starting ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221); };
+    var chain = (w.chain || []).map(function (st) {
+      var inputs = Object.keys(st.with || {}).map(function (p) { var src = st.with[p]; return esc(p) + ' ' + String.fromCharCode(8592) + ' ' + (src === 'result' ? 'its result' : 'its ' + esc(src.slice(6))); }).join(', ');
+      return '<div class="gl-step" data-step="' + esc(st.id) + '"><span>After <strong>' + esc(titleOf(st.after)) + '</strong>' + whenText(st.when) + ', run <strong>' + esc(titleOf(st.run)) + '</strong>' + (inputs ? ' <span class="hint">(' + inputs + ')</span>' : '') + '</span><button type="button" class="gl-link" data-chain-remove="' + esc(st.id) + '">Remove</button></div>';
+    }).join('');
     return '<div class="gl-how"><div class="gl-how-head">How it' + String.fromCharCode(8217) + 's done</div>' + flows.map(function (d) {
       return '<div class="gl-how-row" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' +
         '<div class="gl-how-main"><span class="gl-how-wf">' + esc(d.title) + '</span><span class="gl-how-agent">on <strong>' + esc(d.agent) + '</strong></span></div>' +
         '<span class="gl-how-meta" data-how-meta>' + ELLIPSIS + '</span>' +
-        '<a class="gl-how-open" href="/agents/config?agent=' + encodeURIComponent(d.agent) + '&tab=workflows&workflow=' + encodeURIComponent(d.workflowId) + '">Open</a></div>';
-    }).join('') + '</div>';
+        '<span class="gl-how-actions"><a class="gl-how-open" href="/agents/config?agent=' + encodeURIComponent(d.agent) + '&tab=workflows&workflow=' + encodeURIComponent(d.workflowId) + '">Open</a>' +
+        (flows.length > 1 ? '<button type="button" class="gl-link gl-unlink" data-unlink="' + esc(d.agent) + '|' + esc(d.workflowId) + '">Remove</button>' : '') + '</span></div>';
+    }).join('') +
+    (chain ? '<div class="gl-chain"><div class="gl-how-head">Then</div>' + chain + '</div>' : '') +
+    '<div class="gl-row"><button type="button" class="gl-btn plain" data-act="addwf">Add a workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-btn plain" data-act="addstep">Add a step</button>' : '') + '</div>' +
+    '<div class="gl-panel" data-panel="addwf" hidden><label class="hint" for="addwf-' + esc(w.id) + '">A workflow already on one of your agents</label>' +
+      '<div class="gl-row"><select class="gl-select" id="addwf-' + esc(w.id) + '" data-pick-workflow><option value="">Loading' + ELLIPSIS + '</option></select><button type="button" class="gl-btn soft" data-act="link">Add it</button></div>' +
+      '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for this job</button></div></div>' +
+    '<div class="gl-panel" data-panel="addstep" hidden>' +
+      '<div class="gl-row"><span class="hint">After</span><select class="gl-select" data-step-after>' + flows.map(function (d) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' + esc(d.title) + '</option>'; }).join('') + '</select>' +
+        '<span class="hint">finishes</span><select class="gl-select" data-step-when><option value="always">every time</option><option value="contains">when its result contains</option><option value="line_starts">when its result has a line starting</option></select><input class="gl-input" data-step-text placeholder="e.g. Lead:" hidden></div>' +
+      '<div class="gl-row"><span class="hint">run</span><select class="gl-select" data-step-run>' + flows.map(function (d, i) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '"' + (i === 1 ? ' selected' : '') + '>' + esc(d.title) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="gl-step-inputs" data-step-inputs></div>' +
+      '<div class="gl-row"><button type="button" class="gl-btn soft" data-act="savestep">Save the step</button></div></div>' +
+    '</div>';
   }
 
   function startsText(w) {
@@ -329,6 +356,7 @@ ${consoleShellScript}
         if (!r.ok) return;
         var byId = {};
         (r.body.workflows || []).forEach(function (w) { byId[w.id] = w; });
+        state.flows[agent] = r.body.workflows || [];
         var mine = page.querySelectorAll('[data-how]');
         for (var j = 0; j < mine.length; j++) {
           var parts = mine[j].getAttribute('data-how').split('|');
@@ -479,13 +507,114 @@ ${consoleShellScript}
     });
   }
 
+  // Every workflow on every agent, for adding one to a job.
+  function loadWorkflowChoices(card) {
+    var select = card.querySelector('[data-pick-workflow]');
+    api('GET', '/agents').then(function (r) {
+      var names = r.ok ? (r.body.agents || []).map(function (a) { return a.name; }) : [];
+      return Promise.all(names.map(function (n) { return api('GET', '/agents/' + encodeURIComponent(n) + '/workflows').then(function (x) { if (x.ok) state.flows[n] = x.body.workflows || []; return { agent: n, flows: x.ok ? x.body.workflows || [] : [] }; }); }));
+    }).then(function (all) {
+      var have = {};
+      var rows = card.querySelectorAll('[data-how]');
+      for (var i = 0; i < rows.length; i++) have[rows[i].getAttribute('data-how')] = true;
+      var options = [];
+      all.forEach(function (a) { a.flows.forEach(function (w) { if (!have[a.agent + '|' + w.id]) options.push('<option value="' + esc(a.agent) + '|' + esc(w.id) + '">' + esc(w.title) + ' (' + esc(a.agent) + ')</option>'); }); });
+      select.innerHTML = options.length ? '<option value="">Choose a workflow</option>' + options.join('') : '<option value="">No other workflows yet: build a new one</option>';
+    });
+  }
+
+  // The next run's inputs: each from the result, or one of the first run's
+  // inputs (shown when the step's "run" changes).
+  function stepInputs(card) {
+    var box = card.querySelector('[data-step-inputs]');
+    var flow = function (v) { var p = v.split('|'); return (state.flows[p[0]] || []).filter(function (w) { return w.id === p[1]; })[0]; };
+    var target = flow(card.querySelector('[data-step-run]').value);
+    var source = flow(card.querySelector('[data-step-after]').value);
+    var text = card.querySelector('[data-step-text]');
+    text.hidden = card.querySelector('[data-step-when]').value === 'always';
+    if (!target) { box.innerHTML = '<p class="hint" style="margin:0">Loading its inputs' + ELLIPSIS + '</p>'; return; }
+    var params = Object.keys(target.parameters || {});
+    if (!params.length) { box.innerHTML = '<p class="hint" style="margin:0">' + esc(target.title) + ' takes no inputs.</p>'; return; }
+    var choices = function (p) {
+      var srcParams = source ? Object.keys(source.parameters || {}) : [];
+      return '<option value=""' + (target.parameters[p].required ? ' disabled' : '') + '>(leave empty)</option><option value="result"' + (target.parameters[p].required ? ' selected' : '') + '>the result of the run before</option>' +
+        srcParams.map(function (sp) { return '<option value="input:' + esc(sp) + '"' + (sp === p && !target.parameters[p].required ? ' selected' : '') + '>its input ' + esc(sp) + '</option>'; }).join('');
+    };
+    box.innerHTML = params.map(function (p) { return '<div class="gl-row"><span class="hint"><code>' + esc(p) + '</code>' + (target.parameters[p].required ? '' : ' (optional)') + ' from</span><select class="gl-select" data-input="' + esc(p) + '">' + choices(p) + '</select></div>'; }).join('');
+  }
+
   function wireCard(card, base) {
     var id = card.getAttribute('data-wf');
     var status = card.querySelector('[data-wf-status]');
+    // A job's chain: change the step being written, remove a step or a workflow.
+    ['[data-step-run]', '[data-step-after]', '[data-step-when]'].forEach(function (sel) {
+      var el = card.querySelector(sel);
+      if (el) el.addEventListener('change', function () { stepInputs(card); });
+    });
+    var patch = function (body, btn) {
+      btn.disabled = true;
+      api('PATCH', base + '/jobs/' + encodeURIComponent(id), body).then(function (r) {
+        if (!r.ok) { status.textContent = r.body.error || 'Could not do that.'; btn.disabled = false; return; }
+        replaceGoal(r.body.goal);
+        render();
+      });
+    };
+    var removes = card.querySelectorAll('[data-chain-remove]');
+    for (var cr = 0; cr < removes.length; cr++) removes[cr].addEventListener('click', function (ev) {
+      var stepId = ev.currentTarget.getAttribute('data-chain-remove');
+      var job = (state.current.jobs || []).filter(function (j) { return j.id === id; })[0];
+      patch({ action: 'chain', chain: (job.chain || []).filter(function (st) { return st.id !== stepId; }) }, ev.currentTarget);
+    });
+    var unlinks = card.querySelectorAll('[data-unlink]');
+    for (var ul = 0; ul < unlinks.length; ul++) unlinks[ul].addEventListener('click', function (ev) {
+      var b = ev.currentTarget;
+      if (b.dataset.confirming !== '1') { b.dataset.confirming = '1'; b.textContent = 'Click again to remove it from this job (it stays on its agent)'; return; }
+      var parts = b.getAttribute('data-unlink').split('|');
+      patch({ action: 'unlink', agent: parts[0], workflowId: parts[1] }, b);
+    });
     var buttons = card.querySelectorAll('[data-act]');
     for (var b = 0; b < buttons.length; b++) buttons[b].addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
       var act = btn.getAttribute('data-act');
+      if (act === 'addwf' || act === 'addstep') {
+        var panel = card.querySelector('[data-panel="' + act + '"]');
+        panel.hidden = !panel.hidden;
+        if (!panel.hidden && act === 'addwf') loadWorkflowChoices(card);
+        if (!panel.hidden && act === 'addstep') stepInputs(card);
+        return;
+      }
+      if (act === 'link' || act === 'savestep') {
+        var job = (state.current.jobs || []).filter(function (j) { return j.id === id; })[0];
+        var body;
+        if (act === 'link') {
+          var pick = card.querySelector('[data-pick-workflow]').value;
+          if (!pick) { status.textContent = 'Choose a workflow first.'; return; }
+          body = { action: 'link', agent: pick.split('|')[0], workflowId: pick.split('|')[1] };
+        } else {
+          var ref = function (v) { return { agent: v.split('|')[0], workflowId: v.split('|')[1] }; };
+          var kind = card.querySelector('[data-step-when]').value;
+          var mapping = {};
+          var picks = card.querySelectorAll('[data-input]');
+          for (var m = 0; m < picks.length; m++) if (picks[m].value) mapping[picks[m].getAttribute('data-input')] = picks[m].value;
+          var step = { after: ref(card.querySelector('[data-step-after]').value), when: kind === 'always' ? { kind: 'always' } : { kind: kind, text: card.querySelector('[data-step-text]').value }, run: ref(card.querySelector('[data-step-run]').value), with: mapping };
+          body = { action: 'chain', chain: (job.chain || []).concat([step]) };
+        }
+        btn.disabled = true;
+        api('PATCH', base + '/jobs/' + encodeURIComponent(id), body).then(function (r) {
+          if (!r.ok) { status.textContent = r.body.error || 'Could not do that.'; btn.disabled = false; return; }
+          replaceGoal(r.body.goal);
+          render();
+        });
+        return;
+      }
+      if (act === 'another') {
+        status.textContent = 'Getting the agent ready' + ELLIPSIS;
+        api('POST', base + '/jobs/' + encodeURIComponent(id) + '/build', { another: true }).then(function (r) {
+          if (!r.ok) { status.textContent = r.body.error || 'Could not build it.'; return; }
+          location.href = r.body.url;
+        });
+        return;
+      }
       if (act === 'again') {
         var box = card.querySelector('.gl-again');
         if (box) { box.hidden = false; box.querySelector('textarea').focus(); }

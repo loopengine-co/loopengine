@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  acceptJob, assignJob, checkBuiltWorkflows, createGoal, editAmount, goalView, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
+  acceptJob, assignJob, chainConditionMet, chainedRuns, checkBuiltWorkflows, createGoal, editAmount, editJob, goalView, MAX_CHAIN_DEPTH, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
   type GoalsDeps,
 } from '#web/goals-admin.js'
 
@@ -356,5 +356,70 @@ describe('a one-off job assigned to its agent', () => {
     await assignJob(deps, id, once!.id)
     expect(created.map((c) => c.name)).toEqual(['listings-agent'])
     await expect(assignJob(deps, id, recurring!.id)).rejects.toThrow(/Only a one-off job/)
+  })
+})
+
+describe("a recurring job's workflows and chain", () => {
+  const FLOWS: Record<string, { title: string; parameters: Record<string, { required: boolean }> }> = {
+    'growth-agent/lead-scan': { title: 'Lead scan', parameters: { week: { required: false } } },
+    'sales-agent/outreach-draft': { title: 'Outreach draft', parameters: { lead: { required: true }, week: { required: false } } },
+    'sales-agent/follow-up': { title: 'Follow-up', parameters: { lead: { required: true } } },
+  }
+  async function activeJob() {
+    const s = setup([[wf('Reach leads')]], ['growth-agent', 'sales-agent'])
+    s.deps.workflowInfo = (agent, workflowId) => FLOWS[`${agent}/${workflowId}`]
+    const { id } = createGoal(s.deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    const job = getGoal(s.deps, id).jobs[0]!
+    setWorkflowState(s.deps, id, job.id, 'save')
+    markBuilt(s.deps, id, job.id, { agent: 'growth-agent', workflowId: 'lead-scan', title: 'Lead scan' })
+    return { ...s, id, jobId: job.id }
+  }
+  const lead = { after: { agent: 'growth-agent', workflowId: 'lead-scan' }, when: { kind: 'line_starts', text: 'Lead:' }, run: { agent: 'sales-agent', workflowId: 'outreach-draft' }, with: { lead: 'result', week: 'input:week' } }
+
+  it('adds workflows on other agents to the job, and builds another one', async () => {
+    const { deps, id, jobId } = await activeJob()
+    const goal = editJob(deps, id, jobId, { action: 'link', agent: 'sales-agent', workflowId: 'outreach-draft' })
+    expect(goal.jobs[0]!.doers.map((d) => d.type === 'workflow' && d.workflowId)).toEqual(['lead-scan', 'outreach-draft'])
+    expect(() => editJob(deps, id, jobId, { action: 'link', agent: 'sales-agent', workflowId: 'nope' })).toThrow(/has no workflow/)
+    await expect(prepareBuild(deps, id, jobId)).rejects.toThrow(/add another workflow/)
+    expect((await prepareBuild(deps, id, jobId, { another: true })).url).toContain('description=&')
+    expect(readLeverEvents(deps).filter((e) => e.type === 'built')).toHaveLength(1)
+  })
+
+  it('checks a chain: both workflows on the job, required inputs filled, no loops', async () => {
+    const { deps, id, jobId } = await activeJob()
+    expect(() => editJob(deps, id, jobId, { action: 'chain', chain: [lead] })).toThrow(/must do this job/)
+    editJob(deps, id, jobId, { action: 'link', agent: 'sales-agent', workflowId: 'outreach-draft' })
+    expect(() => editJob(deps, id, jobId, { action: 'chain', chain: [{ ...lead, with: {} }] })).toThrow(/Outreach draft's lead comes from/)
+    expect(() => editJob(deps, id, jobId, { action: 'chain', chain: [{ ...lead, with: { lead: 'input:nope' } }] })).toThrow(/comes from "result"/)
+    const back = { after: lead.run, when: { kind: 'always' }, run: lead.after, with: {} }
+    expect(() => editJob(deps, id, jobId, { action: 'chain', chain: [lead, back] })).toThrow(/loops/)
+    const goal = editJob(deps, id, jobId, { action: 'chain', chain: [lead] })
+    expect(goal.jobs[0]!.chain).toMatchObject([{ id: expect.stringMatching(/^c-/), when: { kind: 'line_starts', text: 'Lead:' }, with: { lead: 'result', week: 'input:week' } }])
+  })
+
+  it('says what runs next when a run finishes: only when its result meets the step, inputs filled, not too deep', async () => {
+    const { deps, id, jobId } = await activeJob()
+    editJob(deps, id, jobId, { action: 'link', agent: 'sales-agent', workflowId: 'outreach-draft' })
+    editJob(deps, id, jobId, { action: 'chain', chain: [lead] })
+    const run = { run_id: 'r1', agent: 'growth-agent', workflow_id: 'lead-scan', status: 'done', params: { week: '46' } }
+    expect(chainedRuns(deps, { ...run, result: 'Nothing new this week.' })).toEqual([])
+    expect(chainedRuns(deps, { ...run, result: 'Found one.\nLead: Ann at Acme' })).toEqual([
+      { goal: id, job: jobId, step: expect.any(String), agent: 'sales-agent', workflowId: 'outreach-draft', params: { lead: 'Found one.\nLead: Ann at Acme', week: '46' }, depth: 1 },
+    ])
+    expect(chainedRuns(deps, { ...run, status: 'error', result: 'Lead: x' })).toEqual([])
+    expect(chainedRuns(deps, { ...run, result: 'Lead: x', chain_depth: MAX_CHAIN_DEPTH })).toEqual([])
+    expect(chainConditionMet({ kind: 'contains', text: 'URGENT' }, 'this is urgent')).toBe(true)
+  })
+
+  it('removes a workflow and its steps; with none left the job is saved again', async () => {
+    const { deps, id, jobId } = await activeJob()
+    editJob(deps, id, jobId, { action: 'link', agent: 'sales-agent', workflowId: 'outreach-draft' })
+    editJob(deps, id, jobId, { action: 'chain', chain: [lead] })
+    let goal = editJob(deps, id, jobId, { action: 'unlink', agent: 'sales-agent', workflowId: 'outreach-draft' })
+    expect(goal.jobs[0]!.chain).toBeUndefined()
+    goal = editJob(deps, id, jobId, { action: 'unlink', agent: 'growth-agent', workflowId: 'lead-scan' })
+    expect(goal.jobs[0]).toMatchObject({ state: 'saved', doers: [] })
   })
 })
