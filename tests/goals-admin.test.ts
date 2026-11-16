@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  checkBuiltWorkflows, createGoal, editAmount, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
+  acceptJob, assignJob, checkBuiltWorkflows, createGoal, editAmount, goalView, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
   type GoalsDeps,
 } from '#web/goals-admin.js'
 
@@ -298,5 +298,63 @@ describe('jobs under a goal', () => {
     })
     expect(goal.jobs.map((j) => [j.id, j.kind, j.state, j.doers.map((d) => d.workflowId)])).toEqual([['w-1', 'recurring', 'active', ['answer-posts']], ['w-2', 'recurring', 'saved', []]])
     expect((goal as unknown as Record<string, unknown>).workflows).toBeUndefined()
+  })
+})
+
+describe('a one-off job assigned to its agent', () => {
+  function withRuns(plans: Record<string, unknown>[][], agents?: string[]) {
+    const s = setup(plans, agents)
+    const runs = new Map<string, { status: 'running' | 'awaiting_approval' | 'done' | 'error'; result?: string; message: string }>()
+    s.deps.startAssignment = async (_agent, message) => {
+      const runId = `r-${runs.size + 1}`
+      runs.set(runId, { status: 'running', message })
+      return { runId }
+    }
+    s.deps.assignmentRun = async (_agent, runId) => runs.get(runId)
+    return { ...s, runs }
+  }
+
+  it('assigns it, keeps each try, sends it back with a note and the previous result, and accepts the latest', async () => {
+    const { deps, runs } = withRuns([[wf('List in directories', { kind: 'once', measure: 'done when: listed in 15 directories' })]])
+    const { id } = createGoal(deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    const [job] = getGoal(deps, id).jobs
+    await expect(assignJob(deps, id, job!.id)).rejects.toThrow(/Save it first/)
+    setWorkflowState(deps, id, job!.id, 'save')
+
+    let goal = await assignJob(deps, id, job!.id)
+    expect(goal.jobs[0]).toMatchObject({ state: 'active', doers: [{ type: 'assignment', agent: 'growth-agent', runId: 'r-1' }] })
+    expect(runs.get('r-1')!.message).toContain('This is a one-off job for the goal "Grow signups to 100".')
+    expect(runs.get('r-1')!.message).toContain('Done when: listed in 15 directories')
+    await expect(assignJob(deps, id, job!.id, { note: 'more' })).rejects.toThrow(/still going/)
+    await expect(acceptJob(deps, id, job!.id)).rejects.toThrow(/finished/)
+
+    runs.set('r-1', { ...runs.get('r-1')!, status: 'done', result: '1. Product Hunt\n2. BetaList' })
+    goal = await assignJob(deps, id, job!.id, { note: 'Add 5 more, skip paid ones.' })
+    const again = runs.get('r-2')!.message
+    expect(again).toContain('<previous_result>\n1. Product Hunt\n2. BetaList\n</previous_result>')
+    expect(again).toContain('Add 5 more, skip paid ones.')
+
+    runs.set('r-2', { ...runs.get('r-2')!, status: 'done', result: '7 directories' })
+    const view = await goalView(deps, getGoal(deps, id))
+    expect(view.jobs[0]!.tries!.map((t) => [t.runId, t.status, t.note ?? ''])).toEqual([['r-1', 'done', ''], ['r-2', 'done', 'Add 5 more, skip paid ones.']])
+
+    goal = await acceptJob(deps, id, job!.id)
+    expect(goal.jobs[0]).toMatchObject({ state: 'done', result: '7 directories', doneAt: expect.any(String) })
+    expect(readLeverEvents(deps).map((e) => [e.type, e.detail])).toEqual([
+      ['suggested', { position: 1, round: 1 }], ['saved', {}], ['built', { newAgent: false }], ['done', { tries: 2 }],
+    ])
+  })
+
+  it('makes its suggested agent first when there is none, and refuses a recurring job', async () => {
+    const { deps, created } = withRuns([[wf('List in directories', { kind: 'once', agent: 'listings-agent', newAgent: { name: 'listings-agent', instructions: 'Finds directories.' } }), wf('Answer posts')]], [])
+    const { id } = createGoal(deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    const [once, recurring] = getGoal(deps, id).jobs
+    setWorkflowState(deps, id, once!.id, 'save')
+    setWorkflowState(deps, id, recurring!.id, 'save')
+    await assignJob(deps, id, once!.id)
+    expect(created.map((c) => c.name)).toEqual(['listings-agent'])
+    await expect(assignJob(deps, id, recurring!.id)).rejects.toThrow(/Only a one-off job/)
   })
 })

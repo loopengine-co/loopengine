@@ -28,8 +28,11 @@ export interface WorkflowRun {
   workflow_id: string
   params?: Record<string, string>
   /** Who started it: the console's Run now, an app over the API, a
-   * schedule, or an outside service through a webhook trigger. */
-  source: 'console' | 'api' | 'schedule' | 'webhook'
+   * schedule, an outside service through a webhook trigger, or a goal's
+   * one-off job assigned to the agent (workflow_id is then empty). */
+  source: 'console' | 'api' | 'schedule' | 'webhook' | 'assignment'
+  /** For an assignment: the goal and the job it's for. */
+  job?: { goal: string; job: string }
   /** The webhook trigger that started it, for source "webhook"
    * (core/workflow-triggers.ts). */
   trigger_id?: string
@@ -190,6 +193,7 @@ export interface StartRunInput {
   notify?: boolean
   callback_url?: string
   trigger_id?: string
+  job?: { goal: string; job: string }
 }
 
 export class WorkflowRunner {
@@ -225,6 +229,7 @@ export class WorkflowRunner {
       ...(input.notify ? { notify: true } : {}),
       ...(input.callback_url ? { callback_url: input.callback_url } : {}),
       ...(input.trigger_id ? { trigger_id: input.trigger_id } : {}),
+      ...(input.job ? { job: input.job } : {}),
       status: 'running',
       started_at: new Date().toISOString(),
       message: input.message,
