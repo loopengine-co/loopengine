@@ -465,15 +465,23 @@ describe('a job the person adds', () => {
     const added = await addJob(deps, id, { idea: 'email every new customer a thank you' })
     expect(added.verdict).toBe('changed')
     const job = added.goal.jobs.find((j) => j.id === added.jobId)!
-    expect(job).toMatchObject({ state: 'saved', title: 'Thank new customers', leverId: 'new-signups.x-thank-new-customers', added: { idea: 'email every new customer a thank you', verdict: 'changed' } })
+    expect(job).toMatchObject({ state: 'saved', title: 'Thank new customers', leverId: 'new-signups.x-thank-new-customers', keepPrivate: true, added: { idea: 'email every new customer a thank you', verdict: 'changed' } })
     expect(readLeverEvents(deps).at(-1)).toMatchObject({ type: 'added', job: job.id })
   })
 
-  it('keeps a job to the workspace when asked: its lever events are marked private', async () => {
-    const { deps, id } = await plannedGoal({ verdict: 'added', job: wf('Thank new customers') })
-    const added = await addJob(deps, id, { idea: 'email every new customer a thank you', private: true })
-    expect(added.goal.jobs.find((j) => j.id === added.jobId)).toMatchObject({ keepPrivate: true })
+  it('keeps a typed job and its lever to the workspace unless the person agrees to share', async () => {
+    const lever = { key: 'thank', name: 'Thank new customers', kind: 'recurring', mechanism: 'A thank-you brings people back.', fitsWhen: ['online orders'], notWhen: [], needs: ['email'], humanMinutesPerWeek: 10, firstResultDays: 14, measureLink: 'repeat orders', guardrails: ['Nothing is sent without approval.'], template: 'Thank each new customer of {product}.' }
+    const { deps, id } = await plannedGoal({ verdict: 'added', job: wf('Thank new customers', { leverId: 'thank' }), newLever: lever })
+    const kept = await addJob(deps, id, { idea: 'email every new customer a thank you' })
+    expect(kept.goal.jobs.find((j) => j.id === kept.jobId)).toMatchObject({ keepPrivate: true })
     expect(readLeverEvents(deps).at(-1)).toMatchObject({ type: 'added', private: true })
+    const { readFileSync } = await import('node:fs')
+    const local = JSON.parse(readFileSync(join(deps.projectDir(), '.loopengine', 'playbook-local.json'), 'utf8'))
+    expect(local.levers[0]).toMatchObject({ id: 'new-signups.x-thank', private: true })
+
+    const shared = await addJob(deps, id, { idea: 'email every new customer a thank you', share: true })
+    expect(shared.goal.jobs.find((j) => j.id === shared.jobId)!.keepPrivate).toBeUndefined()
+    expect(readLeverEvents(deps).at(-1)!.private).toBeUndefined()
   })
 
   it('refuses a deceptive one and adds nothing', async () => {
@@ -482,5 +490,21 @@ describe('a job the person adds', () => {
     const result = await addJob(deps, id, { idea: 'post fake 5 star reviews' })
     expect(result).toMatchObject({ verdict: 'refused', alternative: 'Ask happy customers for honest reviews.' })
     expect(getGoal(deps, id).jobs).toHaveLength(before)
+  })
+})
+
+describe('a lever kept private', () => {
+  it('keeps every job the planner later makes from it private too', async () => {
+    const { addToLocalPlaybook, setPlaybookProjectDir, LEVERS } = await import('#core/system-agents/goal-playbooks.js')
+    const s = setup([[wf('Thank new customers again', { leverId: 'new-signups.x-thank' }), wf('Answer posts')]])
+    setPlaybookProjectDir(s.deps.projectDir())
+    addToLocalPlaybook(s.deps.projectDir(), { levers: [{ ...LEVERS[0]!, id: 'new-signups.x-thank', name: 'Thank new customers', private: true }] })
+    const { id } = createGoal(s.deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    const [fromPrivate, other] = getGoal(s.deps, id).jobs
+    expect(fromPrivate).toMatchObject({ leverId: 'new-signups.x-thank', keepPrivate: true })
+    expect(other!.keepPrivate).toBeUndefined()
+    expect(readLeverEvents(s.deps).filter((e) => e.job === fromPrivate!.id).every((e) => e.private)).toBe(true)
+    setPlaybookProjectDir(undefined)
   })
 })

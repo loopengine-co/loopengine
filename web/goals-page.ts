@@ -164,7 +164,7 @@ ${consoleShellScript}
   // Which view: the list (/goals), a new goal (?new=1, or the front page)
   // or one goal (?goal=).
   var startNew = location.pathname === '/' || new URLSearchParams(location.search).has('new');
-  var state = { addOpen: false, addDraft: '', addPrivate: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
+  var state = { addOpen: false, addDraft: '', addShare: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -314,7 +314,7 @@ ${consoleShellScript}
         '<span class="gl-job-primary">' + primary + '</span>' +
       '</div>' +
       '<div class="gl-job-body"' + (open ? '' : ' hidden') + '>' +
-        (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? ' ' + String.fromCharCode(183) + ' ' + esc(w.added.note) : '') + (w.keepPrivate ? ' ' + String.fromCharCode(183) + ' kept to your workspace' : '') + '</p>' : '') +
+        (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? ' ' + String.fromCharCode(183) + ' ' + esc(w.added.note) : '') + (w.keepPrivate ? ' ' + String.fromCharCode(183) + ' kept to your workspace' : ' ' + String.fromCharCode(183) + ' its approach may be shared') + '</p>' : '') +
         (w.why && sub !== w.why ? '<p class="gl-why">' + esc(w.why) + '</p>' : '') +
         (w.measure && sub.indexOf(w.measure) < 0 ? '<p class="gl-job-measure">' + (once ? '' : 'Measured by ') + esc(w.measure) + '</p>' : '') +
         (w.state === 'active' || w.state === 'done' ? '' : '<div class="gl-row">' + agentHtml(w) + '</div>' + needsHtml(w)) +
@@ -340,8 +340,8 @@ ${consoleShellScript}
       '<div class="gl-add-form"' + (state.addOpen ? '' : ' hidden') + '>' +
         '<label for="glAddIdea"><strong>A job you have in mind</strong> <span class="hint">in your own words; LoopEngine shapes it into a job and says if anything looks off</span></label>' +
         '<textarea id="glAddIdea" rows="2" placeholder="e.g. Thank every new customer by email within a day">' + esc(state.addDraft || '') + '</textarea>' +
-        '<label class="hint gl-share"><input type="checkbox" id="glAddPrivate"' + (state.addPrivate ? ' checked' : '') + '> Keep this one to my workspace</label>' +
-        '<p class="hint" style="margin:0">Unless you tick that, the approach behind this job (never your words) may be shared anonymously to improve suggestions, and only once many workspaces use something similar.</p>' +
+        '<label class="hint gl-share"><input type="checkbox" id="glAddShare"' + (state.addShare ? ' checked' : '') + '> Share the approach behind this job to improve suggestions for everyone</label>' +
+        '<p class="hint" style="margin:0">Your idea stays in your workspace unless you tick that. If you do, only a generic description of the approach is shared, never your words, and only once many workspaces use something similar.</p>' +
         '<div class="gl-row"><button type="button" class="gl-btn soft" id="glAddJob"' + (planning ? ' disabled' : '') + '>Add it</button><button type="button" class="gl-btn plain" id="glAddCancel">Cancel</button><span class="hint" id="glAddStatus"></span></div>' +
       '</div>' + notice + '</div>';
   }
@@ -548,8 +548,8 @@ ${consoleShellScript}
     if (addCancel) addCancel.addEventListener('click', function () { state.addOpen = false; state.addDraft = ''; render(); });
     var addIdea = document.getElementById('glAddIdea');
     if (addIdea) addIdea.addEventListener('input', function () { state.addDraft = addIdea.value; });
-    var addPrivate = document.getElementById('glAddPrivate');
-    if (addPrivate) addPrivate.addEventListener('change', function () { state.addPrivate = addPrivate.checked; });
+    var addShare = document.getElementById('glAddShare');
+    if (addShare) addShare.addEventListener('change', function () { state.addShare = addShare.checked; });
     var addJob = document.getElementById('glAddJob');
     if (addJob) addJob.addEventListener('click', function () {
       var idea = document.getElementById('glAddIdea').value.trim();
@@ -557,11 +557,11 @@ ${consoleShellScript}
       if (idea.length < 5) { status.textContent = 'Say what the job is first.'; return; }
       addJob.disabled = true;
       status.textContent = 'Shaping it into a job' + ELLIPSIS;
-      var keep = document.getElementById('glAddPrivate');
-      api('POST', base + '/jobs', { idea: idea, private: !!(keep && keep.checked) }).then(function (r) {
+      var shareBox = document.getElementById('glAddShare');
+      api('POST', base + '/jobs', { idea: idea, share: !!(shareBox && shareBox.checked) }).then(function (r) {
         if (!r.ok) { addJob.disabled = false; status.textContent = r.body.error || 'Could not add it.'; return; }
         state.addNotice = { verdict: r.body.verdict, note: r.body.note, alternative: r.body.alternative };
-        if (r.body.verdict !== 'refused') { state.addOpen = false; state.addDraft = ''; state.addPrivate = false; if (r.body.jobId) state.openJobs[r.body.jobId] = true; }
+        if (r.body.verdict !== 'refused') { state.addOpen = false; state.addDraft = ''; state.addShare = false; if (r.body.jobId) state.openJobs[r.body.jobId] = true; }
         replaceGoal(r.body.goal);
         render();
       });

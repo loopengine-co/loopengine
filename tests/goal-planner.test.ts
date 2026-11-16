@@ -240,3 +240,24 @@ describe('generating more', () => {
     expect(prompts[4]!.user).toContain('every one for this focus is already under this goal')
   })
 })
+
+describe('choosing levers for this goal', () => {
+  it('reads the goal profile and records every lever it looked at, chosen or ruled out', async () => {
+    const profile = { metric: 'signups', direction: 'up', constraints: ['no ad budget'], timeframe: 'by March', startingPoint: 'first try', bottleneck: 'nobody knows it exists', bottleneckWhy: 'no audience yet' }
+    const { modelCall, prompts } = scriptedModel({
+      save_brief: [{ ...BRIEF, profile }],
+      save_plan: [{ setup: [], workflows: [workflow()], considered: [
+        { lever: 'new-signups.answer-intent-posts', decision: 'chosen', reason: 'reaches people already asking' },
+        { lever: 'new-signups.marketplace-listings', decision: 'ruled_out', reason: 'no marketplace for this product' },
+      ], leftOut: [], assumptions: [], message: '' }],
+      save_review: [{ passed: true, issues: [] }],
+    })
+    const result = await runGoalPipeline(modelCall, { goal: caseById('le-grow-100').goal, context: caseById('le-grow-100').context })
+    expect(result.brief.profile).toMatchObject({ direction: 'up', constraints: ['no ad budget'], bottleneck: 'nobody knows it exists' })
+    expect(prompts[1]!.user).toContain('bottleneck: nobody knows it exists')
+    expect(result.considered).toEqual([
+      { leverId: 'new-signups.answer-intent-posts', lever: LEVERS.find((l) => l.id === 'new-signups.answer-intent-posts')!.name, decision: 'chosen', reason: 'reaches people already asking' },
+      { leverId: 'new-signups.marketplace-listings', lever: LEVERS.find((l) => l.id === 'new-signups.marketplace-listings')!.name, decision: 'ruled_out', reason: 'no marketplace for this product' },
+    ])
+  })
+})

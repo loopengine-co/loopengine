@@ -37,6 +37,29 @@ export interface GoalContext {
 
 export type GoalScope = 'in' | 'partial' | 'out'
 
+export interface GoalProfile {
+  /** The number it moves, and which way: up, down, reach a milestone, or keep it steady. */
+  metric: string
+  direction: 'up' | 'down' | 'reach' | 'keep'
+  /** Limits that rule approaches out: budget, time, diet, an injury, a region… */
+  constraints: string[]
+  timeframe: string
+  /** Where they start: first try, tried before, what's already in place. */
+  startingPoint: string
+  /** What's most likely to stop this goal, and why. */
+  bottleneck: string
+  bottleneckWhy: string
+}
+
+/** How the plan chose its levers: every lever it looked at, chosen or
+ * ruled out, and why. */
+export interface LeverChoice {
+  leverId?: string
+  lever: string
+  decision: 'chosen' | 'ruled_out'
+  reason: string
+}
+
 export interface GoalBrief {
   /** Whether agents can work on it: fully, only the information work
    * around it, or not at all. */
@@ -57,6 +80,9 @@ export interface GoalBrief {
   /** What the goal singles out beyond its main outcome (a segment, a
    * topic, a season…): each must be covered by a workflow. */
   qualifiers: string[]
+  /** What makes this goal different from others with the same focus, and
+   * what's most likely to stop it: levers are chosen against this. */
+  profile?: GoalProfile
   audience: string
   weeklyHours: number
   approvals: string
@@ -115,6 +141,8 @@ export interface GoalPlan {
   critique: { passed: boolean; issues: string[]; revised: boolean }
   /** The playbook version the plan was made with. */
   playbookVersion: number
+  /** Every lever the plan looked at, chosen or ruled out, and why. */
+  considered?: LeverChoice[]
   /** Levers the planner wrote because the playbook had none that fit
    * (generic, like the playbook's own; saved in the workspace's own
    * playbook, and the jobs made from them refer to them). */
@@ -140,15 +168,18 @@ Call save_brief once:
 - measure: the number that shows progress, in the person's terms, with what is known about its current value ("unknown" when it isn't).
 - measureSource: the system in the context that holds that number ("none" when no system does), and measureSourceConnected: true only when the context lists that system as connected.
 - qualifiers: what the goal singles out beyond its main outcome, in its own words ("mostly small e-commerce shops", "especially refunds", "this Christmas"); empty when it singles out nothing.
+- profile: what makes this goal different from others with the same focus. metric: the number it moves; direction: "up", "down", "reach" (a milestone) or "keep"; constraints: limits that rule approaches out (no budget, night shifts, vegetarian, an injury, only one market), from the goal and the context, empty when none; timeframe ("by March", "unknown"); startingPoint (first try, tried before, what's already in place, or "unknown"); bottleneck: what's most likely to stop this particular goal (for most weight goals it's sticking with it; for a new product it may be that nobody knows it exists), and bottleneckWhy in a sentence.
+- A listed focus is the same focus when the goal is the same kind of work, even worded differently or aimed the other way (losing and gaining weight; hiring support staff and hiring engineers): use it rather than naming a new one.
 - audience, weeklyHours (from the context, else 3), approvals (from the context's rules, else "nothing is posted, sent or published without approval").`
 
 export const GOAL_PLAN_PROMPT = `You plan workflows for a confirmed goal brief in LoopEngine. Each workflow is one recurring job for one AI agent; a person reviews what it drafts.
 
 Rules:
 1. Levers first, capabilities second. Choose what moves this focus's measure (the playbook's levers, or your own when the context calls for one), then map each to what the workspace has. Never start from what the connected tools could do.
-1b. When the request lists no playbook levers for this focus (none yet, or every one already under this goal), write the levers you need first, in newLevers (two to five), then make each workflow from one of them (its leverId is the lever's key). When levers are listed but one this goal clearly needs is missing, you may add up to two. A new lever is like the playbook's: one distinct approach (one reason it works), in generic words that fit many businesses (no names of this business, its products, people, places or sites), with when it fits and doesn't, what it needs, review time, how its effect shows up, guardrails (approval before anything is sent, posted or published), and a generic template with {placeholders}. The workflow's request is where this business's specifics go.
+1b. When the request lists no playbook levers for this focus (none yet, or every one already under this goal), write the levers you need first, in newLevers (two to five), then make each workflow from one of them (its leverId is the lever's key). When levers are listed but one this goal clearly needs is missing, you may add up to two. A new lever is like the playbook's: one distinct approach (one reason it works), in generic words that fit many goals of this focus (no names of this business, its products, people, places or sites; no direction, target or amount when the approach works either way: "a weekly meal routine toward the target", not "eat less"), with when it fits and doesn't, what it needs, review time, how its effect shows up, guardrails (approval before anything is sent, posted or published), and a generic template with {placeholders}. The workflow's request is where this business's specifics go.
 2. Every workflow serves the brief's focus directly and moves its measure. Workflows that only support it (reporting, onboarding for an acquisition goal, support) go in leftOut with a reason, not in workflows.
 3. One lever per workflow, named in a few generic words (no business, product, person, place or site names: "list in app marketplaces", not "list Wick & Ember on Shopify"); no two workflows on the same lever. Never propose a lever already saved under the goal (built, proposed or dismissed): those are listed in the request.
+3b. Choose levers for this goal, not for the focus in general. Look at every lever listed: rule out one whose "not when", needs or the profile's constraints don't fit; prefer the ones that address the profile's bottleneck; pick ones that work in different ways (not three kinds of tracking). In considered, list every lever you looked at with chosen or ruled_out and a short reason tied to this goal ("addresses sticking with it", "no gym: ruled out"). Reuse a listed lever whenever its approach fits, even if it was written for a goal aimed the other way: put what's specific to this goal (the direction, the target, the details) in the workflow's request. Write a new lever only for what no listed lever covers.
 4. Three to five workflows for an "in" goal, ordered by impact against effort, quickest useful one first; startsAfter when one depends on another. Their humanMinutesPerWeek together stay within three quarters of the brief's weeklyHours, so the plan survives a busy week.
 4b. Each one is a job: kind "recurring" when it runs again and again (a weekly scan, a reply to each signup), kind "once" for work on a finite list or done one time (submitting to a set of directories, a one-time audit, researching a list of communities). A once job is done by an agent once, in Chat; never make it a weekly job that runs out of things to do.
 4c. measure: the job's own number, in the person's terms, that shows it's working ("replies per week", "signups tagged ref=directories"); for a once job, what done looks like ("done when: listed in 15 directories"). A playbook lever says the kind and measure it usually has: start from those, and change them only when the context calls for it.
@@ -193,6 +224,14 @@ const briefTool = (): ToolSchema => ({
       reading: { type: 'string' },
       focus: { type: 'string', enum: focusEnum() },
       newFocus: { type: 'object', properties: { label: { type: 'string' }, hint: { type: 'string' } }, required: ['label', 'hint'], description: 'only when focus is "other": the stage, named in generic words' },
+      profile: {
+        type: 'object',
+        properties: {
+          metric: { type: 'string' }, direction: { type: 'string', enum: ['up', 'down', 'reach', 'keep'] }, constraints: { type: 'array', items: { type: 'string' } },
+          timeframe: { type: 'string' }, startingPoint: { type: 'string' }, bottleneck: { type: 'string' }, bottleneckWhy: { type: 'string' },
+        },
+        required: ['metric', 'direction', 'constraints', 'timeframe', 'startingPoint', 'bottleneck', 'bottleneckWhy'],
+      },
       measure: { type: 'string' },
       measureSource: { type: 'string' },
       measureSourceConnected: { type: 'boolean' },
@@ -257,6 +296,11 @@ const planTool = (): ToolSchema => ({
         },
       },
       newLevers: { type: 'array', items: NEW_LEVER_SCHEMA, description: 'levers the playbook lacks; required when the request lists none for this focus' },
+      considered: {
+        type: 'array',
+        description: 'every lever you looked at (listed ones, and any you wrote), chosen or ruled out, with a short reason tied to this goal',
+        items: { type: 'object', properties: { lever: { type: 'string', description: 'its id, or for one you wrote its key' }, decision: { type: 'string', enum: ['chosen', 'ruled_out'] }, reason: { type: 'string' } }, required: ['lever', 'decision', 'reason'] },
+      },
       leftOut: { type: 'array', items: { type: 'string' } },
       assumptions: { type: 'array', items: { type: 'string' } },
       message: { type: 'string' },
@@ -417,6 +461,16 @@ export function agentName(raw: string): string {
 const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v.trim() : fallback)
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((x) => x.trim()) : [])
 const focusOf = (v: unknown): GoalBrief['focus'] => (typeof v === 'string' && focusEnum().includes(v) ? (v as GoalBrief['focus']) : 'other')
+function profileFrom(raw: unknown): GoalProfile | undefined {
+  const p = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined
+  if (!p || !str(p.bottleneck)) return undefined
+  const direction = p.direction === 'down' || p.direction === 'reach' || p.direction === 'keep' ? p.direction : 'up'
+  return {
+    metric: str(p.metric).slice(0, 200), direction, constraints: strings(p.constraints).slice(0, 8), timeframe: str(p.timeframe, 'unknown').slice(0, 100),
+    startingPoint: str(p.startingPoint, 'unknown').slice(0, 300), bottleneck: str(p.bottleneck).slice(0, 200), bottleneckWhy: str(p.bottleneckWhy).slice(0, 400),
+  }
+}
+
 const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '')
 /** Text that shouldn't leave the workspace in a lever: links, addresses,
  * handles, long numbers. */
@@ -485,13 +539,23 @@ export async function readGoalBrief(modelCall: ModelCall, goal: string, context:
     measureSource: str(raw.measureSource, 'none'),
     measureSourceConnected: raw.measureSourceConnected === true,
     qualifiers: strings(raw.qualifiers),
+    ...(profileFrom(raw.profile) ? { profile: profileFrom(raw.profile) } : {}),
     audience: str(raw.audience, context.audience ?? ''),
     weeklyHours: typeof raw.weeklyHours === 'number' && raw.weeklyHours > 0 ? raw.weeklyHours : context.weeklyHours ?? 3,
     approvals: str(raw.approvals, 'nothing is posted, sent or published without approval'),
   }
 }
 
+function profileText(p: GoalProfile | undefined): string {
+  if (!p) return ''
+  return `\n- profile: ${p.metric}, ${p.direction}; constraints: ${p.constraints.join('; ') || 'none'}; timeframe: ${p.timeframe}; starting point: ${p.startingPoint}\n- bottleneck: ${p.bottleneck} (${p.bottleneckWhy})`
+}
+
 function briefText(brief: GoalBrief): string {
+  return profileText(brief.profile).length ? `${briefTextCore(brief)}${profileText(brief.profile)}` : briefTextCore(brief)
+}
+
+function briefTextCore(brief: GoalBrief): string {
   return `Confirmed brief:\n- scope: ${brief.scope} (${brief.scopeReason})\n- reading: ${brief.reading}\n- focus: ${brief.focus}${brief.newFocus ? ` (${brief.newFocus.label}: ${brief.newFocus.hint}; new, not in the playbook yet)` : ''}\n- measure: ${brief.measure}\n- measure source: ${brief.measureSource} (${brief.measureSourceConnected ? 'connected' : 'not connected'})\n- qualifiers: ${brief.qualifiers.join('; ') || 'none'}\n- audience: ${brief.audience}\n- weekly review time: ${brief.weeklyHours} hours\n- approvals: ${brief.approvals}`
 }
 
@@ -538,7 +602,17 @@ function parsePlan(raw: Record<string, unknown>, focus: string): Omit<GoalPlan, 
   })
   // The plan's own levers that a workflow is made from: the ones to keep.
   const used = [...written.values()].filter((l) => workflows.some((w) => w.leverId === l.id))
-  return { setup: strings(raw.setup), workflows, leftOut: strings(raw.leftOut), assumptions: strings(raw.assumptions), message: str(raw.message), ...(used.length ? { newLevers: used } : {}) }
+  // How it chose: each lever it looked at, named for people.
+  const considered = (Array.isArray(raw.considered) ? raw.considered : []).flatMap((c): LeverChoice[] => {
+    const x = c && typeof c === 'object' ? (c as Record<string, unknown>) : {}
+    const ref = str(x.lever)
+    const own = written.get(slug(ref))
+    const known = levers.find((l) => l.id === ref)
+    const name = own?.name ?? known?.name ?? ref
+    if (!name || !str(x.reason)) return []
+    return [{ ...(own || known ? { leverId: (own ?? known)!.id } : {}), lever: name, decision: x.decision === 'ruled_out' ? 'ruled_out' : 'chosen', reason: str(x.reason).slice(0, 300) }]
+  }).slice(0, 20)
+  return { setup: strings(raw.setup), workflows, leftOut: strings(raw.leftOut), assumptions: strings(raw.assumptions), message: str(raw.message), ...(used.length ? { newLevers: used } : {}), ...(considered.length ? { considered } : {}) }
 }
 
 export async function draftGoalPlan(modelCall: ModelCall, input: GoalPipelineInput, brief: GoalBrief, issues: string[] = []): Promise<Omit<GoalPlan, 'brief' | 'critique' | 'playbookVersion'>> {

@@ -71,6 +71,10 @@ export interface Lever {
   guardrails: string[]
   /** The request it starts from, with {placeholders} filled from context. */
   template: string
+  /** A workspace's own lever written from a job the person typed, which
+   * they didn't agree to share: it, and every job made from it, stays in
+   * the workspace. */
+  private?: true
 }
 
 const PLAYBOOK_FILE = new URL('./playbook.json', import.meta.url)
@@ -118,6 +122,7 @@ export function parsePlaybook(raw: unknown, knownFocuses: readonly string[] = GO
       needs: { ...(anyOf ? { anyOf } : {}), ...(plus ? { plus } : {}) },
       humanMinutesPerWeek: num('humanMinutesPerWeek'), firstResultDays: num('firstResultDays'), measureLink: text('measureLink'),
       guardrails: list('guardrails'), template: text('template'),
+      ...(l.private === true ? { private: true as const } : {}),
     }
   })
   return { version, focuses, levers }

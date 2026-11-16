@@ -37,7 +37,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import type { ModelCall } from '../core/run-agent.js'
-import { agentName, runGoalPipeline, shapeJob, type GoalBrief, type GoalContext, type GoalNeed, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
+import { agentName, runGoalPipeline, shapeJob, type GoalBrief, type GoalContext, type GoalNeed, type LeverChoice, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
 import { activePlaybook, addToLocalPlaybook, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
 
 export type GoalJobState = 'suggested' | 'saved' | 'active' | 'done' | 'discarded'
@@ -110,9 +110,11 @@ export interface GoalJob {
   /** A job the person added themselves: their own words, and how the
    * planner judged it ("changed" or "warned", with its note). */
   added?: { idea: string; verdict: 'added' | 'changed' | 'warned'; note?: string; alternative?: string }
-  /** The person asked to keep this job's approach to their workspace: its
-   * lever events are never sent, and its lever is never offered as a
-   * candidate for the shared playbook. */
+  /** This job's approach stays in the workspace: its lever events are
+   * never sent, and its lever is never offered as a candidate for the
+   * shared playbook. A job the person typed is kept this way unless they
+   * agreed to share its approach; a planner's job, when it's made from a
+   * lever written from such a job. */
   keepPrivate?: true
   /** How much the person changed the suggested request before building it
    * (edits to the built workflow's instructions later don't count). */
@@ -144,6 +146,9 @@ export interface Goal {
   /** The playbook version the latest suggestions came from. */
   playbookVersion?: number
   rounds: number
+  /** How each round of suggestions chose its levers (the latest five):
+   * every lever looked at, chosen or ruled out, and why. */
+  choices?: { round: number; at: string; considered: LeverChoice[] }[]
   jobs: GoalJob[]
   createdAt: string
   updatedAt: string
@@ -338,7 +343,10 @@ const sameLever = (a: { leverId?: string; lever: string; title: string }, b: { l
 function toJob(w: PlannedGoalWorkflow, round: number, deps: GoalsDeps): GoalJob {
   const name = agentName(w.newAgent?.name || w.agent) || 'goal-agent'
   const exists = deps.agentExists(name)
+  // Made from a lever written from a person's job they kept private.
+  const fromPrivate = Boolean(w.leverId && activePlaybook().levers.find((l) => l.id === w.leverId)?.private)
   return {
+    ...(fromPrivate ? { keepPrivate: true as const } : {}),
     id: newId('w'),
     title: w.title,
     kind: w.kind,
@@ -397,6 +405,7 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
         status: 'ready',
         error: undefined,
         rounds: round,
+        ...(plan.considered?.length ? { choices: [...(latest.choices ?? []), { round, at: now(), considered: plan.considered }].slice(-5) } : {}),
         jobs: [...latest.jobs, ...fresh],
         updatedAt: now(),
       } as Goal
@@ -527,7 +536,7 @@ export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input
 // (deceptive, illegal, against a platform's rules). One that's added is
 // saved, ready to build or assign.
 
-export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknown; private?: unknown }): Promise<{ goal: Goal; verdict: 'added' | 'changed' | 'warned' | 'refused'; note: string; alternative: string; jobId?: string }> {
+export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknown; share?: unknown }): Promise<{ goal: Goal; verdict: 'added' | 'changed' | 'warned' | 'refused'; note: string; alternative: string; jobId?: string }> {
   const idea = typeof input.idea === 'string' ? input.idea.trim() : ''
   if (idea.length < 5) throw new GoalError('Say what the job is, e.g. "Thank every new customer by email within a day".')
   if (idea.length > 1000) throw new GoalError('Keep it under 1000 characters.')
@@ -545,9 +554,12 @@ export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknow
   if (shaped.verdict === 'refused' || !shaped.job) {
     return { goal, verdict: 'refused', note: shaped.note || 'This couldn\'t be shaped into a job: say a little more about what it should do.', alternative: shaped.alternative }
   }
+  // The person's own idea stays theirs unless they agreed to share its
+  // approach: then the lever written from it can become a candidate.
+  const share = input.share === true
   if (shaped.newLever) {
     try {
-      addToLocalPlaybook(deps.projectDir(), { levers: [shaped.newLever] })
+      addToLocalPlaybook(deps.projectDir(), { levers: [share ? shaped.newLever : { ...shaped.newLever, private: true }] })
     } catch (err) {
       console.error('[loopengine] couldn\'t add the job\'s lever to the playbook:', err instanceof Error ? err.message : err)
     }
@@ -555,7 +567,7 @@ export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknow
   const job: GoalJob = {
     ...toJob(shaped.job, goal.rounds || 1, deps),
     state: 'saved',
-    ...(input.private === true ? { keepPrivate: true as const } : {}),
+    ...(share ? {} : { keepPrivate: true as const }),
     added: { idea, verdict: shaped.verdict, ...(shaped.note ? { note: shaped.note } : {}), ...(shaped.alternative ? { alternative: shaped.alternative } : {}) },
   }
   const latest = getGoal(deps, id)
