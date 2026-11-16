@@ -41,7 +41,7 @@ describe('sending lever events', () => {
     expect(init.headers['x-loopengine-signature']).toBe(`t=${t},v1=${createHmac('sha256', 'shh').update(`${t}.${init.body}`).digest('hex')}`)
     expect(init.headers['x-loopengine-workspace']).toBe('acme')
     const sent = JSON.parse(init.body).events
-    expect(sent[0]).toEqual({ id: 'e-0', type: 'saved', leverId: 'new-signups.answer-intent-posts', lever: 'answer intent posts', focus: 'new-signups', playbookVersion: 1, businessKind: 'saas', workflowRef: 'w-1', detail: {}, at: '2026-11-14T00:00:00.000Z' })
+    expect(sent[0]).toEqual({ id: 'e-0', type: 'saved', leverId: 'new-signups.answer-intent-posts', lever: 'answer intent posts', focus: 'new-signups', playbookVersion: 1, businessKind: 'saas', jobRef: 'w-1', detail: {}, at: '2026-11-14T00:00:00.000Z' })
     expect(init.body).not.toContain('g-secret-goal')
     expect(init.body).not.toContain('secret business')
     // Nothing new: nothing sent. A new event: only that one.

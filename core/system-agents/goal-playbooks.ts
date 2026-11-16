@@ -24,20 +24,23 @@ export interface Lever {
   id: string
   focus: GoalFocus
   name: string
+  /** The job it usually makes: recurring (a workflow that runs again and
+   * again) or once (a finite piece of work, done once). */
+  kind: 'recurring' | 'once'
   /** Why it works, in a sentence: shown as the plan's "Why". */
   mechanism: string
   fitsWhen: string[]
   notWhen: string[]
-  /** What a workflow for it uses: any one of `anyOf`, plus each of `plus`.
+  /** What a job for it uses: any one of `anyOf`, plus each of `plus`.
    * Names are kinds of app or ability (email, messaging, web-search…). */
   needs: { anyOf?: string[]; plus?: string[] }
   /** The person's review time it usually takes. */
   humanMinutesPerWeek: number
   /** Days until it first shows something. */
   firstResultDays: number
-  /** How its effect on the measure shows up. */
+  /** How its effect on the measure shows up: the job's own measure. */
   measureLink: string
-  /** Rules every workflow built from it keeps. */
+  /** Rules every job made from it keeps. */
   guardrails: string[]
   /** The request it starts from, with {placeholders} filled from context. */
   template: string
@@ -66,8 +69,9 @@ export function parsePlaybook(raw: unknown): { version: number; levers: Lever[] 
     const kinds = (v: unknown, k: string) => { if (v === undefined) return undefined; if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw new Error(`${where}: needs.${k} must be a list of kinds`); return v as string[] }
     const anyOf = kinds(needs.anyOf, 'anyOf')
     const plus = kinds(needs.plus, 'plus')
+    if (l.kind !== undefined && l.kind !== 'recurring' && l.kind !== 'once') throw new Error(`${where}: kind must be "recurring" or "once"`)
     return {
-      id, focus, name: text('name'), mechanism: text('mechanism'), fitsWhen: list('fitsWhen'), notWhen: list('notWhen'),
+      id, focus, name: text('name'), kind: (l.kind ?? 'recurring') as Lever['kind'], mechanism: text('mechanism'), fitsWhen: list('fitsWhen'), notWhen: list('notWhen'),
       needs: { ...(anyOf ? { anyOf } : {}), ...(plus ? { plus } : {}) },
       humanMinutesPerWeek: num('humanMinutesPerWeek'), firstResultDays: num('firstResultDays'), measureLink: text('measureLink'),
       guardrails: list('guardrails'), template: text('template'),

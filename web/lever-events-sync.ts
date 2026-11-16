@@ -8,7 +8,7 @@
 // What's sent is anonymous: the event's id, type and time, the lever's id
 // (or, for the planner's own idea, its generic label), focus, playbook
 // version, the workspace's kind of business, an opaque id linking one
-// workflow's events, and counts or buckets. Never a goal's, a request's or
+// job's events, and counts or buckets. Never a goal's, a request's or
 // a workflow's text, agent names, or anything from runs.
 //
 // Signed like the workspace's run reports: X-LoopEngine-Workspace names it,
@@ -74,7 +74,8 @@ export function outgoingLeverEvent(e: Record<string, unknown>, businessKind: str
     focus: e.focus,
     ...(typeof e.playbookVersion === 'number' ? { playbookVersion: e.playbookVersion } : {}),
     ...(businessKind ? { businessKind } : {}),
-    workflowRef: e.goalWorkflow,
+    // The job, as an opaque id (an event from before jobs: goalWorkflow).
+    jobRef: e.job ?? e.goalWorkflow,
     detail: e.detail && typeof e.detail === 'object' ? e.detail : {},
     at: e.at,
   }

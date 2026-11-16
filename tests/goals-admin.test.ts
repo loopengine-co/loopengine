@@ -170,7 +170,7 @@ describe('how much a built workflow was edited', () => {
     expect(getGoal(changed.deps, changed.id).jobs[0]!.edited).toBe('light')
     const event = readLeverEvents(changed.deps).find((e) => e.type === 'built')
     expect(event).toMatchObject({ type: 'built', detail: { newAgent: false } })
-    expect(readLeverEvents(changed.deps).find((e) => e.type === 'edited')).toMatchObject({ detail: { amount: 'light' }, lever: 'answer posts', focus: 'new-signups', goalWorkflow: changed.wid })
+    expect(readLeverEvents(changed.deps).find((e) => e.type === 'edited')).toMatchObject({ detail: { amount: 'light' }, lever: 'answer posts', focus: 'new-signups', job: changed.wid })
     // Never the text itself.
     expect(JSON.stringify(readLeverEvents(changed.deps))).not.toContain('r/AI_Agents')
 
@@ -284,7 +284,7 @@ describe('jobs under a goal', () => {
     const { url } = await prepareBuild(deps, id, job!.id)
     expect(url).toMatch(/^\/playground\?agent=growth-agent&message=Do\+List\+in\+directories/)
     expect(setWorkflowState(deps, id, job!.id, 'done').jobs[0]).toMatchObject({ state: 'done', doneAt: expect.any(String) })
-    expect(readLeverEvents(deps).map((e) => e.type)).toEqual(['suggested', 'saved', 'built'])
+    expect(readLeverEvents(deps).map((e) => e.type)).toEqual(['suggested', 'saved', 'done'])
     expect(setWorkflowState(deps, id, job!.id, 'undone').jobs[0]!.state).toBe('saved')
   })
 

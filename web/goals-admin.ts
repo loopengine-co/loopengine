@@ -372,7 +372,7 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
     if (w.kind !== 'once') throw new GoalError('Only a one-off job is marked done.')
     if (w.state === 'done') return goal
     if (w.state !== 'saved') throw new GoalError('Save it first.')
-    recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
+    recordLeverEvent(deps, goal, w, 'done', { newAgent: Boolean(w.agentCreated) })
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'done', doneAt: now() }))
   }
   if (action === 'undone') {
@@ -443,14 +443,19 @@ export function editAmount(before: string, after: string): EditAmount {
 // they're sent to loopengine.co. Never the goal's or the workflow's text:
 // the lever, its focus, the playbook version and what happened.
 
-export type LeverEventType = 'suggested' | 'saved' | 'discarded' | 'discard_reason' | 'restored' | 'built' | 'edited' | 'kept_14d' | 'used' | 'removed'
+/** What happened to a lever's job: suggested, saved, discarded (with a
+ * reason), restored; built (a workflow does it) or done (a once job
+ * finished); edited (its request, at Build); then, from its workflow,
+ * kept_14d, used (weekly) and removed. */
+export type LeverEventType = 'suggested' | 'saved' | 'discarded' | 'discard_reason' | 'restored' | 'built' | 'done' | 'edited' | 'kept_14d' | 'used' | 'removed'
 
 export interface LeverEvent {
   id: string
   type: LeverEventType
   at: string
   goal: string
-  goalWorkflow: string
+  /** The job (its id under the goal). */
+  job: string
   leverId?: string
   /** The lever's label (for a new idea, the planner's own, generic). */
   lever: string
@@ -463,7 +468,7 @@ export interface LeverEvent {
 
 export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalJob, type: LeverEventType, detail: LeverEvent['detail'] = {}): LeverEvent {
   const full: LeverEvent = {
-    id: newId('e'), type, at: now(), goal: goal.id, goalWorkflow: w.id, ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
+    id: newId('e'), type, at: now(), goal: goal.id, job: w.id, ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
     ...(goal.playbookVersion !== undefined ? { playbookVersion: goal.playbookVersion } : {}), detail,
   }
   mkdirSync(goalsDir(deps), { recursive: true })
@@ -514,7 +519,11 @@ export async function checkBuiltWorkflows(deps: GoalsDeps, nowMs = Date.now()): 
 
 export function readLeverEvents(deps: GoalsDeps): LeverEvent[] {
   try {
-    return readFileSync(join(goalsDir(deps), 'lever-events.jsonl'), 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as LeverEvent)
+    // An event from before jobs named its job goalWorkflow.
+    return readFileSync(join(goalsDir(deps), 'lever-events.jsonl'), 'utf8').split('\n').filter(Boolean).map((line) => {
+      const { goalWorkflow, ...e } = JSON.parse(line) as LeverEvent & { goalWorkflow?: string }
+      return { ...e, job: e.job ?? goalWorkflow ?? '' }
+    })
   } catch {
     return []
   }

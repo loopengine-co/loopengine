@@ -50,8 +50,11 @@ describe('playbook v1', () => {
   })
 
   it('loads from playbook.json, versioned', () => {
-    expect(PLAYBOOK_VERSION).toBe(1)
+    expect(PLAYBOOK_VERSION).toBe(2)
     expect(LEVERS.length).toBeGreaterThanOrEqual(20)
+    // Each lever says the job it usually makes.
+    expect(LEVERS.find((l) => l.id === 'new-signups.directory-listings')?.kind).toBe('once')
+    expect(LEVERS.find((l) => l.id === 'new-signups.answer-intent-posts')?.kind).toBe('recurring')
   })
 
   it('names the lever at fault when playbook.json is malformed', () => {
