@@ -1,6 +1,8 @@
 // The console's Goals page: /goals lists the goals made so far, /goals?new=1
 // (and the workspace's front page, /) starts one, and /goals?goal=<id>
-// opens one. Type a goal, get suggested workflows
+// opens one. A goal breaks into jobs, each with its own measure: recurring
+// ones are built into a workflow on an agent, one-off ones are done with
+// an agent in Chat. Type a goal, get suggested jobs
 // (each with the agent it would go into), save the ones worth keeping,
 // generate more, and build a saved one, which makes its agent first when
 // it doesn't exist (web/goals-admin.ts behind /goals/*). Same shell and
@@ -52,6 +54,11 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-state { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; }
   .gl-state.saved { background: var(--accent-soft); color: var(--accent-ink); }
   .gl-state.built { background: var(--good-soft); color: var(--good); }
+  .gl-job-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
+  .gl-kind { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .gl-doer { font-size: 13px; color: var(--ink-muted); }
+  .gl-doer strong { color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+  .gl-link-btn { display: inline-flex; align-items: center; text-decoration: none; }
   .gl-setup { margin: 0; padding-left: 18px; font-size: 13.5px; display: grid; gap: 4px; }
   .gl-select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   .gl-share { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; line-height: 1.45; }
@@ -84,7 +91,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1 id="glTitle">Goals</h1><p id="glLead">Say what you want to achieve. LoopEngine suggests workflows that move it, each with the agent it would go into. Save the ones worth keeping, generate more, and build them when you’re ready.</p></div>
+        <div><h1 id="glTitle">Goals</h1><p id="glLead">Say what you want to achieve. LoopEngine breaks it into jobs that move it, each with the agent that would do it. Save the ones worth keeping and generate more. Build the recurring ones into workflows; do the one-off ones with their agent in Chat.</p></div>
       </div>
       <a class="gl-btn gl-new-btn" id="glNewBtn" href="/goals?new=1" hidden>New goal</a>
     </div>
@@ -162,16 +169,17 @@ ${consoleShellScript}
   }
 
   function listHtml() {
-    var count = function (g, s) { return g.workflows.filter(function (w) { return w.state === s; }).length; };
+    var count = function (g, s) { return (g.jobs || []).filter(function (w) { return w.state === s; }).length; };
     return '<ul class="gl-list">' + state.goals.map(function (g) {
       var parts = [];
       if (g.status === 'planning') parts.push('<span class="gl-state planning">Suggesting' + ELLIPSIS + '</span>');
       if (g.status === 'failed') parts.push('<span class="gl-state failed">Failed</span>');
-      var suggested = count(g, 'suggested'), saved = count(g, 'saved'), built = count(g, 'built');
+      var suggested = count(g, 'suggested'), saved = count(g, 'saved'), active = count(g, 'active'), done = count(g, 'done');
       if (suggested) parts.push(suggested + ' suggested');
       if (saved) parts.push(saved + ' saved');
-      if (built) parts.push('<span class="gl-state built">' + built + ' built</span>');
-      if (!parts.length) parts.push('No workflows kept yet');
+      if (active) parts.push('<span class="gl-state built">' + active + ' running</span>');
+      if (done) parts.push(done + ' done');
+      if (!parts.length) parts.push('No jobs kept yet');
       var date = g.createdAt ? new Date(g.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
       return '<li><a href="/goals?goal=' + encodeURIComponent(g.id) + '"><span class="gl-list-goal" title="' + esc(g.goal) + '">' + esc(g.goal) + '</span>' +
         '<span class="gl-list-date">' + esc(date) + '</span>' +
@@ -188,7 +196,7 @@ ${consoleShellScript}
         '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
         (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '') +
       '</details>' +
-      '<div class="gl-row"><button type="button" class="gl-btn" id="glSubmit">Suggest workflows</button><span class="hint" id="glSubmitStatus"></span></div>' +
+      '<div class="gl-row"><button type="button" class="gl-btn" id="glSubmit">Suggest jobs</button><span class="hint" id="glSubmitStatus"></span></div>' +
     '</div>';
   }
 
@@ -203,26 +211,70 @@ ${consoleShellScript}
     return '<span class="gl-agent">' + ARROW + ' ' + (w.agent.isNew ? '<span class="gl-new">New agent</span>' : '') + '<strong>' + esc(w.agent.name) + '</strong></span>';
   }
 
-  function workflowHtml(w) {
+  // A job: one piece of the goal, with its measure, and what does it.
+  function jobHtml(w) {
+    var once = w.kind === 'once';
+    var doer = (w.doers || [])[0];
     var actions = '';
     if (w.state === 'suggested') actions = '<button type="button" class="gl-btn soft" data-act="save">Save</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
-    else if (w.state === 'saved') actions = '<button type="button" class="gl-btn" data-act="build">Build workflow</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
-    else if (w.state === 'built') actions = '<a class="gl-btn soft" style="display:inline-flex;align-items:center;text-decoration:none" href="/agents/config?agent=' + encodeURIComponent(w.built.agent) + '&tab=workflows&workflow=' + encodeURIComponent(w.built.workflowId) + '">Open</a>';
+    else if (w.state === 'saved' && once) actions = '<button type="button" class="gl-btn" data-act="build">Do it in Chat</button><button type="button" class="gl-btn soft" data-act="done">Mark done</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
+    else if (w.state === 'saved') actions = '<button type="button" class="gl-btn" data-act="build">Build it</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
+    else if (w.state === 'active' && doer) actions = '<a class="gl-btn soft gl-link-btn" href="/agents/config?agent=' + encodeURIComponent(doer.agent) + '&tab=workflows&workflow=' + encodeURIComponent(doer.workflowId) + '">Open its workflow</a>';
+    else if (w.state === 'done') actions = '<button type="button" class="gl-btn plain" data-act="undone">Reopen</button>';
     else if (w.state === 'discarded') actions = '<button type="button" class="gl-btn plain" data-act="restore">Restore</button>';
-    var pill = w.state === 'saved' ? '<span class="gl-state saved">Saved</span>' : w.state === 'built' ? '<span class="gl-state built">Built</span>' : '';
-    return '<div class="gl-wf' + (w.state === 'built' ? ' built' : '') + '" data-wf="' + esc(w.id) + '">' +
-      '<div class="gl-wf-head"><span class="gl-wf-title">' + esc(w.title) + ' ' + pill + '</span>' + agentHtml(w) + '</div>' +
+    var pill = w.state === 'saved' ? '<span class="gl-state saved">Saved</span>'
+      : w.state === 'active' ? '<span class="gl-state built">Running</span>'
+      : w.state === 'done' ? '<span class="gl-state built">Done</span>' : '';
+    var measure = w.measure ? '<span class="gl-measure">' + (once ? '' : 'Measured by: ') + esc(w.measure) + '</span>' : '';
+    var doneBy = w.state === 'active' && doer
+      ? '<div class="gl-doer">Done by <strong>' + esc(doer.agent) + '</strong> ' + String.fromCharCode(183) + ' ' + esc(doer.title) + '<span class="gl-evidence" data-evidence="' + esc(doer.agent) + '|' + esc(doer.workflowId) + '"></span></div>'
+      : w.state === 'done' && w.doneAt ? '<div class="gl-doer">Done ' + esc(new Date(w.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</div>' : '';
+    return '<div class="gl-wf' + (w.state === 'active' || w.state === 'done' ? ' built' : '') + '" data-wf="' + esc(w.id) + '">' +
+      '<div class="gl-wf-head"><span class="gl-wf-title">' + esc(w.title) + ' ' + pill + '</span>' + (w.state === 'active' ? '' : agentHtml(w)) + '</div>' +
+      '<div class="gl-job-meta"><span class="gl-kind">' + (once ? 'One-off' : 'Recurring') + '</span>' + measure + '</div>' +
+      doneBy +
       (w.why ? '<p class="gl-why">' + esc(w.why) + '</p>' : '') +
-      needsHtml(w) +
-      '<details><summary>What it will do</summary><p>' + esc(w.request) + '</p></details>' +
+      (w.state === 'active' || w.state === 'done' ? '' : needsHtml(w)) +
+      '<details><summary>' + (once ? 'What the agent is asked to do' : 'What its workflow will do') + '</summary><p>' + esc(w.request) + '</p></details>' +
       '<div class="gl-row">' + actions + '<span class="hint" data-wf-status></span></div>' +
     '</div>';
   }
 
+  // An active job's evidence, from its workflow (the agent's workflow list).
+  function fillEvidence() {
+    var spots = page.querySelectorAll('[data-evidence]');
+    var agents = {};
+    for (var i = 0; i < spots.length; i++) agents[spots[i].getAttribute('data-evidence').split('|')[0]] = true;
+    Object.keys(agents).forEach(function (agent) {
+      api('GET', '/agents/' + encodeURIComponent(agent) + '/workflows').then(function (r) {
+        if (!r.ok) return;
+        var byId = {};
+        (r.body.workflows || []).forEach(function (w) { byId[w.id] = w; });
+        var mine = page.querySelectorAll('[data-evidence]');
+        for (var j = 0; j < mine.length; j++) {
+          var parts = mine[j].getAttribute('data-evidence').split('|');
+          if (parts[0] !== agent) continue;
+          var w = byId[parts[1]];
+          if (!w) { mine[j].textContent = ' ' + String.fromCharCode(183) + ' its workflow is gone'; continue; }
+          var sc = w.scores || { runs: 0, failed: 0, approvals: { refused: 0 }, feedback: { count: 0, edits: { heavy: 0 } } };
+          var bits = [sc.runs ? sc.runs + ' run' + (sc.runs === 1 ? '' : 's') : 'no runs yet'];
+          if (sc.failed) bits.push(sc.failed + ' failed');
+          if (sc.approvals && sc.approvals.refused) bits.push(sc.approvals.refused + ' refused at approval');
+          if (sc.feedback && sc.feedback.count) bits.push(Math.round(100 * sc.feedback.edits.heavy / sc.feedback.count) + '% heavily edited');
+          var round = w.evals && w.evals.rounds && w.evals.rounds[0];
+          if (round && typeof round.average === 'number') bits.push('evals ' + round.average.toFixed(1) + ' / 5');
+          mine[j].textContent = ' ' + String.fromCharCode(183) + ' ' + bits.join(', ');
+        }
+      });
+    });
+  }
+
   function goalHtml(g) {
-    var by = function (s) { return g.workflows.filter(function (w) { return w.state === s; }); };
+    var jobs = g.jobs || [];
+    var by = function (s) { return jobs.filter(function (w) { return w.state === s; }); };
     var suggested = by('suggested');
-    var kept = g.workflows.filter(function (w) { return w.state === 'saved' || w.state === 'built'; });
+    // Yours: running first, then saved, then done.
+    var kept = by('active').concat(by('saved'), by('done'));
     var discarded = by('discarded');
     var planning = g.status === 'planning';
     var focus = g.focus || (g.brief && g.brief.focus) || '';
@@ -232,22 +284,22 @@ ${consoleShellScript}
       (focus ? '<div class="gl-focus">Planning for <select id="glFocus"' + (planning ? ' disabled' : '') + '>' + FOCUS.map(function (f) { return '<option value="' + f[0] + '"' + (f[0] === focus ? ' selected' : '') + '>' + f[1] + '</option>'; }).join('') + '</select>' +
         (g.brief && g.brief.measure ? '<span>' + String.fromCharCode(183) + ' measured by ' + esc(g.brief.measure) + '</span>' : '') + '</div>' : '') +
       (g.message ? '<p class="gl-why">' + esc(g.message) + '</p>' : '') +
-      (planning ? '<p class="gl-status">Suggesting workflows' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
+      (planning ? '<p class="gl-status">Suggesting jobs' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
       (g.status === 'failed' ? '<p class="error">' + esc(g.error || 'Planning failed.') + '</p>' : '') +
       (g.setup && g.setup.length ? '<div><strong style="font-size:13.5px">Before you start</strong><ol class="gl-setup">' + g.setup.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></div>' : '') +
     '</div>' +
     (state.justDiscarded ? '<div class="gl-discarded-note" data-discarded="' + esc(state.justDiscarded.id) + '"><span>Discarded <strong>' + esc(state.justDiscarded.title) + '</strong>. Why?</span>' +
       REASONS.map(function (r) { return '<button type="button" class="gl-btn plain" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '<button type="button" class="gl-link" data-undo="1">Undo</button></div>' : '') +
-    '<div class="gl-section"><h3>Suggestions <span class="gl-count">' + suggested.length + '</span></h3>' +
-      (suggested.length ? suggested.map(workflowHtml).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
+    '<div class="gl-section"><h3>Suggested jobs <span class="gl-count">' + suggested.length + '</span></h3>' +
+      (suggested.length ? suggested.map(jobHtml).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
       '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">New ideas only: nothing you’ve saved, built or discarded comes back.</span></div>' +
     '</div>' +
-    '<div class="gl-section"><h3>Saved workflows <span class="gl-count">' + kept.length + '</span></h3>' +
-      (kept.length ? kept.map(workflowHtml).join('') : '<p class="gl-empty">Save a suggestion to keep it here, then build it into its agent.</p>') +
+    '<div class="gl-section"><h3>Your jobs <span class="gl-count">' + kept.length + '</span></h3>' +
+      (kept.length ? kept.map(jobHtml).join('') : '<p class="gl-empty">Save a suggestion to keep it here. Build a recurring job into a workflow on its agent; do a one-off job with its agent in Chat.</p>') +
     '</div>' +
     (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
-      (state.showDiscarded ? discarded.map(workflowHtml).join('') : '') + '</div>' : '') +
+      (state.showDiscarded ? discarded.map(jobHtml).join('') : '') + '</div>' : '') +
     '<div><button type="button" class="gl-link" id="glDelete" style="color:var(--bad)">Delete this goal</button></div>';
   }
 
@@ -264,6 +316,7 @@ ${consoleShellScript}
     state.error = '';
     wire();
     watch();
+    if (state.current) fillEvidence();
   }
 
   function wire() {
@@ -316,7 +369,7 @@ ${consoleShellScript}
     if (shown) shown.addEventListener('click', function () { state.showDiscarded = !state.showDiscarded; render(); });
     var del = document.getElementById('glDelete');
     if (del) del.addEventListener('click', function () {
-      if (del.dataset.confirming !== '1') { del.dataset.confirming = '1'; del.textContent = 'Click again to delete this goal (built workflows stay in their agents)'; return; }
+      if (del.dataset.confirming !== '1') { del.dataset.confirming = '1'; del.textContent = 'Click again to delete this goal (the workflows that do its jobs stay in their agents)'; return; }
       api('DELETE', base).then(function () { state.current = null; setUrl(''); reloadSidebar(); load(); });
     });
     var cards = page.querySelectorAll('[data-wf]');
@@ -326,7 +379,7 @@ ${consoleShellScript}
       var wid = note.getAttribute('data-discarded');
       var send = function (body) {
         state.justDiscarded = null;
-        api('PATCH', base + '/workflows/' + encodeURIComponent(wid), body).then(function (r) {
+        api('PATCH', base + '/jobs/' + encodeURIComponent(wid), body).then(function (r) {
           if (r.ok) replaceGoal(r.body.goal);
           render();
         });
@@ -353,13 +406,13 @@ ${consoleShellScript}
       btn.disabled = true;
       if (act === 'build') {
         status.textContent = 'Getting the agent ready' + ELLIPSIS;
-        api('POST', base + '/workflows/' + encodeURIComponent(id) + '/build').then(function (r) {
+        api('POST', base + '/jobs/' + encodeURIComponent(id) + '/build').then(function (r) {
           if (!r.ok) { status.textContent = r.body.error || 'Could not build it.'; btn.disabled = false; return; }
           location.href = r.body.url;
         });
         return;
       }
-      api('PATCH', base + '/workflows/' + encodeURIComponent(id), { action: act }).then(function (r) {
+      api('PATCH', base + '/jobs/' + encodeURIComponent(id), { action: act }).then(function (r) {
         if (!r.ok) { status.textContent = r.body.error || 'Could not do that.'; btn.disabled = false; return; }
         replaceGoal(r.body.goal);
         // Ask why, once, right after a discard.

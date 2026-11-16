@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  checkBuiltWorkflows, createGoal, editAmount, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
+  checkBuiltWorkflows, createGoal, editAmount, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
   type GoalsDeps,
 } from '#web/goals-admin.js'
 
@@ -53,11 +53,11 @@ describe('a goal and its workflows', () => {
     await goalPlanning(started.id)
     const goal = getGoal(deps, started.id)
     expect(goal.status).toBe('ready')
-    expect(goal.workflows.map((w) => [w.title, w.state, w.agent.name, w.agent.isNew])).toEqual([
+    expect(goal.jobs.map((w) => [w.title, w.state, w.agent.name, w.agent.isNew])).toEqual([
       ['Answer posts', 'suggested', 'growth-agent', false],
       ['Directory listings', 'suggested', 'listings-agent', true],
     ])
-    expect(goal.workflows[1]!.agent.instructions).toBe('Finds directories.')
+    expect(goal.jobs[1]!.agent.instructions).toBe('Finds directories.')
     expect(goal.setup).toEqual(['Record today’s signups as a baseline'])
     expect(readAbout(deps)).toBe('An agent platform for small teams')
     expect(listGoals(deps).map((g) => g.id)).toEqual([goal.id])
@@ -67,14 +67,14 @@ describe('a goal and its workflows', () => {
     const { deps } = setup([[wf('A'), wf('B')]])
     const { id } = createGoal(deps, { goal: 'Grow users to 100' })
     await goalPlanning(id)
-    const [a, b] = getGoal(deps, id).workflows
+    const [a, b] = getGoal(deps, id).jobs
     setWorkflowState(deps, id, a!.id, 'save')
     setWorkflowState(deps, id, a!.id, 'discard')
     setWorkflowState(deps, id, b!.id, 'discard')
-    expect(getGoal(deps, id).workflows.map((w) => w.state)).toEqual(['discarded', 'discarded'])
+    expect(getGoal(deps, id).jobs.map((w) => w.state)).toEqual(['discarded', 'discarded'])
     setWorkflowState(deps, id, a!.id, 'restore')
     setWorkflowState(deps, id, b!.id, 'restore')
-    expect(getGoal(deps, id).workflows.map((w) => w.state)).toEqual(['saved', 'suggested'])
+    expect(getGoal(deps, id).jobs.map((w) => w.state)).toEqual(['saved', 'suggested'])
     expect(() => setWorkflowState(deps, id, a!.id, 'save')).toThrow(/Only a suggestion/)
   })
 
@@ -82,7 +82,7 @@ describe('a goal and its workflows', () => {
     const { deps, plans } = setup([[wf('A'), wf('B')], [wf('A again', { lever: 'a' }), wf('C'), wf('C', { lever: 'c' })]])
     const { id } = createGoal(deps, { goal: 'Grow users to 100' })
     await goalPlanning(id)
-    const [a, b] = getGoal(deps, id).workflows
+    const [a, b] = getGoal(deps, id).jobs
     setWorkflowState(deps, id, a!.id, 'save')
     setWorkflowState(deps, id, b!.id, 'discard')
     generateMore(deps, id)
@@ -92,7 +92,7 @@ describe('a goal and its workflows', () => {
     // its own duplicate C were dropped.
     expect(plans[1]).toContain('- A (lever: a; saved)')
     expect(plans[1]).toContain('- B (lever: b; discarded)')
-    expect(goal.workflows.map((w) => [w.title, w.state, w.round])).toEqual([['A', 'saved', 1], ['B', 'discarded', 1], ['C', 'suggested', 2]])
+    expect(goal.jobs.map((w) => [w.title, w.state, w.round])).toEqual([['A', 'saved', 1], ['B', 'discarded', 1], ['C', 'suggested', 2]])
     expect(goal.rounds).toBe(2)
   })
 
@@ -100,7 +100,7 @@ describe('a goal and its workflows', () => {
     const { deps, created } = setup([[wf('Listings', { agent: 'listings-agent', newAgent: { name: 'listings-agent', instructions: 'Finds directories.' } }), wf('Posts')]], [])
     const { id } = createGoal(deps, { goal: 'Grow users to 100' })
     await goalPlanning(id)
-    const [listings, posts] = getGoal(deps, id).workflows
+    const [listings, posts] = getGoal(deps, id).jobs
     await expect(prepareBuild(deps, id, listings!.id)).rejects.toThrow(/Save it first/)
     setWorkflowState(deps, id, listings!.id, 'save')
     const built = await prepareBuild(deps, id, listings!.id)
@@ -119,12 +119,12 @@ describe('a goal and its workflows', () => {
     const { deps } = setup([[wf('Posts')]])
     const { id } = createGoal(deps, { goal: 'Grow users to 100' })
     await goalPlanning(id)
-    const [posts] = getGoal(deps, id).workflows
+    const [posts] = getGoal(deps, id).jobs
     setWorkflowState(deps, id, posts!.id, 'save')
     const goal = markBuilt(deps, id, posts!.id, { agent: 'growth-agent', workflowId: 'answer-posts', title: 'Answer posts' })
-    expect(goal.workflows[0]).toMatchObject({ state: 'built', built: { agent: 'growth-agent', workflowId: 'answer-posts' } })
-    await expect(prepareBuild(deps, id, posts!.id)).rejects.toThrow(/already built/)
-    expect(() => setWorkflowState(deps, id, posts!.id, 'discard')).toThrow(/built/)
+    expect(goal.jobs[0]).toMatchObject({ state: 'active', doers: [{ type: 'workflow', agent: 'growth-agent', workflowId: 'answer-posts' }] })
+    await expect(prepareBuild(deps, id, posts!.id)).rejects.toThrow(/already does this job/)
+    expect(() => setWorkflowState(deps, id, posts!.id, 'discard')).toThrow(/remove it from its agent/)
   })
 
   it('records a planning failure on the goal', async () => {
@@ -155,7 +155,7 @@ describe('how much a built workflow was edited', () => {
     const { deps } = setup([[wf('Answer posts', { request: SUGGESTION })]])
     const { id } = createGoal(deps, { goal: 'Grow users to 100' })
     await goalPlanning(id)
-    const [w] = getGoal(deps, id).workflows
+    const [w] = getGoal(deps, id).jobs
     setWorkflowState(deps, id, w!.id, 'save')
     markBuilt(deps, id, w!.id, { agent: 'growth-agent', workflowId: 'answer-posts', ...(description !== undefined ? { description } : {}) })
     return { deps, id, wid: w!.id }
@@ -163,11 +163,11 @@ describe('how much a built workflow was edited', () => {
 
   it('records how much the request was changed at Build, and an event only when it was', async () => {
     const untouched = await built(SUGGESTION)
-    expect(getGoal(untouched.deps, untouched.id).workflows[0]!.edited).toBe('none')
+    expect(getGoal(untouched.deps, untouched.id).jobs[0]!.edited).toBe('none')
     expect(readLeverEvents(untouched.deps).map((e) => e.type)).toEqual(['suggested', 'saved', 'built'])
 
     const changed = await built(SUGGESTION.replace('Reddit and Hacker News', 'r/AI_Agents and r/nocode'))
-    expect(getGoal(changed.deps, changed.id).workflows[0]!.edited).toBe('light')
+    expect(getGoal(changed.deps, changed.id).jobs[0]!.edited).toBe('light')
     const event = readLeverEvents(changed.deps).find((e) => e.type === 'built')
     expect(event).toMatchObject({ type: 'built', detail: { newAgent: false } })
     expect(readLeverEvents(changed.deps).find((e) => e.type === 'edited')).toMatchObject({ detail: { amount: 'light' }, lever: 'answer posts', focus: 'new-signups', goalWorkflow: changed.wid })
@@ -176,7 +176,7 @@ describe('how much a built workflow was edited', () => {
 
     // Without the submitted request, nothing is known about edits.
     const unknown = await built()
-    expect(getGoal(unknown.deps, unknown.id).workflows[0]!.edited).toBeUndefined()
+    expect(getGoal(unknown.deps, unknown.id).jobs[0]!.edited).toBeUndefined()
   })
 })
 
@@ -185,7 +185,7 @@ describe('lever events', () => {
     const { deps } = setup([[wf('A'), wf('B'), wf('C', { agent: 'new-agent', newAgent: { name: 'new-agent', instructions: 'Does C.' } })]])
     const { id } = createGoal(deps, { goal: 'Grow users to 100' })
     await goalPlanning(id)
-    const [a, b, c] = getGoal(deps, id).workflows
+    const [a, b, c] = getGoal(deps, id).jobs
     setWorkflowState(deps, id, a!.id, 'discard')
     setWorkflowState(deps, id, a!.id, 'reason', 'too-much-work')
     expect(() => setWorkflowState(deps, id, a!.id, 'reason', 'boring')).toThrow(/reason must be one of/)
@@ -206,10 +206,10 @@ describe('lever events', () => {
     const { deps } = setup([[wf('A')]])
     const { id } = createGoal(deps, { goal: 'Grow users to 100' })
     await goalPlanning(id)
-    const [a] = getGoal(deps, id).workflows
+    const [a] = getGoal(deps, id).jobs
     setWorkflowState(deps, id, a!.id, 'save')
     markBuilt(deps, id, a!.id, { agent: 'growth-agent', workflowId: 'a' })
-    const builtAt = Date.parse(getGoal(deps, id).workflows[0]!.built!.at)
+    const builtAt = Date.parse(getGoal(deps, id).jobs[0]!.doers[0]!.at)
     const day = 24 * 60 * 60 * 1000
     let exists = true
     deps.workflowActivity = async () => ({ exists, runs: 6, done: 5 })
@@ -260,5 +260,43 @@ describe('the workspace as the goal planner sees it', () => {
       { name: 'Telegram', kind: 'messaging', connected: true },
     ])
     expect(kindOf('Firecrawl')).toBe('web-search')
+  })
+})
+
+describe('jobs under a goal', () => {
+  it('gives each job a kind and its own measure', async () => {
+    const { deps } = setup([[wf('Answer posts', { kind: 'recurring', measure: 'replies per week' }), wf('List in directories', { kind: 'once', measure: 'done when: listed in 15 directories' })]])
+    const { id } = createGoal(deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    expect(getGoal(deps, id).jobs.map((j) => [j.title, j.kind, j.measure, j.doers])).toEqual([
+      ['Answer posts', 'recurring', 'replies per week', []],
+      ['List in directories', 'once', 'done when: listed in 15 directories', []],
+    ])
+  })
+
+  it('does a one-off job with its agent in Chat, then marks it done or reopens it', async () => {
+    const { deps } = setup([[wf('List in directories', { kind: 'once', measure: 'done when: listed' })]])
+    const { id } = createGoal(deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    const [job] = getGoal(deps, id).jobs
+    expect(() => setWorkflowState(deps, id, job!.id, 'done')).toThrow(/Save it first/)
+    setWorkflowState(deps, id, job!.id, 'save')
+    const { url } = await prepareBuild(deps, id, job!.id)
+    expect(url).toMatch(/^\/playground\?agent=growth-agent&message=Do\+List\+in\+directories/)
+    expect(setWorkflowState(deps, id, job!.id, 'done').jobs[0]).toMatchObject({ state: 'done', doneAt: expect.any(String) })
+    expect(readLeverEvents(deps).map((e) => e.type)).toEqual(['suggested', 'saved', 'built'])
+    expect(setWorkflowState(deps, id, job!.id, 'undone').jobs[0]!.state).toBe('saved')
+  })
+
+  it('reads a goal saved before jobs: its workflows become recurring jobs, a built one active with its workflow', () => {
+    const goal = migrateGoal({
+      id: 'g-1', goal: 'Grow', setup: [], message: '', status: 'ready', rounds: 1, createdAt: '', updatedAt: '',
+      workflows: [
+        { id: 'w-1', title: 'Answer posts', state: 'built', built: { agent: 'growth-agent', workflowId: 'answer-posts', title: 'Answer posts', at: '2026-11-01T00:00:00Z' } },
+        { id: 'w-2', title: 'List', state: 'saved' },
+      ],
+    })
+    expect(goal.jobs.map((j) => [j.id, j.kind, j.state, j.doers.map((d) => d.workflowId)])).toEqual([['w-1', 'recurring', 'active', ['answer-posts']], ['w-2', 'recurring', 'saved', []]])
+    expect((goal as unknown as Record<string, unknown>).workflows).toBeUndefined()
   })
 })

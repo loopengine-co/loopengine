@@ -124,7 +124,8 @@ ${consoleShellScript}
   var EX_PAGE = 6;
   // Opened from a goal's saved workflow (/goals): build it straight away,
   // and link the created workflow back to the goal.
-  var fromGoal = { goal: new URLSearchParams(location.search).get('goal') || '', workflow: new URLSearchParams(location.search).get('goalWorkflow') || '' };
+  // Built for a goal's job (goalJob; goalWorkflow from before jobs).
+  var fromGoal = { goal: new URLSearchParams(location.search).get('goal') || '', workflow: new URLSearchParams(location.search).get('goalJob') || new URLSearchParams(location.search).get('goalWorkflow') || '' };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -628,7 +629,7 @@ ${consoleShellScript}
       post('/workflows/create', body).then(function (r) {
         if (!r.ok) { renderPlan(r.body.error || 'Could not create it.'); return; }
         if (!fromGoal.goal || !fromGoal.workflow) { renderDone(r.body); return; }
-        post('/goals/' + encodeURIComponent(fromGoal.goal) + '/workflows/' + encodeURIComponent(fromGoal.workflow) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow, description: state.description })
+        post('/goals/' + encodeURIComponent(fromGoal.goal) + '/jobs/' + encodeURIComponent(fromGoal.workflow) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow, description: state.description })
           .then(function () { renderDone(r.body); }, function () { renderDone(r.body); });
       }).catch(function (err) { renderPlan(err.message); });
     });

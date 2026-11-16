@@ -1494,6 +1494,9 @@ ${consoleShellScript}
         updateCaption();
         renderAgentHead();
         resetConversation();
+        // A one-off job from a goal (?message=...) arrives ready to send.
+        var prefill = new URLSearchParams(location.search).get('message');
+        if (hasAgents && prefill && !messageInput.value) messageInput.value = prefill;
         updateSendButtonState();
         if (hasAgents) messageInput.focus();
       })

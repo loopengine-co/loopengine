@@ -1027,8 +1027,10 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
   }
   // /goals, /goals/about, /goals/<id>, /goals/<id>/generate,
-  // /goals/<id>/workflows/<wid>[/build|/built]
+  // /goals/<id>/jobs/<jobId>[/build|/built]. A job was called a workflow
+  // under its goal before; /goals/<id>/workflows/<jobId> still works.
   const [, , id, sub, wid, action] = pathname.split('/')
+  const jobs = sub === 'jobs' || sub === 'workflows'
   try {
     if (!id && req.method === 'GET') {
       const settings = readGoalSettings(goalsDeps)
@@ -1045,12 +1047,12 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
       return json(200, { deleted: true })
     }
     if (id && sub === 'generate' && req.method === 'POST') return json(200, { goal: generateMore(goalsDeps, id, await readJsonBody(req)) })
-    if (id && sub === 'workflows' && wid && !action && req.method === 'PATCH') {
+    if (id && jobs && wid && !action && req.method === 'PATCH') {
       const body = await readJsonBody(req)
       return json(200, { goal: setWorkflowState(goalsDeps, id, wid, body.action, body.reason) })
     }
-    if (id && sub === 'workflows' && wid && action === 'build' && req.method === 'POST') return json(200, await prepareBuild(goalsDeps, id, wid))
-    if (id && sub === 'workflows' && wid && action === 'built' && req.method === 'POST') return json(200, { goal: markBuilt(goalsDeps, id, wid, await readJsonBody(req)) })
+    if (id && jobs && wid && action === 'build' && req.method === 'POST') return json(200, await prepareBuild(goalsDeps, id, wid))
+    if (id && jobs && wid && action === 'built' && req.method === 'POST') return json(200, { goal: markBuilt(goalsDeps, id, wid, await readJsonBody(req)) })
     return json(404, { error: 'not found' })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

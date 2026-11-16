@@ -65,13 +65,19 @@ export interface SavedGoalWorkflow {
   title: string
   lever: string
   leverId?: string
-  state: 'suggested' | 'saved' | 'built' | 'discarded' | 'proposed' | 'dismissed'
+  state: 'suggested' | 'saved' | 'built' | 'active' | 'done' | 'discarded' | 'proposed' | 'dismissed'
 }
 
 export interface GoalNeed { name: string; kind: string; connected: boolean }
 
 export interface PlannedGoalWorkflow {
   title: string
+  /** recurring: a workflow runs it again and again. once: one piece of
+   * work (a finite list, a one-time audit) an agent does once. */
+  kind: 'recurring' | 'once'
+  /** The job's own number ("replies per week"), or for a once job what
+   * done looks like ("done when: 20 communities are listed"). */
+  measure: string
   /** The playbook lever's id, when it comes from the playbook. */
   leverId?: string
   /** The lever in a few words, always set: what dedupe and reviews use. */
@@ -136,7 +142,8 @@ Rules:
 2. Every workflow serves the brief's focus directly and moves its measure. Workflows that only support it (reporting, onboarding for an acquisition goal, support) go in leftOut with a reason, not in workflows.
 3. One lever per workflow, named in a few generic words (no business, product, person, place or site names: "list in app marketplaces", not "list Wick & Ember on Shopify"); no two workflows on the same lever. Never propose a lever already saved under the goal (built, proposed or dismissed): those are listed in the request.
 4. Three to five workflows for an "in" goal, ordered by impact against effort, quickest useful one first; startsAfter when one depends on another. Their humanMinutesPerWeek together stay within three quarters of the brief's weeklyHours, so the plan survives a busy week.
-4b. Work on a finite list (submitting to a set of directories, a one-time audit) is a setup task, or a workflow that says when it stops; never a weekly job that runs out of things to do.
+4b. Each one is a job: kind "recurring" when it runs again and again (a weekly scan, a reply to each signup), kind "once" for work on a finite list or done one time (submitting to a set of directories, a one-time audit, researching a list of communities). A once job is done by an agent once, in Chat; never make it a weekly job that runs out of things to do.
+4c. measure: the job's own number, in the person's terms, that shows it's working ("replies per week", "signups tagged ref=directories"); for a once job, what done looks like ("done when: listed in 15 directories").
 5. Specific to this context: name the person's own communities, systems, products and channels in each request. A request anyone could use unchanged is wrong.
 6. needs: what each workflow uses, each with a kind from the playbook's vocabulary and connected true only when the context lists that kind as connected.
 7. Every request that posts, sends or publishes says nothing goes out without the person's approval.
@@ -156,7 +163,7 @@ export const GOAL_CRITIQUE_PROMPT = `You check a goal plan against its rules bef
 - review time over three quarters of the weekly budget;
 - a measure whose source isn't connected, with no setup step that connects it or a manual record, or no baseline;
 - a qualifier from the brief no workflow addresses;
-- a weekly workflow on a finite list that will run out;
+- a recurring job on a finite list that will run out (it should be kind "once");
 - a plan claiming to achieve a goal that is only partly in scope, or workflows for an out-of-scope goal.
 Call save_review once: passed true only when there are no issues.`
 
@@ -199,6 +206,8 @@ const PLAN_TOOL: ToolSchema = {
           type: 'object',
           properties: {
             title: { type: 'string' },
+            kind: { type: 'string', enum: ['recurring', 'once'] },
+            measure: { type: 'string', description: "the job's own number, or for a once job what done looks like" },
             leverId: { type: 'string', description: "the playbook lever's id; empty for a new idea" },
             lever: { type: 'string', description: 'the lever in a few generic words, with no names of the business, its products, people, places or sites' },
             focus: { type: 'string', enum: focusEnum },
@@ -342,6 +351,8 @@ function parsePlan(raw: Record<string, unknown>): Omit<GoalPlan, 'brief' | 'crit
     })
     return [{
       title,
+      kind: x.kind === 'once' ? 'once' : 'recurring',
+      measure: str(x.measure),
       ...(leverId ? { leverId } : {}),
       // An empty label falls back to the playbook lever's name, else the title.
       lever: (leverId && (str(x.lever) === leverId || !str(x.lever)) ? levers.find((l) => l.id === leverId)?.name : str(x.lever)) || title,

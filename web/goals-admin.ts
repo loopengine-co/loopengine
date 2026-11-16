@@ -1,17 +1,24 @@
-// Backs the console's Goals page: a goal someone types, the workflows the
-// goal planner (core/system-agents/goal-planner.ts) suggests for it, and
-// what the person does with each one. Each goal is one JSON file in the
+// Backs the console's Goals page: a goal someone types, the jobs the goal
+// planner (core/system-agents/goal-planner.ts) suggests for it, and what
+// the person does with each one. Each goal is one JSON file in the
 // project, goals/<id>.json; what the person says about their business is
 // goals/about.json, shared by every goal.
 //
-// A workflow under a goal is in one of four states:
+// A job is one piece of the goal, with its own measure: recurring (done
+// by a workflow on an agent) or once (a one-off piece of work an agent
+// does in Chat). It's in one of five states:
 //   suggested  the planner proposed it (on create or Generate more)
 //   saved      the person kept it
-//   built      it was built into its agent (linked to the real workflow)
+//   active     a workflow does it (Build linked the real workflow back)
+//   done       a once job the person marked done
 //   discarded  the person said no; never suggested again unless restored
-// Generate more is given every workflow in every state, so nothing comes
-// back twice. Building one makes its suggested agent first when there is
-// none by that name, then hands the request to Build a workflow.
+// Generate more is given every job in every state, so nothing comes back
+// twice. Building one makes its suggested agent first when there is none
+// by that name, then hands the request to Build a workflow (a once job
+// opens Chat with the agent instead).
+//
+// Goals saved before jobs kept them as `workflows`, built ones with a
+// `built` link; they're read as jobs and saved that way next time.
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
@@ -19,11 +26,27 @@ import type { ModelCall } from '../core/run-agent.js'
 import { agentName, runGoalPipeline, type GoalBrief, type GoalContext, type GoalNeed, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
 import { GOAL_FOCUSES, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
 
-export type GoalWorkflowState = 'suggested' | 'saved' | 'built' | 'discarded'
+export type GoalJobState = 'suggested' | 'saved' | 'active' | 'done' | 'discarded'
 
-export interface GoalWorkflow {
+/** What does a job: a workflow on an agent. (One-off assignments and
+ * several chained workflows come later: docs, Jobs under goals.) */
+export interface JobDoer {
+  type: 'workflow'
+  agent: string
+  workflowId: string
+  title: string
+  at: string
+}
+
+export interface GoalJob {
   id: string
   title: string
+  /** recurring: a workflow does it, again and again. once: one piece of
+   * work, done when the person says so. */
+  kind: 'recurring' | 'once'
+  /** The job's own number, in the person's terms ("replies per week"), or
+   * for a once job what done looks like. */
+  measure: string
   /** The request Build a workflow is given. */
   request: string
   /** Why it helps the goal, one sentence. */
@@ -36,11 +59,13 @@ export interface GoalWorkflow {
   needs: GoalNeed[]
   humanMinutesPerWeek: number
   measureLink: string
-  state: GoalWorkflowState
+  state: GoalJobState
   /** Where a discarded one goes back to on Restore. */
-  restoreTo?: Exclude<GoalWorkflowState, 'discarded'>
-  /** Set once built: the agent and the workflow (skill id) it became. */
-  built?: { agent: string; workflowId: string; title: string; at: string }
+  restoreTo?: 'suggested' | 'saved'
+  /** What does it, once built: the workflow (skill id) on its agent. */
+  doers: JobDoer[]
+  /** When a once job was marked done. */
+  doneAt?: string
   /** How much the person changed the suggested request before building it
    * (edits to the built workflow's instructions later don't count). */
   edited?: EditAmount
@@ -53,6 +78,10 @@ export interface GoalWorkflow {
   /** Which generation suggested it (1 on create). */
   round: number
 }
+
+/** Before jobs: the same thing, called a workflow under its goal. */
+export type GoalWorkflow = GoalJob
+export type GoalWorkflowState = GoalJobState
 
 export interface Goal {
   id: string
@@ -67,7 +96,7 @@ export interface Goal {
   /** The playbook version the latest suggestions came from. */
   playbookVersion?: number
   rounds: number
-  workflows: GoalWorkflow[]
+  jobs: GoalJob[]
   createdAt: string
   updatedAt: string
 }
@@ -114,10 +143,28 @@ function write(deps: GoalsDeps, goal: Goal): Goal {
   return goal
 }
 
+/** A goal as saved before jobs (its `workflows`, a built one's `built`
+ * link) read as one with jobs; one saved since, as it is. */
+export function migrateGoal(raw: Record<string, unknown>): Goal {
+  if (Array.isArray(raw.jobs)) return raw as unknown as Goal
+  const { workflows, ...rest } = raw
+  const jobs = (Array.isArray(workflows) ? workflows : []).map((w): GoalJob => {
+    const { built, ...x } = w as Record<string, unknown> & { built?: { agent: string; workflowId: string; title: string; at: string } }
+    return {
+      ...(x as unknown as GoalJob),
+      kind: 'recurring',
+      measure: typeof x.measure === 'string' ? x.measure : '',
+      state: x.state === 'built' ? 'active' : (x.state as GoalJobState),
+      doers: built ? [{ type: 'workflow', ...built }] : [],
+    }
+  })
+  return { ...(rest as unknown as Goal), jobs }
+}
+
 export function getGoal(deps: GoalsDeps, id: string): Goal {
   const file = goalFile(deps, id)
   if (!existsSync(file)) throw new GoalError('No such goal')
-  const goal = JSON.parse(readFileSync(file, 'utf8')) as Goal
+  const goal = migrateGoal(JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>)
   if (goal.status === 'planning' && Date.now() - Date.parse(goal.updatedAt) > STALE_PLANNING_MS && !running.has(id)) {
     return write(deps, { ...goal, status: 'failed', error: 'Planning was interrupted. Try Generate more.', updatedAt: now() })
   }
@@ -203,12 +250,14 @@ export function goalPlanning(id: string): Promise<void> {
 const sameLever = (a: { leverId?: string; lever: string; title: string }, b: { leverId?: string; lever: string; title: string }) =>
   Boolean((a.leverId && a.leverId === b.leverId) || a.lever.toLowerCase() === b.lever.toLowerCase() || a.title.toLowerCase() === b.title.toLowerCase())
 
-function toWorkflow(w: PlannedGoalWorkflow, round: number, deps: GoalsDeps): GoalWorkflow {
+function toJob(w: PlannedGoalWorkflow, round: number, deps: GoalsDeps): GoalJob {
   const name = agentName(w.newAgent?.name || w.agent) || 'goal-agent'
   const exists = deps.agentExists(name)
   return {
     id: newId('w'),
     title: w.title,
+    kind: w.kind,
+    measure: w.measure,
     request: w.request,
     why: w.mechanism,
     lever: w.lever,
@@ -221,6 +270,7 @@ function toWorkflow(w: PlannedGoalWorkflow, round: number, deps: GoalsDeps): Goa
     humanMinutesPerWeek: w.humanMinutesPerWeek,
     measureLink: w.measureLink,
     state: 'suggested',
+    doers: [],
     round,
   }
 }
@@ -237,13 +287,13 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
       const plan = await runGoalPipeline(modelCall, {
         goal: planning.goal,
         context,
-        saved: planning.workflows.map((w) => ({ title: w.title, lever: w.lever, ...(w.leverId ? { leverId: w.leverId } : {}), state: w.state })),
+        saved: planning.jobs.map((w) => ({ title: w.title, lever: w.lever, ...(w.leverId ? { leverId: w.leverId } : {}), state: w.state })),
         ...(planning.focus ? { focus: planning.focus } : {}),
       })
       const latest = getGoal(deps, planning.id)
       // The planner is told what's there; anything it repeats anyway is dropped.
-      const fresh = plan.workflows.map((w) => toWorkflow(w, round, deps)).filter((w, i, all) =>
-        !latest.workflows.some((old) => sameLever(old, w)) && all.findIndex((x) => sameLever(x, w)) === i)
+      const fresh = plan.workflows.map((w) => toJob(w, round, deps)).filter((w, i, all) =>
+        !latest.jobs.some((old) => sameLever(old, w)) && all.findIndex((x) => sameLever(x, w)) === i)
       const updated: Goal = {
         ...latest,
         brief: plan.brief,
@@ -253,7 +303,7 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
         status: 'ready',
         error: undefined,
         rounds: round,
-        workflows: [...latest.workflows, ...fresh],
+        jobs: [...latest.jobs, ...fresh],
         updatedAt: now(),
       } as Goal
       write(deps, updated)
@@ -274,7 +324,7 @@ export function createGoal(deps: GoalsDeps, input: { goal?: unknown; about?: unk
   if (text.length < 5) throw new GoalError('Say what you want to achieve, e.g. "Grow my Cloud users to 100".')
   if (text.length > MAX_GOAL_CHARS) throw new GoalError(`Keep the goal under ${MAX_GOAL_CHARS} characters.`)
   if (input.about !== undefined) writeAbout(deps, input.about)
-  const goal: Goal = { id: newId('g'), goal: text, setup: [], message: '', status: 'planning', rounds: 0, workflows: [], createdAt: now(), updatedAt: now() }
+  const goal: Goal = { id: newId('g'), goal: text, setup: [], message: '', status: 'planning', rounds: 0, jobs: [], createdAt: now(), updatedAt: now() }
   return startPlanning(deps, write(deps, goal))
 }
 
@@ -286,17 +336,17 @@ export function generateMore(deps: GoalsDeps, id: string, input: { goal?: unknow
   return startPlanning(deps, { ...goal, goal: text, ...(focus ? { focus } : {}) })
 }
 
-// ---- What the person does with a workflow.
+// ---- What the person does with a job (/goals/<id>/jobs/<jobId>).
 
-function findWorkflow(goal: Goal, workflowId: string): GoalWorkflow {
-  const w = goal.workflows.find((x) => x.id === workflowId)
-  if (!w) throw new GoalError('No such workflow under this goal')
+function findWorkflow(goal: Goal, jobId: string): GoalJob {
+  const w = goal.jobs.find((x) => x.id === jobId)
+  if (!w) throw new GoalError('No such job under this goal')
   return w
 }
 
-function updateWorkflow(deps: GoalsDeps, goal: Goal, workflowId: string, change: (w: GoalWorkflow) => GoalWorkflow): Goal {
-  findWorkflow(goal, workflowId)
-  return write(deps, { ...goal, workflows: goal.workflows.map((w) => (w.id === workflowId ? change(w) : w)), updatedAt: now() })
+function updateWorkflow(deps: GoalsDeps, goal: Goal, jobId: string, change: (w: GoalJob) => GoalJob): Goal {
+  findWorkflow(goal, jobId)
+  return write(deps, { ...goal, jobs: goal.jobs.map((w) => (w.id === jobId ? change(w) : w)), updatedAt: now() })
 }
 
 export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string, action: unknown, reason?: unknown): Goal {
@@ -309,7 +359,7 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
   }
   if (action === 'discard') {
     if (w.state === 'discarded') return goal
-    if (w.state === 'built') throw new GoalError('This one is built: remove the workflow from its agent instead.')
+    if (w.state === 'active') throw new GoalError('A workflow does this job: remove it from its agent instead.')
     recordLeverEvent(deps, goal, w, 'discarded')
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'discarded', restoreTo: x.state as 'suggested' | 'saved' }))
   }
@@ -318,6 +368,17 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
     recordLeverEvent(deps, goal, w, 'restored')
     return updateWorkflow(deps, goal, workflowId, ({ restoreTo, discardReason: _r, ...x }) => ({ ...x, state: restoreTo ?? 'suggested' }))
   }
+  if (action === 'done') {
+    if (w.kind !== 'once') throw new GoalError('Only a one-off job is marked done.')
+    if (w.state === 'done') return goal
+    if (w.state !== 'saved') throw new GoalError('Save it first.')
+    recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
+    return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'done', doneAt: now() }))
+  }
+  if (action === 'undone') {
+    if (w.state !== 'done') return goal
+    return updateWorkflow(deps, goal, workflowId, ({ doneAt: _d, ...x }) => ({ ...x, state: 'saved' }))
+  }
   if (action === 'reason') {
     if (w.state !== 'discarded') throw new GoalError('Only a discarded workflow has a reason.')
     if (!DISCARD_REASONS.includes(reason as DiscardReason)) throw new GoalError(`reason must be one of ${DISCARD_REASONS.join(', ')}`)
@@ -325,16 +386,18 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
     recordLeverEvent(deps, goal, w, 'discard_reason', { reason: reason as string })
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, discardReason: reason as DiscardReason }))
   }
-  throw new GoalError('action must be save, discard, restore or reason')
+  throw new GoalError('action must be save, discard, restore, done, undone or reason')
 }
 
-/** Build workflow: makes the suggested agent when there is none by that
- * name, then returns where Build a workflow takes over, with the request
- * and the agent filled in and the goal to link the result back to. */
+/** Build: makes the suggested agent when there is none by that name,
+ * then returns where the work starts. A recurring job goes to Build a
+ * workflow, with the request and the agent filled in and the goal to link
+ * the result back to; a once job opens Chat with the agent, the request
+ * ready to send. */
 export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: string): Promise<{ goal: Goal; agent: string; createdAgent: boolean; url: string }> {
   let goal = getGoal(deps, id)
   const w = findWorkflow(goal, workflowId)
-  if (w.state === 'built') throw new GoalError('This workflow is already built.')
+  if (w.state === 'active') throw new GoalError('A workflow already does this job.')
   if (w.state !== 'saved') throw new GoalError('Save it first.')
   let createdAgent = false
   if (!deps.agentExists(w.agent.name)) {
@@ -342,7 +405,8 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
     createdAgent = true
   }
   if (w.agent.isNew || createdAgent) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, agent: { name: x.agent.name, isNew: false }, ...(createdAgent ? { agentCreated: true } : {}) }))
-  const params = new URLSearchParams({ agent: w.agent.name, description: w.request, goal: id, goalWorkflow: workflowId })
+  if (w.kind === 'once') return { goal, agent: w.agent.name, createdAgent, url: `/playground?${new URLSearchParams({ agent: w.agent.name, message: w.request })}` }
+  const params = new URLSearchParams({ agent: w.agent.name, description: w.request, goal: id, goalJob: workflowId })
   return { goal, agent: w.agent.name, createdAgent, url: `/workflows/new?${params}` }
 }
 
@@ -352,11 +416,11 @@ export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input
   const goal = getGoal(deps, id)
   const w = findWorkflow(goal, workflowId)
   if (typeof input.agent !== 'string' || typeof input.workflowId !== 'string') throw new GoalError('agent and workflowId are required')
-  const built = { agent: input.agent, workflowId: input.workflowId, title: typeof input.title === 'string' ? input.title : input.workflowId, at: now() }
+  const doer: JobDoer = { type: 'workflow', agent: input.agent, workflowId: input.workflowId, title: typeof input.title === 'string' ? input.title : input.workflowId, at: now() }
   const edited = typeof input.description === 'string' ? editAmount(w.request, input.description) : undefined
   recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
   if (edited && edited !== 'none') recordLeverEvent(deps, goal, w, 'edited', { amount: edited })
-  return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'built', built, agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}) }))
+  return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'active', doers: [...x.doers.filter((d) => !(d.agent === doer.agent && d.workflowId === doer.workflowId)), doer], agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}) }))
 }
 
 // ---- Edits: how much the person changed a suggested request at Build.
@@ -397,7 +461,7 @@ export interface LeverEvent {
   detail: Record<string, string | number | boolean>
 }
 
-export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalWorkflow, type: LeverEventType, detail: LeverEvent['detail'] = {}): LeverEvent {
+export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalJob, type: LeverEventType, detail: LeverEvent['detail'] = {}): LeverEvent {
   const full: LeverEvent = {
     id: newId('e'), type, at: now(), goal: goal.id, goalWorkflow: w.id, ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
     ...(goal.playbookVersion !== undefined ? { playbookVersion: goal.playbookVersion } : {}), detail,
@@ -407,22 +471,24 @@ export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalWorkflow, t
   return full
 }
 
-// ---- The daily check of built workflows: kept after 14 days, how much
-// they're used (weekly), and removed.
+// ---- The daily check of the workflows that do active jobs: kept after
+// 14 days, how much they're used (weekly), and removed.
 
 const DAY = 24 * 60 * 60 * 1000
 
 export async function checkBuiltWorkflows(deps: GoalsDeps, nowMs = Date.now()): Promise<void> {
   if (!deps.workflowActivity) return
   for (const goal of listGoals(deps)) {
-    for (const w of goal.workflows) {
-      if (w.state !== 'built' || !w.built || w.signals?.removed) continue
-      const builtAt = Date.parse(w.built.at)
+    for (const w of goal.jobs) {
+      // The workflow that does it (the first, for now).
+      const built = w.doers.find((d) => d.type === 'workflow')
+      if (w.state !== 'active' || !built || w.signals?.removed) continue
+      const builtAt = Date.parse(built.at)
       const lastUsed = w.signals?.lastUsedAt ? Date.parse(w.signals.lastUsedAt) : builtAt
       const since = new Date(lastUsed).toISOString()
       let activity: { exists: boolean; runs: number; done: number }
       try {
-        activity = await deps.workflowActivity(w.built.agent, w.built.workflowId, since)
+        activity = await deps.workflowActivity(built.agent, built.workflowId, since)
       } catch {
         continue
       }
