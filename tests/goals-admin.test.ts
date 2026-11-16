@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  acceptJob, assignJob, chainConditionMet, chainedRuns, checkBuiltWorkflows, createGoal, editAmount, editJob, goalView, MAX_CHAIN_DEPTH, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
-  type GoalsDeps,
+  acceptJob, assignJob, chainConditionMet, chainedRuns, checkBuiltWorkflows, createGoal, editAmount, editJob, goalView, MAX_CHAIN_DEPTH, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, migrateGoalFiles, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
+  type GoalJob, type GoalsDeps,
 } from '#web/goals-admin.js'
 
 const BRIEF = { scope: 'in', scopeReason: 'ok', reading: 'literal', focus: 'new-signups', measure: 'signups a week', measureSource: 'none', measureSourceConnected: false, qualifiers: [], audience: 'small teams', weeklyHours: 3, approvals: 'approval first' }
@@ -421,5 +421,29 @@ describe("a recurring job's workflows and chain", () => {
     expect(goal.jobs[0]!.chain).toBeUndefined()
     goal = editJob(deps, id, jobId, { action: 'unlink', agent: 'growth-agent', workflowId: 'lead-scan' })
     expect(goal.jobs[0]).toMatchObject({ state: 'saved', doers: [] })
+  })
+})
+
+describe('goals saved before jobs', () => {
+  it('rewrites their files once: built ones active with their workflow, the rest taking their lever kind and measure', async () => {
+    const { deps } = setup([])
+    const { writeFileSync, readFileSync, mkdirSync } = await import('node:fs')
+    mkdirSync(join(deps.projectDir(), 'goals'), { recursive: true })
+    const file = join(deps.projectDir(), 'goals', 'g-old-1.json')
+    writeFileSync(file, JSON.stringify({
+      id: 'g-old-1', goal: 'Grow', setup: [], message: '', status: 'ready', rounds: 1, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z',
+      workflows: [
+        { id: 'w-1', title: 'Answer posts', leverId: 'new-signups.answer-intent-posts', lever: 'answer intent posts', focus: 'new-signups', measureLink: 'ref', state: 'built', built: { agent: 'growth-agent', workflowId: 'answer-posts', title: 'Answer posts', at: '2026-11-02T00:00:00Z' } },
+        { id: 'w-2', title: 'List in directories', leverId: 'new-signups.directory-listings', lever: 'directory listings', focus: 'new-signups', measureLink: 'ref', state: 'saved' },
+      ],
+    }))
+    expect(migrateGoalFiles(deps)).toBe(1)
+    const saved = JSON.parse(readFileSync(file, 'utf8'))
+    expect(saved.workflows).toBeUndefined()
+    expect(saved.jobs.map((j: GoalJob) => [j.id, j.kind, j.state, j.doers.length, j.measure])).toEqual([
+      ['w-1', 'recurring', 'active', 1, 'signups tagged ref=community'],
+      ['w-2', 'once', 'saved', 0, 'signups tagged ref=directory'],
+    ])
+    expect(migrateGoalFiles(deps)).toBe(0)
   })
 })

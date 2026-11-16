@@ -38,7 +38,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import type { ModelCall } from '../core/run-agent.js'
 import { agentName, runGoalPipeline, type GoalBrief, type GoalContext, type GoalNeed, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
-import { GOAL_FOCUSES, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
+import { GOAL_FOCUSES, activePlaybook, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
 
 export type GoalJobState = 'suggested' | 'saved' | 'active' | 'done' | 'discarded'
 
@@ -193,21 +193,50 @@ function write(deps: GoalsDeps, goal: Goal): Goal {
 }
 
 /** A goal as saved before jobs (its `workflows`, a built one's `built`
- * link) read as one with jobs; one saved since, as it is. */
+ * link) read as one with jobs; one saved since, as it is. Each becomes a
+ * job: a built one active, done by its workflow; one not built yet takes
+ * the kind its playbook lever usually makes (a finite list is a one-off
+ * job). Each gets a measure: the lever's, else how it was said to move
+ * the goal. */
 export function migrateGoal(raw: Record<string, unknown>): Goal {
   if (Array.isArray(raw.jobs)) return raw as unknown as Goal
   const { workflows, ...rest } = raw
+  let levers: readonly { id: string; kind: 'recurring' | 'once'; measureLink: string }[] = []
+  try {
+    levers = activePlaybook().levers
+  } catch {}
   const jobs = (Array.isArray(workflows) ? workflows : []).map((w): GoalJob => {
     const { built, ...x } = w as Record<string, unknown> & { built?: { agent: string; workflowId: string; title: string; at: string } }
+    const lever = typeof x.leverId === 'string' ? levers.find((l) => l.id === x.leverId) : undefined
+    const kind: GoalJob['kind'] = built || x.state === 'built' ? 'recurring' : lever?.kind ?? 'recurring'
     return {
       ...(x as unknown as GoalJob),
-      kind: 'recurring',
-      measure: typeof x.measure === 'string' ? x.measure : '',
+      kind,
+      measure: typeof x.measure === 'string' && x.measure ? x.measure : lever?.measureLink ?? (typeof x.measureLink === 'string' ? x.measureLink : ''),
       state: x.state === 'built' ? 'active' : (x.state as GoalJobState),
       doers: built ? [{ type: 'workflow', ...built }] : [],
     }
   })
   return { ...(rest as unknown as Goal), jobs }
+}
+
+/** Rewrites every goal saved before jobs in the new form (jobs, with
+ * their workflows as doers), once, at start. Returns how many changed. */
+export function migrateGoalFiles(deps: GoalsDeps): number {
+  const dir = goalsDir(deps)
+  if (!existsSync(dir)) return 0
+  let changed = 0
+  for (const f of readdirSync(dir).filter((name) => /^g-[a-z0-9-]+\.json$/.test(name))) {
+    try {
+      const raw = JSON.parse(readFileSync(join(dir, f), 'utf8')) as Record<string, unknown>
+      if (Array.isArray(raw.jobs) || !Array.isArray(raw.workflows)) continue
+      write(deps, migrateGoal(raw))
+      changed++
+    } catch (err) {
+      console.error(`[loopengine] couldn't move goals/${f} to jobs:`, err instanceof Error ? err.message : err)
+    }
+  }
+  return changed
 }
 
 export function getGoal(deps: GoalsDeps, id: string): Goal {

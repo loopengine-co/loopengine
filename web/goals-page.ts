@@ -54,6 +54,23 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-state { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; }
   .gl-state.saved { background: var(--accent-soft); color: var(--accent-ink); }
   .gl-state.built { background: var(--good-soft); color: var(--good); }
+  .gl-job { padding: 0; gap: 0; }
+  .gl-job-head { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; border-radius: 10px; }
+  .gl-job-head:hover { background: var(--surface); }
+  .gl-job-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .gl-caret { width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; }
+  .gl-job.is-open .gl-caret { transform: rotate(45deg); }
+  .gl-job-main { display: grid; gap: 3px; min-width: 0; }
+  .gl-job-sub { display: flex; gap: 8px; align-items: center; min-width: 0; font-size: 12.5px; color: var(--ink-muted); }
+  .gl-job-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .gl-job-status { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .gl-job-primary .gl-btn { height: 30px; font-size: 13px; padding: 0 12px; }
+  .gl-job-body { display: grid; gap: 10px; padding: 2px 16px 14px 40px; }
+  .gl-job-body[hidden] { display: none; }
+  .gl-job-measure { margin: 0; font-size: 13px; color: var(--ink-muted); }
+  .gl-job-status-line:empty { display: none; }
+  .gl-job-status-line { padding: 0 16px 10px 40px; }
+  @media (max-width: 560px) { .gl-job-head { grid-template-columns: 12px minmax(0, 1fr); } .gl-job-status, .gl-job-primary { grid-column: 2; } .gl-job-body, .gl-job-status-line { padding-left: 16px; } }
   .gl-job-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
   .gl-kind { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
   .gl-doer { font-size: 13px; color: var(--ink-muted); }
@@ -137,7 +154,7 @@ ${consoleShellScript}
   // Which view: the list (/goals), a new goal (?new=1, or the front page)
   // or one goal (?goal=).
   var startNew = location.pathname === '/' || new URLSearchParams(location.search).has('new');
-  var state = { flows: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
+  var state = { flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -247,38 +264,54 @@ ${consoleShellScript}
   }
 
   // A job: one piece of the goal, with its measure, and what does it.
+  // A job as one row: its title, kind and one line (why it helps, until
+  // it's kept; then its measure), its status, and the one action that
+  // matters now. Click it for the rest: why, what it needs, how it's done,
+  // and the other actions.
   function jobHtml(w) {
     var once = w.kind === 'once';
     var doer = (w.doers || [])[0];
-    var actions = '';
-    if (w.state === 'suggested') actions = '<button type="button" class="gl-btn soft" data-act="save">Save</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
-    else if (w.state === 'saved' && once) actions = '<button type="button" class="gl-btn" data-act="assign">Assign to ' + esc(w.agent.name) + '</button><button type="button" class="gl-btn soft" data-act="build">Open in Chat</button><button type="button" class="gl-btn plain" data-act="done">Mark done</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
-    else if (w.state === 'active' && once) {
-      var t = lastTry(w);
-      actions = (t && t.status === 'done' ? '<button type="button" class="gl-btn" data-act="accept">Accept</button><button type="button" class="gl-btn soft" data-act="again">Ask again</button>'
-        : t && (t.status === 'error' || t.status === 'gone') ? '<button type="button" class="gl-btn" data-act="again">Try again</button>' : '') +
-        '<button type="button" class="gl-btn plain" data-act="done">Mark done</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
-    }
-    else if (w.state === 'saved') actions = '<button type="button" class="gl-btn" data-act="build">Build it</button><button type="button" class="gl-btn plain" data-act="discard">Discard</button>';
-    else if (w.state === 'done') actions = '<button type="button" class="gl-btn plain" data-act="undone">Reopen</button>';
-    else if (w.state === 'discarded') actions = '<button type="button" class="gl-btn plain" data-act="restore">Restore</button>';
+    var t = lastTry(w);
+    var btn = function (act, label, cls) { return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '">' + label + '</button>'; };
+    var primary = w.state === 'suggested' ? btn('save', 'Save', 'soft')
+      : w.state === 'saved' && once ? btn('assign', 'Assign')
+      : w.state === 'saved' ? btn('build', 'Build it')
+      : w.state === 'active' && once && t && t.status === 'done' ? btn('accept', 'Accept')
+      : w.state === 'active' && once && t && (t.status === 'error' || t.status === 'gone') ? btn('again', 'Try again')
+      : w.state === 'discarded' ? btn('restore', 'Restore', 'plain') : '';
+    var more = w.state === 'suggested' ? btn('discard', 'Discard', 'plain')
+      : w.state === 'saved' && once ? btn('build', 'Open in Chat', 'plain') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
+      : w.state === 'saved' ? btn('discard', 'Discard', 'plain')
+      : w.state === 'active' && once ? (t && t.status === 'done' ? btn('again', 'Ask again', 'soft') : '') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
+      : w.state === 'done' ? btn('undone', 'Reopen', 'plain') : '';
     var pill = w.state === 'saved' ? '<span class="gl-state saved">Saved</span>'
-      : w.state === 'active' && once ? '<span class="gl-state saved">Assigned</span>'
+      : w.state === 'active' && once ? (t && t.status === 'done' ? '<span class="gl-state built">Result ready</span>' : t && t.status === 'awaiting_approval' ? '<span class="gl-state planning">Needs you</span>' : t && t.status === 'running' ? '<span class="gl-state saved">Working' + ELLIPSIS + '</span>' : '<span class="gl-state failed">Failed</span>')
       : w.state === 'active' ? '<span class="gl-state built">Running</span>'
-      : w.state === 'done' ? '<span class="gl-state built">Done</span>' : '';
-    var measure = w.measure ? '<span class="gl-measure">' + (once ? '' : 'Measured by: ') + esc(w.measure) + '</span>' : '';
+      : w.state === 'done' ? '<span class="gl-state built">Done</span>'
+      : w.state === 'discarded' ? '<span class="gl-state">Discarded</span>' : '';
+    var sub = w.state === 'suggested' || w.state === 'discarded' ? (w.why || w.measure || '') : (w.measure ? (once ? '' : 'Measured by ') + w.measure : w.why || '');
     var doneBy = once && (w.state === 'active' || w.state === 'done') && w.tries && w.tries.length ? triesHtml(w)
       : w.state === 'active' && doer && doer.type === 'workflow' ? howHtml(w)
       : w.state === 'done' && w.doneAt ? '<div class="gl-doer">Done ' + esc(new Date(w.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</div>' : '';
-    return '<div class="gl-wf' + (w.state === 'active' || w.state === 'done' ? ' built' : '') + '" data-wf="' + esc(w.id) + '">' +
-      '<div class="gl-wf-head"><span class="gl-wf-title">' + esc(w.title) + ' ' + pill + ' <span class="gl-state planning" data-attn hidden>Needs you</span></span>' + (w.state === 'active' ? '' : agentHtml(w)) + '</div>' +
-      '<div class="gl-job-meta"><span class="gl-kind">' + (once ? 'One-off' : 'Recurring') + '</span>' + measure + '</div>' +
-      doneBy +
-      (w.why ? '<p class="gl-why">' + esc(w.why) + '</p>' : '') +
-      (w.state === 'active' || w.state === 'done' ? '' : needsHtml(w)) +
-      (w.state === 'active' && !once ? '' : '<details><summary>' + (once ? 'What the agent is asked to do' : 'What its workflow will do') + '</summary><p>' + esc(w.request) + '</p></details>') +
-      '<div class="gl-row">' + actions + '<span class="hint" data-wf-status></span></div>' +
-      (once && w.state === 'active' ? '<div class="gl-again" hidden><label class="hint" for="note-' + esc(w.id) + '">What should change this time? (optional)</label><textarea class="gl-note" id="note-' + esc(w.id) + '" rows="2" placeholder="e.g. Add 5 more, and skip the paid ones."></textarea><div class="gl-row"><button type="button" class="gl-btn" data-act="assign">Send it back</button></div></div>' : '') +
+    var open = !!state.openJobs[w.id];
+    return '<div class="gl-wf gl-job' + (open ? ' is-open' : '') + (w.state === 'active' || w.state === 'done' ? ' built' : '') + '" data-wf="' + esc(w.id) + '">' +
+      '<div class="gl-job-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
+        '<span class="gl-caret" aria-hidden="true"></span>' +
+        '<div class="gl-job-main"><span class="gl-wf-title">' + esc(w.title) + '</span>' +
+          '<span class="gl-job-sub"><span class="gl-kind">' + (once ? 'One-off' : 'Recurring') + '</span>' + (sub ? '<span class="gl-job-line">' + esc(sub) + '</span>' : '') + '</span></div>' +
+        '<span class="gl-job-status">' + pill + '<span class="gl-state planning" data-attn hidden>Needs you</span></span>' +
+        '<span class="gl-job-primary">' + primary + '</span>' +
+      '</div>' +
+      '<div class="gl-job-body"' + (open ? '' : ' hidden') + '>' +
+        (w.why && sub !== w.why ? '<p class="gl-why">' + esc(w.why) + '</p>' : '') +
+        (w.measure && sub.indexOf(w.measure) < 0 ? '<p class="gl-job-measure">' + (once ? '' : 'Measured by ') + esc(w.measure) + '</p>' : '') +
+        (w.state === 'active' || w.state === 'done' ? '' : '<div class="gl-row">' + agentHtml(w) + '</div>' + needsHtml(w)) +
+        doneBy +
+        (w.state === 'active' && !once ? '' : '<details><summary>' + (once ? 'What the agent is asked to do' : 'What its workflow will do') + '</summary><p>' + esc(w.request) + '</p></details>') +
+        (more ? '<div class="gl-row">' + more + '</div>' : '') +
+        (once && w.state === 'active' ? '<div class="gl-again" hidden><label class="hint" for="note-' + esc(w.id) + '">What should change this time? (optional)</label><textarea class="gl-note" id="note-' + esc(w.id) + '" rows="2" placeholder="e.g. Add 5 more, and skip the paid ones."></textarea><div class="gl-row"><button type="button" class="gl-btn" data-act="assign">Send it back</button></div></div>' : '') +
+      '</div>' +
+      '<span class="hint gl-job-status-line" data-wf-status></span>' +
     '</div>';
   }
 
@@ -543,9 +576,27 @@ ${consoleShellScript}
     box.innerHTML = params.map(function (p) { return '<div class="gl-row"><span class="hint"><code>' + esc(p) + '</code>' + (target.parameters[p].required ? '' : ' (optional)') + ' from</span><select class="gl-select" data-input="' + esc(p) + '">' + choices(p) + '</select></div>'; }).join('');
   }
 
+  function setJobOpen(card, open) {
+    var id = card.getAttribute('data-wf');
+    state.openJobs[id] = open;
+    card.classList.toggle('is-open', open);
+    card.querySelector('.gl-job-head').setAttribute('aria-expanded', String(open));
+    card.querySelector('.gl-job-body').hidden = !open;
+  }
+
   function wireCard(card, base) {
     var id = card.getAttribute('data-wf');
     var status = card.querySelector('[data-wf-status]');
+    var head = card.querySelector('.gl-job-head');
+    head.addEventListener('click', function (ev) {
+      if (ev.target.closest('button, a')) return;
+      setJobOpen(card, !card.classList.contains('is-open'));
+    });
+    head.addEventListener('keydown', function (ev) {
+      if (ev.target !== head || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+      ev.preventDefault();
+      setJobOpen(card, !card.classList.contains('is-open'));
+    });
     // A job's chain: change the step being written, remove a step or a workflow.
     ['[data-step-run]', '[data-step-after]', '[data-step-when]'].forEach(function (sel) {
       var el = card.querySelector(sel);
@@ -616,6 +667,7 @@ ${consoleShellScript}
         return;
       }
       if (act === 'again') {
+        setJobOpen(card, true);
         var box = card.querySelector('.gl-again');
         if (box) { box.hidden = false; box.querySelector('textarea').focus(); }
         return;
