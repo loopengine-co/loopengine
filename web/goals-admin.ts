@@ -37,8 +37,8 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import type { ModelCall } from '../core/run-agent.js'
-import { agentName, runGoalPipeline, type GoalBrief, type GoalContext, type GoalNeed, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
-import { GOAL_FOCUSES, activePlaybook, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
+import { agentName, runGoalPipeline, shapeJob, type GoalBrief, type GoalContext, type GoalNeed, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
+import { activePlaybook, addToLocalPlaybook, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
 
 export type GoalJobState = 'suggested' | 'saved' | 'active' | 'done' | 'discarded'
 
@@ -107,6 +107,13 @@ export interface GoalJob {
   result?: string
   /** For a recurring job done by several workflows: what runs after what. */
   chain?: ChainStep[]
+  /** A job the person added themselves: their own words, and how the
+   * planner judged it ("changed" or "warned", with its note). */
+  added?: { idea: string; verdict: 'added' | 'changed' | 'warned'; note?: string; alternative?: string }
+  /** The person asked to keep this job's approach to their workspace: its
+   * lever events are never sent, and its lever is never offered as a
+   * candidate for the shared playbook. */
+  keepPrivate?: true
   /** How much the person changed the suggested request before building it
    * (edits to the built workflow's instructions later don't count). */
   edited?: EditAmount
@@ -368,6 +375,15 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
         saved: planning.jobs.map((w) => ({ title: w.title, lever: w.lever, ...(w.leverId ? { leverId: w.leverId } : {}), state: w.state })),
         ...(planning.focus ? { focus: planning.focus } : {}),
       })
+      // A focus or levers the planner wrote, because the playbook had none
+      // that fit, go in the workspace's own playbook for next time.
+      if (plan.brief.newFocus || plan.newLevers?.length) {
+        try {
+          addToLocalPlaybook(deps.projectDir(), { ...(plan.brief.newFocus ? { focuses: [plan.brief.newFocus] } : {}), levers: plan.newLevers ?? [] })
+        } catch (err) {
+          console.error('[loopengine] couldn\'t add the planner\'s focus and levers to the playbook:', err instanceof Error ? err.message : err)
+        }
+      }
       const latest = getGoal(deps, planning.id)
       // The planner is told what's there; anything it repeats anyway is dropped.
       const fresh = plan.workflows.map((w) => toJob(w, round, deps)).filter((w, i, all) =>
@@ -410,7 +426,7 @@ export function createGoal(deps: GoalsDeps, input: { goal?: unknown; about?: unk
 export function generateMore(deps: GoalsDeps, id: string, input: { goal?: unknown; focus?: unknown } = {}): Goal {
   const goal = getGoal(deps, id)
   const text = typeof input.goal === 'string' && input.goal.trim() ? input.goal.trim().slice(0, MAX_GOAL_CHARS) : goal.goal
-  const focus = typeof input.focus === 'string' && ([...GOAL_FOCUSES, 'other'] as string[]).includes(input.focus) ? (input.focus as Goal['focus']) : goal.focus
+  const focus = typeof input.focus === 'string' && [...activePlaybook().focuses.map((f) => f.id), 'other'].includes(input.focus) ? (input.focus as Goal['focus']) : goal.focus
   return startPlanning(deps, { ...goal, goal: text, ...(focus ? { focus } : {}) })
 }
 
@@ -503,6 +519,49 @@ export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input
   if (first) recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
   if (first && edited && edited !== 'none') recordLeverEvent(deps, goal, w, 'edited', { amount: edited })
   return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'active', doers: [...x.doers.filter((d) => !(d.type === 'workflow' && d.agent === doer.agent && d.workflowId === doer.workflowId)), doer], agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}) }))
+}
+
+// ---- A job the person adds, in their own words: the planner shapes it
+// (kind, measure, agent, request, a lever or a new generic one) and
+// judges it: added, added with changes, added with a warning, or refused
+// (deceptive, illegal, against a platform's rules). One that's added is
+// saved, ready to build or assign.
+
+export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknown; private?: unknown }): Promise<{ goal: Goal; verdict: 'added' | 'changed' | 'warned' | 'refused'; note: string; alternative: string; jobId?: string }> {
+  const idea = typeof input.idea === 'string' ? input.idea.trim() : ''
+  if (idea.length < 5) throw new GoalError('Say what the job is, e.g. "Thank every new customer by email within a day".')
+  if (idea.length > 1000) throw new GoalError('Keep it under 1000 characters.')
+  const goal = getGoal(deps, id)
+  if (goal.status === 'planning') throw new GoalError('Wait for the suggestions first.')
+  if (!goal.brief) throw new GoalError('This goal hasn\'t been planned yet: generate suggestions first.')
+  const brief = { ...goal.brief, ...(goal.focus ? { focus: goal.focus } : {}) }
+  const shaped = await shapeJob(await deps.modelCall(), {
+    goal: goal.goal,
+    brief,
+    context: await deps.context(readAbout(deps)),
+    saved: goal.jobs.map((w) => ({ title: w.title, lever: w.lever, ...(w.leverId ? { leverId: w.leverId } : {}), state: w.state })),
+    idea,
+  })
+  if (shaped.verdict === 'refused' || !shaped.job) {
+    return { goal, verdict: 'refused', note: shaped.note || 'This couldn\'t be shaped into a job: say a little more about what it should do.', alternative: shaped.alternative }
+  }
+  if (shaped.newLever) {
+    try {
+      addToLocalPlaybook(deps.projectDir(), { levers: [shaped.newLever] })
+    } catch (err) {
+      console.error('[loopengine] couldn\'t add the job\'s lever to the playbook:', err instanceof Error ? err.message : err)
+    }
+  }
+  const job: GoalJob = {
+    ...toJob(shaped.job, goal.rounds || 1, deps),
+    state: 'saved',
+    ...(input.private === true ? { keepPrivate: true as const } : {}),
+    added: { idea, verdict: shaped.verdict, ...(shaped.note ? { note: shaped.note } : {}), ...(shaped.alternative ? { alternative: shaped.alternative } : {}) },
+  }
+  const latest = getGoal(deps, id)
+  const updated = write(deps, { ...latest, jobs: [...latest.jobs, job], updatedAt: now() })
+  recordLeverEvent(deps, updated, job, 'added', { verdict: shaped.verdict })
+  return { goal: updated, verdict: shaped.verdict, note: shaped.note, alternative: shaped.alternative, jobId: job.id }
 }
 
 // ---- A recurring job's workflows and its chain.
@@ -719,11 +778,12 @@ export function editAmount(before: string, after: string): EditAmount {
 // they're sent to loopengine.co. Never the goal's or the workflow's text:
 // the lever, its focus, the playbook version and what happened.
 
-/** What happened to a lever's job: suggested, saved, discarded (with a
+/** What happened to a lever's job: suggested (by the planner) or added
+ * (by the person, in their own words), saved, discarded (with a
  * reason), restored; built (a workflow does it) or done (a once job
  * finished); edited (its request, at Build); then, from its workflow,
  * kept_14d, used (weekly) and removed. */
-export type LeverEventType = 'suggested' | 'saved' | 'discarded' | 'discard_reason' | 'restored' | 'built' | 'done' | 'edited' | 'kept_14d' | 'used' | 'removed'
+export type LeverEventType = 'suggested' | 'added' | 'saved' | 'discarded' | 'discard_reason' | 'restored' | 'built' | 'done' | 'edited' | 'kept_14d' | 'used' | 'removed'
 
 export interface LeverEvent {
   id: string
@@ -732,6 +792,8 @@ export interface LeverEvent {
   goal: string
   /** The job (its id under the goal). */
   job: string
+  /** From a job kept to the workspace: never sent. */
+  private?: true
   leverId?: string
   /** The lever's label (for a new idea, the planner's own, generic). */
   lever: string
@@ -744,7 +806,7 @@ export interface LeverEvent {
 
 export function recordLeverEvent(deps: GoalsDeps, goal: Goal, w: GoalJob, type: LeverEventType, detail: LeverEvent['detail'] = {}): LeverEvent {
   const full: LeverEvent = {
-    id: newId('e'), type, at: now(), goal: goal.id, job: w.id, ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
+    id: newId('e'), type, at: now(), goal: goal.id, job: w.id, ...(w.keepPrivate ? { private: true as const } : {}), ...(w.leverId ? { leverId: w.leverId } : {}), lever: w.lever, focus: w.focus,
     ...(goal.playbookVersion !== undefined ? { playbookVersion: goal.playbookVersion } : {}), detail,
   }
   mkdirSync(goalsDir(deps), { recursive: true })

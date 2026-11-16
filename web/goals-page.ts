@@ -96,6 +96,14 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-how-open:hover { text-decoration: underline; }
   .gl-waiting { color: var(--warn); font-weight: 600; }
   [data-attn][hidden] { display: none; }
+  .gl-add { display: grid; gap: 8px; }
+  .gl-add-form { display: grid; gap: 6px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
+  .gl-add-form[hidden], #glAddToggle[hidden] { display: none; }
+  #glAddToggle { justify-self: start; }
+  .gl-notice { display: grid; gap: 4px; padding: 10px 14px; border-radius: 10px; font-size: 13.5px; }
+  .gl-notice.good { background: var(--good-soft); }
+  .gl-notice.warn { background: var(--warn-soft); }
+  .gl-notice.bad { background: var(--bad-soft); }
   .gl-try { display: grid; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--surface); }
   .gl-try + .gl-try { margin-top: 6px; }
   .gl-result { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.55; max-height: 360px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
@@ -148,13 +156,15 @@ ${consoleShellScript}
   var page = document.getElementById('glPage');
   var ELLIPSIS = String.fromCharCode(8230);
   var ARROW = String.fromCharCode(8594);
+  // The focuses in use (the playbook's, and the workspace's own the
+  // planner named), from the server; these until it answers.
   var FOCUS = [['new-signups', 'Getting new signups or customers'], ['activation', 'Getting new users started'], ['retention', 'Keeping users'], ['faster-support', 'Faster support'], ['revenue-recovery', 'Recovering revenue'], ['ops-hygiene', 'Smoother operations'], ['other', 'Something else']];
   var KINDS = [['', 'Choose one'], ['ecommerce', 'Online store'], ['saas', 'Software or app'], ['agency', 'Agency or services'], ['local', 'Local business'], ['creator', 'Creator or media'], ['nonprofit', 'Nonprofit'], ['other', 'Something else']];
   var REASONS = [['not-relevant', 'Not relevant'], ['too-much-work', 'Too much work'], ['already-doing-it', 'Already doing it']];
   // Which view: the list (/goals), a new goal (?new=1, or the front page)
   // or one goal (?goal=).
   var startNew = location.pathname === '/' || new URLSearchParams(location.search).has('new');
-  var state = { flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
+  var state = { addOpen: false, addDraft: '', addPrivate: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -183,6 +193,7 @@ ${consoleShellScript}
       state.goals = r.body.goals || [];
       state.about = r.body.about || '';
       state.settings = r.body.settings || {};
+      if (Array.isArray(r.body.focuses) && r.body.focuses.length) FOCUS = r.body.focuses.map(function (f) { return [f.id, f.label]; }).concat([['other', 'Something else']]);
       var id = selectId || new URLSearchParams(location.search).get('goal');
       state.current = state.goals.filter(function (g) { return g.id === id; })[0] || null;
       render();
@@ -303,6 +314,7 @@ ${consoleShellScript}
         '<span class="gl-job-primary">' + primary + '</span>' +
       '</div>' +
       '<div class="gl-job-body"' + (open ? '' : ' hidden') + '>' +
+        (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? ' ' + String.fromCharCode(183) + ' ' + esc(w.added.note) : '') + (w.keepPrivate ? ' ' + String.fromCharCode(183) + ' kept to your workspace' : '') + '</p>' : '') +
         (w.why && sub !== w.why ? '<p class="gl-why">' + esc(w.why) + '</p>' : '') +
         (w.measure && sub.indexOf(w.measure) < 0 ? '<p class="gl-job-measure">' + (once ? '' : 'Measured by ') + esc(w.measure) + '</p>' : '') +
         (w.state === 'active' || w.state === 'done' ? '' : '<div class="gl-row">' + agentHtml(w) + '</div>' + needsHtml(w)) +
@@ -313,6 +325,25 @@ ${consoleShellScript}
       '</div>' +
       '<span class="hint gl-job-status-line" data-wf-status></span>' +
     '</div>';
+  }
+
+  // A job of the person's own: typed in their words, shaped and judged by
+  // the planner (added, changed, warned or refused), with what it said.
+  function addJobHtml(planning) {
+    var n = state.addNotice;
+    var notice = !n ? '' : '<div class="gl-notice ' + (n.verdict === 'refused' ? 'bad' : n.verdict === 'added' ? 'good' : 'warn') + '">' +
+      '<strong>' + (n.verdict === 'refused' ? 'Not added' : n.verdict === 'changed' ? 'Added, with changes' : n.verdict === 'warned' ? 'Added, with a caution' : 'Added') + '</strong>' +
+      (n.note ? '<span>' + esc(n.note) + '</span>' : '') +
+      (n.alternative ? '<span class="hint">Instead, you could: ' + esc(n.alternative) + '</span>' : '') + '</div>';
+    return '<div class="gl-add">' +
+      '<button type="button" class="gl-link" id="glAddToggle"' + (state.addOpen ? ' hidden' : '') + '>+ Add your own job</button>' +
+      '<div class="gl-add-form"' + (state.addOpen ? '' : ' hidden') + '>' +
+        '<label for="glAddIdea"><strong>A job you have in mind</strong> <span class="hint">in your own words; LoopEngine shapes it into a job and says if anything looks off</span></label>' +
+        '<textarea id="glAddIdea" rows="2" placeholder="e.g. Thank every new customer by email within a day">' + esc(state.addDraft || '') + '</textarea>' +
+        '<label class="hint gl-share"><input type="checkbox" id="glAddPrivate"' + (state.addPrivate ? ' checked' : '') + '> Keep this one to my workspace</label>' +
+        '<p class="hint" style="margin:0">Unless you tick that, the approach behind this job (never your words) may be shared anonymously to improve suggestions, and only once many workspaces use something similar.</p>' +
+        '<div class="gl-row"><button type="button" class="gl-btn soft" id="glAddJob"' + (planning ? ' disabled' : '') + '>Add it</button><button type="button" class="gl-btn plain" id="glAddCancel">Cancel</button><span class="hint" id="glAddStatus"></span></div>' +
+      '</div>' + notice + '</div>';
   }
 
   // A one-off job's tries: the latest with its state and result, earlier
@@ -425,7 +456,8 @@ ${consoleShellScript}
     var secs = state.startedAt ? Math.round((Date.now() - state.startedAt) / 1000) : 0;
     return '<div class="gl-card">' +
       '<h2 class="gl-goal-title">' + esc(g.goal) + '</h2>' +
-      (focus ? '<div class="gl-focus">Planning for <select id="glFocus"' + (planning ? ' disabled' : '') + '>' + FOCUS.map(function (f) { return '<option value="' + f[0] + '"' + (f[0] === focus ? ' selected' : '') + '>' + f[1] + '</option>'; }).join('') + '</select>' +
+      (focus ? '<div class="gl-focus"><label for="glFocus">Focus</label> <select id="glFocus"' + (planning ? ' disabled' : '') + '>' + (FOCUS.some(function (f) { return f[0] === focus; }) ? FOCUS : FOCUS.concat([[focus, (g.brief && g.brief.newFocus && g.brief.newFocus.label) || focus]])).map(function (f) { return '<option value="' + esc(f[0]) + '"' + (f[0] === focus ? ' selected' : '') + '>' + esc(f[1]) + '</option>'; }).join('') + '</select>' +
+        (focus.indexOf('x-') === 0 ? '<span class="hint" title="No focus in the playbook fit this goal, so its planner named one and wrote the approaches it needed. They stay in this workspace for next time.">written for your goals</span>' : '') +
         (g.brief && g.brief.measure ? '<span>' + String.fromCharCode(183) + ' measured by ' + esc(g.brief.measure) + '</span>' : '') + '</div>' : '') +
       (g.message ? '<p class="gl-why">' + esc(g.message) + '</p>' : '') +
       (planning ? '<p class="gl-status">Suggesting jobs' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
@@ -441,6 +473,7 @@ ${consoleShellScript}
     '</div>' +
     '<div class="gl-section"><h3>Your jobs <span class="gl-count">' + kept.length + '</span></h3>' +
       (kept.length ? kept.map(jobHtml).join('') : '<p class="gl-empty">Save a suggestion to keep it here. Build a recurring job into a workflow on its agent; assign a one-off job to its agent.</p>') +
+      addJobHtml(planning) +
     '</div>' +
     (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
       (state.showDiscarded ? discarded.map(jobHtml).join('') : '') + '</div>' : '') +
@@ -505,6 +538,30 @@ ${consoleShellScript}
       api('POST', base + '/generate', { focus: focus.value }).then(function (r) {
         if (!r.ok) { state.error = r.body.error || 'Could not plan for that.'; render(); return; }
         state.startedAt = Date.now();
+        replaceGoal(r.body.goal);
+        render();
+      });
+    });
+    var addToggle = document.getElementById('glAddToggle');
+    if (addToggle) addToggle.addEventListener('click', function () { state.addOpen = true; state.addNotice = null; render(); var box = document.getElementById('glAddIdea'); if (box) box.focus(); });
+    var addCancel = document.getElementById('glAddCancel');
+    if (addCancel) addCancel.addEventListener('click', function () { state.addOpen = false; state.addDraft = ''; render(); });
+    var addIdea = document.getElementById('glAddIdea');
+    if (addIdea) addIdea.addEventListener('input', function () { state.addDraft = addIdea.value; });
+    var addPrivate = document.getElementById('glAddPrivate');
+    if (addPrivate) addPrivate.addEventListener('change', function () { state.addPrivate = addPrivate.checked; });
+    var addJob = document.getElementById('glAddJob');
+    if (addJob) addJob.addEventListener('click', function () {
+      var idea = document.getElementById('glAddIdea').value.trim();
+      var status = document.getElementById('glAddStatus');
+      if (idea.length < 5) { status.textContent = 'Say what the job is first.'; return; }
+      addJob.disabled = true;
+      status.textContent = 'Shaping it into a job' + ELLIPSIS;
+      var keep = document.getElementById('glAddPrivate');
+      api('POST', base + '/jobs', { idea: idea, private: !!(keep && keep.checked) }).then(function (r) {
+        if (!r.ok) { addJob.disabled = false; status.textContent = r.body.error || 'Could not add it.'; return; }
+        state.addNotice = { verdict: r.body.verdict, note: r.body.note, alternative: r.body.alternative };
+        if (r.body.verdict !== 'refused') { state.addOpen = false; state.addDraft = ''; state.addPrivate = false; if (r.body.jobId) state.openJobs[r.body.jobId] = true; }
         replaceGoal(r.body.goal);
         render();
       });

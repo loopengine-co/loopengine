@@ -1,6 +1,38 @@
 {
+  "version": 3,
+  "focuses": [
+    {
+      "id": "new-signups",
+      "label": "Getting new signups or customers",
+      "hint": "more people signing up, buying or getting in touch for the first time"
+    },
+    {
+      "id": "activation",
+      "label": "Getting new users started",
+      "hint": "new users reaching their first real use: setup finished, first key step taken"
+    },
+    {
+      "id": "retention",
+      "label": "Keeping users",
+      "hint": "people who use it continuing to, renewing, or coming back"
+    },
+    {
+      "id": "faster-support",
+      "label": "Faster support",
+      "hint": "answering customers sooner and better"
+    },
+    {
+      "id": "revenue-recovery",
+      "label": "Recovering revenue",
+      "hint": "failed payments, abandoned checkouts and lapsed customers won back"
+    },
+    {
+      "id": "ops-hygiene",
+      "label": "Smoother operations",
+      "hint": "exceptions, stuck items and deadlines caught before they cost anything"
+    }
+  ],
   "$comment": "Playbook v1 for the goal planner (core/system-agents/goal-planner.ts). A lever is one proven way to move a kind of goal. Ids are stable: saved workflows, discards and eval expectations refer to them, so change wording freely but never an id. Loaded and checked by core/system-agents/goal-playbooks.ts.",
-  "version": 2,
   "levers": [
     {
       "id": "new-signups.answer-intent-posts",

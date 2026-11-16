@@ -72,3 +72,26 @@ describe('sending lever events', () => {
     expect(signLeverEvents('{}', 5, 'k')).toBe(`t=5,v1=${createHmac('sha256', 'k').update('5.{}').digest('hex')}`)
   })
 })
+
+describe("a workspace's own focus and levers", () => {
+  it('leave as "other" and as their generic label, never their ids', async () => {
+    const { outgoingLeverEvent } = await import('#web/lever-events-sync.js')
+    const sent = outgoingLeverEvent({ id: 'e-1', type: 'saved', job: 'w-1', leverId: 'x-hiring.x-screen', lever: 'screen applicants', focus: 'x-hiring', detail: {}, at: '2026-11-16T00:00:00Z' }, 'saas')
+    expect(sent).toMatchObject({ focus: 'other', lever: 'screen applicants' })
+    expect(sent).not.toHaveProperty('leverId')
+    expect(outgoingLeverEvent({ id: 'e-2', type: 'saved', leverId: 'new-signups.x-niche', lever: 'niche', focus: 'new-signups', detail: {}, at: '' }, undefined)).not.toHaveProperty('leverId')
+  })
+})
+
+describe('a job kept to the workspace', () => {
+  it('never sends its events', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'loopengine-lever-private-'))
+    mkdirSync(join(dir, 'goals'), { recursive: true })
+    const line = (id: string, extra: Record<string, unknown> = {}) => JSON.stringify({ id, type: 'added', at: '2026-11-16T00:00:00.000Z', goal: 'g-1', job: 'w-1', lever: 'thank customers', focus: 'retention', detail: {}, ...extra }) + '\n'
+    writeFileSync(join(dir, 'goals', 'lever-events.jsonl'), line('e-1', { private: true }) + line('e-2'))
+    const fetchMock = vi.fn(async () => ok())
+    expect(await sendLeverEvents(dir, config, fetchMock as unknown as typeof fetch, CLOUD)).toEqual({ status: 'sent', events: 1 })
+    const sent = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body).events
+    expect(sent.map((e: { id: string }) => e.id)).toEqual(['e-2'])
+  })
+})

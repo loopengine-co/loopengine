@@ -64,14 +64,17 @@ export function signLeverEvents(body: string, timestamp: number, secret: string)
   return `t=${timestamp},v1=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`
 }
 
-/** An event as it leaves the workspace: only the anonymous fields. */
+/** An event as it leaves the workspace: only the anonymous fields. A
+ * workspace's own focus or lever (written by its planner, "x-...") goes
+ * as "other" and as its generic label, not its id. */
 export function outgoingLeverEvent(e: Record<string, unknown>, businessKind: string | undefined): Record<string, unknown> {
+  const local = (v: unknown) => typeof v === 'string' && /(^|\.)x-/.test(v)
   return {
     id: e.id,
     type: e.type,
-    ...(typeof e.leverId === 'string' ? { leverId: e.leverId } : {}),
+    ...(typeof e.leverId === 'string' && !local(e.leverId) ? { leverId: e.leverId } : {}),
     lever: e.lever,
-    focus: e.focus,
+    focus: local(e.focus) ? 'other' : e.focus,
     ...(typeof e.playbookVersion === 'number' ? { playbookVersion: e.playbookVersion } : {}),
     ...(businessKind ? { businessKind } : {}),
     // The job, as an opaque id (an event from before jobs: goalWorkflow).
@@ -108,9 +111,11 @@ export async function sendLeverEvents(projectDir: string, config: LeverEventsSyn
       bytes += Buffer.byteLength(line, 'utf8') + 1
     }
     if (!lines.length) break
+    // An event from a job the person kept to their workspace isn't sent.
     const events = lines.flatMap((line) => {
       try {
-        return [outgoingLeverEvent(JSON.parse(line) as Record<string, unknown>, businessKind)]
+        const e = JSON.parse(line) as Record<string, unknown>
+        return e.private === true ? [] : [outgoingLeverEvent(e, businessKind)]
       } catch {
         return []
       }

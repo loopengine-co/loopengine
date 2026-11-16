@@ -118,9 +118,9 @@ import { abilityDetails } from '#web/ability-details-admin.js'
 import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, noteForExistingAgent, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { goalsPageHtml } from '#web/goals-page.js'
-import { setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
+import { activePlaybook, setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
 import { startPlaybookSync } from '#core/playbook-sync.js'
-import { GoalError, acceptJob, assignJob, chainedRuns, editJob, goalView, migrateGoalFiles, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
+import { GoalError, acceptJob, addJob, assignJob, chainedRuns, editJob, goalView, migrateGoalFiles, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
 import { sharesLeverStats, startLeverEventsSync } from '#web/lever-events-sync.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -1050,7 +1050,8 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
   try {
     if (!id && req.method === 'GET') {
       const settings = readGoalSettings(goalsDeps)
-      return json(200, { goals: listGoals(goalsDeps), about: settings.about, settings: { ...settings, shareLeverStats: sharesLeverStats(projectDir()), cloud: Boolean(process.env.LOOPENGINE_TRUSTED_PROXY_SECRET) } })
+      // The focuses in use (the playbook's and this workspace's own), for the page's Focus choice.
+      return json(200, { goals: listGoals(goalsDeps), about: settings.about, settings: { ...settings, shareLeverStats: sharesLeverStats(projectDir()), cloud: Boolean(process.env.LOOPENGINE_TRUSTED_PROXY_SECRET) }, focuses: activePlaybook().focuses })
     }
     if (!id && req.method === 'POST') return json(200, { goal: createGoal(goalsDeps, await readJsonBody(req)) })
     if (id === 'about' && req.method === 'PUT') {
@@ -1068,6 +1069,11 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
       // A recurring job's workflows and chain; else what the person did with it.
       if (body.action === 'link' || body.action === 'unlink' || body.action === 'chain') return json(200, await view(editJob(goalsDeps, id, wid, body)))
       return json(200, await view(setWorkflowState(goalsDeps, id, wid, body.action, body.reason)))
+    }
+    // A job the person adds in their own words, shaped and judged by the planner.
+    if (id && jobs && !wid && req.method === 'POST') {
+      const added = await addJob(goalsDeps, id, await readJsonBody(req))
+      return json(200, { ...(await view(added.goal)), verdict: added.verdict, note: added.note, alternative: added.alternative, ...(added.jobId ? { jobId: added.jobId } : {}) })
     }
     if (id && jobs && wid && action === 'assign' && req.method === 'POST') return json(200, await view(await assignJob(goalsDeps, id, wid, await readJsonBody(req))))
     if (id && jobs && wid && action === 'accept' && req.method === 'POST') return json(200, await view(await acceptJob(goalsDeps, id, wid)))

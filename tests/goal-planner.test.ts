@@ -50,7 +50,7 @@ describe('playbook v1', () => {
   })
 
   it('loads from playbook.json, versioned', () => {
-    expect(PLAYBOOK_VERSION).toBe(2)
+    expect(PLAYBOOK_VERSION).toBe(3)
     expect(LEVERS.length).toBeGreaterThanOrEqual(20)
     // Each lever says the job it usually makes.
     expect(LEVERS.find((l) => l.id === 'new-signups.directory-listings')?.kind).toBe('once')
@@ -179,5 +179,64 @@ describe('scoring a plan', () => {
     const outPlan = plan([], { brief: { ...good.brief, scope: 'out', focus: 'other' }, message: 'LoopEngine can’t land anyone on the moon; I can help you follow lunar missions instead.' })
     expect(failed(outPlan, moon)).toEqual([])
     expect(failed(plan([workflow()], { brief: { ...good.brief, scope: 'out', focus: 'other' }, message: '' }), moon)).toEqual(expect.arrayContaining(['count', 'honest scope']))
+  })
+})
+
+describe('when the playbook has nothing that fits', () => {
+  const NEW_LEVER = {
+    key: 'daily-check-in', name: 'Daily check-in and log', kind: 'recurring', mechanism: 'A short daily check-in keeps the habit visible, and the log shows the trend.',
+    fitsWhen: ['the goal depends on a daily habit'], notWhen: ['the person does not want daily messages'], needs: ['messaging', 'records'],
+    humanMinutesPerWeek: 10, firstResultDays: 7, measureLink: 'days logged per week', guardrails: ['Never give medical advice.'], template: 'Every evening, ask me in {channel} for today’s {measure} and log it.',
+  }
+  const input = { goal: 'Lose weight to 70 kg', context: caseById('le-grow-100').context }
+
+  it('names a focus, writes the levers it needs, and makes its jobs from them', async () => {
+    const { modelCall, prompts } = scriptedModel({
+      save_brief: [{ ...BRIEF, scope: 'partial', focus: 'other', newFocus: { label: 'Personal health habits', hint: 'daily habits that move a personal health number' } }],
+      save_plan: [{ setup: [], workflows: [workflow({ leverId: 'daily-check-in', lever: 'daily check-in', title: 'Daily check-in on Telegram' })], newLevers: [NEW_LEVER, { ...NEW_LEVER, key: 'leaky', name: 'Leaky', template: 'Visit https://example.com' }], leftOut: [], assumptions: [], message: '' }],
+      save_review: [{ passed: true, issues: [] }],
+    })
+    const result = await runGoalPipeline(modelCall, input)
+    expect(result.brief).toMatchObject({ focus: 'x-personal-health-habits', newFocus: { id: 'x-personal-health-habits', label: 'Personal health habits' } })
+    expect(prompts[1]!.user).toContain('none for this focus yet')
+    // The leaky lever (a link) is dropped; the job is made from the written one.
+    expect(result.newLevers!.map((l) => l.id)).toEqual(['x-personal-health-habits.x-daily-check-in'])
+    expect(result.workflows[0]).toMatchObject({ leverId: 'x-personal-health-habits.x-daily-check-in', newIdea: false })
+  })
+})
+
+describe("a workspace's own playbook", () => {
+  it('keeps the focuses and levers its planner wrote, and uses them next to the shared ones', async () => {
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { addToLocalPlaybook, activePlaybook, focusLabel, readLocalPlaybook, setPlaybookProjectDir } = await import('#core/system-agents/goal-playbooks.js')
+    const dir = mkdtempSync(join(tmpdir(), 'loopengine-local-playbook-'))
+    setPlaybookProjectDir(dir)
+    const lever = { ...LEVERS[0]!, id: 'x-hiring.x-screen', focus: 'x-hiring', name: 'Screen applicants' }
+    addToLocalPlaybook(dir, { focuses: [{ id: 'x-hiring', label: 'Hiring', hint: 'filling open roles' }], levers: [lever, { ...LEVERS[0]!, id: 'not-local' } as never] })
+    expect(readLocalPlaybook(dir).levers.map((l) => l.id)).toEqual(['x-hiring.x-screen'])
+    expect(activePlaybook().focuses.map((f) => f.id)).toEqual([...GOAL_FOCUSES, 'x-hiring'])
+    expect(leversFor('x-hiring').map((l) => l.name)).toEqual(['Screen applicants'])
+    expect(focusLabel('x-hiring')).toBe('Hiring')
+    expect(() => addToLocalPlaybook(dir, { levers: [{ ...lever, id: 'x-nowhere.x-a', focus: 'x-nowhere' }] })).toThrow(/focus must be one of/)
+    setPlaybookProjectDir(undefined)
+  })
+})
+
+describe('generating more', () => {
+  it('shows only the levers still unused under the goal, and asks for new ones when none are left', async () => {
+    const all = leversFor('new-signups').map((l) => ({ title: l.name, lever: l.name, leverId: l.id, state: 'saved' as const }))
+    const { modelCall, prompts } = scriptedModel({
+      save_brief: [BRIEF, BRIEF],
+      save_plan: [{ setup: [], workflows: [], leftOut: [], assumptions: [], message: '' }, { setup: [], workflows: [], leftOut: [], assumptions: [], message: '' }],
+      save_review: [{ passed: true, issues: [] }, { passed: true, issues: [] }],
+    })
+    const input = { goal: caseById('le-grow-100').goal, context: caseById('le-grow-100').context }
+    await runGoalPipeline(modelCall, { ...input, saved: all.slice(0, 1) })
+    expect(prompts[1]!.user).not.toContain(`- ${all[0]!.leverId}:`)
+    expect(prompts[1]!.user).toContain(`- ${all[1]!.leverId}:`)
+    await runGoalPipeline(modelCall, { ...input, saved: all })
+    expect(prompts[4]!.user).toContain('every one for this focus is already under this goal')
   })
 })

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  acceptJob, assignJob, chainConditionMet, chainedRuns, checkBuiltWorkflows, createGoal, editAmount, editJob, goalView, MAX_CHAIN_DEPTH, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, migrateGoalFiles, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
+  acceptJob, addJob, assignJob, chainConditionMet, chainedRuns, checkBuiltWorkflows, createGoal, editAmount, editJob, goalView, MAX_CHAIN_DEPTH, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, migrateGoalFiles, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
   type GoalJob, type GoalsDeps,
 } from '#web/goals-admin.js'
 
@@ -445,5 +445,42 @@ describe('goals saved before jobs', () => {
       ['w-2', 'once', 'saved', 0, 'signups tagged ref=directory'],
     ])
     expect(migrateGoalFiles(deps)).toBe(0)
+  })
+})
+
+describe('a job the person adds', () => {
+  async function plannedGoal(answer: Record<string, unknown>) {
+    const s = setup([[wf('Answer posts')]])
+    const { id } = createGoal(s.deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    s.deps.modelCall = async () => (async (_m, _s, tools) => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'j1', name: tools[0]!.name, input: answer }] }) as ModelResponse)
+    return { ...s, id }
+  }
+
+  it('shapes it into a saved job, with the person’s words and how it was judged', async () => {
+    const { deps, id } = await plannedGoal({ verdict: 'changed', note: 'I added approval before anything is sent.', job: wf('Thank new customers', { kind: 'recurring', measure: 'repeat orders from thanked customers', leverId: 'thank-new-customers' }), newLever: {
+      key: 'thank-new-customers', name: 'Thank new customers soon after purchase', kind: 'recurring', mechanism: 'A quick personal thank-you makes a second purchase more likely.', fitsWhen: ['customers buy online'], notWhen: [], needs: ['email'],
+      humanMinutesPerWeek: 15, firstResultDays: 14, measureLink: 'repeat orders from thanked customers', guardrails: ['Nothing is sent without approval.'], template: 'Each day, draft a thank-you to every new customer of {product}.',
+    } })
+    const added = await addJob(deps, id, { idea: 'email every new customer a thank you' })
+    expect(added.verdict).toBe('changed')
+    const job = added.goal.jobs.find((j) => j.id === added.jobId)!
+    expect(job).toMatchObject({ state: 'saved', title: 'Thank new customers', leverId: 'new-signups.x-thank-new-customers', added: { idea: 'email every new customer a thank you', verdict: 'changed' } })
+    expect(readLeverEvents(deps).at(-1)).toMatchObject({ type: 'added', job: job.id })
+  })
+
+  it('keeps a job to the workspace when asked: its lever events are marked private', async () => {
+    const { deps, id } = await plannedGoal({ verdict: 'added', job: wf('Thank new customers') })
+    const added = await addJob(deps, id, { idea: 'email every new customer a thank you', private: true })
+    expect(added.goal.jobs.find((j) => j.id === added.jobId)).toMatchObject({ keepPrivate: true })
+    expect(readLeverEvents(deps).at(-1)).toMatchObject({ type: 'added', private: true })
+  })
+
+  it('refuses a deceptive one and adds nothing', async () => {
+    const { deps, id } = await plannedGoal({ verdict: 'refused', note: 'Fake reviews break store rules.', alternative: 'Ask happy customers for honest reviews.' })
+    const before = getGoal(deps, id).jobs.length
+    const result = await addJob(deps, id, { idea: 'post fake 5 star reviews' })
+    expect(result).toMatchObject({ verdict: 'refused', alternative: 'Ask happy customers for honest reviews.' })
+    expect(getGoal(deps, id).jobs).toHaveLength(before)
   })
 })
