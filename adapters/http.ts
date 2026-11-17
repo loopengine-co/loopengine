@@ -131,7 +131,7 @@ import { isMcpAuthError, listMcpServerTools, resolveMcpManifest } from '#core/mc
 import { McpAbilityGenerationError, generateMcpAbility, mcpAbilityNames } from '#core/mcp-ability-generator.js'
 import { McpSignInError, finishMcpSignIn, mcpOAuthEnvName, mcpSignInSupport, startMcpSignIn } from '#core/mcp-oauth.js'
 import { readAbilityDetails } from '#core/ability-details.js'
-import { AppToolsError, appCatalog, appServer, appTools, connectedApps, isAppAbility, loadAppIcons, refreshAppTools, setAppDefault, type AgentAppTools } from '#core/mcp-apps.js'
+import { AppToolsError, appCatalog, appServer, appTools, connectedApps, isAppAbility, loadAppIcons, refreshAppTools, setAppDefault, appToolInputs, type AgentAppTools } from '#core/mcp-apps.js'
 import { AbilitySourceError, abilityOrigin, readAbilitySources, type AbilitySource } from '#core/ability-sources.js'
 import {
   installAbility,
@@ -1219,7 +1219,14 @@ async function workflowMcpServerTools(id: string): Promise<unknown> {
   // A connected app's tools are already known (and one connected by
   // signing in can't be listed without its sign-in).
   const existing = workflowMcp.existingFor(server.url)
-  if (existing?.tools.length) return { server: server.title, connected: true, tools: existing.tools.slice(0, 80).map((t) => ({ name: t.remote })) }
+  if (existing?.tools.length) {
+    // What each does and must be given (an account, a workspace...), so
+    // the plan includes the tool that finds it; just the names when the
+    // server can't be reached.
+    const detailed = await appToolInputs(existing.spec, (n) => process.env[n]).catch(() => undefined)
+    if (detailed?.length) return { server: server.title, connected: true, tools: detailed.slice(0, 80).map((t) => ({ name: t.remote, description: t.description.slice(0, 200), ...(t.readOnly !== undefined ? { readOnly: t.readOnly } : {}), ...(t.required.length ? { needs: t.required } : {}) })) }
+    return { server: server.title, connected: true, tools: existing.tools.slice(0, 80).map((t) => ({ name: t.remote })) }
+  }
   const { keyEnv } = mcpAbilityNames(server)
   const key = process.env[keyEnv]
   try {
@@ -1227,7 +1234,13 @@ async function workflowMcpServerTools(id: string): Promise<unknown> {
       { url: server.url, ...(server.transport === 'sse' ? { transport: 'sse' as const } : {}), auth: key ? { type: 'key', env: keyEnv, ...(server.auth ?? {}) } : { type: 'none' } },
       { get: (n) => (n === keyEnv ? key : undefined), require: (n) => { if (n === keyEnv && key) return key; throw new Error(`${n} is not set`) } },
     )
-    return { server: server.title, tools: tools.slice(0, 80).map((t) => ({ name: t.name, description: t.description.split('\n')[0].slice(0, 200), ...(t.readOnly !== undefined ? { readOnly: t.readOnly } : {}) })) }
+    return {
+      server: server.title,
+      tools: tools.slice(0, 80).map((t) => {
+        const needs = Array.isArray(t.inputSchema?.required) ? (t.inputSchema.required as unknown[]).filter((r): r is string => typeof r === 'string') : []
+        return { name: t.name, description: t.description.split('\n')[0].slice(0, 200), ...(t.readOnly !== undefined ? { readOnly: t.readOnly } : {}), ...(needs.length ? { needs } : {}) }
+      }),
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return isMcpAuthError(err)
@@ -1627,6 +1640,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
         addAppTools: async (agent, spec, tools) => addAgentAppTools(agent, spec, tools),
         appStatus: workflowAppStatus,
         appForSpec: workflowAppForSpec,
+        appToolInputs: (spec) => appToolInputs(spec, (n) => process.env[n]),
         mcp: {
           ...workflowMcp,
           // The planning model matches steps to the app's tools, when the

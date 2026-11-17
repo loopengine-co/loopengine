@@ -396,6 +396,46 @@ export async function appTools(spec: string, envValue: (name: string) => string 
   })
 }
 
+/** A server tool with the inputs a call must give, for working out which
+ * of an app's tools a workflow needs. */
+export interface AppToolInputs {
+  remote: string
+  description: string
+  readOnly?: boolean
+  /** Its schema's required inputs. */
+  required: string[]
+}
+
+/** Every tool the app's server offers, with its required inputs. */
+export async function appToolInputs(spec: string, envValue: (name: string) => string | undefined): Promise<AppToolInputs[]> {
+  const dir = spec.replace(/^file:/, '')
+  const { manifest } = readApp(dir)
+  const listed = await serverTools(dir, manifest, envValue)
+  return listed.map((t) => ({
+    remote: t.name,
+    description: t.description.split('\n')[0].slice(0, 240),
+    ...(t.readOnly !== undefined ? { readOnly: t.readOnly } : {}),
+    required: Array.isArray(t.inputSchema?.required) ? (t.inputSchema.required as unknown[]).filter((r): r is string => typeof r === 'string') : [],
+  }))
+}
+
+// Inputs that name which account, org or workspace a call is for, and the
+// read-only tools that list them (Stripe's stripe_context, from
+// stripe_list_available_accounts_or_orgs; a workspace_id from a
+// list_workspaces). A tool needing one is no use without a way to find it.
+const CONTEXT_INPUT = /(^|_)(context|account|accounts|org|orgs|organization|organizations|workspace|workspaces|tenant|tenants|team|teams)(_ids?)?$/i
+const CONTEXT_LISTER = /(^|_)(list|get|available|whoami|me)(_|$).*(account|org|organization|workspace|tenant|team|context)s?(_|$)|(^|_)(account|org|organization|workspace|tenant|team)s?_(list|available)(_|$)/i
+
+/** The app's tools that list what `chosen` tools need to be told (an
+ * account, an org, a workspace), when they aren't chosen already. One the
+ * server marks as changing things is never added; one it doesn't mark
+ * gets the app's default permission for unmarked tools, which asks. */
+export function contextToolsFor(chosen: string[], tools: AppToolInputs[]): string[] {
+  const needsContext = tools.some((t) => chosen.includes(t.remote) && t.required.some((input) => CONTEXT_INPUT.test(input)))
+  if (!needsContext) return []
+  return tools.filter((t) => t.readOnly !== false && !chosen.includes(t.remote) && CONTEXT_LISTER.test(t.remote)).map((t) => t.remote)
+}
+
 /** Sets a tool's default permission, for agents that add it from now on;
  * agents that already have it keep theirs. */
 export function setAppDefault(spec: string, remote: string, decision: 'allow' | 'ask' | 'deny'): void {

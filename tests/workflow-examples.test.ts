@@ -184,3 +184,50 @@ describe('workflow examples', () => {
     expect(created.checklist.map((c) => c.label)).toContain(`Edit "Who handles what" and the repository in the workflow's instructions (its Edit, on the Workflows tab)`)
   })
 })
+
+describe('app tools that need an account', () => {
+  const stripeTools = [
+    { remote: 'stripe_api_execute', description: 'Calls a Stripe API operation', readOnly: false, required: ['stripe_context', 'operation'] },
+    { remote: 'stripe_api_details', description: 'Describes an operation', readOnly: true, required: ['operation'] },
+    { remote: 'stripe_list_available_accounts_or_orgs', description: 'Lists the accounts you can use', readOnly: true, required: [] },
+    { remote: 'stripe_delete_account_link', description: 'Removes an account link', readOnly: false, required: [] },
+  ]
+
+  it('come with the read-only tool that lists the accounts', async () => {
+    const { contextToolsFor } = await import('#core/mcp-apps.js')
+    expect(contextToolsFor(['stripe_api_execute'], stripeTools)).toEqual(['stripe_list_available_accounts_or_orgs'])
+    // Nothing needs an account: nothing added; already chosen: not again.
+    expect(contextToolsFor(['stripe_api_details'], stripeTools)).toEqual([])
+    expect(contextToolsFor(['stripe_api_execute', 'stripe_list_available_accounts_or_orgs'], stripeTools)).toEqual([])
+    // Unmarked counts; one marked as changing things never does.
+    expect(contextToolsFor(['stripe_api_execute'], stripeTools.map((t) => ({ ...t, readOnly: undefined })))).toEqual(['stripe_list_available_accounts_or_orgs'])
+    expect(contextToolsFor(['stripe_api_execute'], stripeTools.map((t) => ({ ...t, readOnly: false })))).toEqual([])
+    expect(contextToolsFor(['create_page'], [
+      { remote: 'create_page', description: '', required: ['workspace_id', 'title'] },
+      { remote: 'list_workspaces', description: '', readOnly: true, required: [] },
+      { remote: 'list_pages', description: '', readOnly: true, required: [] },
+    ])).toEqual(['list_workspaces'])
+  })
+
+  it('are turned on with it when the workflow is created', async () => {
+    const plan = structuredClone(workflowExample('customer-email-replies')!.plan) as WorkflowPlan
+    plan.apps = [{ id: 'stripe', title: 'Stripe', tools: ['stripe_api_execute'] }]
+    const added: string[][] = []
+    const agent = {
+      name: 'support', tools: [], abilities: [], rules: [], defaultDecision: 'ask' as const, messaging: 'slack',
+      apps: [{ id: 'stripe', title: 'Stripe', url: 'https://mcp.stripe.com', tools: [], all: stripeTools.map((t) => ({ name: `stripe_${t.remote}`, remote: t.remote })) }],
+    }
+    await createWorkflow({ plan, agent: 'support' }, deps({
+      agentInfo: async () => [agent],
+      prepareApp: async () => 'file:/apps/stripe',
+      addAppTools: async (_agent, _spec, tools) => void added.push(tools),
+      appToolInputs: async () => stripeTools,
+    }))
+    expect(added).toEqual([['stripe_api_execute', 'stripe_list_available_accounts_or_orgs']])
+  })
+
+  it('tells the planner to plan that tool', () => {
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/also plan the app's read-only tool that lists them/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/call mcp_server_tools with its id: it says what each tool does and the inputs it needs/)
+  })
+})

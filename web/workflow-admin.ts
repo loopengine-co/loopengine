@@ -16,6 +16,7 @@ import { planParameters, planWebhook, planWorkflowWithModel, workflowTemplate, t
 import { createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
+import { contextToolsFor, type AppToolInputs } from '../core/mcp-apps.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowModel } from '../core/workflows.js'
 import { readEvals, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
@@ -592,6 +593,8 @@ export interface WorkflowCreateDeps extends Pick<TemplateCreateDeps, 'installAbi
   addAppTools?: (agent: string, spec: string, tools: string[]) => Promise<void>
   /** The connected app a workspace ability was made from. */
   appForSpec?: AppForSpec
+  /** An app's server tools with their required inputs (core/mcp-apps.ts). */
+  appToolInputs?: (spec: string) => Promise<AppToolInputs[]>
 }
 
 /** A to-do for each step nothing could be found for, first in the list. */
@@ -685,6 +688,12 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
     if (!spec) {
       appsToConnect.push(app.title)
       continue
+    }
+    // A tool that has to be told which account, org or workspace to use
+    // comes with the app's read-only tool that lists them.
+    if (deps.appToolInputs && app.tools.length) {
+      const extra = await deps.appToolInputs(spec).then((tools) => contextToolsFor(app.tools, tools), () => [])
+      if (extra.length) app.tools = [...app.tools, ...extra]
     }
     const has = agent.apps?.find((a) => a.id === app.id)
     const toAdd = has ? app.tools.filter((remote) => !has.tools.includes(has.all?.find((t) => t.remote === remote)?.name ?? remote)) : app.tools
