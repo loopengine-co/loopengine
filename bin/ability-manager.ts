@@ -780,7 +780,7 @@ export interface UpgradeFileResult {
 // the spec. Confirmed live: `npm pack 'git+file://...#v1.0.0@1.0.0'`
 // fails outright ("The git reference could not be found... pathspec
 // 'v1.0.0@1.0.0'"), it doesn't fall back to resolving just the tag.
-const PINNED_SPEC = /^(git\+|git:|https?:|file:|\.\.?\/|\/)/
+const PINNED_SPEC = /^(git\+|git:|github:|gitlab:|bitbucket:|https?:|file:|\.\.?\/|\/)/
 
 /** What to fetch to reconstruct the exact content that was installed or
  * last upgraded to, for use as the three-way merge's `base` — as
@@ -808,8 +808,19 @@ function oldContentSpec(recordedSpec: string | undefined, abilityName: string, v
   return `${bareName}@${version}`
 }
 
+/** What Upgrade fetches when it isn't given a spec: the place the
+ * ability was installed from. A workspace copy (file:), a git source or
+ * a URL is fetched from there again; a registry name gets its latest
+ * version. Before this, a bare name was always used, which fetched a
+ * private ability from public npm (or was refused there as unofficial). */
+function upgradeSpec(recordedSpec: string | undefined, abilityName: string): string {
+  if (!recordedSpec) return abilityName
+  if (PINNED_SPEC.test(recordedSpec)) return recordedSpec
+  return recordedSpec.startsWith('@') ? `@${recordedSpec.slice(1).split('@')[0]}` : recordedSpec.split('@')[0]!
+}
+
 /** Upgrades an already-installed ability to whatever `spec` (defaulting
- * to `abilityName`, i.e. "latest") currently resolves to. Tool and skill
+ * to where it was installed from, see upgradeSpec) currently resolves to. Tool and skill
  * files get a real three-way merge (mine = current file, possibly
  * hand-edited since install; base = the version recorded at
  * install/last-upgrade, refetched via oldContentSpec; theirs = newly
@@ -827,7 +838,7 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
   if (!record) {
     throw new AbilityNotInstalledError(`Ability '${abilityName}' isn't installed for '${agentName}'.`)
   }
-  const spec = options.spec ?? abilityName
+  const spec = options.spec ?? upgradeSpec(record.spec, abilityName)
   // New code is fetched: the same check as an install.
   assertOfficialAbility(spec)
 
@@ -836,6 +847,16 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
   const oldManifest = readManifest(oldDir)
   const newManifest = readManifest(newDir)
   checkLoopengineVersion(newManifest, options.installedLoopengineRange)
+  // The old content can't always be fetched again: a workspace copy is
+  // replaced in place when it's updated, and a git source without a ref
+  // gives today's files. Then the files as installed stand in for the
+  // old version: a file unchanged since install takes the new version,
+  // an edited one is left alone and reported as a conflict.
+  const oldIsInstalled = oldManifest.version === record.version
+  const baseFor = (minePath: string, recorded: string | undefined, fetched: string): string | null => {
+    if (oldIsInstalled) return fetched
+    return isDirty(minePath, recorded) ? null : readFileSync(minePath, 'utf8')
+  }
 
   const results: UpgradeFileResult[] = []
   const newContentHashes: Record<string, string> = { ...record.contentHashes }
@@ -865,17 +886,25 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
       continue
     }
     remainingTools.push(toolName)
-    if (!oldFile) {
-      results.push({ path: relPath, status: 'unchanged' })
-      continue
-    }
-    const base = readFileSync(join(oldDir, oldFile), 'utf8')
-    const theirs = readFileSync(join(newDir, newFile), 'utf8')
-    if (base === theirs) {
+    if (!oldFile && oldIsInstalled) {
       results.push({ path: relPath, status: 'unchanged' })
       continue
     }
     const minePath = join(agentDir(agentName), relPath)
+    if (!existsSync(minePath)) {
+      results.push({ path: relPath, status: 'unchanged' })
+      continue
+    }
+    const theirs = readFileSync(join(newDir, newFile), 'utf8')
+    const base = baseFor(minePath, record.contentHashes[relPath], oldFile ? readFileSync(join(oldDir, oldFile), 'utf8') : theirs)
+    if (base === null) {
+      results.push({ path: relPath, status: readFileSync(minePath, 'utf8') === theirs ? 'unchanged' : 'conflict' })
+      continue
+    }
+    if (base === theirs) {
+      results.push({ path: relPath, status: 'unchanged' })
+      continue
+    }
     const { merged, conflicted } = mergeFile(readFileSync(minePath, 'utf8'), base, theirs)
     writeFileSync(minePath, merged)
     if (!conflicted) newContentHashes[relPath] = sha256(merged)
@@ -893,17 +922,21 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     const newSkillDir = (newManifest.skills ?? []).find((s) => basename(s) === bareSkillId)
     const oldFile = oldSkillDir ? join(oldDir, oldSkillDir, 'SKILL.md') : null
     const newFile = newSkillDir ? join(newDir, newSkillDir, 'SKILL.md') : null
-    if (!oldFile || !newFile || !existsSync(oldFile) || !existsSync(newFile)) {
+    const minePath = join(agentDir(agentName), relPath)
+    if (!newFile || !existsSync(newFile) || !existsSync(minePath) || (oldIsInstalled && (!oldFile || !existsSync(oldFile)))) {
       results.push({ path: relPath, status: 'unchanged' })
       continue
     }
-    const base = readFileSync(oldFile, 'utf8')
     const theirs = readFileSync(newFile, 'utf8')
+    const base = baseFor(minePath, record.contentHashes[relPath], oldFile && existsSync(oldFile) ? readFileSync(oldFile, 'utf8') : theirs)
+    if (base === null) {
+      results.push({ path: relPath, status: readFileSync(minePath, 'utf8') === theirs ? 'unchanged' : 'conflict' })
+      continue
+    }
     if (base === theirs) {
       results.push({ path: relPath, status: 'unchanged' })
       continue
     }
-    const minePath = join(agentDir(agentName), relPath)
     const { merged, conflicted } = mergeFile(readFileSync(minePath, 'utf8'), base, theirs)
     writeFileSync(minePath, merged)
     if (!conflicted) newContentHashes[relPath] = sha256(merged)
@@ -921,6 +954,13 @@ export async function upgradeAbility(agentName: string, abilityName: string, opt
     const newRule = newRules.find((r) => matchesInstalledRuleName(abilityName, r.name, ruleName))
     const current = currentRules.get(ruleName)
     const path = `actauth:${ruleName}`
+    // Without the installed version's rules, a hand-edited permission
+    // can't be told from one the new version changed: it's left alone.
+    if (!oldIsInstalled) {
+      const differs = !!newRule && !!current && (current.scope !== newRule.scope || current.tool !== newRule.tool || current.decision !== newRule.decision)
+      results.push({ path, status: differs ? 'conflict' : 'unchanged' })
+      continue
+    }
     if (!oldRule || !newRule || !current) {
       results.push({ path, status: 'unchanged' })
       continue
