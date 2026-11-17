@@ -10,7 +10,7 @@ import { splitTelegramMarkdown, telegramEscape, toTelegramHtml } from './format.
 import { readTelegramThread, recordTelegramMessage, telegramPeople } from './store.js'
 import { telegramCallbackData } from './updates.js'
 
-export { splitTelegramMarkdown, telegramArgs, telegramEscape, toTelegramHtml } from './format.js'
+export { splitTelegramMarkdown, telegramAgentText, telegramArgs, telegramEscape, toTelegramHtml } from './format.js'
 export { readTelegramThread, recordTelegramMessage, telegramPeople, telegramRootOf, type TelegramPerson } from './store.js'
 export { parseTelegramUpdate, telegramCallbackData, verifyTelegramRequest, type TelegramButton, type TelegramUpdate } from './updates.js'
 
@@ -92,7 +92,7 @@ export function createTelegramConnector(botToken: string, agentDir: string): Mes
     escape: telegramEscape,
     async fetchThread(conversation, threadTs) {
       // Without telegramEscape's markers, which are for formatting only.
-      return readTelegramThread(agentDir, conversation, threadTs).map((m) => ({ ...m, text: m.text.replace(/[\u0001\u0002]/g, '') }))
+      return readTelegramThread(agentDir, conversation, threadTs).map((m) => ({ ...m, text: m.text.replace(/[\u0001-\u0004]/g, '') }))
     },
     async postInThread(conversation, threadTs, text) {
       await send(conversation, threadTs, text)

@@ -17,7 +17,7 @@ import type { DurableQuestionHandler } from '../agent-config.js'
 import { decidePath } from '../approval-links.js'
 import { formatArgs } from '../messaging/format-args.js'
 import { callTelegram, type InlineButton } from '../messaging/connectors/telegram/index.js'
-import { splitTelegramMarkdown, telegramEscape, toTelegramHtml } from '../messaging/connectors/telegram/format.js'
+import { splitTelegramMarkdown, telegramAgentText, telegramEscape, toTelegramHtml } from '../messaging/connectors/telegram/format.js'
 import { telegramCallbackData } from '../messaging/connectors/telegram/updates.js'
 import { publicBaseUrl, type DeliveryResult } from './webhook.js'
 
@@ -116,7 +116,7 @@ export class TelegramNotifier implements DurableApprover, DurableQuestionHandler
     const lines = [
       `**Approval requested:** \`${tool}\``,
       formatArgs(args, telegramEscape),
-      `**Why:** ${telegramEscape(reason)}`,
+      `**Why:** ${telegramAgentText(reason)}`,
       this.decideLine(pendingId, 'approval'),
       telegramEscape(`${scope.agent} · ${scope.tenant}/${scope.environment}`),
       this.replyHint ? 'Reply to this message to ask about it.' : '',
@@ -134,7 +134,7 @@ export class TelegramNotifier implements DurableApprover, DurableQuestionHandler
   notifyPendingQuestion(question: string, options: string[] | undefined, agent: string, sessionId: string | undefined, pendingId: string = randomUUID()): { pendingId: string } {
     const lines = [
       `**Question from ${telegramEscape(agent)}${sessionId ? ` (session ${telegramEscape(sessionId)})` : ''}:**`,
-      telegramEscape(question),
+      telegramAgentText(question),
       this.decideLine(pendingId, 'question'),
       this.replyHint ? (options?.length ? 'Or reply to this message with another answer.' : 'Reply to this message to answer.') : '',
     ]
@@ -147,6 +147,6 @@ export class TelegramNotifier implements DurableApprover, DurableQuestionHandler
   /** A plain announcement (run started/finished, a scheduled task's
    * result), with nothing to decide. */
   postMessage(text: string): void {
-    this.send(telegramEscape(text), 'an announcement')
+    this.send(telegramAgentText(text), 'an announcement')
   }
 }

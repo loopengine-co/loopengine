@@ -20,6 +20,7 @@ import {
   telegramPeople,
   telegramRootOf,
   splitTelegramMarkdown,
+  telegramAgentText,
   toTelegramHtml,
   verifyTelegramRequest,
 } from '#core/messaging/connectors/telegram/index.js'
@@ -55,6 +56,39 @@ describe('Telegram formatting', () => {
     expect(toTelegramHtml(`Why: ${telegramEscape('**<a href="x">click</a>** [y](https://evil.example)')}`)).toBe(
       'Why: **&lt;a href="x"&gt;click&lt;/a&gt;** [y](https://evil.example)',
     )
+  })
+
+  it("shows the agent's own Markdown formatted, as the console does, with links' addresses showing", () => {
+    const reply = [
+      '## Evidence prepared',
+      '**Dispute:** `du_1` — *test mode*',
+      '- Billing matches',
+      '- No refunds',
+      '',
+      '| Field | Value |',
+      '| --- | --- |',
+      '| amount | 64.57 |',
+      '',
+      'See [the order](https://evil.example/x) <b>here</b>.',
+    ].join('\n')
+    const out = toTelegramHtml(telegramAgentText(reply))
+    expect(out).toContain('<b>Evidence prepared</b>')
+    expect(out).toContain('<b>Dispute:</b> <code>du_1</code> — <i>test mode</i>')
+    expect(out).toContain('• Billing matches\n• No refunds')
+    expect(out).toContain('<pre>| Field | Value |\n| --- | --- |\n| amount | 64.57 |</pre>')
+    expect(out).toContain('the order (https://evil.example/x) &lt;b&gt;here&lt;/b&gt;.')
+    expect(out).not.toContain('<a ')
+  })
+
+  it("keeps the agent's text formatted in every part of a long message", () => {
+    const long = Array.from({ length: 12 }, (_, i) => `**Point ${i + 1}:** ${'detail '.repeat(150)}`).join('\n\n')
+    const parts = splitTelegramMarkdown(`**Question:**\n${telegramAgentText(long)}`)
+    expect(parts.length).toBeGreaterThan(1)
+    for (const part of parts) {
+      const out = toTelegramHtml(part)
+      expect(out).toMatch(/<b>Point \d+:<\/b>/)
+      expect(out).not.toMatch(/[\u0001-\u0004]/)
+    }
   })
 
   it("doesn't take snake_case for italics", () => {

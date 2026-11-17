@@ -9,7 +9,11 @@ import { formatArgs } from '../../format-args.js'
 
 const OPEN = '\u0001'
 const CLOSE = '\u0002'
-const KEEP = /(```[\s\S]*?```|`[^`\n]*`|\u0001[\s\S]*?\u0002)/
+// The agent's own writing (telegramAgentText): formatted, links shown.
+const OPEN_AGENT = '\u0003'
+const CLOSE_AGENT = '\u0004'
+const MARKERS = /[\u0001-\u0004]/g
+const KEEP = /(```[\s\S]*?```|`[^`\n]*`|\u0001[\s\S]*?\u0002|\u0003[\s\S]*?\u0004)/
 
 // Telegram's limit is 4096 characters of text after the tags are read;
 // cutting the Markdown well short of it keeps the tags whole.
@@ -22,7 +26,16 @@ function html(text: string): string {
 /** Marks text that isn't ours, so toTelegramHtml escapes it and leaves it
  * as plain text. */
 export function telegramEscape(text: string): string {
-  return OPEN + text.replace(/[\u0001\u0002]/g, '') + CLOSE
+  return OPEN + text.replace(MARKERS, '') + CLOSE
+}
+
+/** Marks the agent's own writing (its question, its reason, its result):
+ * its Markdown is shown formatted, as the console shows it (bold, lists,
+ * headings, code, a table as fixed-width text), but a link shows its
+ * address instead of hiding it behind text, since what the agent writes
+ * can carry text from anyone. */
+export function telegramAgentText(text: string): string {
+  return OPEN_AGENT + text.replace(MARKERS, '') + CLOSE_AGENT
 }
 
 // A long message goes out as several, at most this many; past that the
@@ -53,10 +66,13 @@ export function splitTelegramMarkdown(markdown: string, max = MAX_MARKDOWN - 100
     let head = rest.slice(0, at).trimEnd()
     rest = rest.slice(at).replace(/^[ \n]+/, '')
     let escaped = false
+    let agent = false
     let fenced = false
     for (let i = 0; i < head.length; i++) {
       if (head[i] === OPEN) escaped = true
       else if (head[i] === CLOSE) escaped = false
+      else if (head[i] === OPEN_AGENT) agent = true
+      else if (head[i] === CLOSE_AGENT) agent = false
       else if (!escaped && head.startsWith('```', i)) {
         fenced = !fenced
         i += 2
@@ -66,10 +82,11 @@ export function splitTelegramMarkdown(markdown: string, max = MAX_MARKDOWN - 100
       head += CLOSE
       rest = OPEN + rest
     }
-    if (fenced) {
-      head += '\n```'
-      rest = '```\n' + rest
-    }
+    // A code block open inside the agent's text closes before its marker.
+    if (fenced) head += '\n```'
+    if (agent) head += CLOSE_AGENT
+    if (fenced) rest = '```\n' + rest
+    if (agent) rest = OPEN_AGENT + rest
     parts.push(head)
   }
   parts.push(rest)
@@ -85,16 +102,36 @@ export function toTelegramHtml(markdown: string): string {
     .split(KEEP)
     .map((part, i) => {
       if (i % 2 === 0) return convertProse(part)
-      const plain = part.replace(/[\u0001\u0002]/g, '')
+      if (part.startsWith(OPEN_AGENT)) return agentHtml(part.slice(1, -1))
+      const plain = part.replace(MARKERS, '')
       if (part.startsWith(OPEN)) return html(plain)
       if (part.startsWith('```')) return `<pre>${html(plain.slice(3, -3).replace(/^[\w-]*\n/, ''))}</pre>`
       return `<code>${html(plain.slice(1, -1))}</code>`
     })
     .join('')
-    .replace(/[\u0001\u0002]/g, '')
+    .replace(MARKERS, '')
 }
 
-function convertProse(text: string): string {
+// A run of Markdown table lines ("| a | b |").
+const TABLE = /((?:^[ \t]*\|.*\|[ \t]*(?:\n|$)){2,})/m
+
+/** The agent's Markdown: code and tables as fixed-width text, the rest
+ * formatted, links with their address showing. */
+function agentHtml(text: string): string {
+  return text
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part, i) => {
+      if (i % 2 === 1) return part.startsWith('```') ? `<pre>${html(part.slice(3, -3).replace(/^[\w-]*\n/, ''))}</pre>` : `<code>${html(part.slice(1, -1))}</code>`
+      return part
+        .split(TABLE)
+        .map((piece, j) => (j % 2 === 1 ? `<pre>${html(piece.replace(/\n$/, ''))}</pre>\n` : convertProse(piece, { links: false })))
+        .join('')
+    })
+    .join('')
+}
+
+function convertProse(text: string, options: { links?: boolean } = {}): string {
+  const links = options.links ?? true
   return html(text)
     // # Heading -> bold
     .replace(/^#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, '<b>$1</b>')
@@ -107,7 +144,7 @@ function convertProse(text: string): string {
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>')
     // [text](url): the URL was escaped with the rest, which is what an
     // attribute needs, and can't hold a quote.
-    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)"]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)"]+)\)/g, links ? '<a href="$2">$1</a>' : '$1 ($2)')
 }
 
 /** A call's arguments as Telegram HTML (core/messaging/format-args.ts). */

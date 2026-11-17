@@ -111,7 +111,7 @@ import type { InboundMessage, MessagingConnector } from '#core/messaging/connect
 import { formatArgs } from '#core/messaging/format-args.js'
 import { answerTelegramClick, createTelegramConnector, editTelegramMessage, parseTelegramUpdate, readTelegramThread, recordTelegramMessage, telegramBotUsername, telegramEscape, telegramRootOf, verifyTelegramRequest, type TelegramUpdate } from '#core/messaging/connectors/telegram/index.js'
 import { describeChange } from '#core/messaging/decide.js'
-import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackOutcomeText, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
+import { createSlackConnector, openSlackAnswerModal, parseSlackEvent, parseSlackInteraction, replyInSlack, replyPrivatelyInSlack, slackArgs, slackEscape, slackOutcomeText, toSlackMrkdwn, verifySlackRequest } from '#core/messaging/connectors/slack/index.js'
 import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities-admin.js'
 import { installMissingPackages } from '#core/ability-dependencies.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
@@ -4156,6 +4156,17 @@ async function handleSlackInteraction(req: IncomingMessage, res: ServerResponse,
     const item = (await checkpoints.get(interaction.pendingId))?.outstanding[interaction.pendingId]
     if (item) ran = `\nRan \`${item.tool}\` with:\n${slackArgs(item.args, (await resolveAgentTool(entry.config, item.tool))?.input_schema)}`
   }
+  // The decision carries the run on, which can take minutes: the message
+  // says what was decided (and loses its buttons) straight away.
+  const waiting = (await checkpoints.get(interaction.pendingId))?.outstanding[interaction.pendingId]
+  if (waiting && interaction.responseUrl) {
+    const who = interaction.user ? ` by <@${interaction.user}>` : ''
+    const working =
+      interaction.type === 'answer' ? `*Answered${who}:* ${toSlackMrkdwn(slackEscape(interaction.answer))}. The agent is carrying on… this message updates when it's done.`
+      : interaction.decision === 'approve' ? `*Approved${who}.* Running \`${waiting.tool}\`… this message updates when it's done.`
+      : `*Denied${who}.* Letting the agent know…`
+    await replyInSlack(interaction.responseUrl, working).catch((err) => console.error('[loopengine] Slack reply failed:', err))
+  }
   const capture = captureResponse()
   if (interaction.type === 'decide') await resolvePendingApproval(capture.res, interaction.pendingId, { decision: interaction.decision })
   else await answerPendingQuestion(capture.res, interaction.pendingId, { answer: interaction.answer })
@@ -4281,11 +4292,19 @@ async function handleTelegramClick(agentName: string, entry: RegistryEntry, botT
   const deps = messagingDeps(agentName, entry, connector)
   const who = click.username ? `@${click.username}` : click.userName ?? 'someone'
   if (click.button.type === 'action') {
+    // Approving a change runs the tool and the rest of the run: say so
+    // (and take the buttons away) until it's done.
+    if (click.button.action === 'approve_edited' || click.button.action === 'confirm') {
+      await editTelegramMessage(botToken, click.conversation, click.messageId, `**Approved by ${who}.** Running it… this message updates when it's done.`)
+    }
     const text = await handleMessagingAction(click.button.action, click.pendingId, click.user, deps)
     await editTelegramMessage(botToken, click.conversation, click.messageId, text)
     return
   }
   const item = (await checkpoints.get(click.pendingId))?.outstanding[click.pendingId]
+  // The buttons are on a long request's last message, which belongs to its first.
+  const dir = agentDirFor(entry.config)
+  const request = readTelegramThread(dir, click.conversation, telegramRootOf(dir, click.conversation, click.messageId)).find((m) => m.ts === click.messageId)?.text
   let decision: MessagingDecision
   let answer: string | undefined
   if (click.button.type === 'decide') {
@@ -4300,6 +4319,16 @@ async function handleTelegramClick(agentName: string, entry: RegistryEntry, botT
       return
     }
   }
+  // The decision carries the run on, which can take minutes: the message
+  // says what was decided (and loses its buttons) straight away, then
+  // what happened once the run gets there.
+  if (item) {
+    const working =
+      decision.kind === 'approve' ? `**Approved by ${who}.** Running \`${item.tool}\`… this message updates when it's done.`
+      : decision.kind === 'deny' ? `**Denied by ${who}.** Letting the agent know…`
+      : `**Answered by ${who}:** "${telegramEscape(answer ?? '')}". The agent is carrying on… this message updates when it's done.`
+    await editTelegramMessage(botToken, click.conversation, click.messageId, request ? `${request}\n\n${working}` : working)
+  }
   const outcome = await decideFromMessaging(click.pendingId, decision)
   const kind = decision.kind === 'answer' ? 'answer' : decision.kind
   if (!outcome.error && !outcome.alreadyResolved) {
@@ -4310,9 +4339,6 @@ async function handleTelegramClick(agentName: string, entry: RegistryEntry, botT
   const settled = !outcome.error && !outcome.alreadyResolved
   let result = outcomeText(kind, who, outcome, answer === undefined ? undefined : telegramEscape(answer))
   if (kind === 'approve' && settled) result = `**Approved by ${who}.** ${result}`
-  // The buttons are on a long request's last message, which belongs to its first.
-  const dir = agentDirFor(entry.config)
-  const request = readTelegramThread(dir, click.conversation, telegramRootOf(dir, click.conversation, click.messageId)).find((m) => m.ts === click.messageId)?.text
   if (request) result = `${request}\n\n${result}`
   else if (item && kind === 'approve' && settled) result += `\nRan \`${item.tool}\` with:\n${formatArgs(item.args, telegramEscape, (await resolveAgentTool(entry.config, item.tool))?.input_schema)}`
   await editTelegramMessage(botToken, click.conversation, click.messageId, result)
