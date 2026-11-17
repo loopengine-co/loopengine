@@ -24,6 +24,7 @@
 // *same* session don't race on read-modify-write of that session's
 // history. What counts as "the same session" is deliberately not this
 // file's call — see AgentConfig.sessionIdFor and defaultSessionIdFor below.
+import { UNATTENDED_NOTE } from '#core/unattended.js'
 import { execFile } from 'node:child_process'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, rmSync } from 'node:fs'
@@ -2181,10 +2182,12 @@ async function executeUnattendedRun(agent: string, message: string, rawSessionId
   const tenant = 'default'
   const environment = process.env.LOOPENGINE_ENV ?? 'production'
   const outcome = await sessions.withSession(`${tenant}:${environment}:${agent}:${rawSessionId}`, async (history) => {
-    const result = await runAgent(config, modelCall, message, history, {
+    // Nobody is in its chat: how to ask for a decision goes with it.
+    const result = await runAgent(config, modelCall, `${message}\n\n${UNATTENDED_NOTE}`, history, {
       tenant,
       sessionId: rawSessionId,
       channel: 'http',
+      unattended: true,
       approver: defaultHttpWebhookNotifier ?? { requestApproval: async () => false },
       questionHandler: defaultHttpWebhookNotifier ?? { requestQuestion: async () => NO_HUMAN_ANSWER },
     })
@@ -3808,6 +3811,8 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
       approver: fromJobThread ? threadApprover : defaultHttpWebhookNotifier ?? createTrackedApprover(finalCheckpoint.sessionId),
       questionHandler: fromJobThread ? threadQuestions : defaultHttpWebhookNotifier,
       onQuestionPending: () => {},
+      // A workflow run carries on unattended after the decision.
+      ...(resumedRun && !fromJobThread ? { unattended: true } : {}),
     })
     // The resumed turn can itself hit another durably-pending call/
     // question — same wiring as the fresh-turn call sites above, or its

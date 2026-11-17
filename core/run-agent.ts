@@ -3,6 +3,7 @@
 // differ. runAgent itself does no I/O and holds no state between calls:
 // callers own conversation history, which is what lets the same function
 // serve a one-shot CLI invocation and a long-lived chat session.
+import { MAX_UNATTENDED_NUDGES, UNATTENDED_NUDGE, asksThePerson } from './unattended.js'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -220,6 +221,10 @@ export interface RunAgentOptions {
    * on, so the run still reaches a result instead of stopping at a
    * denial. */
   evalMode?: boolean
+  /** Nobody is watching this run (core/unattended.ts): a final reply that
+   * asks the person something is sent back for the agent to make the
+   * call (the tool, or system_ask_user) instead. */
+  unattended?: boolean
   /** This call's own default QuestionHandler — question-side sibling of
    * `approver` above, same precedence (`AgentConfig.httpNotifier`, when it
    * covers `'question'` on the `http` channel, still wins outright over
@@ -603,6 +608,8 @@ interface TurnContext {
   modelLabel: { provider?: string; model?: string }
   /** RunAgentOptions.evalMode: what's checked, and the tools never run. */
   evalMode?: { rules: RuleSet; neverRun: Set<ToolDefinition> }
+  /** RunAgentOptions.unattended. */
+  unattended?: boolean
 }
 
 async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, options: RunAgentOptions): Promise<TurnContext> {
@@ -818,6 +825,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     httpNotifier,
     modelLabel: { provider: config.model?.provider, model: config.model?.model },
     ...(options.evalMode ? { evalMode: { rules, neverRun: new Set<ToolDefinition>(scheduleTools) } } : {}),
+    ...(options.unattended ? { unattended: true } : {}),
     toolContext: {
       agentName: config.name,
       tenant: scope.tenant,
@@ -836,7 +844,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
  * fresh in each case) but mutated here via pushMessage, same as the
  * single function this was split out of always did. */
 async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
-  const { modelCall, log, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel, evalMode } = ctx
+  const { modelCall, log, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel, evalMode, unattended } = ctx
 
   function pushMessage(message: Message): void {
     messages.push(message)
@@ -898,6 +906,7 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
   pushMessage(starterMessage)
 
   let turn = 0
+  let nudges = 0
 
   for (;;) {
     turn++
@@ -948,6 +957,13 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
 
     if (toolUseBlocks.length === 0) {
       const text = response.content.find((b) => b.type === 'text')?.text ?? ''
+      // Nobody can answer a question in an unattended run's last reply:
+      // it goes back for the agent to ask with a call.
+      if (unattended && nudges < MAX_UNATTENDED_NUDGES && (await asksThePerson(modelCall, text))) {
+        nudges++
+        pushMessage({ role: 'user', content: UNATTENDED_NUDGE })
+        continue
+      }
       log({ type: 'loop:done', text })
       return { text, history: messages, newMessages }
     }

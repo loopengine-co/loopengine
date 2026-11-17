@@ -45,6 +45,8 @@
     "dist/core/secret-store.d.ts",
     "dist/core/trusted-proxy.js",
     "dist/core/trusted-proxy.d.ts",
+    "dist/core/unattended.js",
+    "dist/core/unattended.d.ts",
     "dist/core/usage.js",
     "dist/core/usage.d.ts",
     "dist/core/run-events.js",

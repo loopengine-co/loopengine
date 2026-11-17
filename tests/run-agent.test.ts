@@ -1665,3 +1665,45 @@ describe('runAgent in a test run (evalMode)', () => {
     expect(toolResults(result.history).find((r) => r.tool_use_id === 't2')?.content).toMatch(/not run: this is a test run/)
   })
 })
+
+describe('runAgent with nobody watching (unattended)', () => {
+  // The model call: the agent's turns in order; the check of its reply
+  // (core/unattended.ts) answers `waits`.
+  function scripted(turns: ModelResponse[], waits: boolean | ((reply: string) => boolean)) {
+    const seen: Message[][] = []
+    let next = 0
+    const modelCall: ModelCall = vi.fn(async (messages, system) => {
+      if (system.includes('ended its work with this reply')) {
+        const reply = String(messages[0]!.content)
+        return toolUseResponse({ id: 'r', name: 'record_reading', input: { waits: typeof waits === 'function' ? waits(reply) : waits } })
+      }
+      seen.push(messages.map((m) => m))
+      return turns[next++] ?? textResponse('out of turns')
+    })
+    return { modelCall, seen }
+  }
+
+  it('sends back a final reply that asks for approval, so the agent makes the call', async () => {
+    const asked = textResponse('Here is the evidence. Do you approve submitting it?')
+    const { modelCall, seen } = scripted([asked, textResponse('Submitted after approval.')], (reply) => reply.includes('?'))
+    const result = await runAgent(baseConfig(), modelCall, 'go', [], { unattended: true })
+    expect(result.text).toBe('Submitted after approval.')
+    expect(JSON.stringify(seen[1])).toContain('this run has nobody in the chat')
+  })
+
+  it('ends as before when the reply asks nothing, or the run is watched', async () => {
+    const done = scripted([textResponse('All done, evidence submitted.')], true)
+    expect((await runAgent(baseConfig(), done.modelCall, 'go', [], { unattended: true })).text).toBe('All done, evidence submitted.')
+    const watched = scripted([textResponse('Do you approve?')], true)
+    expect((await runAgent(baseConfig(), watched.modelCall, 'go')).text).toBe('Do you approve?')
+    const offered = scripted([textResponse('Done. Let me know if you need anything else?')], false)
+    expect((await runAgent(baseConfig(), offered.modelCall, 'go', [], { unattended: true })).text).toContain('Done.')
+  })
+
+  it('sends a reply back at most twice', async () => {
+    const ask = () => textResponse('Do you approve?')
+    const { modelCall, seen } = scripted([ask(), ask(), ask(), textResponse('never reached')], true)
+    expect((await runAgent(baseConfig(), modelCall, 'go', [], { unattended: true })).text).toBe('Do you approve?')
+    expect(seen).toHaveLength(3)
+  })
+})

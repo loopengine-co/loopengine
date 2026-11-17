@@ -100,6 +100,9 @@ describe('workflow examples', () => {
     expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Numbered steps only where the order truly matters/)
     expect(WORKFLOW_PLANNER_PROMPT).toMatch(/context: leave it empty/)
     expect(WORKFLOW_PLANNER_PROMPT).toMatch(/Never make one up, and write no placeholders/)
+    // An approval is the tool call itself, never a question in the reply.
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/So an approval is the call itself/)
+    expect(WORKFLOW_PLANNER_PROMPT).toMatch(/asked with system_ask_user, and the work carries on after the answer/)
   })
 
   it('becomes a template with its skills, settings and notes', () => {
