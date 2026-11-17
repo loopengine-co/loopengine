@@ -7,9 +7,9 @@
 // A job is one piece of the goal, with its own measure: recurring (done
 // by a workflow on an agent) or once (a one-off piece of work, assigned to
 // an agent as one unattended run, or done with it in Chat). It's in one
-// of five states:
-//   suggested  the planner proposed it (on create or Generate more)
-//   saved      the person kept it
+// of four states:
+//   suggested  the planner proposed it (on create or Generate more), or the
+//              person added it; it's built or assigned straight from here
 //   active     a workflow does it (Build linked the real workflow back),
 //              or, for a once job, it's been assigned and not accepted yet
 //   done       a once job whose result the person accepted, or marked done
@@ -40,7 +40,7 @@ import type { ModelCall } from '../core/run-agent.js'
 import { agentName, runGoalPipeline, shapeJob, type GoalBrief, type GoalContext, type GoalNeed, type LeverChoice, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
 import { activePlaybook, addToLocalPlaybook, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
 
-export type GoalJobState = 'suggested' | 'saved' | 'active' | 'done' | 'discarded'
+export type GoalJobState = 'suggested' | 'active' | 'done' | 'discarded'
 
 /** What does a job: a workflow on an agent, or, for a once job, each try
  * of its assignment (a run of its agent). */
@@ -98,7 +98,7 @@ export interface GoalJob {
   measureLink: string
   state: GoalJobState
   /** Where a discarded one goes back to on Restore. */
-  restoreTo?: 'suggested' | 'saved'
+  restoreTo?: 'suggested'
   /** What does it, once built: the workflow (skill id) on its agent. */
   doers: JobDoer[]
   /** When a once job was marked done. */
@@ -242,7 +242,7 @@ export function migrateGoalFiles(deps: GoalsDeps): number {
     try {
       const raw = JSON.parse(readFileSync(join(dir, f), 'utf8')) as Record<string, unknown>
       if (Array.isArray(raw.jobs) || !Array.isArray(raw.workflows)) continue
-      write(deps, migrateGoal(raw))
+      write(deps, withoutSaved(migrateGoal(raw)))
       changed++
     } catch (err) {
       console.error(`[loopengine] couldn't move goals/${f} to jobs:`, err instanceof Error ? err.message : err)
@@ -251,10 +251,17 @@ export function migrateGoalFiles(deps: GoalsDeps): number {
   return changed
 }
 
+/** Jobs once saved (a state since removed) are suggestions again, ready
+ * to build or assign; a discarded one restores to a suggestion. */
+function withoutSaved(goal: Goal): Goal {
+  if (!goal.jobs.some((j) => (j.state as string) === 'saved' || (j.restoreTo as string) === 'saved')) return goal
+  return { ...goal, jobs: goal.jobs.map((j) => ({ ...j, ...((j.state as string) === 'saved' ? { state: 'suggested' as const } : {}), ...((j.restoreTo as string) === 'saved' ? { restoreTo: 'suggested' as const } : {}) })) }
+}
+
 export function getGoal(deps: GoalsDeps, id: string): Goal {
   const file = goalFile(deps, id)
   if (!existsSync(file)) throw new GoalError('No such goal')
-  const goal = migrateGoal(JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>)
+  const goal = withoutSaved(migrateGoal(JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>))
   if (goal.status === 'planning' && Date.now() - Date.parse(goal.updatedAt) > STALE_PLANNING_MS && !running.has(id)) {
     return write(deps, { ...goal, status: 'failed', error: 'Planning was interrupted. Try Generate more.', updatedAt: now() })
   }
@@ -455,16 +462,11 @@ function updateWorkflow(deps: GoalsDeps, goal: Goal, jobId: string, change: (w: 
 export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string, action: unknown, reason?: unknown): Goal {
   const goal = getGoal(deps, id)
   const w = findWorkflow(goal, workflowId)
-  if (action === 'save') {
-    if (w.state !== 'suggested') throw new GoalError('Only a suggestion can be saved.')
-    recordLeverEvent(deps, goal, w, 'saved')
-    return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'saved' }))
-  }
   if (action === 'discard') {
     if (w.state === 'discarded') return goal
     if (w.state === 'active' && w.kind !== 'once') throw new GoalError('A workflow does this job: remove it from its agent instead.')
     recordLeverEvent(deps, goal, w, 'discarded')
-    return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'discarded', restoreTo: x.state === 'suggested' ? 'suggested' : 'saved' }))
+    return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'discarded', restoreTo: 'suggested' }))
   }
   if (action === 'restore') {
     if (w.state !== 'discarded') return goal
@@ -474,13 +476,13 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
   if (action === 'done') {
     if (w.kind !== 'once') throw new GoalError('Only a one-off job is marked done.')
     if (w.state === 'done') return goal
-    if (w.state !== 'saved' && w.state !== 'active') throw new GoalError('Save it first.')
+    if (w.state !== 'suggested' && w.state !== 'active') throw new GoalError('Restore it first.')
     recordLeverEvent(deps, goal, w, 'done', { newAgent: Boolean(w.agentCreated) })
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'done', doneAt: now() }))
   }
   if (action === 'undone') {
     if (w.state !== 'done') return goal
-    return updateWorkflow(deps, goal, workflowId, ({ doneAt: _d, ...x }) => ({ ...x, state: 'saved' }))
+    return updateWorkflow(deps, goal, workflowId, ({ doneAt: _d, ...x }) => ({ ...x, state: x.doers.length ? 'active' : 'suggested' }))
   }
   if (action === 'reason') {
     if (w.state !== 'discarded') throw new GoalError('Only a discarded workflow has a reason.')
@@ -489,7 +491,7 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
     recordLeverEvent(deps, goal, w, 'discard_reason', { reason: reason as string })
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, discardReason: reason as DiscardReason }))
   }
-  throw new GoalError('action must be save, discard, restore, done, undone or reason')
+  throw new GoalError('action must be discard, restore, done, undone or reason')
 }
 
 /** Build: makes the suggested agent when there is none by that name,
@@ -502,7 +504,7 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
   const w = findWorkflow(goal, workflowId)
   if (w.state === 'active' && w.kind === 'once') throw new GoalError('This job is assigned already.')
   if (w.state === 'active' && !opts.another) throw new GoalError('A workflow already does this job: add another workflow to it instead.')
-  if (w.state !== 'saved' && w.state !== 'active') throw new GoalError('Save it first.')
+  if (w.state !== 'suggested' && w.state !== 'active') throw new GoalError('Restore it first.')
   let createdAgent = false
   if (!deps.agentExists(w.agent.name)) {
     await deps.createAgent(w.agent.name, w.agent.instructions || `You help with: ${w.title}.`)
@@ -566,7 +568,7 @@ export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknow
   }
   const job: GoalJob = {
     ...toJob(shaped.job, goal.rounds || 1, deps),
-    state: 'saved',
+    state: 'suggested',
     ...(share ? {} : { keepPrivate: true as const }),
     added: { idea, verdict: shaped.verdict, ...(shaped.note ? { note: shaped.note } : {}), ...(shaped.alternative ? { alternative: shaped.alternative } : {}) },
   }
@@ -643,9 +645,9 @@ export function editJob(deps: GoalsDeps, id: string, jobId: string, body: { acti
     const ref = refFrom(body, 'Adding a workflow')
     const info = deps.workflowInfo?.(ref.agent, ref.workflowId)
     if (!info) throw new GoalError(`${ref.agent} has no workflow ${ref.workflowId}.`)
-    if (job.state !== 'saved' && job.state !== 'active') throw new GoalError('Save it first.')
+    if (job.state !== 'suggested' && job.state !== 'active') throw new GoalError('Restore it first.')
     if (job.doers.some((d) => d.type === 'workflow' && sameRef(d, ref))) return goal
-    if (job.state === 'saved') recordLeverEvent(deps, goal, job, 'built', { newAgent: false })
+    if (job.state === 'suggested') recordLeverEvent(deps, goal, job, 'built', { newAgent: false })
     return updateWorkflow(deps, goal, jobId, (x) => ({ ...x, state: 'active', doers: [...x.doers, { type: 'workflow', ...ref, title: info.title, at: now() }] }))
   }
   if (body.action === 'unlink') {
@@ -653,7 +655,7 @@ export function editJob(deps: GoalsDeps, id: string, jobId: string, body: { acti
     return updateWorkflow(deps, goal, jobId, (x) => {
       const doers = x.doers.filter((d) => !(d.type === 'workflow' && sameRef(d, ref)))
       const chain = (x.chain ?? []).filter((st) => !sameRef(st.after, ref) && !sameRef(st.run, ref))
-      return { ...x, doers, ...(chain.length ? { chain } : { chain: undefined }), state: doers.length ? x.state : 'saved' }
+      return { ...x, doers, ...(chain.length ? { chain } : { chain: undefined }), state: doers.length ? x.state : 'suggested' }
     })
   }
   if (body.action === 'chain') {
@@ -714,7 +716,7 @@ export async function assignJob(deps: GoalsDeps, id: string, jobId: string, inpu
   let goal = getGoal(deps, id)
   const job = findWorkflow(goal, jobId)
   if (job.kind !== 'once') throw new GoalError('Only a one-off job is assigned; build a recurring job into a workflow.')
-  if (job.state !== 'saved' && job.state !== 'active') throw new GoalError(job.state === 'done' ? 'This job is done: reopen it first.' : 'Save it first.')
+  if (job.state !== 'suggested' && job.state !== 'active') throw new GoalError(job.state === 'done' ? 'This job is done: reopen it first.' : 'Restore it first.')
   const tries = job.doers.filter((d): d is Extract<JobDoer, { type: 'assignment' }> => d.type === 'assignment')
   const last = tries[tries.length - 1]
   let previous: string | undefined
@@ -795,6 +797,8 @@ export function editAmount(before: string, after: string): EditAmount {
  * reason), restored; built (a workflow does it) or done (a once job
  * finished); edited (its request, at Build); then, from its workflow,
  * kept_14d, used (weekly) and removed. */
+/** "saved" is from before suggestions were built or assigned directly;
+ * no longer recorded. */
 export type LeverEventType = 'suggested' | 'added' | 'saved' | 'discarded' | 'discard_reason' | 'restored' | 'built' | 'done' | 'edited' | 'kept_14d' | 'used' | 'removed'
 
 export interface LeverEvent {

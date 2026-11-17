@@ -2,10 +2,11 @@
 // (and the workspace's front page, /) starts one, and /goals?goal=<id>
 // opens one. A goal breaks into jobs, each with its own measure: recurring
 // ones are built into a workflow on an agent, one-off ones are assigned to
-// an agent (each try's result shown, accepted or sent back with a note). Type a goal, get suggested jobs
-// (each with the agent it would go into), save the ones worth keeping,
-// generate more, and build a saved one, which makes its agent first when
-// it doesn't exist (web/goals-admin.ts behind /goals/*). Same shell and
+// an agent (each try's result shown, accepted or sent back with a note).
+// Type a goal, get suggested jobs (each with the agent it would go into),
+// generate more, and build or assign one straight from the suggestions,
+// which makes its agent first when it doesn't exist (web/goals-admin.ts
+// behind /goals/*). Same shell and
 // styles as the other console pages; like them, its inline script avoids
 // backslashes and template placeholders, since it lives inside a template
 // literal.
@@ -142,7 +143,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1 id="glTitle">Goals</h1><p id="glLead">Say what you want to achieve. LoopEngine breaks it into jobs that move it, each with the agent that would do it. Save the ones worth keeping and generate more. Build the recurring ones into workflows; assign the one-off ones to their agent.</p></div>
+        <div><h1 id="glTitle">Goals</h1><p id="glLead">Say what you want to achieve. LoopEngine breaks it into jobs that move it, each with the agent that would do it. Build the recurring ones into workflows, assign the one-off ones to their agent, and generate more when you want new ideas.</p></div>
       </div>
       <a class="gl-btn gl-new-btn" id="glNewBtn" href="/goals?new=1" hidden>New goal</a>
     </div>
@@ -237,9 +238,8 @@ ${consoleShellScript}
       var parts = [];
       if (g.status === 'planning') parts.push('<span class="gl-state planning">Suggesting' + ELLIPSIS + '</span>');
       if (g.status === 'failed') parts.push('<span class="gl-state failed">Failed</span>');
-      var suggested = count(g, 'suggested'), saved = count(g, 'saved'), active = count(g, 'active'), done = count(g, 'done');
+      var suggested = count(g, 'suggested'), active = count(g, 'active'), done = count(g, 'done');
       if (suggested) parts.push(suggested + ' suggested');
-      if (saved) parts.push(saved + ' saved');
       if (active) parts.push('<span class="gl-state built">' + active + ' running</span>');
       if (done) parts.push(done + ' done');
       if (!parts.length) parts.push('No jobs kept yet');
@@ -284,19 +284,16 @@ ${consoleShellScript}
     var doer = (w.doers || [])[0];
     var t = lastTry(w);
     var btn = function (act, label, cls) { return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '">' + label + '</button>'; };
-    var primary = w.state === 'suggested' ? btn('save', 'Save', 'soft')
-      : w.state === 'saved' && once ? btn('assign', 'Assign')
-      : w.state === 'saved' ? btn('build', 'Build it')
+    var primary = w.state === 'suggested' && once ? btn('assign', 'Assign')
+      : w.state === 'suggested' ? btn('build', 'Build it')
       : w.state === 'active' && once && t && t.status === 'done' ? btn('accept', 'Accept')
       : w.state === 'active' && once && t && (t.status === 'error' || t.status === 'gone') ? btn('again', 'Try again')
       : w.state === 'discarded' ? btn('restore', 'Restore', 'plain') : '';
-    var more = w.state === 'suggested' ? btn('discard', 'Discard', 'plain')
-      : w.state === 'saved' && once ? btn('build', 'Open in Chat', 'plain') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
-      : w.state === 'saved' ? btn('discard', 'Discard', 'plain')
+    var more = w.state === 'suggested' && once ? btn('build', 'Open in Chat', 'plain') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
+      : w.state === 'suggested' ? btn('discard', 'Discard', 'plain')
       : w.state === 'active' && once ? (t && t.status === 'done' ? btn('again', 'Ask again', 'soft') : '') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
       : w.state === 'done' ? btn('undone', 'Reopen', 'plain') : '';
-    var pill = w.state === 'saved' ? '<span class="gl-state saved">Saved</span>'
-      : w.state === 'active' && once ? (t && t.status === 'done' ? '<span class="gl-state built">Result ready</span>' : t && t.status === 'awaiting_approval' ? '<span class="gl-state planning">Needs you</span>' : t && t.status === 'running' ? '<span class="gl-state saved">Working' + ELLIPSIS + '</span>' : '<span class="gl-state failed">Failed</span>')
+    var pill = w.state === 'active' && once ? (t && t.status === 'done' ? '<span class="gl-state built">Result ready</span>' : t && t.status === 'awaiting_approval' ? '<span class="gl-state planning">Needs you</span>' : t && t.status === 'running' ? '<span class="gl-state saved">Working' + ELLIPSIS + '</span>' : '<span class="gl-state failed">Failed</span>')
       : w.state === 'active' ? '<span class="gl-state built">Running</span>'
       : w.state === 'done' ? '<span class="gl-state built">Done</span>'
       : w.state === 'discarded' ? '<span class="gl-state">Discarded</span>' : '';
@@ -448,8 +445,8 @@ ${consoleShellScript}
     var jobs = g.jobs || [];
     var by = function (s) { return jobs.filter(function (w) { return w.state === s; }); };
     var suggested = by('suggested');
-    // Yours: running first, then saved, then done.
-    var kept = by('active').concat(by('saved'), by('done'));
+    // Yours: running first, then done.
+    var kept = by('active').concat(by('done'));
     var discarded = by('discarded');
     var planning = g.status === 'planning';
     var focus = g.focus || (g.brief && g.brief.focus) || '';
@@ -469,11 +466,11 @@ ${consoleShellScript}
       '<button type="button" class="gl-link" data-undo="1">Undo</button></div>' : '') +
     '<div class="gl-section"><h3>Suggested jobs <span class="gl-count">' + suggested.length + '</span></h3>' +
       (suggested.length ? suggested.map(jobHtml).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
-      '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">New ideas only: nothing you’ve saved, built or discarded comes back.</span></div>' +
+      '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">New ideas only: nothing already here, built or discarded comes back.</span></div>' +
+      addJobHtml(planning) +
     '</div>' +
     '<div class="gl-section"><h3>Your jobs <span class="gl-count">' + kept.length + '</span></h3>' +
-      (kept.length ? kept.map(jobHtml).join('') : '<p class="gl-empty">Save a suggestion to keep it here. Build a recurring job into a workflow on its agent; assign a one-off job to its agent.</p>') +
-      addJobHtml(planning) +
+      (kept.length ? kept.map(jobHtml).join('') : '<p class="gl-empty">Nothing running yet. Build it turns a recurring suggestion into a workflow on its agent; Assign gives a one-off one to its agent.</p>') +
     '</div>' +
     (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
       (state.showDiscarded ? discarded.map(jobHtml).join('') : '') + '</div>' : '') +
