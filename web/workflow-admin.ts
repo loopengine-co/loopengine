@@ -431,8 +431,13 @@ export async function prepareMcpAbilities(plan: WorkflowPlan, deps: WorkflowMcpC
       if (remote === name) continue
       plan.skill.body = plan.skill.body.replace(new RegExp(`(?<![A-Za-z0-9_])${remote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), name)
     }
-    // Added to the agent as an app, with just these tools.
-    if (tools.length) plan.apps = [...(plan.apps ?? []).filter((a) => a.id !== planned.id), { id: planned.id, title: planned.title, tools }]
+    // Added to the agent as an app, with just these tools, next to any of
+    // the same app's tools other steps already turn on (a step on a tool of
+    // an app the agent has, resolved before): merged, never replaced.
+    if (tools.length) {
+      const before = plan.apps?.find((a) => a.id === planned.id)?.tools ?? []
+      plan.apps = [...(plan.apps ?? []).filter((a) => a.id !== planned.id), { id: planned.id, title: planned.title, tools: [...new Set([...before, ...tools])] }]
+    }
   }
   delete plan.mcpServers
   return { failed }
