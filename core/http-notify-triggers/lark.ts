@@ -64,6 +64,13 @@ async function getTenantAccessToken(appId: string, appSecret: string): Promise<s
   return cachedToken.token
 }
 
+/** The agent's own writing in a lark_md card: its Markdown shows as it
+ * is, but a link shows its address instead of hiding behind text, and it
+ * can't @mention everyone. */
+function larkAgentText(text: string): string {
+  return text.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)').replace(/<at\b/gi, '‹at')
+}
+
 export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
   private readonly appId: string
   private readonly appSecret: string
@@ -100,7 +107,7 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
               tag: 'div',
               text: {
                 tag: 'lark_md',
-                content: `**tool:** ${tool}\n**args:** \`${JSON.stringify(args)}\`\n**scope:** ${scope.tenant}/${scope.environment}/${scope.agent}\n**reason:** ${reason}${this.decideLine(pendingId, 'approval')}`,
+                content: `**tool:** ${tool}\n**args:** \`${JSON.stringify(args)}\`\n**scope:** ${scope.tenant}/${scope.environment}/${scope.agent}\n**reason:** ${larkAgentText(reason)}${this.decideLine(pendingId, 'approval')}`,
               },
             },
             ...(this.buttons
@@ -136,7 +143,7 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
           config: { wide_screen_mode: true },
           header: { title: { tag: 'plain_text', content: `Question from ${agent}` } },
           elements: [
-            { tag: 'div', text: { tag: 'lark_md', content: question + (sessionId ? `\n_(session ${sessionId})_` : '') + this.decideLine(pendingId, 'question') } },
+            { tag: 'div', text: { tag: 'lark_md', content: larkAgentText(question) + (sessionId ? `\n_(session ${sessionId})_` : '') + this.decideLine(pendingId, 'question') } },
             ...(this.buttons
               ? [
               ...(optionButtons.length ? [{ tag: 'action', actions: optionButtons }] : []),
@@ -172,7 +179,7 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
         const token = await getTenantAccessToken(this.appId, this.appSecret)
         const card = {
           config: { wide_screen_mode: true },
-          elements: [{ tag: 'div', text: { tag: 'lark_md', content: text } }],
+          elements: [{ tag: 'div', text: { tag: 'lark_md', content: larkAgentText(text) } }],
         }
         await this.sendCard(token, card, 'lifecycle')
       } catch (err) {

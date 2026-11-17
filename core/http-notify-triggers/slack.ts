@@ -27,7 +27,7 @@ import { randomUUID } from 'node:crypto'
 import type { DurableApprover, Scope } from 'actauth'
 import type { DurableQuestionHandler } from '../agent-config.js'
 import { decidePath } from '../approval-links.js'
-import { slackArgs, slackEscape, toSlackMrkdwn } from '../messaging/connectors/slack/format.js'
+import { slackAgentText, slackArgs, toSlackMrkdwn } from '../messaging/connectors/slack/format.js'
 import { publicBaseUrl } from './webhook.js'
 
 /** Where a request landed: its channel and its message ts (the id of
@@ -93,7 +93,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
           text: fitSection(
             `*Approval requested:* \`${tool}\``,
             slackArgs(args),
-            `*Why:* ${toSlackMrkdwn(slackEscape(reason))}${this.decideLine(pendingId, 'approval')}`,
+            `*Why:* ${toSlackMrkdwn(slackAgentText(reason))}${this.decideLine(pendingId, 'approval')}`,
           ),
         },
       },
@@ -122,7 +122,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       action_id: `answer_option_${i}`,
     }))
     this.postMessage(`Question from ${agent}: ${question}`, [
-      { type: 'section', text: { type: 'mrkdwn', text: fitSection(`*Question from ${agent}${sessionId ? ` (session ${sessionId})` : ''}:*`, toSlackMrkdwn(slackEscape(question)), this.decideLine(pendingId, 'question').trim()) } },
+      { type: 'section', text: { type: 'mrkdwn', text: fitSection(`*Question from ${agent}${sessionId ? ` (session ${sessionId})` : ''}:*`, toSlackMrkdwn(slackAgentText(question)), this.decideLine(pendingId, 'question').trim()) } },
       ...(this.buttons
         ? [{ type: 'actions', elements: [...optionButtons, { type: 'button', text: { type: 'plain_text', text: 'Other…' }, action_id: 'open_answer_modal', value: pendingId }] }]
         : []),
@@ -144,7 +144,9 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
     fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.botToken}`, 'content-type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ channel: this.channelId, text, ...(blocks ? { blocks } : {}) }),
+      // A plain announcement (a run's result) is the agent's writing:
+      // formatted, escaped and with links showing (slackAgentText).
+      body: JSON.stringify({ channel: this.channelId, text: blocks ? text : toSlackMrkdwn(slackAgentText(text)), ...(blocks ? { blocks } : {}) }),
     })
       .then((res) => res.json() as Promise<{ ok: boolean; error?: string; channel?: string; ts?: string }>)
       .then((body) => {
