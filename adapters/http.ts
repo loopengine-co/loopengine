@@ -4305,7 +4305,9 @@ async function handleTelegramClick(agentName: string, entry: RegistryEntry, botT
   const settled = !outcome.error && !outcome.alreadyResolved
   let result = outcomeText(kind, who, outcome, answer === undefined ? undefined : telegramEscape(answer))
   if (kind === 'approve' && settled) result = `**Approved by ${who}.** ${result}`
-  const request = readTelegramThread(agentDirFor(entry.config), click.conversation, click.messageId).find((m) => m.ts === click.messageId)?.text
+  // The buttons are on a long request's last message, which belongs to its first.
+  const dir = agentDirFor(entry.config)
+  const request = readTelegramThread(dir, click.conversation, telegramRootOf(dir, click.conversation, click.messageId)).find((m) => m.ts === click.messageId)?.text
   if (request) result = `${request}\n\n${result}`
   else if (item && kind === 'approve' && settled) result += `\nRan \`${item.tool}\` with:\n${formatArgs(item.args, telegramEscape, (await resolveAgentTool(entry.config, item.tool))?.input_schema)}`
   await editTelegramMessage(botToken, click.conversation, click.messageId, result)

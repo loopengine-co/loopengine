@@ -215,9 +215,10 @@ function buildResolved(httpNotifier: HttpNotifierConfig, agentDir: string): Reso
       // linked to it, so replies to it reach the agent.
       const telegram = new TelegramNotifier({
         botToken, chatId, publicUrl, buttons, replyHint,
-        onPosted: ({ chat, messageId, text, pendingId, kind }) => {
-          recordTelegramMessage(agentDir, { chat, id: messageId, root: messageId, fromBot: true, text })
-          if (pendingId && kind) recordThread(agentDir, { app: 'telegram', conversation: chat, ts: messageId, pendingId, kind })
+        onPosted: ({ chat, messageId, text, pendingId, kind, root }) => {
+          // A long request's later messages belong to its first.
+          recordTelegramMessage(agentDir, { chat, id: messageId, root: root ?? messageId, fromBot: true, text })
+          if (pendingId && kind && !root) recordThread(agentDir, { app: 'telegram', conversation: chat, ts: messageId, pendingId, kind })
         },
       })
       return {

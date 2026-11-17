@@ -6,11 +6,11 @@
 // formatting ./format.ts. Posting requests is TelegramNotifier's job
 // (core/http-notify-triggers/telegram.ts).
 import type { MessagingChoice, MessagingConnector } from '../../connector.js'
-import { telegramEscape, toTelegramHtml } from './format.js'
+import { splitTelegramMarkdown, telegramEscape, toTelegramHtml } from './format.js'
 import { readTelegramThread, recordTelegramMessage, telegramPeople } from './store.js'
 import { telegramCallbackData } from './updates.js'
 
-export { telegramArgs, telegramEscape, toTelegramHtml } from './format.js'
+export { splitTelegramMarkdown, telegramArgs, telegramEscape, toTelegramHtml } from './format.js'
 export { readTelegramThread, recordTelegramMessage, telegramPeople, telegramRootOf, type TelegramPerson } from './store.js'
 export { parseTelegramUpdate, telegramCallbackData, verifyTelegramRequest, type TelegramButton, type TelegramUpdate } from './updates.js'
 
@@ -61,21 +61,28 @@ function personLabel(agentDir: string, user: string): string {
 }
 
 export function createTelegramConnector(botToken: string, agentDir: string): MessagingConnector {
+  // A reply too long for one message goes out as several, the last with
+  // the buttons; its id is the one returned (the buttons' message).
   const send = async (conversation: string, threadTs: string, text: string, keyboard?: InlineButton[][]): Promise<string | undefined> => {
-    const sent = await callTelegram<{ message_id: number }>(botToken, 'sendMessage', {
-      chat_id: conversation,
-      text: toTelegramHtml(text),
-      parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-      ...replyTo(threadTs),
-      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-    })
-    if (!sent.ok || !sent.result) {
-      console.error('[loopengine] Telegram sendMessage (thread reply) failed:', sent.description)
-      return undefined
+    const parts = splitTelegramMarkdown(text)
+    let id: string | undefined
+    for (const [i, part] of parts.entries()) {
+      const last = i === parts.length - 1
+      const sent = await callTelegram<{ message_id: number }>(botToken, 'sendMessage', {
+        chat_id: conversation,
+        text: toTelegramHtml(part),
+        parse_mode: 'HTML',
+        link_preview_options: { is_disabled: true },
+        ...replyTo(threadTs),
+        ...(last && keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+      })
+      if (!sent.ok || !sent.result) {
+        console.error('[loopengine] Telegram sendMessage (thread reply) failed:', sent.description)
+        return undefined
+      }
+      id = String(sent.result.message_id)
+      recordTelegramMessage(agentDir, { chat: conversation, id, root: threadTs, fromBot: true, text: part })
     }
-    const id = String(sent.result.message_id)
-    recordTelegramMessage(agentDir, { chat: conversation, id, root: threadTs, fromBot: true, text })
     return id
   }
   return {

@@ -25,6 +25,60 @@ export function telegramEscape(text: string): string {
   return OPEN + text.replace(/[\u0001\u0002]/g, '') + CLOSE
 }
 
+// A long message goes out as several, at most this many; past that the
+// middle is left out (the last part, with its link and buttons, stays).
+const MAX_PARTS = 10
+
+/** Where a part may end: a paragraph break, else a line break, else a
+ * space, as late as fits; mid-word only when there's none in the later
+ * half. */
+function breakAt(text: string, max: number): number {
+  for (const sep of ['\n\n', '\n', ' ']) {
+    const at = text.lastIndexOf(sep, max)
+    if (at > max / 2) return at
+  }
+  return max
+}
+
+/** Splits Markdown into parts that each fit one Telegram message, between
+ * paragraphs where it can. A part ending inside the agent's escaped text
+ * (telegramEscape) or a code block closes it, and the next part opens it
+ * again, so every part formats on its own. Each is a little under the
+ * limit, leaving room for those markers and the cut-short note. */
+export function splitTelegramMarkdown(markdown: string, max = MAX_MARKDOWN - 100): string[] {
+  const parts: string[] = []
+  let rest = markdown
+  while (rest.length > max) {
+    const at = breakAt(rest, max)
+    let head = rest.slice(0, at).trimEnd()
+    rest = rest.slice(at).replace(/^[ \n]+/, '')
+    let escaped = false
+    let fenced = false
+    for (let i = 0; i < head.length; i++) {
+      if (head[i] === OPEN) escaped = true
+      else if (head[i] === CLOSE) escaped = false
+      else if (!escaped && head.startsWith('```', i)) {
+        fenced = !fenced
+        i += 2
+      }
+    }
+    if (escaped) {
+      head += CLOSE
+      rest = OPEN + rest
+    }
+    if (fenced) {
+      head += '\n```'
+      rest = '```\n' + rest
+    }
+    parts.push(head)
+  }
+  parts.push(rest)
+  if (parts.length <= MAX_PARTS) return parts
+  const kept = parts.slice(0, MAX_PARTS - 1)
+  kept[kept.length - 1] += '\n\n… (the rest is cut short here; the decision link has it all)'
+  return [...kept, parts[parts.length - 1]!]
+}
+
 export function toTelegramHtml(markdown: string): string {
   const cut = markdown.length > MAX_MARKDOWN ? markdown.slice(0, MAX_MARKDOWN).trimEnd() + '\n…' : markdown
   return cut

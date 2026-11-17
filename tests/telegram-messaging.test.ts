@@ -19,6 +19,7 @@ import {
   telegramEscape,
   telegramPeople,
   telegramRootOf,
+  splitTelegramMarkdown,
   toTelegramHtml,
   verifyTelegramRequest,
 } from '#core/messaging/connectors/telegram/index.js'
@@ -148,7 +149,61 @@ describe('the Telegram connector', () => {
   })
 })
 
+describe('long Telegram messages', () => {
+  const paragraph = (n: number) => `Paragraph ${n}. ${'word '.repeat(150).trim()}.`
+  const long = Array.from({ length: 12 }, (_, i) => paragraph(i + 1)).join('\n\n')
+
+  it('split between paragraphs, each part fitting one message', () => {
+    const parts = splitTelegramMarkdown(long)
+    expect(parts.length).toBeGreaterThan(1)
+    for (const part of parts) expect(part.length).toBeLessThanOrEqual(3800)
+    expect(parts.join('\n\n')).toBe(long)
+    expect(parts.every((p) => p.startsWith('Paragraph'))).toBe(true)
+    expect(splitTelegramMarkdown('short')).toEqual(['short'])
+  })
+
+  it("keep the agent's escaped text and code blocks whole in every part", () => {
+    for (const part of splitTelegramMarkdown(`**Question:**\n${telegramEscape(long)}\n[Open](https://x.test/d)`)) {
+      expect(part.split('\u0001').length).toBe(part.split('\u0002').length)
+      expect(toTelegramHtml(part)).not.toMatch(/[\u0001\u0002]/)
+    }
+    for (const part of splitTelegramMarkdown('```\n' + long + '\n```')) expect(toTelegramHtml(part)).toMatch(/^<pre>[\s\S]*<\/pre>$/)
+  })
+
+  it('leave out the middle past ten parts, keeping the last', () => {
+    const parts = splitTelegramMarkdown(Array.from({ length: 60 }, (_, i) => paragraph(i + 1)).join('\n\n') + '\n\n[Open to answer](https://x.test/d)')
+    expect(parts).toHaveLength(10)
+    expect(parts[8]).toContain('the decision link has it all')
+    expect(parts[9]).toContain('[Open to answer](https://x.test/d)')
+  })
+})
+
 describe('TelegramNotifier', () => {
+  it('sends a long question as several messages: the later ones reply to the first, the last has the link and buttons', async () => {
+    const sent: Array<Record<string, any>> = []
+    let next = 70
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent.push(JSON.parse(init.body as string))
+      return new Response(JSON.stringify({ ok: true, result: { message_id: next++, chat: { id: -100 } } }))
+    })
+    const posted: TelegramPosted[] = []
+    const telegram = new TelegramNotifier({ botToken: 't', chatId: '-100', publicUrl: 'https://le.test', buttons: true, replyHint: true, onPosted: (p) => posted.push(p) })
+    const question = Array.from({ length: 12 }, (_, i) => `Point ${i + 1}: ${'detail '.repeat(150)}`).join('\n\n')
+    telegram.notifyPendingQuestion(question, ['Yes', 'No'], 'cs-agent', undefined, PENDING)
+    await vi.waitFor(() => expect(posted.length).toBe(sent.length))
+    await vi.waitFor(() => expect(sent.at(-1)!.reply_markup).toBeDefined())
+    expect(sent.length).toBeGreaterThan(1)
+    expect(sent.slice(0, -1).every((m) => !m.reply_markup)).toBe(true)
+    expect(sent.slice(1).every((m) => m.reply_parameters.message_id === 70)).toBe(true)
+    expect(sent.at(-1)!.text).toContain('Open to answer')
+    expect(sent.at(-1)!.text).toContain('Or reply to this message')
+    expect(sent.at(-1)!.text).toContain('Point 12')
+    expect(posted[0]).toMatchObject({ messageId: '70', pendingId: PENDING, kind: 'question' })
+    expect(posted[0].root).toBeUndefined()
+    expect(posted.slice(1).every((p) => p.root === '70')).toBe(true)
+  })
+
+
   it('adds Approve and Deny buttons and reports where the request landed', async () => {
     const sent: Array<Record<string, any>> = []
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

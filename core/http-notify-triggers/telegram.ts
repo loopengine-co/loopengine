@@ -17,7 +17,7 @@ import type { DurableQuestionHandler } from '../agent-config.js'
 import { decidePath } from '../approval-links.js'
 import { formatArgs } from '../messaging/format-args.js'
 import { callTelegram, type InlineButton } from '../messaging/connectors/telegram/index.js'
-import { telegramEscape, toTelegramHtml } from '../messaging/connectors/telegram/format.js'
+import { splitTelegramMarkdown, telegramEscape, toTelegramHtml } from '../messaging/connectors/telegram/format.js'
 import { telegramCallbackData } from '../messaging/connectors/telegram/updates.js'
 import { publicBaseUrl, type DeliveryResult } from './webhook.js'
 
@@ -51,6 +51,9 @@ export interface TelegramPosted {
   text: string
   pendingId?: string
   kind?: 'approval' | 'question'
+  /** For a request too long for one message: the first message, which
+   * the later ones belong to (a reply to any of them reaches it). */
+  root?: string
 }
 
 export class TelegramNotifier implements DurableApprover, DurableQuestionHandler {
@@ -82,20 +85,31 @@ export class TelegramNotifier implements DurableApprover, DurableQuestionHandler
   }
 
   private send(markdown: string, label: string, keyboard?: InlineButton[][], request?: { pendingId: string; kind: 'approval' | 'question' }): void {
-    // Not awaited, by DurableApprover's contract; a failure is logged.
-    void callTelegram<{ message_id: number; chat?: { id: number } }>(this.botToken, 'sendMessage', {
-      chat_id: this.chatId,
-      text: toTelegramHtml(markdown),
-      parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-      ...(keyboard?.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-    }).then((sent) => {
-      if (!sent.ok || !sent.result) {
-        console.error(`[loopengine] TelegramNotifier: send message failed for ${label}:`, sent.description)
-        return
+    // Not awaited, by DurableApprover's contract; a failure is logged. Too
+    // long for one message, it goes out as several, in order: the later
+    // ones reply to the first, and the last carries the buttons.
+    const parts = splitTelegramMarkdown(markdown)
+    void (async () => {
+      let first: string | undefined
+      for (const [i, part] of parts.entries()) {
+        const last = i === parts.length - 1
+        const sent = await callTelegram<{ message_id: number; chat?: { id: number } }>(this.botToken, 'sendMessage', {
+          chat_id: this.chatId,
+          text: toTelegramHtml(part),
+          parse_mode: 'HTML',
+          link_preview_options: { is_disabled: true },
+          ...(first ? { reply_parameters: { message_id: Number(first), allow_sending_without_reply: true } } : {}),
+          ...(last && keyboard?.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+        })
+        if (!sent.ok || !sent.result) {
+          console.error(`[loopengine] TelegramNotifier: send message failed for ${label}:`, sent.description)
+          return
+        }
+        const messageId = String(sent.result.message_id)
+        this.onPosted?.({ chat: String(sent.result.chat?.id ?? this.chatId), messageId, text: part, ...(request ?? {}), ...(first ? { root: first } : {}) })
+        first ??= messageId
       }
-      this.onPosted?.({ chat: String(sent.result.chat?.id ?? this.chatId), messageId: String(sent.result.message_id), text: markdown, ...(request ?? {}) })
-    })
+    })()
   }
 
   requestDurableApproval(tool: string, args: Record<string, unknown>, scope: Scope, reason: string, pendingId: string = randomUUID()): { pendingId: string } {
