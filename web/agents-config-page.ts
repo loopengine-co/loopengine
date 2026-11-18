@@ -77,12 +77,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-card-title { min-width: 0; }
   .wf-card-title h3 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; color: var(--ink); }
   .wf-card-title p { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-muted); }
-  .wf-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .wf-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted); font-size: 12px; font-weight: 550; line-height: 1.5; }
-  .wf-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .7; }
-  .wf-chip.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
-  .wf-chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
-  .wf-chip.accent { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
   .wf-card-actions { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
   .wf-card-actions button { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
   .wf-card-actions .workflow-edit { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
@@ -104,7 +98,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-row.is-open .wf-row-caret { transform: rotate(45deg); }
   .wf-row-main { min-width: 0; display: grid; gap: 2px; }
   .wf-row-main strong { font-size: 14px; font-weight: 650; color: var(--ink); }
-  .wf-row-desc { font-size: 12.5px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wf-desc { margin: 0; max-width: 72ch; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); overflow-wrap: anywhere; }
   .wf-row-starts { display: grid; gap: 2px; font-size: 12.5px; color: var(--ink-muted); min-width: 0; }
   .wf-start-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wf-start-state { font-size: 11px; font-weight: 700; padding: 0 6px; margin-left: 2px; border-radius: 999px; }
@@ -114,12 +108,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-start-state.warn { background: var(--warn-soft); color: var(--warn); }
   .wf-row-last { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; white-space: nowrap; }
   .wf-row-last .hint { white-space: nowrap; }
+  /* The row's grey notes ("Run now or API", "Last run …", "No runs yet",
+     "+2 more schedules") at the same size as its schedule lines. */
+  .wf-row-starts .hint, .wf-row-last .hint { font-size: 12.5px; }
   .wf-row-actions { display: flex; gap: 6px; }
   .wf-row-actions button, .wf-row-foot button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
   .wf-row-actions button:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
   .wf-row-body { padding: 4px 16px 16px 44px; display: grid; gap: 12px; }
   .wf-row-body[hidden], .wf-panel[hidden] { display: none; }
-  .wf-row-body .wf-chips { margin-top: 0; }
   .wf-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
   .wf-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 10px; margin-bottom: -1px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
   .wf-tab:hover:not(:disabled) { background: none; color: var(--ink); }
@@ -141,7 +137,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
   .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
   @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
-  .wf-trigger { gap: 6px; }
+  .wf-triggers { display: grid; gap: 8px; }
+  .wf-triggers .wf-sub:first-child { margin-top: 0; }
+  .wf-trigger { display: grid; gap: 8px; }
   .wf-trigger-item { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .wf-trigger-item button, .wf-trigger-add button, .wf-trigger .workflow-hook button { padding: 2px 10px; font-size: 12px; }
   .wf-trigger .workflow-hooks:empty { display: none; }
@@ -178,8 +176,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wp-mono { font-family: var(--font-mono); font-size: 12.5px; }
   @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .wf-row-actions .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
-  .wf-row-actions .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
+  .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
+  .wf-row-foot .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   @media (max-width: 760px) {
     .wf-row-head { grid-template-columns: 14px minmax(0, 1fr) auto; row-gap: 6px; }
     .wf-row-starts, .wf-row-last { white-space: normal; }
@@ -1017,27 +1015,7 @@ ${consoleShellScript}
       '</details>';
   }
 
-  // What starts a workflow and what it's doing, as chips under its title:
-  // each schedule, then its webhooks; one line when nothing starts it.
-  function workflowStatusChips(w) {
-    var chips = [];
-    var cap = function (t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; };
-    var when = function (iso) { return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
-    var DOT = ' ' + String.fromCharCode(183) + ' ';
-    (w.schedules || []).forEach(function (x) {
-      var what = escapeHtml(cap(x.describe));
-      if (x.waiting) chips.push('<span class="wf-chip warn">' + what + DOT + 'waiting for a decision</span>');
-      else if (x.status === 'running') chips.push('<span class="wf-chip accent">' + what + DOT + 'running</span>');
-      else if (x.status === 'paused') chips.push('<span class="wf-chip warn">' + what + DOT + 'paused</span>');
-      else chips.push('<span class="wf-chip good">' + what + (x.nextRunAt ? DOT + 'next ' + escapeHtml(when(x.nextRunAt)) : '') + '</span>');
-    });
-    var n = function (count, one, many) { return count === 1 ? one : count + ' ' + many; };
-    if (w.webhooks) chips.push('<span class="wf-chip good">' + n(w.webhooks, 'Webhook on', 'webhooks on') + '</span>');
-    if (w.webhooksWaiting) chips.push('<span class="wf-chip warn">' + n(w.webhooksWaiting, 'Webhook needs its signing secret', 'webhooks need their signing secrets') + '</span>');
-    if (w.webhooksOff) chips.push('<span class="wf-chip">' + n(w.webhooksOff, 'Webhook off', 'webhooks off') + '</span>');
-    if (!chips.length) chips.push('<span class="wf-chip">Runs when you start it: Run now, the API or Chat</span>');
-    return chips.join('');
-  }
+
 
   // Which workflow is open in the list, and each one's chosen tab: kept
   // across redraws (a running run's refresh, a save), and in the URL.
@@ -1143,29 +1121,37 @@ ${consoleShellScript}
   function contractLinesHtml(lines) {
     return lines.map(function (l) { return '<div class="wf-cb-line">' + l + '</div>'; }).join('');
   }
-  function workflowContractHtml(w, name, params) {
-    // The trigger row is where its triggers are managed: each schedule
-    // and webhook with its controls, a way to add either, and the other
-    // ways any workflow starts (Run now above the tabs, the API call).
+  // Its Triggers tab: Run now, its schedules and webhooks with their
+  // controls, a way to add either, and the call an app makes.
+  function workflowTriggersHtml(w, name, params) {
     var schedules = workflowScheduleItemsHtml(w, name);
-    // Its webhooks as the contract says them, until the full rows (with
-    // deliveries and setup steps) load into the same box.
-    var hookLines = [];
-    (w.triggers || []).forEach(function (t) {
-      hookLines.push(escapeHtml(SENDER_LABELS[t.sender] || t.sender) + ' webhook' + (t.filter ? ', <code>' + escapeHtml(t.filter.values.join(' | ')) + '</code>' : '') +
-        (t.waiting ? ' <span class="le-pill ask">Needs its signing secret</span>' : !t.enabled ? ' <span class="le-pill warn">Off</span>' : ''));
-      Object.keys(t.mapping || {}).forEach(function (param) { hookLines.push('<span class="wf-cb-indent"><code>' + escapeHtml(param) + '</code> ' + ARROW_L + ' <code>' + escapeHtml(t.mapping[param]) + '</code></span>'); });
+    return '<div class="wf-triggers">' +
+      '<h4 class="wf-sub">Run now</h4>' + workflowRunBarHtml(w, params) +
+      '<h4 class="wf-sub">Schedules and webhooks</h4>' +
+      '<div class="wf-trigger">' + schedules +
+        '<div class="workflow-hooks"></div>' +
+        (!schedules && !(w.webhooks || w.webhooksWaiting || w.webhooksOff) ? '<p class="hint wf-trigger-none" style="margin:0">None yet: it runs only when started by hand or from an app.</p>' : '') +
+        '<div class="wf-trigger-add"><button type="button" class="workflow-add-schedule">+ Schedule</button>' +
+          '<span class="workflow-hooks-add"' + (w.webhooksWaiting ? ' hidden' : '') + '><button type="button" class="workflow-hooks-btn">+ Webhook</button></span></div>' +
+      '</div>' +
+      '<h4 class="wf-sub">API</h4>' + workflowApiHtml(w, name) +
+      '</div>';
+  }
+
+  function workflowContractHtml(w, name, params) {
+    // What starts it, as the contract says it; they're set up in Triggers.
+    var trigger = [];
+    (w.schedules || []).filter(function (x) { return x.status !== 'cancelled'; }).forEach(function (x) {
+      trigger.push('schedule, ' + escapeHtml(x.describe) + (x.status === 'paused' ? ' <span class="le-pill warn">Paused</span>' : ''));
     });
-    var hasHooks = Boolean(w.webhooks || w.webhooksWaiting || w.webhooksOff || (w.triggers || []).length);
-    var hasTrigger = Boolean(schedules) || hasHooks;
-    var triggerHtml = schedules +
-      '<div class="workflow-hooks">' + contractLinesHtml(hookLines) + '</div>' +
-      '<div class="wf-cb-line"><span class="hint">' + (hasTrigger
-        ? 'also by hand (Run now) or from an app (API)'
-        : 'it runs when started by hand (Run now) or from an app (API), or set up a schedule or webhook') + '</span></div>' +
-      '<div class="wf-trigger-add"><button type="button" class="workflow-add-schedule">+ Schedule</button>' +
-        '<span class="workflow-hooks-add"' + (w.webhooksWaiting ? ' hidden' : '') + '><button type="button" class="workflow-hooks-btn">+ Webhook</button></span></div>' +
-      workflowApiHtml(w, name);
+    (w.triggers || []).forEach(function (t) {
+      trigger.push(escapeHtml(SENDER_LABELS[t.sender] || t.sender) + ' webhook' + (t.filter ? ', <code>' + escapeHtml(t.filter.values.join(' | ')) + '</code>' : '') +
+        (t.waiting ? ' <span class="le-pill ask">Needs its signing secret</span>' : !t.enabled ? ' <span class="le-pill warn">Off</span>' : ''));
+      Object.keys(t.mapping || {}).forEach(function (param) { trigger.push('<span class="wf-cb-indent"><code>' + escapeHtml(param) + '</code> ' + ARROW_L + ' <code>' + escapeHtml(t.mapping[param]) + '</code></span>'); });
+    });
+    trigger.push('<span class="hint">' + (trigger.length
+      ? 'also by hand (Run now) or from an app (API); set them up in Triggers'
+      : 'it runs when started by hand (Run now) or from an app (API), or set up a schedule or webhook in Triggers') + '</span>');
     var names = Object.keys(w.parameters || {});
     var inputs = names.length ? names.map(function (n) {
       var spec = w.parameters[n];
@@ -1187,7 +1173,7 @@ ${consoleShellScript}
     if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's callback address');
     var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
     var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
-    return '<div class="wf-cb">' + '<div class="wf-cb-k">trigger</div><div class="wf-cb-v wf-trigger">' + triggerHtml + '</div>' + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('model', [model]) + '</div>' +
+    return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('model', [model]) + '</div>' +
       '<p class="hint" style="margin:0">Change the inputs, result and model with Edit, and what tools may do in Permissions.</p>';
   }
 
@@ -1295,20 +1281,21 @@ ${consoleShellScript}
       return '<article class="workflow-card wf-row' + (open ? ' is-open' : '') + '" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div class="wf-row-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
           '<span class="wf-row-caret" aria-hidden="true"></span>' +
-          '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong>' + (w.description ? '<span class="wf-row-desc">' + escapeHtml(w.description) + '</span>' : '') + '</div>' +
+          '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong></div>' +
           '<span class="wf-row-starts">' + workflowStartsSummary(w) + '</span>' +
           '<span class="wf-row-last">' + workflowLastRunHtml(last) + '</span>' +
-          '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit</button><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></span>' +
+          '<span class="wf-row-actions"><button type="button" class="workflow-triggers-open">Triggers</button><button type="button" class="workflow-edit">Edit</button></span>' +
         '</div>' +
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
-          '<div class="wf-chips">' + workflowStatusChips(w) + '</div>' +
-          workflowRunBarHtml(w, params) +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('contract', 'Contract') + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
+          // What it does, in full, once it's open (the row shows just its name).
+          (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
+          panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('brief', workflowBriefHtml(w)) +
           panel('evidence', workflowEvidenceHtml(w, runs)) +
           '<div class="hint workflow-result"></div>' +
-          '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span></div>' +
+          '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
         '</div>' +
         '</article>';
     }).join('') + '</div>';
@@ -1767,8 +1754,6 @@ ${consoleShellScript}
         w.webhooks = list.filter(function (t) { return t.enabled; }).length;
         w.webhooksWaiting = list.filter(function (t) { return !t.enabled && t.verify && !t.verify.secret_set; }).length;
         w.webhooksOff = list.length - w.webhooks - w.webhooksWaiting;
-        var chips = card.querySelector('.wf-chips');
-        if (chips) chips.innerHTML = workflowStatusChips(w);
         var startsCell = card.querySelector('.wf-row-starts');
         if (startsCell) startsCell.innerHTML = workflowStartsSummary(w);
         // One waiting for its secret, or just made: open the Run options
@@ -1847,6 +1832,11 @@ ${consoleShellScript}
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
+    // Opens the row (if it's closed) on its Triggers tab.
+    card.querySelector('.workflow-triggers-open').addEventListener('click', function () {
+      if (!card.classList.contains('is-open')) setWorkflowOpen(card, true);
+      showWorkflowTab(card, 'triggers');
+    });
     // Evidence: save a run as an eval case, change or remove a case, run them.
     card.querySelector('.wf-row-body').addEventListener('click', function (ev) {
       var btn = ev.target.closest('.wf-save-case, .wf-case-remove, .wf-case-save, .wf-evals-run');
