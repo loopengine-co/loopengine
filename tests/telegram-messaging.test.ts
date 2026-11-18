@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentConfig } from '#core/agent-config.js'
 import { setAgentDir } from '#core/agent-env.js'
 import { TelegramNotifier, type TelegramPosted } from '#core/http-notify-triggers/telegram.js'
+import { resolveHttpNotifier } from '#core/http-notifier.js'
 import type { InboundMessage, MessagingConnector } from '#core/messaging/connector.js'
 import { clearSightings } from '#core/messaging/engine.js'
 import { handleJobMessage, isJobMessage, jobSessionId, settleJobThread, type JobDeps, type JobTurn } from '#core/messaging/jobs.js'
-import { findThread } from '#core/messaging/threads.js'
+import { findThread, findThreadByPending } from '#core/messaging/threads.js'
 import { parseSlackEvent } from '#core/messaging/connectors/slack/index.js'
 import {
   createTelegramConnector,
@@ -244,6 +245,18 @@ describe('TelegramNotifier', () => {
     expect(posted.slice(1).every((p) => p.root === '70')).toBe(true)
   })
 
+
+  it("records a long request's thread at its first message and its buttons at its last", async () => {
+    let next = 70
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ ok: true, result: { message_id: next++, chat: { id: -100 } } })))
+    const config: AgentConfig = { name: 'tg-agent', systemPrompt: 'x', httpNotifier: { channel: 'telegram', config: { botToken: 't', chatId: '-100', buttons: true }, events: ['question'] } }
+    setAgentDir(config, dir)
+    const { questionHandler } = resolveHttpNotifier(config)
+    const question = Array.from({ length: 12 }, (_, i) => `Point ${i + 1}: ${'detail '.repeat(150)}`).join('\n\n')
+    ;(questionHandler as TelegramNotifier).notifyPendingQuestion(question, ['Yes'], 'cs-agent', undefined, PENDING)
+    await vi.waitFor(() => expect(findThreadByPending(dir, PENDING)?.buttonsTs).toBe(String(next - 1)))
+    expect(findThreadByPending(dir, PENDING)).toMatchObject({ ts: '70', kind: 'question' })
+  })
 
   it('adds Approve and Deny buttons and reports where the request landed', async () => {
     const sent: Array<Record<string, any>> = []

@@ -16,7 +16,7 @@ import { RedisQueueApprover } from './http-notify-triggers/redis.js'
 import type { AgentConfig, HttpNotifierConfig, QuestionHandler } from './agent-config.js'
 import { agentDirFor, createAgentEnv } from './agent-env.js'
 import { notifierConfigFromFile, readActiveConnections, readNotifierFile, type NotifierFile, type NotifierFileChannel } from './notifier-file.js'
-import { recordThread } from './messaging/threads.js'
+import { findThreadByPending, recordThread } from './messaging/threads.js'
 import { recordTelegramMessage } from './messaging/connectors/telegram/store.js'
 
 interface ResolvedHttpNotifier {
@@ -219,6 +219,12 @@ function buildResolved(httpNotifier: HttpNotifierConfig, agentDir: string): Reso
           // A long request's later messages belong to its first.
           recordTelegramMessage(agentDir, { chat, id: messageId, root: root ?? messageId, fromBot: true, text })
           if (pendingId && kind && !root) recordThread(agentDir, { app: 'telegram', conversation: chat, ts: messageId, pendingId, kind })
+          // Its buttons are on its last message, recorded so a decision
+          // made by reply can take them away.
+          if (pendingId && root) {
+            const link = findThreadByPending(agentDir, pendingId)
+            if (link) recordThread(agentDir, { ...link, buttonsTs: messageId })
+          }
         },
       })
       return {

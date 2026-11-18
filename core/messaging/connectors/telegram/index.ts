@@ -111,6 +111,10 @@ export function createTelegramConnector(botToken: string, agentDir: string): Mes
       })
       if (!edited.ok) console.error('[loopengine] Telegram editMessageText failed:', edited.description)
     },
+    async removeButtons(conversation, ts) {
+      const edited = await callTelegram(botToken, 'editMessageReplyMarkup', { chat_id: conversation, message_id: Number(ts), reply_markup: { inline_keyboard: [] } })
+      if (!edited.ok) console.error('[loopengine] Telegram editMessageReplyMarkup failed:', edited.description)
+    },
   }
 }
 

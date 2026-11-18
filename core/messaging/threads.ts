@@ -21,6 +21,9 @@ export interface ThreadLink {
    * proposed change, a Confirm), so it can be replaced once the request
    * is decided and its buttons don't linger. */
   choiceTs?: string
+  /** A long request goes out as several messages (Telegram), its
+   * buttons on the last: that message, when it isn't `ts`. */
+  buttonsTs?: string
 }
 
 function threadsFile(agentDir: string): string {
@@ -32,8 +35,8 @@ function threadsFile(agentDir: string): string {
 export function recordThread(agentDir: string, link: ThreadLink): void {
   try {
     mkdirSync(join(agentDir, '.messaging'), { recursive: true })
-    const { app, conversation, ts, pendingId, kind, proposedArgs, choiceTs } = link
-    appendFileSync(threadsFile(agentDir), JSON.stringify({ app, conversation, ts, pendingId, kind, ...(proposedArgs ? { proposedArgs } : {}), ...(choiceTs ? { choiceTs } : {}), at: new Date().toISOString() }) + '\n')
+    const { app, conversation, ts, pendingId, kind, proposedArgs, choiceTs, buttonsTs } = link
+    appendFileSync(threadsFile(agentDir), JSON.stringify({ app, conversation, ts, pendingId, kind, ...(proposedArgs ? { proposedArgs } : {}), ...(choiceTs ? { choiceTs } : {}), ...(buttonsTs ? { buttonsTs } : {}), at: new Date().toISOString() }) + '\n')
   } catch (err) {
     console.error('[loopengine] could not record the thread:', err instanceof Error ? err.message : err)
   }

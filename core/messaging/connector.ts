@@ -74,4 +74,6 @@ export interface MessagingConnector {
   /** Replaces the request message itself (and its buttons) with the
    * outcome, so nobody acts on a decision already made. Optional. */
   replaceMessage?(conversation: string, ts: string, text: string): Promise<void>
+  /** Takes a message's buttons away and leaves its text. Optional. */
+  removeButtons?(conversation: string, ts: string): Promise<void>
 }

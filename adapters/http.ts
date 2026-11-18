@@ -104,9 +104,9 @@ import { decidePath, verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
 import { agentApprovers, agentMessagingIdentities, agentTelegramWebhookInfo, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, type TwoWayApp } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
-import { firstSighting, handleInboundMessage, handleMessagingAction, outcomeText, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
+import { firstSighting, handleInboundMessage, handleMessagingAction, outcomeText, settleRequest, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
 import { handleJobMessage, isJobMessage, settleJobThread, type JobDeps, type JobTurn } from '#core/messaging/jobs.js'
-import { findJobThreadBySession, findThread } from '#core/messaging/threads.js'
+import { findJobThreadBySession, findThread, findThreadByPending } from '#core/messaging/threads.js'
 import type { InboundMessage, MessagingConnector } from '#core/messaging/connector.js'
 import { formatArgs } from '#core/messaging/format-args.js'
 import { answerTelegramClick, createTelegramConnector, editTelegramMessage, parseTelegramUpdate, readTelegramThread, recordTelegramMessage, telegramBotUsername, telegramEscape, telegramRootOf, verifyTelegramRequest, type TelegramUpdate } from '#core/messaging/connectors/telegram/index.js'
@@ -4072,8 +4072,36 @@ async function handleDecide(req: IncomingMessage, res: ServerResponse, rawToken:
     return
   }
   const body = await readJsonBody(req)
+  // The request's chat message says so (and loses its buttons) before the
+  // run carries on and maybe posts its next request.
+  const answered = token.kind === 'question' && typeof body.answer === 'string' && body.answer.trim() ? body.answer.trim() : undefined
+  const decided = token.kind === 'approval' && (body.decision === 'approve' || body.decision === 'deny') ? body.decision : undefined
+  if (answered || decided) {
+    await settleChatRequest(checkpoint.agent, token.pendingId, (escape) =>
+      answered ? `The question was answered on the web: "${escape(answered)}".`
+      : `\`${item.tool}\` was ${decided === 'deny' ? 'denied' : body.editedArgs ? 'approved as changed' : 'approved'} on the web.`,
+    ).catch((err) => console.error('[loopengine] could not update the chat request:', err))
+  }
   if (token.kind === 'question') await answerPendingQuestion(res, token.pendingId, { answer: body.answer })
   else await resolvePendingApproval(res, token.pendingId, { decision: body.decision, editedArgs: body.editedArgs })
+}
+
+// The chat message of a request decided elsewhere (the web link), in
+// whichever app it was posted to.
+async function settleChatRequest(agent: string, pendingId: string, text: (escape: (t: string) => string) => string): Promise<void> {
+  const entry = getEntry(agent)
+  if (!entry) return
+  const app = findThreadByPending(agentDirFor(entry.config), pendingId)?.app
+  let connector: MessagingConnector | undefined
+  if (app === 'slack') {
+    const { botToken } = slackCredentialsFor(entry.config)
+    if (botToken) connector = createSlackConnector(botToken)
+  } else if (app === 'telegram') {
+    const { botToken } = telegramCredentialsFor(entry.config)
+    if (botToken) connector = createTelegramConnector(botToken, agentDirFor(entry.config))
+  }
+  if (!connector) return
+  await settleRequest(messagingDeps(agent, entry, connector), pendingId, text(connector.escape))
 }
 
 // Runs one of the resolve/answer handlers above without a real HTTP
@@ -4481,7 +4509,8 @@ async function decideFromMessaging(pendingId: string, decision: MessagingDecisio
   if (body.alreadyResolved) return { alreadyResolved: true }
   if (body.resolved) return { stillWaiting: true }
   if (Array.isArray(body.pending) && body.pending.length) return { morePending: true }
-  return { text: typeof body.text === 'string' && !fromJob ? body.text : undefined }
+  if (fromJob) return { inJob: true }
+  return { text: typeof body.text === 'string' ? body.text : undefined }
 }
 
 // ---- Webhook triggers (core/workflow-triggers.ts): an outside service

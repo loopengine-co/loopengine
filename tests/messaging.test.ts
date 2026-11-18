@@ -6,7 +6,7 @@ import type { TurnCheckpoint } from '#core/durable-approvals.js'
 import type { Message, ModelCall } from '#core/run-agent.js'
 import { SlackNotifier } from '#core/http-notify-triggers/slack.js'
 import type { InboundMessage, MessagingConnector, ThreadMessage } from '#core/messaging/connector.js'
-import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, handleMessagingAction, isPlainApproval, settleThreadChoice, threadToMessages, type MessagingDeps } from '#core/messaging/engine.js'
+import { clearSightings, discussionPrompt, firstSighting, handleInboundMessage, handleMessagingAction, isPlainApproval, settleThreadChoice, threadToMessages, type MessagingDeps, settleRequest } from '#core/messaging/engine.js'
 import { findThread, findThreadByPending, recordThread } from '#core/messaging/threads.js'
 import { createSlackConnector, parseSlackEvent } from '#core/messaging/connectors/slack/index.js'
 
@@ -358,6 +358,60 @@ describe('handleInboundMessage', () => {
     expect(answered.decided).toEqual([{ pendingId: 'q1', decision: { kind: 'answer', answer: 'Kyoto' } }])
     expect(answered.decisionCalls[0].system).toContain('"Which city?"')
     expect(answered.replaced).toEqual(['The question was answered ("Kyoto") by @U1 in the thread.'])
+  })
+
+  it('says what was decided before the run carries on, so a new request comes after it', async () => {
+    recordThread(dir, { app: 'chat', conversation: 'C1', ts: '5.0', pendingId: 'q1', kind: 'question' })
+    const question: TurnCheckpoint = { ...checkpoint, outstanding: { q1: { kind: 'question', toolUseId: 'tq', tool: 'system_ask_user', args: { question: 'Which city?' }, reason: 'question' } } }
+    const answered = setup({ approvers: () => [{ user: 'U1' }], getCheckpoint: async (id) => (id === 'q1' ? question : undefined) }, { decision: 'answer', answer: 'Kyoto' })
+    answered.deps.decide = async () => {
+      answered.posts.push('new request')
+      return { morePending: true }
+    }
+    await handleInboundMessage(reply('Kyoto', '5.0'), answered.deps)
+    expect(answered.posts).toEqual(['C1/5.0: Answered by @U1: "Kyoto". The agent is carrying on…', 'new request'])
+
+    mapRequest()
+    const approved = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
+    approved.deps.decide = async () => {
+      approved.posts.push('new request')
+      return { morePending: true }
+    }
+    await handleInboundMessage(reply('yes'), approved.deps)
+    expect(approved.posts).toEqual(['C1/1.0: Approved by @U1. Running `stripe_refund` with:\n**Amount:** 60', 'new request'])
+  })
+
+  it("adds nothing after a decision in a job's thread, which gets the run's own outcome", async () => {
+    mapRequest()
+    const denied = setup({ approvers: () => [{ user: 'U1' }], decide: async () => ({ inJob: true }) }, { decision: 'deny' })
+    await handleInboundMessage(reply('no'), denied.deps)
+    expect(denied.posts).toEqual(['C1/1.0: Denied by @U1. Letting the agent know…'])
+  })
+
+  it("takes the buttons off a long request's last message when it's decided by reply", async () => {
+    recordThread(dir, { app: 'chat', conversation: 'C1', ts: '1.0', pendingId: 'p1', kind: 'approval' })
+    recordThread(dir, { ...findThreadByPending(dir, 'p1')!, buttonsTs: '1.2' })
+    const denied = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'deny' })
+    const removed: string[] = []
+    denied.deps.connector.removeButtons = async (_c, ts) => void removed.push(ts)
+    await handleInboundMessage(reply('no'), denied.deps)
+    expect(denied.replacedAt).toEqual(['1.0: `stripe_refund` was denied by @U1 in the thread.'])
+    expect(removed).toEqual(['1.2'])
+  })
+
+  it('updates the request in the chat when it was decided on the web, and only in its own app', async () => {
+    recordThread(dir, { app: 'chat', conversation: 'C1', ts: '1.0', pendingId: 'p1', kind: 'approval', buttonsTs: '1.2' })
+    const { deps, replacedAt } = setup()
+    const removed: string[] = []
+    deps.connector.removeButtons = async (_c, ts) => void removed.push(ts)
+    await settleRequest(deps, 'p1', '`stripe_refund` was approved on the web.')
+    expect(replacedAt).toEqual(['1.0: `stripe_refund` was approved on the web.'])
+    expect(removed).toEqual(['1.2'])
+
+    const other = setup()
+    await settleRequest({ ...other.deps, connector: { ...other.deps.connector, app: 'slack' } }, 'p1', 'x')
+    await settleRequest(other.deps, 'nope', 'x')
+    expect(other.replacedAt).toEqual([])
   })
 
   it("refuses a decision from someone who isn't an approver, and says who can", async () => {

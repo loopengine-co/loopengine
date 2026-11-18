@@ -95,6 +95,9 @@ export interface DecisionOutcome {
   morePending?: boolean
   /** The agent's reply once the run finished. */
   text?: string
+  /** The run came from a job thread, which gets the run's own next
+   * request or result (core/messaging/jobs.ts), so nothing is added. */
+  inJob?: boolean
 }
 
 const threadLocks = new KeyedMutex()
@@ -188,9 +191,13 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
         return
       }
 
-      const outcome = await deps.decide(link.pendingId, verdict.decision === 'answer' ? { kind: 'answer', answer: verdict.answer } : { kind: 'deny' })
       const answer = verdict.decision === 'answer' ? connector.escape(verdict.answer) : undefined
-      await say(outcomeText(verdict.decision, who, outcome, answer))
+      // Said before the decision goes in: the run carries on inside
+      // deps.decide and may post its next request before it returns.
+      await say(verdict.decision === 'deny' ? `Denied by ${who}. Letting the agent know…` : `Answered by ${who}: "${answer}". The agent is carrying on…`)
+      const outcome = await deps.decide(link.pendingId, verdict.decision === 'answer' ? { kind: 'answer', answer: verdict.answer } : { kind: 'deny' })
+      const after = followUpText(outcome)
+      if (after) await say(after)
       if (!outcome.error && !outcome.alreadyResolved) {
         const what = link.kind === 'approval' ? `\`${item.tool}\`` : 'The question'
         await replaceRequest(connector, link, `${what} was ${verdict.decision === 'deny' ? 'denied' : `answered ("${answer}")`} by ${who} in the thread.`)
@@ -286,7 +293,8 @@ async function runApproved(deps: MessagingDeps, link: ThreadLink, tool: string, 
   const edited = Boolean(link.proposedArgs)
   await connector.postInThread(link.conversation, link.ts, `Approved${edited ? ' as changed' : ''} by ${who}. Running \`${tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(tool))}`)
   const outcome = await deps.decide(link.pendingId, { kind: 'approve', ...(edited ? { editedArgs: args } : {}) })
-  await connector.postInThread(link.conversation, link.ts, outcomeText('approve', who, outcome))
+  const after = followUpText(outcome)
+  if (after) await connector.postInThread(link.conversation, link.ts, after)
   if (!outcome.error && !outcome.alreadyResolved) {
     await replaceRequest(connector, link, `\`${tool}\` was approved${edited ? ' as changed' : ''} by ${who} in the thread.`)
     await settleChoice(deps, link, `Approved${edited ? ' as changed' : ''} by ${who}.`)
@@ -318,9 +326,22 @@ export async function settleThreadChoice(deps: MessagingDeps, pendingId: string,
   if (link) await settleChoice(deps, link, text)
 }
 
+/** For a decision made away from the chat (the web link): replaces the
+ * request message, and any message with buttons in its thread, with
+ * `text`, so nobody acts on it there. Nothing when it wasn't posted in
+ * a chat. */
+export async function settleRequest(deps: MessagingDeps, pendingId: string, text: string): Promise<void> {
+  const link = findThreadByPending(deps.agentDir, pendingId)
+  if (!link || link.app !== deps.connector.app) return
+  await replaceRequest(deps.connector, link, text)
+  await settleChoice(deps, link, text)
+}
+
 async function replaceRequest(connector: MessagingConnector, link: ThreadLink, text: string): Promise<void> {
   if (!connector.replaceMessage) return
   await connector.replaceMessage(link.conversation, link.ts, text).catch((err) => console.error('[loopengine] could not update the request message:', err))
+  // A long request's buttons are on its last message.
+  if (link.buttonsTs && connector.removeButtons) await connector.removeButtons(link.conversation, link.buttonsTs).catch((err) => console.error('[loopengine] could not update the request message:', err))
 }
 
 /** A click on one of the engine's own buttons (Approve as changed, Keep
@@ -362,8 +383,20 @@ export function outcomeText(decision: 'approve' | 'deny' | 'answer', who: string
   if (outcome.alreadyResolved) return 'This was already decided elsewhere.'
   const what = decision === 'approve' ? 'Done' : decision === 'deny' ? `Denied by ${who}` : `Answered by ${who}: "${answer}"`
   if (outcome.stillWaiting) return `${what}. The agent is still waiting on another decision from the same step.`
-  if (outcome.morePending) return `${what}. The agent needs another decision; a new request is on its way.`
+  if (outcome.morePending) return `${what}. The agent needed another decision and sent a new request.`
   return `${what}.${outcome.text ? `\n> ${outcome.text.replace(/\n/g, '\n> ')}` : ''}`
+}
+
+/** What to add in the thread once a decision said there is in, if
+ * anything: nothing when the agent sent a new request, which speaks
+ * for itself (and is already above this), or when the run's job thread
+ * gets its outcome from the job. */
+export function followUpText(outcome: DecisionOutcome): string | undefined {
+  if (outcome.error) return `Couldn't record that: ${outcome.error}`
+  if (outcome.alreadyResolved) return 'This was already decided elsewhere.'
+  if (outcome.stillWaiting) return 'The agent is still waiting on another decision from the same step.'
+  if (outcome.morePending || outcome.inJob) return undefined
+  return outcome.text ? `Done.\n> ${outcome.text.replace(/\n/g, '\n> ')}` : 'Done.'
 }
 
 /** The thread as chat messages: the agent's own replies as `assistant`,
