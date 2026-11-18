@@ -12,8 +12,12 @@ const CLOSE = '\u0002'
 // The agent's own writing (telegramAgentText): formatted, links shown.
 const OPEN_AGENT = '\u0003'
 const CLOSE_AGENT = '\u0004'
-const MARKERS = /[\u0001-\u0004]/g
+const MARKERS = /[\u0001-\u0006]/g
 const KEEP = /(```[\s\S]*?```|`[^`\n]*`|\u0001[\s\S]*?\u0002|\u0003[\s\S]*?\u0004)/
+// Where a kept piece sits while the text around it is converted.
+const SLOT = '\u0005'
+const SLOT_END = '\u0006'
+const SLOTS = /\u0005(\d+)\u0006/g
 
 // Telegram's limit is 4096 characters of text after the tags are read;
 // cutting the Markdown well short of it keeps the tags whole.
@@ -98,18 +102,29 @@ export function splitTelegramMarkdown(markdown: string, max = MAX_MARKDOWN - 100
 
 export function toTelegramHtml(markdown: string): string {
   const cut = markdown.length > MAX_MARKDOWN ? markdown.slice(0, MAX_MARKDOWN).trimEnd() + '\n…' : markdown
-  return cut
+  // The kept pieces (code, someone else's text, the agent's writing) are
+  // set aside while the rest is converted as one, so formatting around
+  // them pairs up: "**Question from <agent>:**" is bold.
+  const kept: string[] = []
+  const prose = cut
     .split(KEEP)
     .map((part, i) => {
-      if (i % 2 === 0) return convertProse(part)
-      if (part.startsWith(OPEN_AGENT)) return agentHtml(part.slice(1, -1))
-      const plain = part.replace(MARKERS, '')
-      if (part.startsWith(OPEN)) return html(plain)
-      if (part.startsWith('```')) return `<pre>${html(plain.slice(3, -3).replace(/^[\w-]*\n/, ''))}</pre>`
-      return `<code>${html(plain.slice(1, -1))}</code>`
+      if (i % 2 === 0) return part
+      kept.push(part)
+      return `${SLOT}${kept.length - 1}${SLOT_END}`
     })
     .join('')
+  return convertProse(prose)
+    .replace(SLOTS, (_m, n: string) => keptHtml(kept[Number(n)]))
     .replace(MARKERS, '')
+}
+
+function keptHtml(part: string): string {
+  if (part.startsWith(OPEN_AGENT)) return agentHtml(part.slice(1, -1))
+  const plain = part.replace(MARKERS, '')
+  if (part.startsWith(OPEN)) return html(plain)
+  if (part.startsWith('```')) return `<pre>${html(plain.slice(3, -3).replace(/^[\w-]*\n/, ''))}</pre>`
+  return `<code>${html(plain.slice(1, -1))}</code>`
 }
 
 // A run of Markdown table lines ("| a | b |").

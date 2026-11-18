@@ -13,16 +13,31 @@ const CLOSE = '\u0002'
 // The agent's own writing (slackAgentText): formatted, links shown.
 const OPEN_AGENT = '\u0003'
 const CLOSE_AGENT = '\u0004'
-const MARKERS = /[\u0001-\u0004]/g
+const MARKERS = /[\u0001-\u0006]/g
 const KEEP = /(```[\s\S]*?```|`[^`\n]*`|\u0001[\s\S]*?\u0002|\u0003[\s\S]*?\u0004)/
+// Where a kept piece sits while the text around it is converted.
+const SLOT = '\u0005'
+const SLOT_END = '\u0006'
+const SLOTS = /\u0005(\d+)\u0006/g
 
 export function toSlackMrkdwn(markdown: string): string {
-  return markdown
-    // ~~old value~~ around protected text: the markers sit outside it.
-    .replace(/~~(\u0001[^\u0002]*\u0002)~~/g, '~$1~')
+  // The kept pieces (code, someone else's text, the agent's writing) are
+  // set aside while the rest is converted as one, so formatting around
+  // them pairs up: "**Answered by <name>:**", "~~<old value>~~".
+  const kept: string[] = []
+  const prose = markdown
     .split(KEEP)
-    .map((part, i) => (i % 2 === 0 ? convertProse(part) : part.startsWith(OPEN_AGENT) ? agentMrkdwn(part.slice(1, -1)) : part))
+    .map((part, i) => {
+      if (i % 2 === 0) return part
+      kept.push(part)
+      return `${SLOT}${kept.length - 1}${SLOT_END}`
+    })
     .join('')
+  return convertProse(prose)
+    .replace(SLOTS, (_m, n: string) => {
+      const part = kept[Number(n)]
+      return part.startsWith(OPEN_AGENT) ? agentMrkdwn(part.slice(1, -1)) : part
+    })
     .replace(MARKERS, '')
 }
 

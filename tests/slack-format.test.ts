@@ -16,6 +16,14 @@ describe('toSlackMrkdwn', () => {
   })
 })
 
+describe('formatting around escaped text in Slack', () => {
+  it('pairs up across it', async () => {
+    const { slackEscape } = await import('#core/messaging/connectors/slack/index.js')
+    expect(toSlackMrkdwn(`**Answered by ${slackEscape('Evan')}:** ${slackEscape('**no**')}`)).toBe('*Answered by Evan:* **no**')
+    expect(toSlackMrkdwn(`~~${slackEscape('old')}~~ new`)).toBe('~old~ new')
+  })
+})
+
 describe("the agent's own writing in Slack and Lark", () => {
   it('is formatted for Slack, escaped, with tables as code and links showing their address', async () => {
     const { slackAgentText } = await import('#core/messaging/connectors/slack/index.js')

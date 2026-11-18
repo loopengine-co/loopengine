@@ -58,6 +58,13 @@ describe('Telegram formatting', () => {
     )
   })
 
+  it('pairs formatting around escaped text, as in a question\'s header', () => {
+    expect(toTelegramHtml(`**Question from ${telegramEscape('cs-agent')} (session ${telegramEscape('run-1')}):**\n${telegramAgentText('Proceed?')}`)).toBe(
+      '<b>Question from cs-agent (session run-1):</b>\nProceed?',
+    )
+    expect(toTelegramHtml(`**Answered by ${telegramEscape('<Evan>')}:** "${telegramEscape('**no**')}"`)).toBe('<b>Answered by &lt;Evan&gt;:</b> "**no**"')
+  })
+
   it("shows the agent's own Markdown formatted, as the console does, with links' addresses showing", () => {
     const reply = [
       '## Evidence prepared',

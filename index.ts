@@ -333,6 +333,7 @@ export {
   AppToolsError,
   appCatalog,
   appServer,
+  appToolInputs,
   appTools,
   catalogServer,
   connectedApps,
@@ -346,6 +347,7 @@ export {
   type AppView,
   type ConnectedApp,
 } from './core/mcp-apps.js'
+export { UNATTENDED_NOTE } from './core/unattended.js'
 
 export { searchPublicAbilities, fetchLatestAbilityVersion } from './web/abilities-admin.js'
 export type { PublicAbilitySearchResult } from './web/abilities-admin.js'
