@@ -1182,7 +1182,7 @@ ${consoleShellScript}
     box.innerHTML = intro +
       '<form id="policiesForm" style="display:flex;flex-direction:column;gap:10px;max-width:720px">' +
         '<label for="policiesText" class="hint">One rule per line, with its real numbers</label>' +
-        '<textarea id="policiesText" rows="8" placeholder="- Refunds within 30 days of delivery.&#10;- Parcels lost over 15 days are reshipped, not refunded.&#10;- Sign customer emails: Everymarket Support">' + escapeHtml(p.policies || '') + '</textarea>' +
+        '<textarea id="policiesText" rows="8" placeholder="- Refunds within 30 days of purchase.&#10;- Never share customer details with other customers.&#10;- Reply in the language the customer wrote in.&#10;- Sign emails: The Support Team">' + escapeHtml(p.policies || '') + '</textarea>' +
         '<div><button type="submit" class="primary">Save</button></div>' +
         '<div id="policiesMsg" class="hint"></div>' +
       '</form>';

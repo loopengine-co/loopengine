@@ -467,7 +467,10 @@ ${consoleShellScript}
       trigger.push(esc(SENDERS[w.sender] || w.sender) + ' webhook' + (w.filter ? ', <code>' + esc(w.filter.values.join(' | ')) + '</code>' : ''));
       Object.keys(w.mapping || {}).forEach(function (k) { trigger.push('<span class="wf-cb-indent"><code>' + esc(k) + '</code> ' + String.fromCharCode(8592) + ' <code>' + esc(w.mapping[k]) + '</code></span>'); });
     }
-    trigger.push('<span class="hint">by hand (Run now) or from an app (API)</span>');
+    // Any workflow can also be started by hand or by an app: said as an
+    // extra, not as a trigger, and without one it can still be given a
+    // schedule or a webhook.
+    trigger.push('<span class="hint">' + (trigger.length ? 'also by hand (Run now) or from an app (API)' : 'it runs when started by hand (Run now) or from an app (API); a schedule or webhook can be set up once it' + String.fromCharCode(8217) + 's created') + '</span>');
     var names = Object.keys(p.parameters || {});
     var inputs = names.length ? names.map(function (n) { return '<code>' + esc(n) + '</code>' + (p.parameters[n].required ? ' (required)' : ''); }) : ['<span class="hint">none: every run is the same</span>'];
     var groups = { allow: [], ask: [], deny: [] };
