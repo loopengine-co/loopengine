@@ -92,13 +92,13 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-row + .wf-row { border-top: 1px solid var(--line); }
   .wf-row.workflow-focus { box-shadow: inset 3px 0 0 var(--accent); }
   .wf-row-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) 210px 200px auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
-  .wf-row-head:hover { background: var(--surface); }
+  .wf-row-head:hover, .wf-row.is-open .wf-row-head { background: var(--surface); }
   .wf-row-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .wf-row-caret { width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; }
   .wf-row.is-open .wf-row-caret { transform: rotate(45deg); }
   .wf-row-main { min-width: 0; display: grid; gap: 2px; }
   .wf-row-main strong { font-size: 14px; font-weight: 650; color: var(--ink); }
-  .wf-desc { margin: 0; max-width: 72ch; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); overflow-wrap: anywhere; }
+  .wf-desc { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); overflow-wrap: anywhere; }
   .wf-row-starts { display: grid; gap: 2px; font-size: 12.5px; color: var(--ink-muted); min-width: 0; }
   .wf-start-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wf-start-state { font-size: 11px; font-weight: 700; padding: 0 6px; margin-left: 2px; border-radius: 999px; }
@@ -137,21 +137,22 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
   .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
   @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
-  .wf-triggers { display: grid; gap: 8px; }
-  .wf-triggers .wf-sub:first-child { margin-top: 0; }
-  .wf-trigger { display: grid; gap: 8px; }
+  .wf-ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 900px) { .wf-ways { grid-template-columns: minmax(0, 1fr); } }
+  .wf-way { margin: 0; display: grid; gap: 8px; align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); min-width: 0; font-size: 13px; }
+  .wf-way h4 { margin: 0; font-size: 14px; font-weight: 650; color: var(--ink); }
+  .wf-way-what { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
+  .wf-way .hint[hidden], .wf-way [hidden] { display: none; }
+  .wf-way .workflow-hooks:empty { display: none; }
+  .wf-way .workflow-hook { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .wf-way button { justify-self: start; }
   .wf-trigger-item { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .wf-trigger-item button, .wf-trigger-add button, .wf-trigger .workflow-hook button { padding: 2px 10px; font-size: 12px; }
-  .wf-trigger .workflow-hooks:empty { display: none; }
-  .wf-trigger .workflow-hook { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-  .wf-trigger-add { display: flex; gap: 6px; flex-wrap: wrap; }
-  .wf-trigger-add [hidden] { display: none; }
-  .wf-api summary { cursor: pointer; font-size: 12.5px; color: var(--accent-ink); }
-  .wf-api[open] { display: grid; gap: 6px; }
+  .wf-trigger-item button, .wf-way .workflow-hook button { padding: 2px 10px; font-size: 12px; }
+  .wf-api { display: grid; gap: 6px; }
   .wf-api pre { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .wf-run-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
-  .wf-run-bar .workflow-params { margin: 0; flex: 1 1 320px; }
-  .wf-run-bar-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+  .wf-run-bar { display: grid; gap: 10px; }
+  .wf-run-bar .workflow-params { margin: 0; }
+  .wf-run-bar-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
   .wf-sub { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
   .wf-scores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .wf-score { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
@@ -176,6 +177,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wp-mono { font-family: var(--font-mono); font-size: 12.5px; }
   @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  /* Triggers is a way in, not an edit: neutral, beside Edit's accent. */
+  .wf-row-actions .workflow-triggers-open { border-color: var(--line); background: var(--bg); color: var(--ink); }
+  .wf-row-actions .workflow-triggers-open:hover:not(:disabled) { border-color: var(--ink-muted); background: var(--surface); }
   .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
   .wf-row-foot .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   @media (max-width: 760px) {
@@ -1007,12 +1011,11 @@ ${consoleShellScript}
     // for the result.
     var example = '{ ' + (paramNames.length ? '"params": { ' + paramNames.map(function (p) { return '"' + p + '": "' + String.fromCharCode(8230) + '"'; }).join(', ') + ' }, ' : '') + '"wait": true }';
     var apiUrl = location.origin + '/agents/' + encodeURIComponent(agentName) + '/workflows/' + encodeURIComponent(w.id) + '/run';
-    return '<details class="wf-api"><summary>Show the API call</summary>' +
-      '<p class="hint" style="margin:0">Your own app starts a run by calling this address with an API key.</p>' +
+    return '<div class="wf-api">' +
       '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
       '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
         'Optional: <code>"wait": true</code> answers with the result; <code>"notify": true</code> sends the result to the messaging app; <code>"callback_url"</code> posts it to your app when the run ends. Leave them out to get the run' + String.fromCharCode(8217) + 's id back at once.</p>' +
-      '</details>';
+      '</div>';
   }
 
 
@@ -1121,20 +1124,24 @@ ${consoleShellScript}
   function contractLinesHtml(lines) {
     return lines.map(function (l) { return '<div class="wf-cb-line">' + l + '</div>'; }).join('');
   }
-  // Its Triggers tab: Run now, its schedules and webhooks with their
-  // controls, a way to add either, and the call an app makes.
+  // Its Triggers tab: the four ways a run starts, each in its own box
+  // with what it is: Run now, a schedule, a webhook, the API.
   function workflowTriggersHtml(w, name, params) {
     var schedules = workflowScheduleItemsHtml(w, name);
-    return '<div class="wf-triggers">' +
-      '<h4 class="wf-sub">Run now</h4>' + workflowRunBarHtml(w, params) +
-      '<h4 class="wf-sub">Schedules and webhooks</h4>' +
-      '<div class="wf-trigger">' + schedules +
+    var hasHooks = Boolean(w.webhooks || w.webhooksWaiting || w.webhooksOff);
+    var way = function (key, title, what, body) {
+      return '<section class="wf-way wf-way-' + key + '"><h4>' + title + '</h4><p class="wf-way-what">' + what + '</p>' + body + '</section>';
+    };
+    return '<div class="wf-ways">' +
+      way('run', 'Run now', 'Starts a run right away, from here. It shows under Evidence as it goes.', workflowRunBarHtml(w, params)) +
+      way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go to the agent' + RSQ + 's messaging app.',
+        (schedules || '<p class="hint" style="margin:0">None yet.</p>') +
+        '<div><button type="button" class="workflow-add-schedule">+ Schedule</button></div>') +
+      way('webhook', 'Webhook', 'Another app (Stripe, GitHub, Shopify or your own) calls a private address when something happens, and each call starts a run.',
         '<div class="workflow-hooks"></div>' +
-        (!schedules && !(w.webhooks || w.webhooksWaiting || w.webhooksOff) ? '<p class="hint wf-trigger-none" style="margin:0">None yet: it runs only when started by hand or from an app.</p>' : '') +
-        '<div class="wf-trigger-add"><button type="button" class="workflow-add-schedule">+ Schedule</button>' +
-          '<span class="workflow-hooks-add"' + (w.webhooksWaiting ? ' hidden' : '') + '><button type="button" class="workflow-hooks-btn">+ Webhook</button></span></div>' +
-      '</div>' +
-      '<h4 class="wf-sub">API</h4>' + workflowApiHtml(w, name) +
+        (hasHooks ? '' : '<p class="hint wf-hooks-none" style="margin:0">None yet.</p>') +
+        '<div class="workflow-hooks-add"' + (w.webhooksWaiting ? ' hidden' : '') + '><button type="button" class="workflow-hooks-btn">+ Webhook</button></div>') +
+      way('api', 'API', 'Your own app starts a run by calling this address with an API key.', workflowApiHtml(w, name)) +
       '</div>';
   }
 
@@ -1289,7 +1296,7 @@ ${consoleShellScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('brief', workflowBriefHtml(w)) +
@@ -1760,6 +1767,8 @@ ${consoleShellScript}
         // row it's in, so its steps show.
         var row = box.closest('details');
         if (row && (shownId || w.webhooksWaiting)) row.open = true;
+        var none = card.querySelector('.wf-hooks-none');
+        if (none) none.hidden = list.length > 0;
         var setupPending = list.some(function (t) { return t.verify && !t.verify.secret_set; });
         // Finish a planned webhook's setup before offering a second one:
         // + Webhook beside + Schedule waits until then.
