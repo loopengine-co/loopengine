@@ -120,6 +120,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 10px; margin-bottom: -1px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
   .wf-tab:hover:not(:disabled) { background: none; color: var(--ink); }
   .wf-tab[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
+  .wf-msg-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+  .wf-msg-row { display: grid; grid-template-columns: 190px 1fr; gap: 12px; align-items: start; }
+  .wf-msg-k { font-weight: 600; font-size: 13px; padding-top: 7px; }
+  .wf-msg-v { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .wf-msg-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+  .wf-msg-check input { width: auto; margin: 0; }
+  .wf-msg-own { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); }
+  .wf-msg-foot { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
+  @media (max-width: 640px) { .wf-msg-row { grid-template-columns: 1fr; gap: 4px; } .wf-msg-k { padding-top: 0; } }
   .wf-tab-count { margin-left: 4px; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
   .wf-row .workflow-steps-text { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); font-size: 13px; line-height: 1.6; max-height: 420px; overflow: auto; white-space: pre-wrap; }
   .wf-original { margin-top: 10px; }
@@ -999,7 +1008,6 @@ ${consoleShellScript}
     return '<div class="wf-run-bar">' +
       (paramsHtml ? '<div class="workflow-params">' + paramsHtml + '</div>' : '') +
       '<div class="wf-run-bar-controls">' +
-        '<label class="workflow-run-notify" title="Sends the completed result through this agent' + String.fromCharCode(8217) + 's configured notifier"><input type="checkbox" class="workflow-run-notify-toggle"> Send result to messaging app</label>' +
         '<button type="button" class="workflow-run primary">Run now</button></div>' +
       '</div>';
   }
@@ -1014,7 +1022,7 @@ ${consoleShellScript}
     return '<div class="wf-api">' +
       '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
       '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
-        'Optional: <code>"wait": true</code> answers with the result once the run finishes; <code>"result_to_chat": true</code> sends the result to the messaging app; <code>"callback_url"</code> tells your app when the run stops for a decision, finishes or fails. Add <code>"decisions": "callback"</code> to send the run' + String.fromCharCode(8217) + 's approvals and questions to that address instead of the messaging app, and <code>"chat_notice"</code> to post a message to the messaging app when it starts (<code>{{input}}</code> is filled in). Without <code>wait</code>, you get the run' + String.fromCharCode(8217) + 's id back at once.</p>' +
+        'Optional: <code>"wait": true</code> answers with the result once the run finishes; <code>"result_to_chat": true</code> sends the result to the messaging app; <code>"callback_url"</code> tells your app when the run stops for a decision, finishes or fails. Add <code>"decisions": "callback"</code> to send the run' + String.fromCharCode(8217) + 's approvals and questions to that address instead of the messaging app, and <code>"chat_notice"</code> to post a message to the messaging app when it starts (<code>{{input}}</code> is filled in). These override the workflow' + String.fromCharCode(8217) + 's Messages tab for that run. Without <code>wait</code>, you get the run' + String.fromCharCode(8217) + 's id back at once.</p>' +
       '</div>';
   }
 
@@ -1131,6 +1139,52 @@ ${consoleShellScript}
     return 'the agent' + String.fromCharCode(8217) + 's messaging app';
   }
 
+  // Where the agent's approvals go by name ("Telegram", "Webhook"), or
+  // null with none.
+  function workflowChatName() {
+    return workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : null;
+  }
+  // Its chat app by name, for messages people read (Slack, Telegram or
+  // Lark), or null.
+  function workflowChatAppName() {
+    return ['slack', 'telegram', 'lark'].indexOf(workflowsMeta.messaging) !== -1 ? workflowChatName() : null;
+  }
+
+  // Its Messages tab: where every run's updates go, however it starts:
+  // your app's address, a chat message when it starts, where approvals
+  // and questions go, and whether the result is posted to chat.
+  function workflowMessagesHtml(w, agentName) {
+    var d = w.delivery || {};
+    var chat = workflowChatAppName();
+    var chatLabel = escapeHtml(chat || 'chat');
+    var decisionsLabel = escapeHtml(workflowChatName() || 'the messaging app');
+    var noChat = chat ? '' : ' disabled';
+    var RSQ = String.fromCharCode(8217);
+    var row = function (label, body) { return '<div class="wf-msg-row"><div class="wf-msg-k">' + label + '</div><div class="wf-msg-v">' + body + '</div></div>'; };
+    // Webhooks saved with settings of their own: their runs use those.
+    var own = (w.triggers || []).filter(function (t) { return t.callback || t.decisions_to || t.chat_notice || t.result_to_chat; });
+    return '<form class="wf-msg-form">' +
+      '<p class="hint" style="margin:0 0 12px">For every run, whether it' + RSQ + 's started by Run now, a schedule, a webhook or the API.' +
+        (chat ? '' : ' This agent has no chat app (Slack, Telegram or Lark): <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">set one up in Messaging</a> to post to chat.') + '</p>' +
+      row('Your app', '<input name="msgUrl" inputmode="url" placeholder="https://example.com/hooks/loopengine" value="' + escapeHtml(d.callback_url || '') + '">' +
+        '<span class="hint">Optional. Gets every run' + RSQ + 's updates as signed JSON: when it stops for a decision, finishes or fails.</span>') +
+      row('When a run starts', '<label class="wf-msg-check"><input type="checkbox" name="msgNoticeOn"' + (d.chat_notice ? ' checked' : noChat) + '> Post to ' + chatLabel + '</label>' +
+        '<input name="msgNotice" maxlength="1000" placeholder="New dispute {{dispute_id}}" value="' + escapeHtml(d.chat_notice || '') + '"' + (d.chat_notice ? '' : ' disabled') + '>' +
+        '<span class="hint">{{name}} puts in an input' + RSQ + 's value.</span>') +
+      row('Approvals and questions', '<label class="wf-msg-check"><input type="radio" name="msgDecisions" value="chat"' + (d.decisions_to === 'callback' ? '' : ' checked') + '> ' + decisionsLabel + '</label>' +
+        '<label class="wf-msg-check"><input type="radio" name="msgDecisions" value="callback"' + (d.decisions_to === 'callback' ? ' checked' : '') + (d.callback_url ? '' : ' disabled') + '> Your app <span class="hint">(it shows them and answers through the API; needs the address above)</span></label>') +
+      row('When a run finishes', '<label class="wf-msg-check"><input type="checkbox" name="msgResult"' + (d.result_to_chat ? ' checked' : noChat) + '> Post the result to ' + chatLabel + '</label>' +
+        '<span class="hint">Your app gets it too, when an address is set.</span>') +
+      (own.length
+        ? '<div class="wf-msg-own">' + own.map(function (t) {
+            return '<p class="hint" style="margin:0">The ' + escapeHtml(t.name) + ' webhook has settings of its own, so its runs use those instead. ' +
+              '<button type="button" class="wf-msg-clear-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">Use these instead</button></p>';
+          }).join('') + '</div>'
+        : '') +
+      '<div class="wf-msg-foot"><span class="hint wf-msg-result" role="status"></span><button type="submit" class="primary">Save</button></div>' +
+      '</form>';
+  }
+
   // Its Triggers tab: the four ways a run starts, each in its own box
   // with what it is: Run now, a schedule, a webhook, the API.
   function workflowTriggersHtml(w, name, params) {
@@ -1182,19 +1236,15 @@ ${consoleShellScript}
     var result = [];
     if (w.output) result.push(escapeHtml(w.output));
     result.push('returned to whoever starts it <span class="hint">(Run now, or the app' + RSQ + 's API call)</span>');
-    var notified = (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.result_to_chat; });
-    if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report <span class="hint">(for the schedules and webhooks set to send it)</span>');
+    var notified = (w.delivery && w.delivery.result_to_chat) || (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.result_to_chat; });
+    if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report' + (w.delivery && w.delivery.result_to_chat ? '' : ' <span class="hint">(for the schedules and webhooks set to send it)</span>'));
     if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's update address');
-    if (w.delivery && w.delivery.callback_url) result.push('run updates posted to ' + escapeHtml(w.delivery.callback_url) + ' <span class="hint">(every run, however it starts)</span>');
-    var decisions = [w.delivery && w.delivery.decisions_to === 'callback'
-      ? 'your app at ' + escapeHtml(w.delivery.callback_url) + ' <span class="hint">(not the messaging app; every run, however it starts)</span>'
-      : escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'the agent' + RSQ + 's messaging app')];
-    if ((w.triggers || []).some(function (t) { return t.decisions_to === 'callback'; })) decisions.push('runs from a webhook set to send them to its own update address go there instead');
-    if (w.delivery && w.delivery.chat_notice) decisions.push('a message in the messaging app when each run starts: ' + escapeHtml(w.delivery.chat_notice));
+    if (w.delivery && w.delivery.callback_url) result.push('run updates posted to ' + escapeHtml(w.delivery.callback_url));
+    var decisions = [(w.delivery && w.delivery.decisions_to === 'callback' ? 'your app' : escapeHtml(workflowChatName() || 'the agent' + RSQ + 's messaging app')) + ' <span class="hint">(see Messages)</span>'];
     var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
     var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
     return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('approvals', decisions) + row('model', [model]) + '</div>' +
-      '<p class="hint" style="margin:0">Change the inputs, result, where approvals go and the model with Edit, and what tools may do in Permissions.</p>';
+      '<p class="hint" style="margin:0">Change the inputs, result and model with Edit, where updates and approvals go in Messages, and what tools may do in Permissions.</p>';
   }
 
   function workflowBriefHtml(w) {
@@ -1309,9 +1359,10 @@ ${consoleShellScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
+          panel('messages', workflowMessagesHtml(w, name)) +
           panel('brief', workflowBriefHtml(w)) +
           panel('evidence', workflowEvidenceHtml(w, runs)) +
           '<div class="hint workflow-result"></div>' +
@@ -1469,11 +1520,6 @@ ${consoleShellScript}
         '<div class="wp-model-row"><select name="modelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' +
           ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'].map(function (p) { return '<option value="' + p + '"' + (w.model && w.model.provider === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') +
         '</select><input name="modelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + escapeHtml((w.model && w.model.model) || '') + '"></div></div>' +
-      '<div class="body-field">Your app <span class="hint">(optional: an https address in your own app, told when each run stops for a decision, finishes or fails, whether it' + String.fromCharCode(8217) + 's started by Run now, a schedule, a webhook or the API)</span>' +
-        '<input name="deliveryUrl" inputmode="url" placeholder="https://example.com/hooks/loopengine" value="' + escapeHtml((w.delivery && w.delivery.callback_url) || '') + '">' +
-        '<label class="http-tool-inline-label"><input type="checkbox" name="deliveryDecisions"' + (w.delivery && w.delivery.decisions_to === 'callback' ? ' checked' : '') + (w.delivery && w.delivery.callback_url ? '' : ' disabled') + '> Send approvals and questions there instead of the messaging app <span class="hint">(your app shows them and answers through the API)</span></label></div>' +
-      '<label>Message the chat when a run starts <span class="hint">(optional: posted to the messaging app; {{name}} puts in an input' + String.fromCharCode(8217) + 's value)</span>' +
-        '<input name="deliveryNotice" maxlength="1000" placeholder="New dispute {{dispute_id}}" value="' + escapeHtml((w.delivery && w.delivery.chat_notice) || '') + '"></label>' +
       '<p class="hint workflow-editor-check" style="margin:0"></p>' +
       '<div class="hint workflow-editor-result"></div>' +
       '<div class="ed-actions"><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary">Save</button></div></form>';
@@ -1496,18 +1542,6 @@ ${consoleShellScript}
     if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't a parameter: add ' + (missing.length > 1 ? 'them' : 'it') + ', or the text stays as written.');
     if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't written in the instructions: each run adds ' + (unused.length > 1 ? 'them' : 'it') + ' with the inputs, above the instructions.');
     form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
-  }
-
-  // The editor's Your app fields, as the save's delivery: null for none.
-  function workflowDeliveryFromForm(form) {
-    var url = form.deliveryUrl.value.trim();
-    var notice = form.deliveryNotice.value.trim();
-    if (!url && !notice) return null;
-    var d = {};
-    if (url) d.callback_url = url;
-    if (url && form.deliveryDecisions.checked) d.decisions = 'callback';
-    if (notice) d.chat_notice = notice;
-    return d;
   }
 
   function openWorkflowEditor(name, card) {
@@ -1535,11 +1569,6 @@ ${consoleShellScript}
       if (ev.target.classList.contains('wp-remove')) { ev.target.closest('.workflow-param-row').remove(); check(); }
     });
     form.addEventListener('input', check);
-    // Decisions can only go to an address that's given.
-    form.deliveryUrl.addEventListener('input', function () {
-      form.deliveryDecisions.disabled = !form.deliveryUrl.value.trim();
-      if (form.deliveryDecisions.disabled) form.deliveryDecisions.checked = false;
-    });
     form.querySelector('.wp-add').addEventListener('click', function () {
       rows.insertAdjacentHTML('beforeend', workflowParamRowHtml('', null));
       rows.lastElementChild.querySelector('.wp-name').focus();
@@ -1585,7 +1614,7 @@ ${consoleShellScript}
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null, delivery: workflowDeliveryFromForm(form) }),
+        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         close();
@@ -1700,14 +1729,7 @@ ${consoleShellScript}
               field('Or give the whole payload to', '<select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select>', '')
             : '<p class="hd-hint">This workflow takes no inputs, so what the app sends isn' + RSQ + 't passed on. Add one with Edit to use it.</p>') +
         '</section>' +
-        '<section class="hd-section"><h4>Messaging app</h4>' +
-          field('Message the chat when it starts <span class="hd-optional">(optional)</span>', '<input name="chat_notice" maxlength="1000" placeholder="New dispute: {{data.object.amount}} {{data.object.currency}}, {{data.object.reason}}">', 'Posted when each run starts. <code>{{data.object.id}}</code> is filled from what the app sends.') +
-          '<label class="hd-check"><input type="checkbox" name="result_to_chat"><span><strong>Send the result to the messaging app</strong><span class="hd-hint">Through the agent' + RSQ + 's Messaging tab: Slack, Telegram, Lark or another you set up.</span></span></label>' +
-        '</section>' +
-        '<section class="hd-section"><h4>Your app</h4>' +
-          field('Send run updates to <span class="hd-optional">(optional)</span>', '<input name="callback_url" placeholder="https://example.com/hooks/loopengine" inputmode="url">', 'An https address in your own app. It' + RSQ + 's told when each run stops for a decision, finishes or fails.') +
-          '<label class="hd-check"><input type="checkbox" name="decisions_callback" disabled><span><strong>Send approvals and questions here instead of the messaging app</strong><span class="hd-hint">Your app shows them and answers through the API. Needs the address above.</span></span></label>' +
-        '</section>' +
+        '<p class="hd-hint">Where its runs' + RSQ + ' updates, approvals and questions go is set once for the workflow, in its Messages tab.</p>' +
       '</div>' +
       '<footer class="hd-foot"><span class="hook-form-result" role="status"></span>' +
         '<div class="hd-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">' + (t ? 'Save' : 'Create webhook') + '</button></div></footer>' +
@@ -1733,10 +1755,6 @@ ${consoleShellScript}
     form.name.value = t.name || '';
     Object.keys(t.mapping || {}).forEach(function (p) { var input = form.querySelector('input[name="map:' + p + '"]'); if (input) input.value = t.mapping[p]; });
     if (form.payload_param && t.payload_param) form.payload_param.value = t.payload_param;
-    form.chat_notice.value = t.chat_notice || '';
-    form.result_to_chat.checked = Boolean(t.result_to_chat || t.notify);
-    form.callback_url.value = t.callback_url || '';
-    form.decisions_callback.checked = t.decisions_to === 'callback';
   }
 
   // existing: a webhook to change instead of making one; onDone then gets
@@ -1767,15 +1785,7 @@ ${consoleShellScript}
     }
     form.sender.addEventListener('change', senderChanged);
     form.filter_values.addEventListener('input', function () { form.name.placeholder = defaultName(); });
-    // Decisions can only go to an address that's given.
-    function callbackChanged() {
-      form.decisions_callback.disabled = !form.callback_url.value.trim();
-      if (form.decisions_callback.disabled) form.decisions_callback.checked = false;
-    }
-    form.callback_url.addEventListener('input', callbackChanged);
     if (existing) fillHookForm(form, existing);
-    callbackChanged();
-    if (existing) form.decisions_callback.checked = existing.decisions_to === 'callback' && !form.decisions_callback.disabled;
     senderChanged();
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -1800,15 +1810,11 @@ ${consoleShellScript}
       for (var j = 0; j < inputs.length; j++) if (inputs[j].value.trim()) mapping[inputs[j].name.slice(4)] = inputs[j].value.trim();
       if (Object.keys(mapping).length) body.mapping = mapping;
       if (form.payload_param && form.payload_param.value) body.payload_param = form.payload_param.value;
-      if (form.result_to_chat.checked) body.result_to_chat = true;
-      if (form.callback_url.value.trim()) body.callback_url = form.callback_url.value.trim();
-      if (body.callback_url && form.decisions_callback.checked) body.decisions = 'callback';
-      if (form.chat_notice.value.trim()) body.chat_notice = form.chat_notice.value.trim();
-      // A change says what's cleared too; a setting left out is kept.
+      // A change says what's cleared too; a setting left out is kept (its
+      // own message settings, from before: the Messages tab clears them).
       if (existing) {
-        ['verify', 'filter', 'mapping', 'callback_url', 'decisions', 'chat_notice'].forEach(function (k) { if (!(k in body)) body[k] = null; });
+        ['verify', 'filter', 'mapping'].forEach(function (k) { if (!(k in body)) body[k] = null; });
         if (!('payload_param' in body)) body.payload_param = '';
-        if (!body.result_to_chat) body.result_to_chat = false;
       }
       var failed = existing ? 'Could not save it' : 'Could not make it';
       result.textContent = (existing ? 'Saving' : 'Making it') + String.fromCharCode(8230);
@@ -1945,6 +1951,49 @@ ${consoleShellScript}
       if (!card.classList.contains('is-open')) setWorkflowOpen(card, true);
       showWorkflowTab(card, 'triggers');
     });
+    // Messages: where every run's updates and decisions go.
+    var msgForm = card.querySelector('.wf-msg-form');
+    if (msgForm) {
+      var msgResult = msgForm.querySelector('.wf-msg-result');
+      var appRadio = msgForm.querySelector('input[name="msgDecisions"][value="callback"]');
+      // Decisions can only go to an address that's given.
+      msgForm.msgUrl.addEventListener('input', function () {
+        appRadio.disabled = !msgForm.msgUrl.value.trim();
+        if (appRadio.disabled && appRadio.checked) msgForm.querySelector('input[name="msgDecisions"][value="chat"]').checked = true;
+      });
+      msgForm.msgNoticeOn.addEventListener('change', function () {
+        msgForm.msgNotice.disabled = !msgForm.msgNoticeOn.checked;
+        if (msgForm.msgNoticeOn.checked) msgForm.msgNotice.focus();
+      });
+      var reloadOnMessages = function () { workflowTabs[id] = 'messages'; loadWorkflowsSection(name); };
+      msgForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var url = msgForm.msgUrl.value.trim();
+        var body = {};
+        if (url) body.callback_url = url;
+        if (url && appRadio.checked) body.decisions = 'callback';
+        if (msgForm.msgNoticeOn.checked && msgForm.msgNotice.value.trim()) body.chat_notice = msgForm.msgNotice.value.trim();
+        if (msgForm.msgResult.checked) body.result_to_chat = true;
+        msgResult.textContent = 'Saving' + String.fromCharCode(8230);
+        fetchJsonRetryOnce(base + '/messages', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+          if (!r.ok) { msgResult.textContent = r.body.error || 'Could not save'; return; }
+          reloadOnMessages();
+        });
+      });
+      var clearButtons = msgForm.querySelectorAll('.wf-msg-clear-hook');
+      for (var cb = 0; cb < clearButtons.length; cb++) {
+        clearButtons[cb].addEventListener('click', function (ev) {
+          var tid = ev.currentTarget.dataset.trigger;
+          fetchJsonRetryOnce(base + '/triggers/' + encodeURIComponent(tid), {
+            method: 'PUT', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ callback_url: null, decisions: null, chat_notice: null, result_to_chat: false }),
+          }).then(function (r) {
+            if (!r.ok) { msgResult.textContent = r.body.error || 'Could not change the webhook'; return; }
+            reloadOnMessages();
+          });
+        });
+      }
+    }
     // Evidence: save a run as an eval case, change or remove a case, run them.
     card.querySelector('.wf-row-body').addEventListener('click', function (ev) {
       var btn = ev.target.closest('.wf-save-case, .wf-case-remove, .wf-case-save, .wf-evals-run');
@@ -2016,17 +2065,13 @@ ${consoleShellScript}
         if (!value && inputs[i].required) { result.textContent = 'Fill in ' + inputs[i].name + ' first.'; inputs[i].focus(); return; }
         if (value) params[inputs[i].name] = value;
       }
-      var notifyToggle = card.querySelector('.workflow-run-notify-toggle');
-      var notifyResult = notifyToggle.checked;
-      notifyToggle.disabled = true;
       btn.disabled = true;
       result.textContent = 'Starting' + String.fromCharCode(8230);
-      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params, source: 'console', result_to_chat: notifyResult }) }).then(function (r) {
+      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params, source: 'console' }) }).then(function (r) {
         btn.disabled = false;
-        notifyToggle.disabled = false;
         if (!r.ok) { result.textContent = r.body.error || 'Could not start it.'; return; }
         var started = workflowsById[id];
-        result.innerHTML = 'Started. Questions and approvals go to ' + workflowDecisionsTo(started || {}) + '; the result shows under Evidence.' + (notifyResult ? ' The result will also be sent to the messaging app when it finishes.' : '') +
+        result.innerHTML = 'Started. Questions and approvals go to ' + workflowDecisionsTo(started || {}) + '; the result shows under Evidence.' + (started && started.delivery && started.delivery.result_to_chat ? ' The result will also be posted to the messaging app when it finishes.' : '') +
           (r.body.warnings ? ' ' + escapeHtml(r.body.warnings.join(' ')) : '');
         setTimeout(function () { loadWorkflowsSection(name); }, 800);
       });
@@ -3371,7 +3416,9 @@ ${consoleShellScript}
           : t.workflow_missing
             ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
             : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') +
-        (t.status !== 'cancelled' && t.status !== 'done'
+        // A workflow's schedule follows its Messages tab; one ticked from
+        // before can still be turned off here.
+        (t.status !== 'cancelled' && t.status !== 'done' && (!t.workflow_id || t.notify)
           ? '<label class="schedule-notify hint" title="Sent through its Messaging tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send result to messaging app</label>'
           : (t.notify ? '<div><span class="workflow-option-value">Send result to messaging app</span></div>' : '')) + '</td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
@@ -3415,7 +3462,7 @@ ${consoleShellScript}
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
           '<label>Name <span class="hint">(optional)</span><input name="task_name" placeholder="Daily ticket summary"></label>' +
-          '<label class="http-tool-inline-label"><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
+          '<label class="http-tool-inline-label" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
           '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
           '<div id="scheduleResult" class="hint"></div>' +
         '</form></section>';
@@ -3517,6 +3564,9 @@ ${consoleShellScript}
         var byMessage = form.querySelector('input[name="runs"]:checked').value === 'message';
         messageField.hidden = !byMessage;
         if (paramsBox) paramsBox.hidden = byMessage;
+        // A workflow's result goes where its Messages tab says.
+        var notifyField = form.querySelector('#scheduleNotifyField');
+        if (notifyField) notifyField.hidden = !byMessage;
       });
     }
     form.addEventListener('submit', function (ev) {
@@ -3540,7 +3590,7 @@ ${consoleShellScript}
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(Object.assign(
           runsWorkflow ? { workflow_id: data.get('workflow_id'), params: scheduleParams(data) } : { message: data.get('message') },
-          { schedule: schedule, task_name: data.get('task_name'), result_to_chat: data.get('notify') === 'on' }
+          { schedule: schedule, task_name: data.get('task_name'), result_to_chat: !runsWorkflow && data.get('notify') === 'on' }
         )),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not schedule'; return; }

@@ -6,7 +6,7 @@ import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import { WEBHOOK_WITHOUT_PARAMETERS, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
 import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
-import { checkWorkflowForAgent, checkWorkflowRequirements, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowPlanDeps } from '#web/workflow-admin.js'
+import { checkWorkflowForAgent, checkWorkflowRequirements, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, updateWorkflowMessages, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowPlanDeps } from '#web/workflow-admin.js'
 import { FileRunStore, WorkflowRunner, setRunStore } from '#core/workflow-runs.js'
 import { FileTriggerStore, createTrigger, listTriggers, setTriggerStore } from '#core/workflow-triggers.js'
 
@@ -402,6 +402,18 @@ describe('workflows are skills with a start message', () => {
     expect(readWorkflow(dir, 'refund-check')?.delivery).toEqual({ chat_notice: 'New one' })
     updateWorkflow(dir, 'refund-check', { instructions: 'Go.', delivery: null })
     expect(readWorkflow(dir, 'refund-check')?.delivery).toBeUndefined()
+  })
+
+  it('saves the Messages tab on its own, leaving the instructions as they are', () => {
+    writeSkill(dir, 'refund-check', 'workflow: true\ntitle: Refund check\n', 'Check the refund.')
+    updateWorkflowMessages(dir, 'refund-check', { callback_url: 'https://ops.example.com/le', decisions: 'callback', chat_notice: 'Refund {{order_number}}', result_to_chat: true })
+    const w = readWorkflow(dir, 'refund-check')!
+    expect(w.delivery).toEqual({ callback_url: 'https://ops.example.com/le', decisions_to: 'callback', chat_notice: 'Refund {{order_number}}', result_to_chat: true })
+    expect(w.instructions).toBe('Check the refund.')
+    expect(() => updateWorkflowMessages(dir, 'refund-check', { decisions: 'callback' })).toThrow('needs a callback_url')
+    updateWorkflowMessages(dir, 'refund-check', {})
+    expect(readWorkflow(dir, 'refund-check')?.delivery).toBeUndefined()
+    expect(() => updateWorkflowMessages(dir, 'nope', {})).toThrow('No workflow nope')
   })
 
   it("shows a title that's just its id as words", () => {

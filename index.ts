@@ -269,6 +269,7 @@ export {
   resolveConnections,
   prepareWorkflowRun,
   updateWorkflow,
+  updateWorkflowMessages,
   startPlanJob,
   type AgentWorkflowView,
   type CreatedWorkflow,
@@ -292,7 +293,7 @@ export { WORKFLOW_EXAMPLE_MESSAGES, type WorkflowExampleMessage } from './core/s
 export { createTrigger, updateTrigger, rotateTrigger, listTriggers, findTriggerByToken, publicTrigger, checkTriggerSettings, verifySenderSignature, parsePayload, valueAt, deliveryId, passesFilter, paramsFromPayload, checkRunDelivery, fillChatNotice, resultToChat, recordDelivery as recordTriggerDelivery, FileTriggerStore, getTriggerStore, setTriggerStore, TriggerError, type WorkflowTrigger, type PublicTrigger, type TriggerSettings, type TriggerVerify, type TriggerFilter, type TriggerSender, type SignatureAlgorithm, type TriggerDelivery, type TriggerOutcome, type TriggerStore } from './core/workflow-triggers.js'
 export { checkCallbackUrl, callbackSecret, signCallback, deliverCallback, runCallbackPayload, isPrivateAddress, CallbackUrlError, type CallbackDelivery, type CallbackPending, type RunCallbackEvent } from './core/run-callbacks.js'
 export { WorkflowRunner, FileRunStore, getRunStore, setRunStore, listRuns, getRun, isUnderWay, RunError, type WorkflowRun, type WorkflowRunStatus, type RunStore, type ExecuteRun, type RunOutcome, type StartRunInput } from './core/workflow-runs.js'
-export { readWorkflows, readWorkflow, setWorkflowFields, clearWorkflowFields, validateParams, workflowRunMessage, workflowPreviewMessage, migrateWorkflowsFile, WorkflowParamsError, readWorkspacePolicies, writeWorkspacePolicies, type Workflow, type WorkflowFields, type WorkflowParameter, type WorkflowModel, type RunMessageExtras } from './core/workflows.js'
+export { readWorkflows, readWorkflow, setWorkflowFields, setWorkflowDelivery, clearWorkflowFields, validateParams, workflowRunMessage, workflowPreviewMessage, migrateWorkflowsFile, WorkflowParamsError, readWorkspacePolicies, writeWorkspacePolicies, type Workflow, type WorkflowFields, type WorkflowParameter, type WorkflowModel, type WorkflowDelivery, type RunMessageExtras } from './core/workflows.js'
 export { EvidenceError, workflowScores, runFeedbackFrom, readEvals, addEvalCase, updateEvalCase, removeEvalCase, judgeEvalResult, startEvalRound, EVAL_JUDGE_PROMPT, type WorkflowScores, type EvalCase, type EvalCaseResult, type EvalRound, type WorkflowEvals, type EvalRunDeps } from './web/workflow-evidence.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
 export { playgroundHtml } from './web/playground.js'

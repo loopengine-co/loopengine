@@ -36,7 +36,8 @@
 //   delivery:
 //     callback_url: https://ops.example.com/loopengine
 //     decisions: callback
-//     chat_notice: New dispute {{dispute_id}} The workspace's shared
+//     chat_notice: New dispute {{dispute_id}}
+//     result_to_chat: true The workspace's shared
 // policies (policies.md in the project) go into every run, after the
 // instructions.
 //
@@ -100,6 +101,8 @@ export interface WorkflowDelivery {
   /** Posted to the messaging app when a run starts; {{name}} is filled
    * from the run's inputs. */
   chat_notice?: string
+  /** Post each run's result to the messaging app too. */
+  result_to_chat?: boolean
 }
 
 /** The front matter that makes a skill a workflow: `instructions` (the
@@ -144,8 +147,35 @@ function deliveryFrom(value: unknown): WorkflowDelivery | undefined {
     ...(callbackUrl ? { callback_url: callbackUrl } : {}),
     ...(callbackUrl && d.decisions === 'callback' ? { decisions_to: 'callback' as const } : {}),
     ...(notice ? { chat_notice: notice } : {}),
+    ...(d.result_to_chat === true ? { result_to_chat: true } : {}),
   }
   return Object.keys(delivery).length ? delivery : undefined
+}
+
+/** A delivery as its front matter, `decisions` named as in the API. */
+function deliveryFrontmatter(delivery: WorkflowDelivery | null | undefined): Record<string, unknown> | undefined {
+  const d = delivery ? deliveryFrom({ ...delivery, decisions: delivery.decisions_to }) : undefined
+  if (!d) return undefined
+  return {
+    ...(d.callback_url ? { callback_url: d.callback_url } : {}),
+    ...(d.decisions_to ? { decisions: d.decisions_to } : {}),
+    ...(d.chat_notice ? { chat_notice: d.chat_notice } : {}),
+    ...(d.result_to_chat ? { result_to_chat: true } : {}),
+  }
+}
+
+/** Sets where a workflow's runs send their updates, decisions, start
+ * notice and result (null: the messaging app's defaults); nothing else
+ * changes. */
+export function setWorkflowDelivery(agentDir: string, id: string, delivery: WorkflowDelivery | null): void {
+  const path = skillPath(agentDir, id)
+  const skill = readSkillFile(path, id)
+  if (!skill || !workflowFrom(id, skill.frontmatter, skill.body)) throw new Error(`No workflow ${id}.`)
+  const frontmatter = { ...skill.frontmatter }
+  const saved = deliveryFrontmatter(delivery)
+  if (saved) frontmatter.delivery = saved
+  else delete frontmatter.delivery
+  writeSkillFile(path, frontmatter, skill.body)
 }
 
 function skillsDir(agentDir: string): string {
@@ -263,8 +293,8 @@ export function setWorkflowFields(agentDir: string, id: string, fields: Workflow
     else delete frontmatter.output
   }
   if (fields.delivery !== undefined) {
-    const delivery = fields.delivery ? deliveryFrom({ ...fields.delivery, decisions: fields.delivery.decisions_to }) : undefined
-    if (delivery) frontmatter.delivery = { ...(delivery.callback_url ? { callback_url: delivery.callback_url } : {}), ...(delivery.decisions_to ? { decisions: delivery.decisions_to } : {}), ...(delivery.chat_notice ? { chat_notice: delivery.chat_notice } : {}) }
+    const saved = deliveryFrontmatter(fields.delivery)
+    if (saved) frontmatter.delivery = saved
     else delete frontmatter.delivery
   }
   // Lookups done before the agent (removed): a save drops the old key.

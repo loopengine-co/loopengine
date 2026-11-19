@@ -294,13 +294,16 @@ trigger:
 - `"result_to_chat": true` (once `"notify"`, still accepted) also sends
   the final result to the messaging app.
 
-To send every run of a workflow there, however it starts (Run now, a
-schedule, a webhook, the API), set it on the workflow instead: Edit →
-Your app in the console, or `delivery` in the workflow's save:
+To set it for every run of a workflow, however it starts (Run now, a
+schedule, a webhook, the API), use the workflow's **Messages** tab in the
+console, or `PUT /agents/<name>/workflows/<id>/messages`:
 
 ```json
-{ "delivery": { "callback_url": "https://ops.example.com/loopengine", "decisions": "callback", "chat_notice": "New dispute {{dispute_id}}" } }
+{ "callback_url": "https://ops.example.com/loopengine", "decisions": "callback", "chat_notice": "New dispute {{dispute_id}}", "result_to_chat": true }
 ```
+
+An empty body goes back to the defaults: approvals and questions in the
+messaging app, no start message, no result posted to chat.
 
 A webhook or API call with its own `callback_url` uses that address (and
 its own `decisions`) for its run instead.

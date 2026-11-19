@@ -17,7 +17,7 @@ import { checkRunDelivery, createTrigger, getTriggerStore, listTriggers, publicT
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { contextToolsFor, type AppToolInputs } from '../core/mcp-apps.js'
-import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowDelivery, type WorkflowModel } from '../core/workflows.js'
+import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowDelivery, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowDelivery, type WorkflowModel } from '../core/workflows.js'
 import { readEvals, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
 import { cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
@@ -955,12 +955,24 @@ export function contractFields(input: Record<string, unknown>): { model?: Workfl
     if (input.delivery === null) fields.delivery = null
     else if (typeof input.delivery !== 'object' || Array.isArray(input.delivery)) throw new WorkflowError('delivery must be { callback_url, decisions, chat_notice }, or null.')
     else {
-      const d = checkRunDelivery(input.delivery as Record<string, unknown>, (m) => new WorkflowError(m))
-      const { result_to_chat: _r, ...kept } = d
-      fields.delivery = Object.keys(kept).length ? kept : null
+      fields.delivery = deliveryOf(input.delivery as Record<string, unknown>)
     }
   }
   return fields
+}
+
+function deliveryOf(input: Record<string, unknown>): WorkflowDelivery | null {
+  const d = checkRunDelivery(input, (m) => new WorkflowError(m))
+  return Object.keys(d).length ? d : null
+}
+
+/** The Messages tab's save: where every run's updates, approvals and
+ * questions, start notice and result go. { callback_url, decisions,
+ * chat_notice, result_to_chat }; empty for the messaging app's defaults. */
+export function updateWorkflowMessages(agentDir: string, id: string, input: Record<string, unknown>): Workflow {
+  if (!readWorkflow(agentDir, id)) throw new WorkflowError(`No workflow ${id}.`)
+  setWorkflowDelivery(agentDir, id, deliveryOf(input))
+  return readWorkflow(agentDir, id)!
 }
 
 export function updateWorkflow(agentDir: string, id: string, input: Record<string, unknown>): Workflow {

@@ -116,7 +116,7 @@ import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities
 import { installMissingPackages } from '#core/ability-dependencies.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
-import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, noteForExistingAgent, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
+import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, noteForExistingAgent, planWorkflow, prepareWorkflowRun, startPlanJob, updateWorkflow, updateWorkflowMessages, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { goalsPageHtml } from '#web/goals-page.js'
 import { activePlaybook, setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
@@ -1771,7 +1771,7 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
         .filter((n) => new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(w.instructions))
         .map((n) => ({ name: n, decision: rules.resolve(n, {}, scope)[0] })),
       triggers: triggers.filter((t) => t.workflow_id === w.id).map((t) => ({
-        name: t.name, sender: t.verify?.sender ?? 'custom', enabled: t.enabled, waiting: !t.enabled && !!t.verify && !t.verify.secret,
+        trigger_id: t.trigger_id, name: t.name, sender: t.verify?.sender ?? 'custom', enabled: t.enabled, waiting: !t.enabled && !!t.verify && !t.verify.secret,
         ...(t.filter ? { filter: t.filter } : {}), ...(t.mapping ? { mapping: t.mapping } : {}), ...(resultToChat(t) ? { result_to_chat: true } : {}), ...(t.callback_url ? { callback: true } : {}), ...(t.decisions_to ? { decisions_to: t.decisions_to } : {}), ...(t.chat_notice ? { chat_notice: true } : {}),
       })),
     })),
@@ -1869,6 +1869,8 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   try {
     if (!id && req.method === 'GET') return json(200, await workflowsView(agentName))
     if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
+    // The Messages tab: where every run's updates and decisions go.
+    if (id && action === 'messages' && req.method === 'PUT') return json(200, updateWorkflowMessages(dir, id, await readJsonBody(req)))
     if (id && action === 'run' && req.method === 'POST') {
       const body = await readJsonBody(req)
       let delivery: ReturnType<typeof checkRunDelivery>
@@ -2313,8 +2315,9 @@ function runDelivery(agent: string, workflowId: string, params: Record<string, s
   const from = own.callback_url ? own : contract
   const callback = from?.callback_url ? { callback_url: from.callback_url, ...(from.decisions_to ? { decisions_to: from.decisions_to } : {}) } : {}
   const notice = own.chat_notice ?? (contract?.chat_notice ? fillChatNotice(contract.chat_notice, params) : undefined)
-  const warnings = chatWarnings(agent, { result_to_chat: own.result_to_chat, chat_notice: notice })
-  return { ...(own.result_to_chat ? { result_to_chat: true as const } : {}), ...callback, ...(notice ? { chat_notice: notice } : {}), ...(warnings.length ? { warnings } : {}) }
+  const warnings = chatWarnings(agent, { result_to_chat: own.result_to_chat || contract?.result_to_chat, chat_notice: notice })
+  const toChat = own.result_to_chat || contract?.result_to_chat
+  return { ...(toChat ? { result_to_chat: true as const } : {}), ...callback, ...(notice ? { chat_notice: notice } : {}), ...(warnings.length ? { warnings } : {}) }
 }
 
 // Why a run's chat messages can't be sent: a notice needs a messaging
@@ -2355,6 +2358,8 @@ function fireScheduledTask(task: ScheduledTask, rawSessionId: string): ReturnTyp
 // A task with `notify` on reports each run through its agent's notifier.
 function announceScheduledRun(task: ScheduledTask, run: ScheduledTaskRun): void {
   if (!task.notify) return
+  // A workflow that posts every run's result already posted this one.
+  if (task.workflow_id && readWorkflow(agentDir(task.agent), task.workflow_id)?.delivery?.result_to_chat) return
   const entry = getEntry(task.agent)
   if (!entry) return
   const label = task.task_name ? `"${task.task_name}"` : `(${describeSchedule(task.schedule)})`
@@ -5118,7 +5123,7 @@ const server = createServer(async (req, res) => {
       await handleWorkflowTriggers(req, res, decodeURIComponent(triggersMatch[1]), triggersMatch[2], triggersMatch[3], triggersMatch[4])
       return
     }
-    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview))?$/)
+    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages))?$/)
     if (agentWorkflowsMatch) {
       await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3])
       return
