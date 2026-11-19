@@ -41,6 +41,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">${GOALS_ICON}Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
   <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
   <div class="le-nav-label"><a class="le-nav-head" href="/jobs" data-le-nav-head="jobs">${JOBS_ICON}Jobs</a><a href="/jobs?new=1" data-le-job-new>+ New</a></div>
+  <ul class="le-agent-list le-goal-list" id="leJobList"></ul>
   <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">${AGENTS_ICON}Agents</a><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
@@ -150,8 +151,6 @@ export const consoleShellScript: string = `<script>
         var creating = page === 'goals' && !onJobs && !current && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
         var head = document.querySelector('[data-le-nav-head="goals"]');
         if (head) { if (page === 'goals' && !onJobs && !current && !creating) head.setAttribute('aria-current', 'page'); else head.removeAttribute('aria-current'); }
-        var jobsHead = document.querySelector('[data-le-nav-head="jobs"]');
-        if (jobsHead) { if (onJobs) jobsHead.setAttribute('aria-current', 'page'); else jobsHead.removeAttribute('aria-current'); }
         if (newLink) { if (creating) newLink.setAttribute('aria-current', 'page'); else newLink.removeAttribute('aria-current'); }
         goalList.innerHTML = goals.length ? goals.map(function (g) {
           return '<li><a class="le-agent-item le-goal-item" href="/goals?goal=' + enc(g.id) + '" title="' + esc(g.goal) + '"' + (g.id === current ? ' aria-current="page"' : '') + '>' +
@@ -161,6 +160,35 @@ export const consoleShellScript: string = `<script>
       .catch(function () { goalList.innerHTML = ''; });
   }
   reloadGoals();
+
+  // ---- Jobs, listed under Goals: the person's own jobs (GET /jobs), newest
+  // added first, each opening on the Jobs page; its dot says whether it's
+  // running, waiting for them, or not started. The Jobs page reloads the
+  // list when it changes (leShell.reloadJobs).
+  var jobList = document.getElementById('leJobList');
+  function reloadJobs() {
+    if (!jobList) return Promise.resolve();
+    var onJobs = location.pathname === '/jobs';
+    var current = onJobs ? new URLSearchParams(location.search).get('job') : null;
+    var jobsHead = document.querySelector('[data-le-nav-head="jobs"]');
+    if (jobsHead) { if (onJobs && !current) jobsHead.setAttribute('aria-current', 'page'); else jobsHead.removeAttribute('aria-current'); }
+    return fetch('/jobs', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { jobs: [] }; })
+      .then(function (data) {
+        var jobs = data.jobs || [];
+        jobList.innerHTML = jobs.length ? jobs.map(function (x) {
+          var j = x.job;
+          var t = j.tries && j.tries.length ? j.tries[j.tries.length - 1] : null;
+          var dot = t && (t.status === 'awaiting_approval' || t.status === 'done') && j.state === 'active' ? ' warn'
+            : j.state === 'active' ? '' : ' idle';
+          var label = j.state === 'done' ? 'Done' : j.state === 'active' ? (dot === ' warn' ? 'Needs you' : 'Running') : 'Not started';
+          return '<li><a class="le-agent-item le-goal-item" href="/jobs?job=' + enc(j.id) + '" title="' + esc(j.title) + ' (' + label + ')"' + (j.id === current ? ' aria-current="page"' : '') + '>' +
+            '<span class="le-dot' + dot + '" aria-hidden="true"></span><span class="le-name">' + esc(j.title) + '</span></a></li>';
+        }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No jobs yet</span><span></span></li>';
+      })
+      .catch(function () { jobList.innerHTML = ''; });
+  }
+  reloadJobs();
 
   var loadError = null;
   var ready = fetch('/agents', { headers: { accept: 'application/json' } })
@@ -505,6 +533,6 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, reloadJobs: reloadJobs, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`

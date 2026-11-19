@@ -203,10 +203,16 @@ ${consoleShellScript}
   function loadJobs() {
     api('GET', '/jobs').then(function (r) {
       if (!r.ok) { page.innerHTML = '<p class="error">Could not load jobs: ' + esc(r.body.error || 'unknown error') + '</p>'; return; }
+      var first = !state.jobsLoaded;
       state.jobs = r.body.jobs || [];
       state.jobsLoaded = true;
       state.jobsStale = false;
+      // A job picked in the sidebar (?job=): open, and brought into view.
+      var picked = first ? new URLSearchParams(location.search).get('job') : null;
+      if (picked) state.openJobs[picked] = true;
+      if (!first) reloadSidebar();
       render();
+      if (picked) { var el = page.querySelector('.gl-job[data-wf="' + picked.replace(/[^a-z0-9-]/gi, '') + '"]'); if (el) el.scrollIntoView({ block: 'center' }); }
     });
   }
 
@@ -258,6 +264,7 @@ ${consoleShellScript}
   }
   function reloadSidebar() {
     if (window.leShell && window.leShell.reloadGoals) window.leShell.reloadGoals();
+    if (window.leShell && window.leShell.reloadJobs) window.leShell.reloadJobs();
   }
   function replaceGoal(goal) {
     // On the Jobs page, a job's goal coming back means the list changed.

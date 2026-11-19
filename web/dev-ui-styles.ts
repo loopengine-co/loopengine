@@ -148,6 +148,7 @@ export const devUiCss: string = `
   .le-agent-item .le-meta { font-size: 12px; color: var(--ink-faint); }
   .le-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
   .le-dot.warn { background: var(--warn); }
+  .le-dot.idle { background: var(--ink-faint); }
   .le-foot { border-top: 1px solid var(--line); padding: 8px; display: grid; gap: 2px; }
   .le-foot a { padding: 7px 8px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; }
   .le-foot a:hover { background: var(--surface-2); color: var(--ink); }
