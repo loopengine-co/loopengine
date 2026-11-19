@@ -90,10 +90,10 @@ import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies
 import { EvidenceError, addEvalCase, readEvals, removeEvalCase, runFeedbackFrom, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
-import { CallbackUrlError, callbackSecret, checkCallbackUrl, deliverCallback, runCallbackPayload, type RunCallbackEvent } from '#core/run-callbacks.js'
+import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
 import {
-  TriggerError, createTrigger, deliveryId, findTriggerByToken, getTriggerStore, listTriggers, paramsFromPayload, parsePayload, passesFilter,
-  publicTrigger, recordDelivery, rotateTrigger, updateTrigger, verifySenderSignature,
+  TriggerError, checkRunDelivery, createTrigger, deliveryId, fillChatNotice, findTriggerByToken, getTriggerStore, listTriggers, paramsFromPayload, parsePayload, passesFilter,
+  publicTrigger, recordDelivery, resultToChat, rotateTrigger, updateTrigger, verifySenderSignature,
 } from '#core/workflow-triggers.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { reportRun, usedTool } from '#core/run-events.js'
@@ -102,7 +102,7 @@ import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js
 import { NotifierFileError } from '#core/notifier-file.js'
 import { decidePath, verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
-import { agentApprovers, agentMessagingIdentities, agentTelegramWebhookInfo, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, type TwoWayApp } from '#web/notifier-admin.js'
+import { agentApprovers, agentMessagingIdentities, agentTelegramWebhookInfo, announceToChat, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, hasChatApp, hasNotifier, type TwoWayApp } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, outcomeText, settleRequest, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
 import { handleJobMessage, isJobMessage, settleJobThread, type JobDeps, type JobTurn } from '#core/messaging/jobs.js'
@@ -1721,12 +1721,20 @@ const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_0
 // now with parameters, edit how runs start (PUT), forget.
 //
 //   POST /agents/:name/workflows/:id/run
-//     { "params": {…}, "wait": true, "notify": true, "callback_url": "https://…" }
+//     { "params": {…}, "wait": true, "result_to_chat": true, "callback_url": "https://…",
+//       "decisions": "callback", "chat_notice": "New case {{order_id}}" }
 //
-// "notify" sends the result through the agent's messaging connection when
-// the run ends; "callback_url" gets the run's record posted to it when it
-// ends or stops for a decision, signed (core/run-callbacks.ts). Both are
-// optional, and work with or without "wait".
+// "result_to_chat" (once "notify", still accepted) sends the result to the
+// agent's messaging app when the run ends; "callback_url" gets the run's
+// record posted to it when it stops for a decision, ends or fails, signed
+// (core/run-callbacks.ts). "decisions": "callback" sends the run's
+// approvals and questions only to callback_url, never to the messaging
+// app (and reports run.started there too); it needs a callback_url.
+// "chat_notice" is posted to the messaging app when the run starts, each
+// {{name}} filled from the run's inputs. All optional, and work with or
+// without "wait". Something asked for that can't be done (a chat message
+// with no messaging app set up) comes back in "warnings"; the run still
+// starts.
 //
 // starts a one-off run. Without "wait" it answers 202 { runId } straight
 // away. With it, 200 { runId, text } once the run finishes, 202 { runId,
@@ -1764,7 +1772,7 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
         .map((n) => ({ name: n, decision: rules.resolve(n, {}, scope)[0] })),
       triggers: triggers.filter((t) => t.workflow_id === w.id).map((t) => ({
         name: t.name, sender: t.verify?.sender ?? 'custom', enabled: t.enabled, waiting: !t.enabled && !!t.verify && !t.verify.secret,
-        ...(t.filter ? { filter: t.filter } : {}), ...(t.mapping ? { mapping: t.mapping } : {}), ...(t.notify ? { notify: true } : {}), ...(t.callback_url ? { callback: true } : {}),
+        ...(t.filter ? { filter: t.filter } : {}), ...(t.mapping ? { mapping: t.mapping } : {}), ...(resultToChat(t) ? { result_to_chat: true } : {}), ...(t.callback_url ? { callback: true } : {}), ...(t.decisions_to ? { decisions_to: t.decisions_to } : {}), ...(t.chat_notice ? { chat_notice: true } : {}),
       })),
     })),
     policies: readWorkspacePolicies(process.cwd()),
@@ -1863,28 +1871,28 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
     if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
     if (id && action === 'run' && req.method === 'POST') {
       const body = await readJsonBody(req)
-      if (body.notify !== undefined && typeof body.notify !== 'boolean') return json(400, { error: 'notify must be true or false' })
-      let callbackUrl: string | undefined
-      if (body.callback_url !== undefined && body.callback_url !== null && body.callback_url !== '') {
-        try {
-          callbackUrl = checkCallbackUrl(body.callback_url)
-        } catch (err) {
-          return json(400, { error: err instanceof CallbackUrlError ? err.message : String(err) })
-        }
+      let delivery: ReturnType<typeof checkRunDelivery>
+      try {
+        delivery = checkRunDelivery(body, (m) => new WorkflowError(m))
+      } catch (err) {
+        return json(400, { error: err instanceof Error ? err.message : String(err) })
       }
       const prepared = await prepareWorkflowRun(agentName, dir, id, body.params, (w, p) => composeWorkflowMessage(agentName, w, p))
+      const notice = delivery.chat_notice ? fillChatNotice(delivery.chat_notice, prepared.params) : undefined
+      const warnings = chatWarnings(agentName, { result_to_chat: delivery.result_to_chat, chat_notice: notice })
       const run = await workflowRunner.start({
         agent: agentName, workflow_id: id, params: prepared.params, source: body.source === 'console' ? 'console' : 'api', message: prepared.message,
-        ...(body.notify === true ? { notify: true } : {}), ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+        ...delivery, ...(notice ? { chat_notice: notice } : {}), ...(warnings.length ? { warnings } : {}),
       })
-      if (body.wait !== true) return json(202, { runId: run.run_id })
+      const extra = warnings.length ? { warnings } : {}
+      if (body.wait !== true) return json(202, { runId: run.run_id, ...extra })
       const deadline = Date.now() + WORKFLOW_WAIT_MS
       for (;;) {
         const current = await getRun(agentName, run.run_id)
-        if (current?.status === 'awaiting_approval') return json(202, { runId: run.run_id, pending: true })
-        if (current?.status === 'done') return json(200, { runId: run.run_id, text: current.result ?? '' })
-        if (current?.status === 'error') return json(502, { runId: run.run_id, error: current.error ?? 'The run failed.' })
-        if (Date.now() >= deadline) return json(202, { runId: run.run_id, running: true })
+        if (current?.status === 'awaiting_approval') return json(202, { runId: run.run_id, pending: true, ...extra })
+        if (current?.status === 'done') return json(200, { runId: run.run_id, text: current.result ?? '', ...extra })
+        if (current?.status === 'error') return json(502, { runId: run.run_id, error: current.error ?? 'The run failed.', ...extra })
+        if (Date.now() >= deadline) return json(202, { runId: run.run_id, running: true, ...extra })
         await new Promise((r) => setTimeout(r, 300))
       }
     }
@@ -2195,7 +2203,7 @@ async function composeWorkflowMessage(_agent: string, workflow: Workflow, params
 // One unattended agent turn: a scheduled task firing, or a workflow run
 // started by hand or by an app (core/workflow-runs.ts), on the workflow's
 // own model when it has one.
-async function executeUnattendedRun(agent: string, message: string, rawSessionId: string, options: { workflowId?: string } = {}): Promise<{ kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }> {
+async function executeUnattendedRun(agent: string, message: string, rawSessionId: string, options: { workflowId?: string; decisionsTo?: 'callback' } = {}): Promise<{ kind: 'done'; text: string } | { kind: 'pending'; pendingIds: string[] }> {
   const entry = getEntry(agent)
   if (!entry) throw new Error(`no agent named "${agent}" in this project`)
   const { config, modelCall } = await runModel(agent, options.workflowId)
@@ -2208,8 +2216,11 @@ async function executeUnattendedRun(agent: string, message: string, rawSessionId
       sessionId: rawSessionId,
       channel: 'http',
       unattended: true,
-      approver: defaultHttpWebhookNotifier ?? { requestApproval: async () => false },
-      questionHandler: defaultHttpWebhookNotifier ?? { requestQuestion: async () => NO_HUMAN_ANSWER },
+      // Decisions for the run's callback wait here until its app answers;
+      // nothing is sent to the agent's messaging app.
+      ...(options.decisionsTo === 'callback'
+        ? { approver: idOnlyApprover, questionHandler: idOnlyQuestions, callerDecides: true }
+        : { approver: defaultHttpWebhookNotifier ?? { requestApproval: async () => false }, questionHandler: defaultHttpWebhookNotifier ?? { requestQuestion: async () => NO_HUMAN_ANSWER } }),
     })
     if (result.pending) await createCheckpointFromPending(agent, tenant, rawSessionId, result.pending)
     return { newMessages: result.newMessages, result: { text: result.text, stopReason: result.stopReason, pendingIds: result.pending?.outstanding.map((o) => o.pendingId) } }
@@ -2224,9 +2235,11 @@ async function executeUnattendedRun(agent: string, message: string, rawSessionId
   return { kind: 'done', text: outcome.text }
 }
 
-// A run started over the API with "notify" or "callback_url" reports
-// when it ends (and, to its callback, when it stops for a decision): its
-// result through the agent's notifier, and its record to the URL.
+// A run started with "result_to_chat" or "callback_url" reports when it
+// ends (and, to its callback, when it stops for a decision): its result
+// to the agent's messaging app, and its record to the URL. A run whose
+// decisions go to its callback also reports there when it starts, and a
+// run with a chat notice posts it to the messaging app when it starts.
 // A job's chain (web/goals-admin.ts): when a workflow run finishes, start
 // the runs its jobs' chains say follow it, each on its own agent with its
 // inputs filled in. One that can't start (a missing input, the same run
@@ -2251,20 +2264,56 @@ async function startChainedRuns(run: WorkflowRun): Promise<void> {
 }
 
 async function reportWorkflowRun(run: WorkflowRun): Promise<void> {
+  if (run.status === 'running') {
+    const entry = getEntry(run.agent)
+    if (run.chat_notice && entry) announceToChat(entry.config, run.chat_notice)
+    if (run.callback_url && run.decisions_to === 'callback') await deliverRunCallback(run, 'run.started')
+    return
+  }
   const event: RunCallbackEvent | undefined = run.status === 'done' ? 'run.done' : run.status === 'error' ? 'run.failed' : run.status === 'awaiting_approval' ? 'run.awaiting_approval' : undefined
   if (!event) return
   if (run.status === 'done') void startChainedRuns(run)
   // For a host's run observer (core/run-events.ts); a failed run isn't reported.
   if (run.status !== 'error') reportRun({ agent: run.agent, source: 'workflow', id: run.run_id, via: run.source, usedTool: true })
   const entry = getEntry(run.agent)
-  if (run.notify && entry && event !== 'run.awaiting_approval') {
+  if ((run.result_to_chat ?? run.notify) && entry && event !== 'run.awaiting_approval') {
     const text = run.status === 'done' ? `Workflow ${run.workflow_id} for ${run.agent} ran:\n${run.result ?? ''}` : `Workflow ${run.workflow_id} for ${run.agent} failed: ${run.error ?? 'unknown error'}`
     announceToNotifier(entry.config, text, { runId: run.run_id, workflowId: run.workflow_id, status: run.status, result: run.result ?? null, error: run.error ?? null }, defaultWebhook)
   }
-  if (run.callback_url) {
-    const delivery = await deliverCallback(run.callback_url, event, runCallbackPayload(event, run))
-    await getRunStore().update(run.run_id, (r) => r && { ...r, callbacks: [...(r.callbacks ?? []), delivery].slice(-10) })
-  }
+  if (run.callback_url) await deliverRunCallback(run, event)
+}
+
+async function deliverRunCallback(run: WorkflowRun, event: RunCallbackEvent): Promise<void> {
+  if (!run.callback_url) return
+  const pending = event === 'run.awaiting_approval' ? await runPending(run) : undefined
+  const delivery = await deliverCallback(run.callback_url, event, runCallbackPayload(event, run, pending))
+  await getRunStore().update(run.run_id, (r) => r && { ...r, callbacks: [...(r.callbacks ?? []), delivery].slice(-10) })
+}
+
+// What a run waits on, for its callback: each open approval or question
+// in its session.
+async function runPending(run: WorkflowRun): Promise<CallbackPending[]> {
+  const open = (await listAgentPending(checkpoints, run.agent)).filter((p) => p.sessionId === run.session_id && (!run.pending_ids || run.pending_ids.includes(p.pendingId)))
+  return open.map((p) => {
+    const question = p.kind === 'question' && typeof p.args.question === 'string' ? p.args.question : undefined
+    const options = p.kind === 'question' && Array.isArray(p.args.options) ? p.args.options.map(String) : undefined
+    return {
+      pendingId: p.pendingId, kind: p.kind, tool: p.tool, args: p.args, reason: p.reason,
+      ...(question ? { question } : {}), ...(options ? { options } : {}),
+      ...(p.kind === 'question' ? { answerPath: `/pending-questions/${p.pendingId}/answer` } : { resolvePath: `/pending-approvals/${p.pendingId}/resolve` }),
+    }
+  })
+}
+
+// Why a run's chat messages can't be sent: a notice needs a messaging
+// app; the result also goes to the agent's webhook, if it has one.
+function chatWarnings(agent: string, asked: { result_to_chat?: boolean; chat_notice?: string }): string[] {
+  const entry = getEntry(agent)
+  if (!entry) return []
+  const warnings: string[] = []
+  if (asked.chat_notice && !hasChatApp(entry.config)) warnings.push(`The chat notice won't be sent: ${agent} has no messaging app set up (Slack, Lark or Telegram).`)
+  if (asked.result_to_chat && !hasNotifier(entry.config, defaultWebhook)) warnings.push(`The result won't be sent to chat: ${agent} has no messaging app set up.`)
+  return warnings
 }
 
 // Workflow runs, whatever starts them, each recorded apart from schedules.
@@ -2361,7 +2410,7 @@ async function handleSchedulesPost(req: IncomingMessage, res: ServerResponse, ag
       ...(params && Object.keys(params).length ? { params } : {}),
       schedule: (body.schedule ?? {}) as { run_at?: unknown; every?: unknown; start_at?: unknown; at?: unknown; weekday?: unknown },
       task_name: typeof body.task_name === 'string' ? body.task_name : undefined,
-      notify: body.notify === true,
+      notify: (body.result_to_chat ?? body.notify) === true,
     })
     scheduleJson(res, 201, task)
   } catch (err) {
@@ -3604,7 +3653,27 @@ async function createCheckpointFromPending(
  * response here is authoritative on its own, not a fallback for some
  * other channel. */
 async function handlePendingApprovalResolve(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<void> {
-  await resolvePendingApproval(res, pendingId, await readJsonBody(req))
+  const body = await readJsonBody(req)
+  await settleChatFromApi(pendingId, 'approval', body)
+  await resolvePendingApproval(res, pendingId, body)
+}
+
+// A request decided over the API (an app that shows it, e.g. a run whose
+// decisions go elsewhere too): its chat message, if it has one, says so
+// and loses its buttons, as for the web link. "by" names who decided.
+async function settleChatFromApi(pendingId: string, kind: 'approval' | 'question', body: Record<string, unknown>): Promise<void> {
+  const checkpoint = await checkpoints.get(pendingId)
+  const item = checkpoint?.outstanding[pendingId]
+  if (!checkpoint || !item || (item.kind ?? 'approval') !== kind) return
+  const answered = kind === 'question' && typeof body.answer === 'string' && body.answer.trim() ? body.answer.trim() : undefined
+  const decided = kind === 'approval' && (body.decision === 'approve' || body.decision === 'deny') ? body.decision : undefined
+  if (!answered && !decided) return
+  const by = typeof body.by === 'string' && body.by.trim() ? body.by.trim().slice(0, 80) : undefined
+  await settleChatRequest(checkpoint.agent, pendingId, (escape) => {
+    const where = by ? `by ${escape(by)}` : 'in another app'
+    return answered ? `The question was answered ${where}: "${escape(answered)}".`
+      : `\`${item.tool}\` was ${decided === 'deny' ? 'denied' : body.editedArgs ? 'approved as changed' : 'approved'} ${where}.`
+  }).catch((err) => console.error('[loopengine] could not update the chat request:', err))
 }
 
 // The resolve itself, shared with the decision page's POST /decide/<token>.
@@ -3731,7 +3800,9 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
  * either answered or it isn't. Shares the same "outstanding empty →
  * resume, else report remaining count" tail via respondAfterResolution. */
 async function handlePendingQuestionAnswer(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<void> {
-  await answerPendingQuestion(res, pendingId, await readJsonBody(req))
+  const body = await readJsonBody(req)
+  await settleChatFromApi(pendingId, 'question', body)
+  await answerPendingQuestion(res, pendingId, body)
 }
 
 async function answerPendingQuestion(res: ServerResponse, pendingId: string, body: Record<string, unknown>): Promise<void> {
@@ -3827,9 +3898,14 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
       tenant: finalCheckpoint.tenant,
       sessionId: finalCheckpoint.sessionId,
       channel: 'http',
-      // A job thread's run keeps asking in its thread (runJobTurn).
-      approver: fromJobThread ? threadApprover : defaultHttpWebhookNotifier ?? createTrackedApprover(finalCheckpoint.sessionId),
-      questionHandler: fromJobThread ? threadQuestions : defaultHttpWebhookNotifier,
+      // A job thread's run keeps asking in its thread (runJobTurn), and a
+      // run whose decisions go to its callback keeps sending them there.
+      ...(resumedRun?.decisions_to === 'callback'
+        ? { approver: idOnlyApprover, questionHandler: idOnlyQuestions, callerDecides: true }
+        : {
+            approver: fromJobThread ? threadApprover : defaultHttpWebhookNotifier ?? createTrackedApprover(finalCheckpoint.sessionId),
+            questionHandler: fromJobThread ? threadQuestions : defaultHttpWebhookNotifier,
+          }),
       onQuestionPending: () => {},
       // A workflow run carries on unattended after the decision.
       ...(resumedRun && !fromJobThread ? { unattended: true } : {}),
@@ -4409,18 +4485,22 @@ function jobDeps(agentName: string, entry: RegistryEntry, connector: MessagingCo
   }
 }
 
-// A job thread's approvals and questions wait in the thread itself
-// (core/messaging/jobs.ts posts them), so the run's own approver only
-// hands out an id. The agent's notifier, when it has one, still sends its
-// request too, and wins: run-agent prefers it on the http channel.
-const threadApprover = {
+// Approvals and questions someone else shows: the run's own approver only
+// hands out an id, and the request waits durably. A job thread's wait in
+// the thread itself (core/messaging/jobs.ts posts them); the agent's
+// notifier, when it has one, still sends its request too, and wins:
+// run-agent prefers it on the http channel. A run whose decisions go to
+// its callback (callerDecides) has its callback show them instead.
+const idOnlyApprover = {
   requestApproval: async () => false,
   requestDurableApproval: () => ({ pendingId: randomUUID() }),
 }
-const threadQuestions = {
+const idOnlyQuestions = {
   requestQuestion: async () => NO_HUMAN_ANSWER,
   notifyPendingQuestion: () => ({ pendingId: randomUUID() }),
 }
+const threadApprover = idOnlyApprover
+const threadQuestions = idOnlyQuestions
 
 function jobTurnOf(text: string, pending: PendingSummary[] | undefined): JobTurn {
   if (!pending?.length) return { kind: 'done', text }
@@ -4574,9 +4654,13 @@ async function handleWorkflowHook(req: IncomingMessage, res: ServerResponse, tok
   }
   try {
     const prepared = await prepareWorkflowRun(trigger.agent, agentDir(trigger.agent), trigger.workflow_id, paramsFromPayload(trigger, payload), (w, p) => composeWorkflowMessage(trigger.agent, w, p))
+    const notice = trigger.chat_notice ? fillChatNotice(trigger.chat_notice, payload) : undefined
+    const warnings = chatWarnings(trigger.agent, { result_to_chat: resultToChat(trigger), chat_notice: notice })
     const run = await workflowRunner.start({
       agent: trigger.agent, workflow_id: trigger.workflow_id, params: prepared.params, source: 'webhook', trigger_id: trigger.trigger_id, message: prepared.message,
-      ...(trigger.notify ? { notify: true } : {}), ...(trigger.callback_url ? { callback_url: trigger.callback_url } : {}),
+      ...(resultToChat(trigger) ? { result_to_chat: true } : {}), ...(trigger.callback_url ? { callback_url: trigger.callback_url } : {}),
+      ...(trigger.callback_url && trigger.decisions_to ? { decisions_to: trigger.decisions_to } : {}),
+      ...(notice ? { chat_notice: notice } : {}), ...(warnings.length ? { warnings } : {}),
     })
     await record('started', { run_id: run.run_id, ...(id ? { delivery_id: id } : {}) }, id)
     return json(202, { runId: run.run_id })
@@ -5365,14 +5449,16 @@ const server = createServer(async (req, res) => {
       await handleSchedulesPost(req, res, decodeURIComponent(schedulesMatch[1]))
       return
     }
-    // POST /schedules/:id/notify { "notify": true|false }: whether each
-    // run's result goes through the agent's notifier.
-    const scheduleNotifyMatch = req.method === 'POST' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)\/notify$/)
+    // POST /schedules/:id/result-to-chat { "result_to_chat": true|false }:
+    // whether each run's result goes to the agent's messaging app. The old
+    // POST /schedules/:id/notify { "notify": … } still works.
+    const scheduleNotifyMatch = req.method === 'POST' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)\/(?:result-to-chat|notify)$/)
     if (scheduleNotifyMatch) {
       const body = await readJsonBody(req)
-      if (typeof body.notify !== 'boolean') return scheduleJson(res, 400, { error: 'notify must be true or false' })
+      const on = body.result_to_chat ?? body.notify
+      if (typeof on !== 'boolean') return scheduleJson(res, 400, { error: 'result_to_chat must be true or false' })
       try {
-        scheduleJson(res, 200, await setScheduledTaskNotify(scheduleNotifyMatch[1], body.notify))
+        scheduleJson(res, 200, await setScheduledTaskNotify(scheduleNotifyMatch[1], on))
       } catch (err) {
         scheduleJson(res, err instanceof ScheduleError ? 404 : 500, { error: err instanceof Error ? err.message : String(err) })
       }

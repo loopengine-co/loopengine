@@ -77,8 +77,18 @@ export interface WorkflowTrigger {
   mapping?: Record<string, string>
   /** A parameter that gets the whole payload, as JSON. */
   payload_param?: string
+  /** Send each run's result to the agent's messaging app. */
+  result_to_chat?: boolean
+  /** The old name of result_to_chat, on triggers saved before it. */
   notify?: boolean
+  /** Where each run's updates are posted (core/run-callbacks.ts). */
   callback_url?: string
+  /** "callback": each run's approvals and questions go only to
+   * callback_url, not to the agent's messaging app. */
+  decisions_to?: 'callback'
+  /** A message posted to the agent's messaging app when a run starts;
+   * {{path}} is filled from the payload, e.g. {{data.object.amount}}. */
+  chat_notice?: string
   /** The latest deliveries, newest first (20). */
   deliveries: TriggerDelivery[]
   /** Delivery ids already handled (the latest 200), for retries. */
@@ -199,8 +209,65 @@ export interface TriggerSettings {
   filter?: unknown
   mapping?: unknown
   payload_param?: unknown
+  result_to_chat?: unknown
+  /** The old name of result_to_chat. */
   notify?: unknown
   callback_url?: unknown
+  /** "callback" or null; given as "decisions" over the API. */
+  decisions?: unknown
+  chat_notice?: unknown
+}
+
+/** Longest chat notice, before its {{paths}} are filled. */
+const MAX_CHAT_NOTICE = 1000
+
+/** Whether a trigger sends its runs' results to the messaging app. */
+export function resultToChat(trigger: Pick<WorkflowTrigger, 'result_to_chat' | 'notify'>): boolean {
+  return Boolean(trigger.result_to_chat ?? trigger.notify)
+}
+
+/** Settings that send a run's results, decisions or a notice somewhere,
+ * shared by webhook triggers and runs started over the API. Throws
+ * `makeError` saying what's wrong. */
+export function checkRunDelivery<E extends Error>(
+  input: { result_to_chat?: unknown; notify?: unknown; callback_url?: unknown; decisions?: unknown; chat_notice?: unknown },
+  makeError: (message: string) => E,
+): { result_to_chat?: true; callback_url?: string; decisions_to?: 'callback'; chat_notice?: string } {
+  const toChat = input.result_to_chat ?? input.notify
+  if (toChat !== undefined && toChat !== null && typeof toChat !== 'boolean') throw makeError('result_to_chat must be true or false')
+  let callbackUrl: string | undefined
+  if (input.callback_url !== undefined && input.callback_url !== null && input.callback_url !== '') {
+    try {
+      callbackUrl = checkCallbackUrl(input.callback_url)
+    } catch (err) {
+      throw makeError(err instanceof Error ? err.message : String(err))
+    }
+  }
+  const decisions = input.decisions === undefined || input.decisions === null || input.decisions === '' || input.decisions === 'chat' ? undefined : input.decisions
+  if (decisions !== undefined && decisions !== 'callback') throw makeError('decisions must be "callback" (send approvals and questions to callback_url) or left out')
+  if (decisions && !callbackUrl) throw makeError('decisions "callback" needs a callback_url to send the run\'s approvals and questions to')
+  let notice: string | undefined
+  if (input.chat_notice !== undefined && input.chat_notice !== null) {
+    if (typeof input.chat_notice !== 'string') throw makeError('chat_notice must be text')
+    notice = input.chat_notice.trim() || undefined
+    if (notice && notice.length > MAX_CHAT_NOTICE) throw makeError(`chat_notice is too long: keep it under ${MAX_CHAT_NOTICE} characters`)
+  }
+  return {
+    ...(toChat === true ? { result_to_chat: true as const } : {}),
+    ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+    ...(decisions ? { decisions_to: 'callback' as const } : {}),
+    ...(notice ? { chat_notice: notice } : {}),
+  }
+}
+
+/** A chat notice with each {{path}} filled from `source` (a webhook's
+ * payload, or a run's inputs); a path with no value is left empty. */
+export function fillChatNotice(template: string, source: unknown): string {
+  return template.replace(/\{\{\s*([A-Za-z0-9_.\-]+)\s*\}\}/g, (_, p: string) => {
+    const value = valueAt(source, p)
+    if (value === undefined || value === null) return ''
+    return typeof value === 'object' ? JSON.stringify(value) : String(value)
+  })
 }
 
 /** Checks settings for a trigger of `workflow`; throws TriggerError saying
@@ -212,11 +279,13 @@ export interface TriggerSettings {
  * secret yet: the workflow planner makes one that way, for the person to
  * add the secret the sender shows them. It can't be turned on until the
  * secret is there. */
-export function checkTriggerSettings(input: TriggerSettings, workflow: Workflow, existing?: WorkflowTrigger): Pick<WorkflowTrigger, 'name' | 'enabled' | 'verify' | 'filter' | 'mapping' | 'payload_param' | 'notify' | 'callback_url'> {
+export function checkTriggerSettings(input: TriggerSettings, workflow: Workflow, existing?: WorkflowTrigger): Pick<WorkflowTrigger, 'name' | 'enabled' | 'verify' | 'filter' | 'mapping' | 'payload_param' | 'result_to_chat' | 'callback_url' | 'decisions_to' | 'chat_notice'> {
   if (existing) {
-    const keys = ['verify', 'filter', 'mapping', 'payload_param', 'notify', 'callback_url'] as const
+    const keys = ['verify', 'filter', 'mapping', 'payload_param', 'callback_url', 'chat_notice'] as const
     input = { ...input }
     for (const key of keys) if (input[key] === undefined && existing[key] !== undefined) input[key] = existing[key]
+    if (input.result_to_chat === undefined && input.notify === undefined && resultToChat(existing)) input.result_to_chat = true
+    if (input.decisions === undefined && existing.decisions_to) input.decisions = existing.decisions_to
   }
   const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : existing?.name ?? 'Webhook'
   if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new TriggerError('enabled must be true or false')
@@ -271,8 +340,7 @@ export function checkTriggerSettings(input: TriggerSettings, workflow: Workflow,
     payloadParam = input.payload_param
   }
 
-  if (input.notify !== undefined && typeof input.notify !== 'boolean') throw new TriggerError('notify must be true or false')
-  const callbackUrl = input.callback_url ? checkCallbackUrl(input.callback_url) : undefined
+  const delivery = checkRunDelivery(input, (m) => new TriggerError(m))
 
   return {
     name,
@@ -281,8 +349,7 @@ export function checkTriggerSettings(input: TriggerSettings, workflow: Workflow,
     ...(filter ? { filter } : {}),
     ...(mapping ? { mapping } : {}),
     ...(payloadParam ? { payload_param: payloadParam } : {}),
-    ...(input.notify === true ? { notify: true } : {}),
-    ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+    ...delivery,
   }
 }
 
@@ -309,7 +376,7 @@ export async function updateTrigger(id: string, workflow: Workflow, input: Trigg
   const existing = await getTriggerStore().get(id)
   if (!existing) throw new TriggerError(`no trigger ${id}`)
   const settings = checkTriggerSettings(input, workflow, existing)
-  const { verify: _v, filter: _f, mapping: _m, payload_param: _p, notify: _n, callback_url: _c, ...kept } = existing
+  const { verify: _v, filter: _f, mapping: _m, payload_param: _p, notify: _n, result_to_chat: _r, callback_url: _c, decisions_to: _d, chat_notice: _t, ...kept } = existing
   const next: WorkflowTrigger = { ...kept, ...settings }
   await getTriggerStore().put(next)
   return next

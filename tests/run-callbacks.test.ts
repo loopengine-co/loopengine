@@ -96,20 +96,37 @@ describe('delivering a callback', () => {
     const run = { run_id: 'r1', status: 'done', result: 'ok', session_id: 's', message: 'long', callbacks: [] }
     expect(runCallbackPayload('run.done', run)).toEqual({ event: 'run.done', run: { run_id: 'r1', status: 'done', result: 'ok' } })
   })
+
+  it('carry what a paused run waits on', () => {
+    const pending = [{ pendingId: 'p1', kind: 'question' as const, tool: 'system_ask_user', args: { question: 'Refund or fight?' }, reason: 'asks', question: 'Refund or fight?', answerPath: '/pending-questions/p1/answer' }]
+    expect(runCallbackPayload('run.awaiting_approval', { run_id: 'r1', status: 'awaiting_approval' }, pending)).toEqual({ event: 'run.awaiting_approval', run: { run_id: 'r1', status: 'awaiting_approval' }, pending })
+  })
 })
 
 describe('a run reporting its changes', () => {
-  it('keeps notify and callback_url, and is reported when it pauses and when it ends', async () => {
+  it('keeps result_to_chat and callback_url, and is reported when it starts, pauses and ends', async () => {
     const seen: [string, boolean | undefined, string | undefined][] = []
-    const onChange = (run: WorkflowRun) => void seen.push([run.status, run.notify, run.callback_url])
+    const onChange = (run: WorkflowRun) => void seen.push([run.status, run.result_to_chat, run.callback_url])
     const runner = new WorkflowRunner({ execute: async () => ({ kind: 'pending', pendingIds: ['p1'] }), onChange })
-    const run = await runner.start({ agent: 'cs', workflow_id: 'refund-check', source: 'api', message: 'x', notify: true, callback_url: 'https://ops.example.com/runs' })
+    const run = await runner.start({ agent: 'cs', workflow_id: 'refund-check', source: 'api', message: 'x', result_to_chat: true, callback_url: 'https://ops.example.com/runs' })
     await runner.idle()
     await runner.settleFromResume(run.session_id, { text: 'Refunded.' })
     await new Promise((r) => setTimeout(r, 10))
 
-    expect(seen).toEqual([['awaiting_approval', true, 'https://ops.example.com/runs'], ['done', true, 'https://ops.example.com/runs']])
-    expect(await getRun('cs', run.run_id)).toMatchObject({ notify: true, callback_url: 'https://ops.example.com/runs' })
+    expect(seen).toEqual([['running', true, 'https://ops.example.com/runs'], ['awaiting_approval', true, 'https://ops.example.com/runs'], ['done', true, 'https://ops.example.com/runs']])
+    expect(await getRun('cs', run.run_id)).toMatchObject({ result_to_chat: true, callback_url: 'https://ops.example.com/runs' })
     expect(existsSync(join(dir, 'runs'))).toBe(true)
+  })
+
+  it('runs with its decisions sent to its callback, keeping the notice and warnings', async () => {
+    const calls: { decisionsTo?: string }[] = []
+    const runner = new WorkflowRunner({ execute: async (_a, _m, _s, options) => (calls.push({ decisionsTo: options?.decisionsTo }), { kind: 'done', text: 'ok' }) })
+    const run = await runner.start({
+      agent: 'cs', workflow_id: 'dispute', source: 'webhook', message: 'x', callback_url: 'https://ops.example.com/runs',
+      decisions_to: 'callback', chat_notice: 'New dispute du_1', warnings: ['no app'],
+    })
+    await runner.idle()
+    expect(calls).toEqual([{ decisionsTo: 'callback' }])
+    expect(await getRun('cs', run.run_id)).toMatchObject({ decisions_to: 'callback', chat_notice: 'New dispute du_1', warnings: ['no app'], status: 'done' })
   })
 })

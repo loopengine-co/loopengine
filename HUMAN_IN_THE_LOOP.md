@@ -258,6 +258,42 @@ route on that server. `editedArgs` lets an approver fix the model's
 drafted arguments before running the tool, not just accept/reject them
 verbatim — see [Approve-with-edit](#approve-with-edit) below.
 
+An optional `"by"` (e.g. `"Jane (ops app)"`) names who decided. If the
+request was also posted to Slack or Telegram, that message says so and
+loses its buttons.
+
+### Decisions for one run in your own app
+
+The notifier above is set per agent, so every run of that agent sends
+its decisions there. A workflow run can instead send its own approvals
+and questions to the app that cares about them, and nowhere else. Pass
+`"decisions": "callback"` with a `callback_url` when starting it
+(`POST /agents/<name>/workflows/<id>/run`), or set both on a webhook
+trigger:
+
+```json
+{
+  "params": { "dispute_id": "du_1Q..." },
+  "callback_url": "https://ops.example.com/loopengine",
+  "decisions": "callback",
+  "chat_notice": "New dispute {{dispute_id}}: https://ops.example.com/disputes/{{dispute_id}}"
+}
+```
+
+- The callback gets `run.started`, then `run.awaiting_approval` each
+  time the run stops, with a `pending` list (`pendingId`, `kind`, `tool`,
+  `args`, `reason`, the `question` and `options` for a question, and
+  `resolvePath`/`answerPath`), then `run.done` or `run.failed`. Each is
+  signed (`X-LoopEngine-Signature`, see `core/run-callbacks.ts`).
+- Nothing about the run reaches the agent's messaging app or webhook,
+  except an optional `chat_notice` posted to its messaging app when the
+  run starts. `{{name}}` in it is filled from the run's inputs, or for a
+  webhook trigger from the payload (`{{data.object.id}}`).
+- Your app answers with the resolve/answer routes above; the run carries
+  on, and its next decision goes to the callback again.
+- `"result_to_chat": true` (once `"notify"`, still accepted) also sends
+  the final result to the messaging app.
+
 ### 4. Telling the *original* requester it's actually done
 
 The original `POST /messages` caller already got back a `202 {pending:

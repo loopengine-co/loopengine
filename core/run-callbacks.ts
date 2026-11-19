@@ -1,10 +1,17 @@
 // Callbacks for workflow runs started over the API: a run started with
 // "callback_url" has its record posted there when it finishes, fails, or
 // stops for an approval or a question (core/workflow-runs.ts calls
-// deliverRunCallback for each of those).
+// deliverRunCallback for each of those). A run.awaiting_approval carries
+// what it waits on: each approval's tool, arguments and reason, or the
+// question, with where to send the answer.
+//
+// A run started with "decisions": "callback" sends its approvals and
+// questions only here, never to the agent's messaging app, and also
+// reports run.started, so the receiving app can show the case at once.
 //
 // Each POST carries
-//   X-LoopEngine-Event: run.done | run.failed | run.awaiting_approval
+//   X-LoopEngine-Event: run.started | run.done | run.failed | run.awaiting_approval
+// (run.started only for a run whose decisions come here, see below)
 //   X-LoopEngine-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">
 // signed with the workspace's callback secret: LOOPENGINE_CALLBACK_SECRET,
 // or one made once and kept in the scheduler's folder
@@ -22,7 +29,7 @@ import path from 'node:path'
 
 export class CallbackUrlError extends Error {}
 
-export type RunCallbackEvent = 'run.done' | 'run.failed' | 'run.awaiting_approval'
+export type RunCallbackEvent = 'run.started' | 'run.done' | 'run.failed' | 'run.awaiting_approval'
 
 function allowLocal(): boolean {
   return process.env.LOOPENGINE_ALLOW_LOCAL_CALLBACKS === '1'
@@ -132,9 +139,26 @@ export async function deliverCallback(url: string, event: RunCallbackEvent, payl
   return last
 }
 
+/** An approval or question a run waits on, as its callback shows it. */
+export interface CallbackPending {
+  pendingId: string
+  kind: 'approval' | 'question'
+  tool: string
+  args: Record<string, unknown>
+  reason: string
+  /** For a question: what it asks, and the choices it offers, if any. */
+  question?: string
+  options?: string[]
+  /** Where to send the decision: POST { decision, editedArgs? } to
+   * resolvePath, or { answer } to answerPath. */
+  resolvePath?: string
+  answerPath?: string
+}
+
 /** What a run's callback carries: the event and the run's record, without
- * its session id, its first message or past callback deliveries. */
-export function runCallbackPayload(event: RunCallbackEvent, run: object): { event: RunCallbackEvent; run: Record<string, unknown> } {
+ * its session id, its first message or past callback deliveries; and for
+ * run.awaiting_approval, what it waits on. */
+export function runCallbackPayload(event: RunCallbackEvent, run: object, pending?: CallbackPending[]): { event: RunCallbackEvent; run: Record<string, unknown>; pending?: CallbackPending[] } {
   const { session_id: _session, message: _message, callbacks: _callbacks, ...rest } = run as Record<string, unknown>
-  return { event, run: rest }
+  return { event, run: rest, ...(pending ? { pending } : {}) }
 }

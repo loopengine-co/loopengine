@@ -345,6 +345,47 @@ export function announceToNotifier(config: AgentConfig, text: string, data: Reco
   return sent
 }
 
+/** Posts `text` to the agent's messaging apps only (Slack, Lark,
+ * Telegram), not to a webhook: a run's chat notice. Whether any app got
+ * it. */
+export function announceToChat(config: AgentConfig, text: string): boolean {
+  let targets: HttpNotifierConfig[]
+  try {
+    targets = activeNotifierTargets(config)
+  } catch {
+    return false
+  }
+  let sent = false
+  for (const target of targets) {
+    if (target.channel === 'slack') new SlackNotifier({ botToken: target.config.botToken, channelId: target.config.channelId }).postMessage(text)
+    else if (target.channel === 'lark') new LarkNotifier({ appId: target.config.appId, appSecret: target.config.appSecret, chatId: target.config.chatId }).postMessage(text)
+    else if (target.channel === 'telegram') new TelegramNotifier({ botToken: target.config.botToken, chatId: target.config.chatId }).postMessage(text)
+    else continue
+    sent = true
+  }
+  return sent
+}
+
+/** Whether announceToNotifier has anywhere to send: a messaging app or a
+ * webhook. */
+export function hasNotifier(config: AgentConfig, defaultWebhook?: DefaultWebhook): boolean {
+  try {
+    return activeNotifierTargets(config, defaultWebhook).length > 0
+  } catch {
+    return false
+  }
+}
+
+/** Whether the agent has a messaging app (Slack, Lark or Telegram) to
+ * post to. */
+export function hasChatApp(config: AgentConfig): boolean {
+  try {
+    return activeNotifierTargets(config).some((t) => t.channel === 'slack' || t.channel === 'lark' || t.channel === 'telegram')
+  } catch {
+    return false
+  }
+}
+
 /** Sends a test through one app's saved connection when `channel` is
  * given (primary or not, so it can be tried before it's made primary),
  * else through whichever notifier applies to this agent; reports what

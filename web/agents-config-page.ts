@@ -1014,7 +1014,7 @@ ${consoleShellScript}
     return '<div class="wf-api">' +
       '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
       '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
-        'Optional: <code>"wait": true</code> answers with the result; <code>"notify": true</code> sends the result to the messaging app; <code>"callback_url"</code> posts it to your app when the run ends. Leave them out to get the run' + String.fromCharCode(8217) + 's id back at once.</p>' +
+        'Optional: <code>"wait": true</code> answers with the result once the run finishes; <code>"result_to_chat": true</code> sends the result to the messaging app; <code>"callback_url"</code> tells your app when the run stops for a decision, finishes or fails. Add <code>"decisions": "callback"</code> to send the run' + String.fromCharCode(8217) + 's approvals and questions to that address instead of the messaging app, and <code>"chat_notice"</code> to post a message to the messaging app when it starts (<code>{{input}}</code> is filled in). Without <code>wait</code>, you get the run' + String.fromCharCode(8217) + 's id back at once.</p>' +
       '</div>';
   }
 
@@ -1175,9 +1175,10 @@ ${consoleShellScript}
     var result = [];
     if (w.output) result.push(escapeHtml(w.output));
     result.push('returned to whoever starts it <span class="hint">(Run now, or the app' + RSQ + 's API call)</span>');
-    var notified = (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.notify; });
+    var notified = (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.result_to_chat; });
     if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report <span class="hint">(for the schedules and webhooks set to send it)</span>');
-    if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's callback address');
+    if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's update address');
+    if ((w.triggers || []).some(function (t) { return t.decisions_to === 'callback'; })) result.push('approvals and questions go to the webhook' + RSQ + 's update address <span class="hint">(not the messaging app)</span>');
     var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
     var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
     return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('model', [model]) + '</div>' +
@@ -1586,8 +1587,10 @@ ${consoleShellScript}
     if (t.filter) rules.push('only when ' + escapeHtml(t.filter.path) + ' is ' + t.filter.values.map(escapeHtml).join(' or '));
     if (t.mapping) rules.push(Object.keys(t.mapping).map(function (p) { return escapeHtml(p) + ' ' + String.fromCharCode(8592) + ' ' + escapeHtml(t.mapping[p]); }).join(', '));
     if (t.payload_param) rules.push('the whole payload goes to ' + escapeHtml(t.payload_param));
-    if (t.notify) rules.push('<span class="workflow-option-value">Send result to messaging app</span>');
-    if (t.callback_url) rules.push('reports to ' + escapeHtml(t.callback_url));
+    if (t.chat_notice) rules.push('posts a notice to the messaging app when it starts');
+    if (t.result_to_chat || t.notify) rules.push('<span class="workflow-option-value">Send result to messaging app</span>');
+    if (t.callback_url) rules.push('sends run updates to ' + escapeHtml(t.callback_url));
+    if (t.decisions_to === 'callback') rules.push('approvals and questions go there too, not to the messaging app');
     // Made by the workflow planner without its secret: it turns on once
     // the sender's signing secret is added.
     var needsSecret = t.verify && !t.verify.secret_set;
@@ -1658,9 +1661,13 @@ ${consoleShellScript}
               field('Or give the whole payload to', '<select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select>', '')
             : '<p class="hd-hint">This workflow takes no inputs, so what the app sends isn' + RSQ + 't passed on. Add one with Edit to use it.</p>') +
         '</section>' +
-        '<section class="hd-section"><h4>After each run</h4>' +
-          '<label class="hd-check"><input type="checkbox" name="notify"><span><strong>Send the result to the messaging app</strong><span class="hd-hint">Through the agent' + RSQ + 's Messaging tab: Slack, Telegram, email or another you set up.</span></span></label>' +
-          field('Post the result to <span class="hd-optional">(optional)</span>', '<input name="callback_url" placeholder="https://example.com/hooks/loopengine" inputmode="url">', 'An https address in your own app that gets each run' + RSQ + 's result.') +
+        '<section class="hd-section"><h4>Messaging app</h4>' +
+          field('Message the chat when it starts <span class="hd-optional">(optional)</span>', '<input name="chat_notice" maxlength="1000" placeholder="New dispute: {{data.object.amount}} {{data.object.currency}}, {{data.object.reason}}">', 'Posted when each run starts. <code>{{data.object.id}}</code> is filled from what the app sends.') +
+          '<label class="hd-check"><input type="checkbox" name="result_to_chat"><span><strong>Send the result to the messaging app</strong><span class="hd-hint">Through the agent' + RSQ + 's Messaging tab: Slack, Telegram, Lark or another you set up.</span></span></label>' +
+        '</section>' +
+        '<section class="hd-section"><h4>Your app</h4>' +
+          field('Send run updates to <span class="hd-optional">(optional)</span>', '<input name="callback_url" placeholder="https://example.com/hooks/loopengine" inputmode="url">', 'An https address in your own app. It' + RSQ + 's told when each run stops for a decision, finishes or fails.') +
+          '<label class="hd-check"><input type="checkbox" name="decisions_callback" disabled><span><strong>Send approvals and questions here instead of the messaging app</strong><span class="hd-hint">Your app shows them and answers through the API. Needs the address above.</span></span></label>' +
         '</section>' +
       '</div>' +
       '<footer class="hd-foot"><span class="hook-form-result" role="status"></span>' +
@@ -1694,6 +1701,12 @@ ${consoleShellScript}
     }
     form.sender.addEventListener('change', senderChanged);
     form.filter_values.addEventListener('input', function () { form.name.placeholder = defaultName(); });
+    // Decisions can only go to an address that's given.
+    function callbackChanged() {
+      form.decisions_callback.disabled = !form.callback_url.value.trim();
+      if (form.decisions_callback.disabled) form.decisions_callback.checked = false;
+    }
+    form.callback_url.addEventListener('input', callbackChanged);
     senderChanged();
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -1716,8 +1729,10 @@ ${consoleShellScript}
       for (var j = 0; j < inputs.length; j++) if (inputs[j].value.trim()) mapping[inputs[j].name.slice(4)] = inputs[j].value.trim();
       if (Object.keys(mapping).length) body.mapping = mapping;
       if (form.payload_param && form.payload_param.value) body.payload_param = form.payload_param.value;
-      if (form.notify.checked) body.notify = true;
+      if (form.result_to_chat.checked) body.result_to_chat = true;
       if (form.callback_url.value.trim()) body.callback_url = form.callback_url.value.trim();
+      if (body.callback_url && form.decisions_callback.checked) body.decisions = 'callback';
+      if (form.chat_notice.value.trim()) body.chat_notice = form.chat_notice.value.trim();
       result.textContent = 'Making it' + String.fromCharCode(8230);
       var submit = form.querySelector('button[type="submit"]');
       submit.disabled = true;
@@ -1922,7 +1937,7 @@ ${consoleShellScript}
       notifyToggle.disabled = true;
       btn.disabled = true;
       result.textContent = 'Starting' + String.fromCharCode(8230);
-      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params, source: 'console', notify: notifyResult }) }).then(function (r) {
+      fetchJsonRetryOnce(base + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params: params, source: 'console', result_to_chat: notifyResult }) }).then(function (r) {
         btn.disabled = false;
         notifyToggle.disabled = false;
         if (!r.ok) { result.textContent = r.body.error || 'Could not start it.'; return; }
@@ -3372,8 +3387,8 @@ ${consoleShellScript}
       notifyToggles[n].addEventListener('change', function (ev) {
         var box = ev.currentTarget;
         box.disabled = true;
-        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(box.dataset.id) + '/notify', {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notify: box.checked }),
+        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(box.dataset.id) + '/result-to-chat', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result_to_chat: box.checked }),
         }).then(function (r) {
           box.disabled = false;
           if (!r.ok) { box.checked = !box.checked; alert('Could not change it: ' + (r.body.error || 'unknown error')); }
@@ -3439,7 +3454,7 @@ ${consoleShellScript}
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(Object.assign(
           runsWorkflow ? { workflow_id: data.get('workflow_id'), params: scheduleParams(data) } : { message: data.get('message') },
-          { schedule: schedule, task_name: data.get('task_name'), notify: data.get('notify') === 'on' }
+          { schedule: schedule, task_name: data.get('task_name'), result_to_chat: data.get('notify') === 'on' }
         )),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not schedule'; return; }

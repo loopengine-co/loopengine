@@ -565,7 +565,7 @@ async function makePlannedWebhook(plan: WorkflowPlan, agent: string, agentDir: s
       verify: { sender: webhook.sender, ...(webhook.header ? { header: webhook.header } : {}) },
       ...(webhook.filter ? { filter: webhook.filter } : {}),
       ...(webhook.mapping ? { mapping: webhook.mapping } : {}),
-      ...(plan.notify?.on && plan.trigger.kind === 'webhook' ? { notify: true } : {}),
+      ...(plan.notify?.on && plan.trigger.kind === 'webhook' ? { result_to_chat: true } : {}),
     })
     return {
       webhook: { trigger: publicTrigger(trigger), token, ...(webhook.setup ? { setup: webhook.setup } : {}) },

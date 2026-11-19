@@ -7,8 +7,10 @@
 //
 // A run executes the same way a scheduled task fires (supplied by the
 // server, adapters/http.ts): an unattended agent turn whose approvals and
-// questions go to the agent's messaging app and wait durably. A run that
-// pauses there is settled by settleFromResume once someone decides.
+// questions go to the agent's messaging app and wait durably (or, for a
+// run started with "decisions": "callback", only to its callback_url). A
+// run that pauses there is settled by settleFromResume once someone
+// decides.
 //
 // Stored like scheduled tasks: one JSON file per run under
 // `<LOOPENGINE_SCHEDULER_DIR or .scheduler>/runs/`. Each agent keeps its
@@ -55,11 +57,22 @@ export interface WorkflowRun {
   error?: string
   /** The approvals or questions it is waiting on. */
   pending_ids?: string[]
-  /** Send its result through the agent's notifier when it ends. */
+  /** Send its result to the agent's messaging app when it ends. */
+  result_to_chat?: boolean
+  /** The old name of result_to_chat, on runs recorded before it. */
   notify?: boolean
-  /** Where its record is posted when it ends or stops for a decision
-   * (core/run-callbacks.ts). */
+  /** Where its record is posted when it starts (with decisions_to), stops
+   * for a decision, ends or fails (core/run-callbacks.ts). */
   callback_url?: string
+  /** "callback": its approvals and questions go only to callback_url,
+   * never to the agent's messaging app, and the app that gets them
+   * answers through the API. */
+  decisions_to?: 'callback'
+  /** A message posted to the agent's messaging app when it starts. */
+  chat_notice?: string
+  /** Something asked for that couldn't be done, e.g. a chat notice with
+   * no messaging app set up. The run goes ahead without it. */
+  warnings?: string[]
   /** Each callback delivery, oldest first (the latest 10). */
   callbacks?: CallbackDelivery[]
   /** Each approval decided while it ran, oldest first. */
@@ -83,7 +96,7 @@ export type RunOutcome = { kind: 'done'; text: string } | { kind: 'pending'; pen
 
 /** Runs the agent once: what a scheduled task's fire does. A workflow's
  * run says which workflow, for its own model. */
-export type ExecuteRun = (agent: string, message: string, sessionId: string, options?: { workflowId?: string }) => Promise<RunOutcome>
+export type ExecuteRun = (agent: string, message: string, sessionId: string, options?: { workflowId?: string; decisionsTo?: 'callback' }) => Promise<RunOutcome>
 
 const MAX_FINISHED_PER_AGENT = 500
 const SESSION_PREFIX = 'run-'
@@ -195,8 +208,11 @@ export interface StartRunInput {
   params?: Record<string, string>
   source: WorkflowRun['source']
   message: string
-  notify?: boolean
+  result_to_chat?: boolean
   callback_url?: string
+  decisions_to?: 'callback'
+  chat_notice?: string
+  warnings?: string[]
   trigger_id?: string
   job?: { goal: string; job: string }
   chained_from?: string
@@ -209,8 +225,9 @@ export class WorkflowRunner {
   private readonly onChange?: (run: WorkflowRun) => void | Promise<void>
   private readonly inFlight = new Set<Promise<void>>()
 
-  /** `onChange`: called with the run each time it finishes, fails or
-   * stops for a decision (the server sends its notify and callback). */
+  /** `onChange`: called with the run when it starts, and each time it
+   * finishes, fails or stops for a decision (the server sends its chat
+   * messages and callbacks). */
   constructor(options: { execute: ExecuteRun; maxFinishedPerAgent?: number; onChange?: (run: WorkflowRun) => void | Promise<void> }) {
     this.execute = options.execute
     this.maxFinishedPerAgent = options.maxFinishedPerAgent ?? MAX_FINISHED_PER_AGENT
@@ -233,8 +250,11 @@ export class WorkflowRunner {
       workflow_id: input.workflow_id,
       ...(input.params && Object.keys(input.params).length ? { params: input.params } : {}),
       source: input.source,
-      ...(input.notify ? { notify: true } : {}),
+      ...(input.result_to_chat ? { result_to_chat: true } : {}),
       ...(input.callback_url ? { callback_url: input.callback_url } : {}),
+      ...(input.decisions_to ? { decisions_to: input.decisions_to } : {}),
+      ...(input.chat_notice ? { chat_notice: input.chat_notice } : {}),
+      ...(input.warnings?.length ? { warnings: input.warnings } : {}),
       ...(input.trigger_id ? { trigger_id: input.trigger_id } : {}),
       ...(input.job ? { job: input.job } : {}),
       ...(input.chained_from ? { chained_from: input.chained_from, chain_depth: input.chain_depth ?? 1 } : {}),
@@ -245,6 +265,7 @@ export class WorkflowRunner {
     }
     await getRunStore().put(run)
     await this.prune(input.agent)
+    this.changed(run)
     const job = this.run(run).finally(() => this.inFlight.delete(job))
     this.inFlight.add(job)
     return run
@@ -293,7 +314,7 @@ export class WorkflowRunner {
 
   private async run(run: WorkflowRun): Promise<void> {
     try {
-      const outcome = await this.execute(run.agent, run.message, run.session_id, { workflowId: run.workflow_id })
+      const outcome = await this.execute(run.agent, run.message, run.session_id, { workflowId: run.workflow_id, ...(run.decisions_to ? { decisionsTo: run.decisions_to } : {}) })
       if (outcome.kind === 'pending') {
         this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
         return

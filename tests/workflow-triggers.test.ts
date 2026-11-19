@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   FileTriggerStore, createTrigger, deliveryId, findTriggerByToken, getTriggerStore, paramsFromPayload, parsePayload, passesFilter,
-  publicTrigger, recordDelivery, rotateTrigger, setTriggerStore, updateTrigger, valueAt, verifySenderSignature,
+  checkRunDelivery, fillChatNotice, publicTrigger, recordDelivery, rotateTrigger, setTriggerStore, updateTrigger, valueAt, verifySenderSignature,
 } from '#core/workflow-triggers.js'
 import type { Workflow } from '#core/workflows.js'
 
@@ -189,8 +189,46 @@ describe('a trigger waiting for its signing secret', () => {
     const { trigger } = await createTrigger('payments', workflow, { verify: { sender: 'stripe', secret: 'whsec_x' }, filter: { path: 'type', values: ['a'] }, mapping: { dispute_id: 'data.object.id' }, notify: true })
     await updateTrigger(trigger.trigger_id, workflow, { enabled: false })
     const back = await updateTrigger(trigger.trigger_id, workflow, { enabled: true })
-    expect(back).toMatchObject({ enabled: true, verify: { secret: 'whsec_x' }, filter: { values: ['a'] }, mapping: { dispute_id: 'data.object.id' }, notify: true })
+    // "notify", the old name, is kept as result_to_chat.
+    expect(back).toMatchObject({ enabled: true, verify: { secret: 'whsec_x' }, filter: { values: ['a'] }, mapping: { dispute_id: 'data.object.id' }, result_to_chat: true })
+    expect(back).not.toHaveProperty('notify')
     // null removes a setting.
     expect(await updateTrigger(trigger.trigger_id, workflow, { filter: null })).not.toHaveProperty('filter')
+  })
+})
+
+describe('where a run sends its result, decisions and notice', () => {
+  const err = (m: string) => new Error(m)
+
+  it('takes result_to_chat, or notify by its old name', () => {
+    expect(checkRunDelivery({ result_to_chat: true }, err)).toEqual({ result_to_chat: true })
+    expect(checkRunDelivery({ notify: true }, err)).toEqual({ result_to_chat: true })
+    expect(checkRunDelivery({ result_to_chat: false }, err)).toEqual({})
+    expect(() => checkRunDelivery({ result_to_chat: 'yes' }, err)).toThrow('result_to_chat must be true or false')
+  })
+
+  it('sends decisions to the callback only when there is one', () => {
+    expect(checkRunDelivery({ callback_url: 'https://ops.example.com/le', decisions: 'callback' }, err)).toEqual({ callback_url: 'https://ops.example.com/le', decisions_to: 'callback' })
+    expect(() => checkRunDelivery({ decisions: 'callback' }, err)).toThrow('needs a callback_url')
+    expect(() => checkRunDelivery({ callback_url: 'https://ops.example.com/le', decisions: 'email' }, err)).toThrow('decisions must be "callback"')
+    expect(checkRunDelivery({ decisions: 'chat' }, err)).toEqual({})
+  })
+
+  it('fills a chat notice from the payload, leaving missing paths empty', () => {
+    const payload = { data: { object: { id: 'du_1', amount: 4500, reason: 'product_not_received' } } }
+    expect(fillChatNotice('New dispute {{data.object.id}}: {{ data.object.amount }} · {{data.object.reason}}{{data.object.nope}}', payload)).toBe('New dispute du_1: 4500 · product_not_received')
+    expect(checkRunDelivery({ chat_notice: '  ' }, err)).toEqual({})
+    expect(() => checkRunDelivery({ chat_notice: 'x'.repeat(1001) }, err)).toThrow('too long')
+  })
+
+  it('keeps a trigger\'s decisions and notice through a change, and drops them on null', async () => {
+    const { trigger } = await createTrigger('payments', workflow, { callback_url: 'https://ops.example.com/le', decisions: 'callback', chat_notice: 'New dispute {{data.object.id}}' })
+    expect(trigger).toMatchObject({ decisions_to: 'callback', chat_notice: 'New dispute {{data.object.id}}' })
+    const renamed = await updateTrigger(trigger.trigger_id, workflow, { name: 'Disputes' })
+    expect(renamed).toMatchObject({ decisions_to: 'callback', chat_notice: 'New dispute {{data.object.id}}' })
+    await expect(updateTrigger(trigger.trigger_id, workflow, { callback_url: null })).rejects.toThrow('needs a callback_url')
+    const cleared = await updateTrigger(trigger.trigger_id, workflow, { callback_url: null, decisions: null, chat_notice: null })
+    expect(cleared).not.toHaveProperty('decisions_to')
+    expect(cleared).not.toHaveProperty('chat_notice')
   })
 })

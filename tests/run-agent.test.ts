@@ -1368,6 +1368,32 @@ describe('AgentConfig.httpNotifier', () => {
     expect(headers['X-Askuser-Signature']).toMatch(/^sha256=[0-9a-f]{64}$/)
   })
 
+  it('leaves the agent\'s httpNotifier out when the caller decides: no request or run message is sent, the decision waits under the caller\'s id', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const modelCall: ModelCall = vi.fn(async () => toolUseResponse({ id: 't1', name: 'gated', input: {} }))
+    const gated: ToolDefinition = {
+      name: 'gated',
+      description: 'Needs approval',
+      input_schema: { type: 'object', properties: {} },
+      execute: vi.fn(async () => 'should not run yet'),
+    }
+    const config = baseConfig({
+      tools: [gated],
+      rules: [{ scopePattern: 'default/production/test-agent', tool: 'gated', decision: 'ask' }],
+      httpNotifier: { channel: 'webhook', config: { webhookUrl: 'https://example.com/hook', webhookSecret: 'shh' }, events: ['approval', 'question', 'run_start', 'run_finish'] },
+    })
+    const approver = { requestApproval: async () => false, requestDurableApproval: vi.fn(() => ({ pendingId: 'caller-1' })) }
+
+    const result = await runAgent(config, modelCall, 'do it', [], { channel: 'http', callerDecides: true, approver })
+
+    expect(result.stopReason).toBe('pending_approval')
+    expect(result.pending?.outstanding.map((o) => o.pendingId)).toEqual(['caller-1'])
+    expect(approver.requestDurableApproval).toHaveBeenCalledTimes(1)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('fires onRunStart/onRunFinish via httpNotifier on the http channel when neither is set directly', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)

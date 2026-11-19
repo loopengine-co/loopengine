@@ -225,6 +225,12 @@ export interface RunAgentOptions {
    * asks the person something is sent back for the agent to make the
    * call (the tool, or system_ask_user) instead. */
   unattended?: boolean
+  /** Whoever started this run handles its decisions (a workflow run
+   * started with "decisions": "callback"): `approver` and
+   * `questionHandler` apply even on the `http` channel, the agent's
+   * messaging settings (httpNotifier) are never consulted, and their run
+   * started/finished messages aren't sent. */
+  callerDecides?: boolean
   /** This call's own default QuestionHandler — question-side sibling of
    * `approver` above, same precedence (`AgentConfig.httpNotifier`, when it
    * covers `'question'` on the `http` channel, still wins outright over
@@ -724,7 +730,9 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // httpNotifier first is what lets a single agent's own httpNotifier
   // actually take effect there, rather than being silently shadowed by
   // that per-deployment default every time.
-  const approver = (options.channel === 'http' ? httpNotifier.approver : undefined) ?? options.approver ?? new ConsoleApprover()
+  // A run whose caller handles its decisions never uses the agent's own.
+  const notifierApplies = options.channel === 'http' && !options.callerDecides
+  const approver = (notifierApplies ? httpNotifier.approver : undefined) ?? options.approver ?? new ConsoleApprover()
   const gate = new Gate(rules, approver)
   // Exact mirror of approver's own resolution above, same reasoning and
   // same ordering (httpNotifier checked before options.questionHandler,
@@ -734,7 +742,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // approver (only the durable branch below actually reads this; the live
   // branch keeps resolving independently, via onQuestionPending).
   const questionHandler: QuestionHandler =
-    (options.channel === 'http' ? httpNotifier.questionHandler : undefined) ?? options.questionHandler ?? new CliQuestionHandler()
+    (notifierApplies ? httpNotifier.questionHandler : undefined) ?? options.questionHandler ?? new CliQuestionHandler()
   // No explicit isSafeTool: fall back to each called tool's own `safe`
   // flag (looked up by name) rather than defaulting every tool to unsafe
   // outright — see ToolDefinition.safe's own doc comment for why this is
@@ -1319,14 +1327,14 @@ export async function runAgent(
   const ctx = await buildTurnContext(config, modelCall, options)
   // config.onRunStart, if set, still wins outright over notifier's own
   // derived hook — see NotifierConfig's own doc comment on precedence.
-  const onRunStart = config.onRunStart ?? (options.channel === 'http' ? ctx.httpNotifier.onRunStart : undefined)
+  const onRunStart = config.onRunStart ?? (options.channel === 'http' && !options.callerDecides ? ctx.httpNotifier.onRunStart : undefined)
   if (onRunStart && shouldFireLifecycleHooks(options.channel)) {
     fireLifecycleHook('onRunStart', config.name, () =>
       onRunStart({ agent: config.name, tenant: ctx.scope.tenant, sessionId: options.sessionId, channel: options.channel, trigger: 'message' }),
     )
   }
   const result = await runLoop(ctx, [...history], [], { role: 'user', content: userMessage })
-  const onRunFinish = config.onRunFinish ?? (options.channel === 'http' ? ctx.httpNotifier.onRunFinish : undefined)
+  const onRunFinish = config.onRunFinish ?? (options.channel === 'http' && !options.callerDecides ? ctx.httpNotifier.onRunFinish : undefined)
   if (onRunFinish && !result.pending && shouldFireLifecycleHooks(options.channel)) {
     fireLifecycleHook('onRunFinish', config.name, () =>
       onRunFinish({ agent: config.name, tenant: ctx.scope.tenant, sessionId: options.sessionId, channel: options.channel, text: result.text, stopReason: result.stopReason as 'max_turns' | 'denied' | undefined }),
@@ -1364,7 +1372,7 @@ export async function resumeAgent(
   options: RunAgentOptions = {},
 ): Promise<RunAgentResult> {
   const ctx = await buildTurnContext(config, modelCall, options)
-  const onRunStart = config.onRunStart ?? (options.channel === 'http' ? ctx.httpNotifier.onRunStart : undefined)
+  const onRunStart = config.onRunStart ?? (options.channel === 'http' && !options.callerDecides ? ctx.httpNotifier.onRunStart : undefined)
   if (onRunStart && shouldFireLifecycleHooks(options.channel)) {
     fireLifecycleHook('onRunStart', config.name, () =>
       onRunStart({ agent: config.name, tenant: ctx.scope.tenant, sessionId: options.sessionId, channel: options.channel, trigger: 'resolution' }),
@@ -1387,7 +1395,7 @@ export async function resumeAgent(
   const lastMessage = history[history.length - 1]
   const effectiveHistory = lastMessage?.role === 'user' && lastMessage.content === CRASH_RECOVERY_CONTINUATION ? history.slice(0, -1) : history
   const result = await runLoop(ctx, [...effectiveHistory], [], { role: 'user', content: resolution })
-  const onRunFinish = config.onRunFinish ?? (options.channel === 'http' ? ctx.httpNotifier.onRunFinish : undefined)
+  const onRunFinish = config.onRunFinish ?? (options.channel === 'http' && !options.callerDecides ? ctx.httpNotifier.onRunFinish : undefined)
   if (onRunFinish && !result.pending && shouldFireLifecycleHooks(options.channel)) {
     fireLifecycleHook('onRunFinish', config.name, () =>
       onRunFinish({ agent: config.name, tenant: ctx.scope.tenant, sessionId: options.sessionId, channel: options.channel, text: result.text, stopReason: result.stopReason as 'max_turns' | 'denied' | undefined }),
