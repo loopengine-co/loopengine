@@ -386,6 +386,24 @@ describe('workflows are skills with a start message', () => {
     )
   })
 
+  it('keeps where its runs\' updates and decisions go, through other edits, until cleared', () => {
+    writeSkill(dir, 'refund-check', REFUND, '1. Look up order $order_number.')
+    const params = { order_number: { description: 'The order', required: true } }
+    updateWorkflow(dir, 'refund-check', { instructions: 'Check order $order_number.', parameters: params, delivery: { callback_url: 'https://ops.example.com/le', decisions: 'callback', chat_notice: 'Refund asked for {{order_number}}' } })
+    expect(readWorkflow(dir, 'refund-check')?.delivery).toEqual({ callback_url: 'https://ops.example.com/le', decisions_to: 'callback', chat_notice: 'Refund asked for {{order_number}}' })
+    expect(readFileSync(join(dir, 'skills', 'refund-check', 'SKILL.md'), 'utf8')).toContain('decisions: callback')
+    // Left out, it stays.
+    updateWorkflow(dir, 'refund-check', { instructions: 'Check order $order_number again.', parameters: params })
+    expect(readWorkflow(dir, 'refund-check')?.delivery?.decisions_to).toBe('callback')
+    expect(() => updateWorkflow(dir, 'refund-check', { instructions: 'Go.', delivery: { decisions: 'callback' } })).toThrow('needs a callback_url')
+    expect(() => updateWorkflow(dir, 'refund-check', { instructions: 'Go.', delivery: { callback_url: 'http://10.0.0.1/x' } })).toThrow(/https|public/)
+    // Only a notice: decisions stay with the messaging app.
+    updateWorkflow(dir, 'refund-check', { instructions: 'Go.', delivery: { chat_notice: 'New one' } })
+    expect(readWorkflow(dir, 'refund-check')?.delivery).toEqual({ chat_notice: 'New one' })
+    updateWorkflow(dir, 'refund-check', { instructions: 'Go.', delivery: null })
+    expect(readWorkflow(dir, 'refund-check')?.delivery).toBeUndefined()
+  })
+
   it("shows a title that's just its id as words", () => {
     writeSkill(dir, 'daily-digest', 'workflow: true\ntitle: daily-digest\n', 'Write the digest.')
     expect(readWorkflow(dir, 'daily-digest')?.title).toBe('Daily digest')

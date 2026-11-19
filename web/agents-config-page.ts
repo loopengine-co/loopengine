@@ -1124,6 +1124,13 @@ ${consoleShellScript}
   function contractLinesHtml(lines) {
     return lines.map(function (l) { return '<div class="wf-cb-line">' + l + '</div>'; }).join('');
   }
+  // Where a workflow's approvals and questions go, as a phrase: its app
+  // (the contract's address), or the agent's messaging app.
+  function workflowDecisionsTo(w) {
+    if (w.delivery && w.delivery.decisions_to === 'callback') return 'your app (' + escapeHtml(w.delivery.callback_url) + ')';
+    return 'the agent' + String.fromCharCode(8217) + 's messaging app';
+  }
+
   // Its Triggers tab: the four ways a run starts, each in its own box
   // with what it is: Run now, a schedule, a webhook, the API.
   function workflowTriggersHtml(w, name, params) {
@@ -1134,7 +1141,7 @@ ${consoleShellScript}
     };
     return '<div class="wf-ways">' +
       way('run', 'Run now', 'Starts a run right away, from here. It shows under Evidence as it goes.', workflowRunBarHtml(w, params)) +
-      way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go to the agent' + RSQ + 's messaging app.',
+      way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go to ' + workflowDecisionsTo(w) + '.',
         (schedules || '<p class="hint" style="margin:0">None yet.</p>') +
         '<div><button type="button" class="workflow-add-schedule">+ Schedule</button></div>') +
       way('webhook', 'Webhook', 'Another app (Stripe, GitHub, Shopify or your own) calls a private address when something happens, and each call starts a run.',
@@ -1178,11 +1185,16 @@ ${consoleShellScript}
     var notified = (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.result_to_chat; });
     if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report <span class="hint">(for the schedules and webhooks set to send it)</span>');
     if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's update address');
-    if ((w.triggers || []).some(function (t) { return t.decisions_to === 'callback'; })) result.push('approvals and questions go to the webhook' + RSQ + 's update address <span class="hint">(not the messaging app)</span>');
+    if (w.delivery && w.delivery.callback_url) result.push('run updates posted to ' + escapeHtml(w.delivery.callback_url) + ' <span class="hint">(every run, however it starts)</span>');
+    var decisions = [w.delivery && w.delivery.decisions_to === 'callback'
+      ? 'your app at ' + escapeHtml(w.delivery.callback_url) + ' <span class="hint">(not the messaging app; every run, however it starts)</span>'
+      : escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'the agent' + RSQ + 's messaging app')];
+    if ((w.triggers || []).some(function (t) { return t.decisions_to === 'callback'; })) decisions.push('runs from a webhook set to send them to its own update address go there instead');
+    if (w.delivery && w.delivery.chat_notice) decisions.push('a message in the messaging app when each run starts: ' + escapeHtml(w.delivery.chat_notice));
     var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
     var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
-    return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('model', [model]) + '</div>' +
-      '<p class="hint" style="margin:0">Change the inputs, result and model with Edit, and what tools may do in Permissions.</p>';
+    return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('approvals', decisions) + row('model', [model]) + '</div>' +
+      '<p class="hint" style="margin:0">Change the inputs, result, where approvals go and the model with Edit, and what tools may do in Permissions.</p>';
   }
 
   function workflowBriefHtml(w) {
@@ -1457,6 +1469,11 @@ ${consoleShellScript}
         '<div class="wp-model-row"><select name="modelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' +
           ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'].map(function (p) { return '<option value="' + p + '"' + (w.model && w.model.provider === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') +
         '</select><input name="modelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + escapeHtml((w.model && w.model.model) || '') + '"></div></div>' +
+      '<div class="body-field">Your app <span class="hint">(optional: an https address in your own app, told when each run stops for a decision, finishes or fails, whether it' + String.fromCharCode(8217) + 's started by Run now, a schedule, a webhook or the API)</span>' +
+        '<input name="deliveryUrl" inputmode="url" placeholder="https://example.com/hooks/loopengine" value="' + escapeHtml((w.delivery && w.delivery.callback_url) || '') + '">' +
+        '<label class="http-tool-inline-label"><input type="checkbox" name="deliveryDecisions"' + (w.delivery && w.delivery.decisions_to === 'callback' ? ' checked' : '') + (w.delivery && w.delivery.callback_url ? '' : ' disabled') + '> Send approvals and questions there instead of the messaging app <span class="hint">(your app shows them and answers through the API)</span></label></div>' +
+      '<label>Message the chat when a run starts <span class="hint">(optional: posted to the messaging app; {{name}} puts in an input' + String.fromCharCode(8217) + 's value)</span>' +
+        '<input name="deliveryNotice" maxlength="1000" placeholder="New dispute {{dispute_id}}" value="' + escapeHtml((w.delivery && w.delivery.chat_notice) || '') + '"></label>' +
       '<p class="hint workflow-editor-check" style="margin:0"></p>' +
       '<div class="hint workflow-editor-result"></div>' +
       '<div class="ed-actions"><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary">Save</button></div></form>';
@@ -1479,6 +1496,18 @@ ${consoleShellScript}
     if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't a parameter: add ' + (missing.length > 1 ? 'them' : 'it') + ', or the text stays as written.');
     if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't written in the instructions: each run adds ' + (unused.length > 1 ? 'them' : 'it') + ' with the inputs, above the instructions.');
     form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
+  }
+
+  // The editor's Your app fields, as the save's delivery: null for none.
+  function workflowDeliveryFromForm(form) {
+    var url = form.deliveryUrl.value.trim();
+    var notice = form.deliveryNotice.value.trim();
+    if (!url && !notice) return null;
+    var d = {};
+    if (url) d.callback_url = url;
+    if (url && form.deliveryDecisions.checked) d.decisions = 'callback';
+    if (notice) d.chat_notice = notice;
+    return d;
   }
 
   function openWorkflowEditor(name, card) {
@@ -1506,6 +1535,11 @@ ${consoleShellScript}
       if (ev.target.classList.contains('wp-remove')) { ev.target.closest('.workflow-param-row').remove(); check(); }
     });
     form.addEventListener('input', check);
+    // Decisions can only go to an address that's given.
+    form.deliveryUrl.addEventListener('input', function () {
+      form.deliveryDecisions.disabled = !form.deliveryUrl.value.trim();
+      if (form.deliveryDecisions.disabled) form.deliveryDecisions.checked = false;
+    });
     form.querySelector('.wp-add').addEventListener('click', function () {
       rows.insertAdjacentHTML('beforeend', workflowParamRowHtml('', null));
       rows.lastElementChild.querySelector('.wp-name').focus();
@@ -1551,7 +1585,7 @@ ${consoleShellScript}
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
+        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null, delivery: workflowDeliveryFromForm(form) }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         close();
@@ -1991,7 +2025,9 @@ ${consoleShellScript}
         btn.disabled = false;
         notifyToggle.disabled = false;
         if (!r.ok) { result.textContent = r.body.error || 'Could not start it.'; return; }
-        result.textContent = 'Started. Questions and approvals go to this agent' + String.fromCharCode(8217) + 's messaging app; the result shows under History.' + (notifyResult ? ' The result will also be sent to the messaging app when it finishes.' : '');
+        var started = workflowsById[id];
+        result.innerHTML = 'Started. Questions and approvals go to ' + workflowDecisionsTo(started || {}) + '; the result shows under Evidence.' + (notifyResult ? ' The result will also be sent to the messaging app when it finishes.' : '') +
+          (r.body.warnings ? ' ' + escapeHtml(r.body.warnings.join(' ')) : '');
         setTimeout(function () { loadWorkflowsSection(name); }, 800);
       });
     });

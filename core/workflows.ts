@@ -27,8 +27,16 @@
 // workflow's schedules and webhook triggers themselves.
 //
 // A workflow's contract can also set, in its front matter: `model` (its
-// own provider and model, instead of the agent's) and `output` (what its
-// result must look like, said to the agent last). The workspace's shared
+// own provider and model, instead of the agent's), `output` (what its
+// result must look like, said to the agent last) and `delivery` (an app
+// that gets every run's updates, and maybe its approvals and questions
+// instead of the messaging app, and a message posted to the messaging app
+// when a run starts):
+//
+//   delivery:
+//     callback_url: https://ops.example.com/loopengine
+//     decisions: callback
+//     chat_notice: New dispute {{dispute_id}} The workspace's shared
 // policies (policies.md in the project) go into every run, after the
 // instructions.
 //
@@ -78,6 +86,20 @@ export interface Workflow {
   model?: WorkflowModel
   /** What its result must look like. */
   output?: string
+  /** Where every run's updates, decisions and start notice go, however
+   * it starts. A webhook or API call with its own callback_url overrides
+   * the address and decisions for its run. */
+  delivery?: WorkflowDelivery
+}
+
+export interface WorkflowDelivery {
+  /** Gets each run's updates (core/run-callbacks.ts). */
+  callback_url?: string
+  /** "callback": approvals and questions go only to callback_url. */
+  decisions_to?: 'callback'
+  /** Posted to the messaging app when a run starts; {{name}} is filled
+   * from the run's inputs. */
+  chat_notice?: string
 }
 
 /** The front matter that makes a skill a workflow: `instructions` (the
@@ -96,6 +118,7 @@ export interface WorkflowFields {
   /** null (or empty) clears it; left out keeps what's saved. */
   model?: WorkflowModel | null
   output?: string | null
+  delivery?: WorkflowDelivery | null
 }
 
 export class WorkflowParamsError extends Error {}
@@ -104,12 +127,25 @@ const PARAMETER_NAME = /^[a-z_][a-z0-9_]*$/
 const WORKFLOW_KEYS = ['workflow', 'title', 'start_message', 'trigger', 'parameters', 'original_request'] as const
 /** The contract's keys: kept when a save doesn't give them. `gather`
  * (lookups done before the agent, since removed) is dropped. */
-const CONTRACT_KEYS = ['model', 'output', 'gather'] as const
+const CONTRACT_KEYS = ['model', 'output', 'delivery', 'gather'] as const
 
 function modelFrom(value: unknown): WorkflowModel | undefined {
   if (!value || typeof value !== 'object') return undefined
   const m = value as Record<string, unknown>
   return typeof m.provider === 'string' && m.provider.trim() && typeof m.model === 'string' && m.model.trim() ? { provider: m.provider.trim(), model: m.model.trim() } : undefined
+}
+
+function deliveryFrom(value: unknown): WorkflowDelivery | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const d = value as Record<string, unknown>
+  const callbackUrl = typeof d.callback_url === 'string' && d.callback_url.trim() ? d.callback_url.trim() : undefined
+  const notice = typeof d.chat_notice === 'string' && d.chat_notice.trim() ? d.chat_notice.trim() : undefined
+  const delivery: WorkflowDelivery = {
+    ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+    ...(callbackUrl && d.decisions === 'callback' ? { decisions_to: 'callback' as const } : {}),
+    ...(notice ? { chat_notice: notice } : {}),
+  }
+  return Object.keys(delivery).length ? delivery : undefined
 }
 
 function skillsDir(agentDir: string): string {
@@ -180,6 +216,7 @@ function workflowFrom(id: string, frontmatter: Record<string, unknown>, body: st
     instructions: combineInstructions(startMessage, body),
     ...(modelFrom(frontmatter.model) ? { model: modelFrom(frontmatter.model) } : {}),
     ...(typeof frontmatter.output === 'string' && frontmatter.output.trim() ? { output: frontmatter.output.trim() } : {}),
+    ...(deliveryFrom(frontmatter.delivery) ? { delivery: deliveryFrom(frontmatter.delivery) } : {}),
   }
 }
 
@@ -224,6 +261,11 @@ export function setWorkflowFields(agentDir: string, id: string, fields: Workflow
   if (fields.output !== undefined) {
     if (fields.output?.trim()) frontmatter.output = fields.output.trim().slice(0, 2000)
     else delete frontmatter.output
+  }
+  if (fields.delivery !== undefined) {
+    const delivery = fields.delivery ? deliveryFrom({ ...fields.delivery, decisions: fields.delivery.decisions_to }) : undefined
+    if (delivery) frontmatter.delivery = { ...(delivery.callback_url ? { callback_url: delivery.callback_url } : {}), ...(delivery.decisions_to ? { decisions: delivery.decisions_to } : {}), ...(delivery.chat_notice ? { chat_notice: delivery.chat_notice } : {}) }
+    else delete frontmatter.delivery
   }
   // Lookups done before the agent (removed): a save drops the old key.
   delete frontmatter.gather

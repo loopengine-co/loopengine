@@ -1878,13 +1878,11 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
         return json(400, { error: err instanceof Error ? err.message : String(err) })
       }
       const prepared = await prepareWorkflowRun(agentName, dir, id, body.params, (w, p) => composeWorkflowMessage(agentName, w, p))
-      const notice = delivery.chat_notice ? fillChatNotice(delivery.chat_notice, prepared.params) : undefined
-      const warnings = chatWarnings(agentName, { result_to_chat: delivery.result_to_chat, chat_notice: notice })
+      const sends = runDelivery(agentName, id, prepared.params, { ...delivery, ...(delivery.chat_notice ? { chat_notice: fillChatNotice(delivery.chat_notice, prepared.params) } : {}) })
       const run = await workflowRunner.start({
-        agent: agentName, workflow_id: id, params: prepared.params, source: body.source === 'console' ? 'console' : 'api', message: prepared.message,
-        ...delivery, ...(notice ? { chat_notice: notice } : {}), ...(warnings.length ? { warnings } : {}),
+        agent: agentName, workflow_id: id, params: prepared.params, source: body.source === 'console' ? 'console' : 'api', message: prepared.message, ...sends,
       })
-      const extra = warnings.length ? { warnings } : {}
+      const extra = sends.warnings ? { warnings: sends.warnings } : {}
       if (body.wait !== true) return json(202, { runId: run.run_id, ...extra })
       const deadline = Date.now() + WORKFLOW_WAIT_MS
       for (;;) {
@@ -2256,7 +2254,7 @@ async function startChainedRuns(run: WorkflowRun): Promise<void> {
     try {
       if (!getEntry(c.agent)) throw new Error(`no agent ${c.agent}`)
       const prepared = await prepareWorkflowRun(c.agent, agentDir(c.agent), c.workflowId, c.params, (w, p) => composeWorkflowMessage(c.agent, w, p))
-      await workflowRunner.start({ agent: c.agent, workflow_id: c.workflowId, params: prepared.params, source: 'chain', message: prepared.message, job: { goal: c.goal, job: c.job }, chained_from: run.run_id, chain_depth: c.depth })
+      await workflowRunner.start({ agent: c.agent, workflow_id: c.workflowId, params: prepared.params, source: 'chain', message: prepared.message, job: { goal: c.goal, job: c.job }, chained_from: run.run_id, chain_depth: c.depth, ...runDelivery(c.agent, c.workflowId, prepared.params) })
     } catch (err) {
       console.error(`[loopengine] chained run ${c.agent}/${c.workflowId} after ${run.agent}/${run.workflow_id} didn't start:`, err instanceof Error ? err.message : err)
     }
@@ -2305,6 +2303,20 @@ async function runPending(run: WorkflowRun): Promise<CallbackPending[]> {
   })
 }
 
+// Where a run's updates, decisions and start notice go: what started it
+// asked for (a webhook's or an API call's own callback_url, and its
+// notice, already filled in), else what its workflow's contract says, its
+// notice filled from the run's inputs.
+type RunDelivery = { result_to_chat?: true; callback_url?: string; decisions_to?: 'callback'; chat_notice?: string; warnings?: string[] }
+function runDelivery(agent: string, workflowId: string, params: Record<string, string>, own: Omit<RunDelivery, 'warnings'> = {}): RunDelivery {
+  const contract = workflowId ? readWorkflow(agentDir(agent), workflowId)?.delivery : undefined
+  const from = own.callback_url ? own : contract
+  const callback = from?.callback_url ? { callback_url: from.callback_url, ...(from.decisions_to ? { decisions_to: from.decisions_to } : {}) } : {}
+  const notice = own.chat_notice ?? (contract?.chat_notice ? fillChatNotice(contract.chat_notice, params) : undefined)
+  const warnings = chatWarnings(agent, { result_to_chat: own.result_to_chat, chat_notice: notice })
+  return { ...(own.result_to_chat ? { result_to_chat: true as const } : {}), ...callback, ...(notice ? { chat_notice: notice } : {}), ...(warnings.length ? { warnings } : {}) }
+}
+
 // Why a run's chat messages can't be sent: a notice needs a messaging
 // app; the result also goes to the agent's webhook, if it has one.
 function chatWarnings(agent: string, asked: { result_to_chat?: boolean; chat_notice?: string }): string[] {
@@ -2329,6 +2341,7 @@ function fireScheduledTask(task: ScheduledTask, rawSessionId: string): ReturnTyp
     })
   }
   return workflowRunner.runForSchedule({
+    ...runDelivery(task.agent, task.workflow_id, task.params ?? {}),
     agent: task.agent,
     workflow_id: task.workflow_id,
     params: task.params,
@@ -4654,13 +4667,13 @@ async function handleWorkflowHook(req: IncomingMessage, res: ServerResponse, tok
   }
   try {
     const prepared = await prepareWorkflowRun(trigger.agent, agentDir(trigger.agent), trigger.workflow_id, paramsFromPayload(trigger, payload), (w, p) => composeWorkflowMessage(trigger.agent, w, p))
-    const notice = trigger.chat_notice ? fillChatNotice(trigger.chat_notice, payload) : undefined
-    const warnings = chatWarnings(trigger.agent, { result_to_chat: resultToChat(trigger), chat_notice: notice })
-    const run = await workflowRunner.start({
-      agent: trigger.agent, workflow_id: trigger.workflow_id, params: prepared.params, source: 'webhook', trigger_id: trigger.trigger_id, message: prepared.message,
+    const sends = runDelivery(trigger.agent, trigger.workflow_id, prepared.params, {
       ...(resultToChat(trigger) ? { result_to_chat: true } : {}), ...(trigger.callback_url ? { callback_url: trigger.callback_url } : {}),
       ...(trigger.callback_url && trigger.decisions_to ? { decisions_to: trigger.decisions_to } : {}),
-      ...(notice ? { chat_notice: notice } : {}), ...(warnings.length ? { warnings } : {}),
+      ...(trigger.chat_notice ? { chat_notice: fillChatNotice(trigger.chat_notice, payload) } : {}),
+    })
+    const run = await workflowRunner.start({
+      agent: trigger.agent, workflow_id: trigger.workflow_id, params: prepared.params, source: 'webhook', trigger_id: trigger.trigger_id, message: prepared.message, ...sends,
     })
     await record('started', { run_id: run.run_id, ...(id ? { delivery_id: id } : {}) }, id)
     return json(202, { runId: run.run_id })

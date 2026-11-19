@@ -13,11 +13,11 @@ import { setAgentEnvVar } from './env-admin.js'
 import { installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
 import { planParameters, planWebhook, planWorkflowWithModel, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
-import { createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
+import { checkRunDelivery, createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { contextToolsFor, type AppToolInputs } from '../core/mcp-apps.js'
-import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowModel } from '../core/workflows.js'
+import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowDelivery, type WorkflowModel } from '../core/workflows.js'
 import { readEvals, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
 import { cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
@@ -937,7 +937,7 @@ export async function prepareWorkflowRun(agentName: string, agentDir: string, id
  * null for the agent's) and `output` (text). Left out, each keeps what's
  * saved. */
 export function contractFields(input: Record<string, unknown>): { model?: WorkflowModel | null; output?: string | null } {
-  const fields: { model?: WorkflowModel | null; output?: string | null } = {}
+  const fields: { model?: WorkflowModel | null; output?: string | null; delivery?: WorkflowDelivery | null } = {}
   if (input.model !== undefined) {
     const m = input.model as Record<string, unknown> | null | string
     if (m === null || m === '') fields.model = null
@@ -948,6 +948,17 @@ export function contractFields(input: Record<string, unknown>): { model?: Workfl
     if (input.output !== null && typeof input.output !== 'string') throw new WorkflowError('The result format must be text.')
     if (typeof input.output === 'string' && input.output.length > 2000) throw new WorkflowError('The result format is too long: keep it under 2000 characters.')
     fields.output = typeof input.output === 'string' ? input.output : null
+  }
+  // Where every run's updates and decisions go: { callback_url, decisions,
+  // chat_notice }, or null for the messaging app only.
+  if (input.delivery !== undefined) {
+    if (input.delivery === null) fields.delivery = null
+    else if (typeof input.delivery !== 'object' || Array.isArray(input.delivery)) throw new WorkflowError('delivery must be { callback_url, decisions, chat_notice }, or null.')
+    else {
+      const d = checkRunDelivery(input.delivery as Record<string, unknown>, (m) => new WorkflowError(m))
+      const { result_to_chat: _r, ...kept } = d
+      fields.delivery = Object.keys(kept).length ? kept : null
+    }
   }
   return fields
 }

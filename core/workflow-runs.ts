@@ -275,7 +275,7 @@ export class WorkflowRunner {
    * for a workflow task): recorded as a run of the workflow, then run the
    * usual way. Returns the outcome for the scheduler, and throws what the
    * run threw, so the schedule's own history records it too. */
-  async runForSchedule(input: { agent: string; workflow_id: string; params?: Record<string, string>; task_id: string; task_name?: string; message: string; session_id: string }): Promise<RunOutcome> {
+  async runForSchedule(input: { agent: string; workflow_id: string; params?: Record<string, string>; task_id: string; task_name?: string; message: string; session_id: string } & Pick<StartRunInput, 'callback_url' | 'decisions_to' | 'chat_notice' | 'warnings'>): Promise<RunOutcome> {
     const run: WorkflowRun = {
       run_id: randomUUID(),
       agent: input.agent,
@@ -284,6 +284,10 @@ export class WorkflowRunner {
       source: 'schedule',
       task_id: input.task_id,
       ...(input.task_name ? { task_name: input.task_name } : {}),
+      ...(input.callback_url ? { callback_url: input.callback_url } : {}),
+      ...(input.decisions_to ? { decisions_to: input.decisions_to } : {}),
+      ...(input.chat_notice ? { chat_notice: input.chat_notice } : {}),
+      ...(input.warnings?.length ? { warnings: input.warnings } : {}),
       status: 'running',
       started_at: new Date().toISOString(),
       message: input.message,
@@ -291,8 +295,9 @@ export class WorkflowRunner {
     }
     await getRunStore().put(run)
     await this.prune(input.agent)
+    this.changed(run)
     try {
-      const outcome = await this.execute(run.agent, run.message, run.session_id, { workflowId: run.workflow_id })
+      const outcome = await this.execute(run.agent, run.message, run.session_id, { workflowId: run.workflow_id, ...(run.decisions_to ? { decisionsTo: run.decisions_to } : {}) })
       if (outcome.kind === 'pending') this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
       else await this.finish(run.run_id, { status: 'done', result: outcome.text })
       return outcome
