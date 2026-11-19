@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import {
-  acceptJob, addJob, assignJob, chainConditionMet, chainedRuns, checkBuiltWorkflows, createGoal, editAmount, editJob, goalView, MAX_CHAIN_DEPTH, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, migrateGoalFiles, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
+  acceptJob, addJob, assignJob, listJob, listJobs, MY_JOBS_ID, submitJob, chainConditionMet, chainedRuns, checkBuiltWorkflows, createGoal, editAmount, editJob, goalView, MAX_CHAIN_DEPTH, generateMore, getGoal, goalContextFrom, goalPlanning, kindOf, listGoals, markBuilt, migrateGoal, migrateGoalFiles, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeGoalSettings,
   type GoalJob, type GoalsDeps,
 } from '#web/goals-admin.js'
 
@@ -474,6 +474,64 @@ describe('a job the person adds', () => {
     const result = await addJob(deps, id, { idea: 'post fake 5 star reviews' })
     expect(result).toMatchObject({ verdict: 'refused', alternative: 'Ask happy customers for honest reviews.' })
     expect(getGoal(deps, id).jobs).toHaveLength(before)
+  })
+})
+
+describe('my jobs', () => {
+  const answer = (input: Record<string, unknown>, seen: string[] = []) => async () => (async (messages: Parameters<ModelCall>[0], _s: string, tools: Parameters<ModelCall>[2]) => {
+    seen.push(String(messages[0]!.content))
+    return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'j1', name: tools[0]!.name, input }] } as ModelResponse
+  }) as ModelCall
+
+  it('takes a job submitted without a goal, shaped and judged on its own, onto the list', async () => {
+    const { deps } = setup([])
+    const seen: string[] = []
+    deps.modelCall = answer({ verdict: 'added', job: wf('Answer customer emails', { kind: 'recurring', measure: 'emails answered within an hour', agent: 'support-agent' }) }, seen)
+    const result = await submitJob(deps, { idea: 'Answer every customer email within an hour' })
+    expect(result).toMatchObject({ verdict: 'added', goalId: MY_JOBS_ID })
+    expect(seen[0]).toContain('There is no goal')
+    const jobs = await listJobs(deps)
+    expect(jobs.map((x) => [x.goalId, x.goal, x.job.title, x.job.state])).toEqual([[MY_JOBS_ID, null, 'Answer customer emails', 'suggested']])
+    expect(jobs[0]!.addedAt).toBe(jobs[0]!.job.addedAt)
+    // The holder isn't a goal anyone planned: no brief, never listed as one by the page.
+    expect(listGoals(deps).find((g) => g.id === MY_JOBS_ID)).toMatchObject({ standalone: true, goal: '' })
+  })
+
+  it('refuses a deceptive job and lists nothing', async () => {
+    const { deps } = setup([])
+    deps.modelCall = answer({ verdict: 'refused', note: 'Fake reviews break store rules.', alternative: 'Ask happy customers for honest reviews.' })
+    expect(await submitJob(deps, { idea: 'post fake 5 star reviews' })).toMatchObject({ verdict: 'refused' })
+    expect(await listJobs(deps)).toEqual([])
+  })
+
+  it('adds a goal’s job to the list and takes it off, and a built one is on it', async () => {
+    const { deps } = setup([[wf('Answer posts'), wf('Directory listings')]])
+    const { id } = createGoal(deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    const [a, b] = getGoal(deps, id).jobs
+    expect(await listJobs(deps)).toEqual([])
+    listJob(deps, id, a!.id, true)
+    let jobs = await listJobs(deps)
+    expect(jobs.map((x) => [x.goalId, x.goal, x.job.id])).toEqual([[id, 'Grow signups to 100', a!.id]])
+    listJob(deps, id, a!.id, false)
+    expect(await listJobs(deps)).toEqual([])
+    markBuilt(deps, id, b!.id, { agent: 'growth-agent', workflowId: 'directory-listings', title: 'Directory listings' })
+    jobs = await listJobs(deps)
+    expect(jobs.map((x) => x.job.id)).toEqual([b!.id])
+    expect(getGoal(deps, id).jobs.find((j) => j.id === b!.id)!.addedAt).toBeTruthy()
+  })
+
+  it('lists newest added first, and leaves discarded jobs out', async () => {
+    const { deps } = setup([[wf('A'), wf('B')]])
+    const { id } = createGoal(deps, { goal: 'Grow signups to 100' })
+    await goalPlanning(id)
+    const [a, b] = getGoal(deps, id).jobs
+    listJob(deps, id, a!.id, true)
+    await new Promise((r) => setTimeout(r, 5))
+    listJob(deps, id, b!.id, true)
+    expect((await listJobs(deps)).map((x) => x.job.title)).toEqual(['B', 'A'])
+    setWorkflowState(deps, id, b!.id, 'discard')
+    expect((await listJobs(deps)).map((x) => x.job.title)).toEqual(['A'])
   })
 })
 

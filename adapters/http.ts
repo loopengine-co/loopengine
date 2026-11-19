@@ -121,7 +121,7 @@ import { workflowPageHtml } from '#web/workflow-page.js'
 import { goalsPageHtml } from '#web/goals-page.js'
 import { activePlaybook, setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
 import { startPlaybookSync } from '#core/playbook-sync.js'
-import { GoalError, acceptJob, addJob, assignJob, chainedRuns, editJob, goalView, migrateGoalFiles, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
+import { GoalError, acceptJob, addJob, assignJob, chainedRuns, editJob, goalView, listJob, listJobs, migrateGoalFiles, submitJob, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
 import { sharesLeverStats, startLeverEventsSync } from '#web/lever-events-sync.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
@@ -1037,6 +1037,23 @@ const goalsDeps: GoalsDeps = {
   },
 }
 
+// The person's own list of jobs (web/goals-admin.ts listJobs): GET lists
+// them, from every goal and those submitted without one; POST submits a
+// job without a goal. A job's actions stay under its goal's
+// /goals/<id>/jobs/<jobId>, which the list gives with each.
+async function handleJobs(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  try {
+    if (req.method === 'GET') return json(200, { jobs: await listJobs(goalsDeps) })
+    if (req.method === 'POST') return json(200, await submitJob(goalsDeps, await readJsonBody(req)))
+    json(405, { error: 'Use GET or POST.' })
+  } catch (err) {
+    json(err instanceof GoalError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
 async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
   const json = (status: number, body: unknown): void => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
@@ -1052,7 +1069,8 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
     if (!id && req.method === 'GET') {
       const settings = readGoalSettings(goalsDeps)
       // The focuses in use (the playbook's and this workspace's own), for the page's Focus choice.
-      return json(200, { goals: listGoals(goalsDeps), about: settings.about, settings: { ...settings, shareLeverStats: sharesLeverStats(projectDir()), cloud: Boolean(process.env.LOOPENGINE_TRUSTED_PROXY_SECRET) }, focuses: activePlaybook().focuses })
+      // The holder of jobs submitted without a goal isn't a goal.
+      return json(200, { goals: listGoals(goalsDeps).filter((g) => !g.standalone), about: settings.about, settings: { ...settings, shareLeverStats: sharesLeverStats(projectDir()), cloud: Boolean(process.env.LOOPENGINE_TRUSTED_PROXY_SECRET) }, focuses: activePlaybook().focuses })
     }
     if (!id && req.method === 'POST') return json(200, { goal: createGoal(goalsDeps, await readJsonBody(req)) })
     if (id === 'about' && req.method === 'PUT') {
@@ -1069,6 +1087,8 @@ async function handleGoals(req: IncomingMessage, res: ServerResponse, pathname: 
       const body = await readJsonBody(req)
       // A recurring job's workflows and chain; else what the person did with it.
       if (body.action === 'link' || body.action === 'unlink' || body.action === 'chain') return json(200, await view(editJob(goalsDeps, id, wid, body)))
+      // Add to my jobs (the Jobs page), or take it off.
+      if (body.action === 'list' || body.action === 'unlist') return json(200, await view(listJob(goalsDeps, id, wid, body.action === 'list')))
       return json(200, await view(setWorkflowState(goalsDeps, id, wid, body.action, body.reason)))
     }
     // A job the person adds in their own words, shaped and judged by the planner.
@@ -4927,6 +4947,15 @@ const server = createServer(async (req, res) => {
     }
     if (pathname === '/goals' || pathname.startsWith('/goals/')) {
       await handleGoals(req, res, pathname)
+      return
+    }
+    // The Jobs page (the same page as Goals, on its jobs view), and its API.
+    if (req.method === 'GET' && pathname === '/jobs' && String(req.headers.accept ?? '').includes('text/html')) {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(goalsPageHtml)
+      return
+    }
+    if (pathname === '/jobs') {
+      await handleJobs(req, res)
       return
     }
     if (req.method === 'GET' && pathname === '/interview') {

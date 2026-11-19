@@ -672,7 +672,8 @@ ${consoleShellScript}
       (c.keptDecisions.length ? '<p class="hint" style="margin:0"><strong>Kept as they were:</strong> ' + c.keptDecisions.map(function (k) { return '<code>' + esc(k.tool) + '</code> stays ' + esc(LABELS[k.has]) + ' (the workflow wanted ' + esc(LABELS[k.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
       (items.length ? '<h3>Left to do</h3><ul class="wf-list">' + items.map(function (it) { return '<li>' + (it.href ? '<a href="' + esc(it.href) + '">' + esc(it.label) + '</a>' : esc(it.label)) + '</li>'; }).join('') + '</ul>' : '<p class="hint" style="margin:0">Nothing left to set up.</p>') +
       '<div class="wf-actions"><a class="wf-btn" href="' + agentHref + '">Open ' + esc(agentLabel(c.agent)) + '</a><a class="wf-btn plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a>' +
-        (fromGoal.goal ? '<a class="wf-btn plain" href="/goals?goal=' + encodeURIComponent(fromGoal.goal) + '">Back to your goal</a>' : '<button type="button" class="wf-btn plain" id="wfAnother">Build another</button>') + '</div>' +
+        (fromGoal.goal === 'g-my-jobs' ? '<a class="wf-btn plain" href="/jobs">Back to your jobs</a>'
+          : fromGoal.goal ? '<a class="wf-btn plain" href="/goals?goal=' + encodeURIComponent(fromGoal.goal) + '">Back to your goal</a>' : '<button type="button" class="wf-btn plain" id="wfAnother">Build another</button>') + '</div>' +
       '</div>';
     var another = document.getElementById('wfAnother');
     if (another) another.addEventListener('click', function () { state.description = ''; state.planned = null; renderDescribe(); });

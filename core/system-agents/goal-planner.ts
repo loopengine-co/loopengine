@@ -322,6 +322,8 @@ Judge it, in verdict:
 - "warned": it's safe but unlikely to move the goal's measure, repeats a job already under the goal, or is unlikely to work; say why in note and give a better-aimed alternative.
 - "refused": it's deceptive, illegal or against a platform's rules (fake reviews or accounts, spam, buying followers, harvesting private data, impersonation, misleading claims) or could harm people. Don't shape it; say why in note, plainly and briefly, and give a legitimate alternative.
 
+When there is no goal (a job added on its own), judge it on its own: "added" when it suits this business and is safe; "warned" when it's unlikely to work or repeats a job already listed. Its mechanism is what the job gets done for the business, and it has no lever: leave leverId and newLever out.
+
 Call save_job once.`
 
 const addJobTool = (): ToolSchema => {
@@ -356,17 +358,18 @@ export interface ShapedJob {
 /** Shapes a job a person typed, under a goal already planned: its kind,
  * measure, agent, request and lever (an existing one, or a new generic
  * one), and judges it: added, changed, warned or refused. */
-export async function shapeJob(modelCall: ModelCall, input: { goal: string; brief: GoalBrief; context: GoalContext; saved?: SavedGoalWorkflow[]; idea: string }): Promise<ShapedJob> {
-  const focus = input.brief.focus
+export async function shapeJob(modelCall: ModelCall, input: { goal?: string; brief?: GoalBrief; context: GoalContext; saved?: SavedGoalWorkflow[]; idea: string }): Promise<ShapedJob> {
+  // A job added on its own (the Jobs page) has no goal: no brief, no levers.
+  const focus = input.brief?.focus ?? 'other'
   const levers = focus === 'other' ? [] : leversFor(focus)
   const user = [
     contextText(input.context),
-    briefText(input.brief),
-    levers.length ? `Playbook levers for this focus:\n${levers.slice(0, MAX_LEVERS_IN_PROMPT * 2).map((l) => `- ${l.id}: ${l.name}. ${l.mechanism} Usually ${l.kind === 'once' ? 'a once job' : 'a recurring job'}; its measure: ${l.measureLink}.`).join('\n')}` : 'Playbook levers: none for this focus yet.',
+    input.brief ? briefText(input.brief) : '',
+    input.brief ? (levers.length ? `Playbook levers for this focus:\n${levers.slice(0, MAX_LEVERS_IN_PROMPT * 2).map((l) => `- ${l.id}: ${l.name}. ${l.mechanism} Usually ${l.kind === 'once' ? 'a once job' : 'a recurring job'}; its measure: ${l.measureLink}.`).join('\n')}` : 'Playbook levers: none for this focus yet.') : '',
     savedText(input.saved),
-    `The goal:\n${input.goal}`,
+    input.goal ? `The goal:\n${input.goal}` : 'There is no goal: the person is adding this job on its own.',
     `The job the person wants to add, in their words:\n${input.idea}`,
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
   const raw = await callTool(modelCall, GOAL_ADD_JOB_PROMPT, user, addJobTool())
   const verdict = raw.verdict === 'changed' || raw.verdict === 'warned' || raw.verdict === 'refused' ? raw.verdict : 'added'
   const note = str(raw.note).slice(0, 600)

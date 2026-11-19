@@ -64,6 +64,11 @@ export const goalsPageHtml: string = `<!doctype html>
   .gl-job-main { display: grid; gap: 3px; min-width: 0; }
   .gl-job-sub { display: flex; gap: 8px; align-items: center; min-width: 0; font-size: 12.5px; color: var(--ink-muted); }
   .gl-job-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .gl-job-from { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gl-job-from a { color: var(--accent-ink); }
+  .gl-listed { font-size: 12px; font-weight: 600; color: var(--accent-ink); white-space: nowrap; }
+  .gl-job-primary { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .gl-push { margin-left: auto; }
   .gl-job-status { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
   .gl-job-primary .gl-btn { height: 30px; font-size: 13px; padding: 0 12px; }
   .gl-job-body { display: grid; gap: 10px; padding: 2px 16px 14px 40px; }
@@ -164,8 +169,14 @@ ${consoleShellScript}
   var REASONS = [['not-relevant', 'Not relevant'], ['too-much-work', 'Too much work'], ['already-doing-it', 'Already doing it']];
   // Which view: the list (/goals), a new goal (?new=1, or the front page)
   // or one goal (?goal=).
-  var startNew = location.pathname === '/' || new URLSearchParams(location.search).has('new');
-  var state = { addOpen: false, addDraft: '', addShare: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
+  // The Jobs page (/jobs): the person's own list of jobs, from any goal
+  // or submitted there without one.
+  var jobsView = location.pathname === '/jobs';
+  var startNew = !jobsView && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
+  // A goal to start from (?new=1&text=...): one typed on the website's
+  // goal box before signing up, carried in by "Open workspace".
+  var startText = (new URLSearchParams(location.search).get('text') || '').slice(0, 500);
+  var state = { jobs: [], jobsLoaded: false, jobsStale: false, jobDraft: '', jobNotice: null, addOpen: false, addDraft: '', addShare: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -184,11 +195,23 @@ ${consoleShellScript}
     var url = new URL(location.href);
     if (id) url.searchParams.set('goal', id); else url.searchParams.delete('goal');
     url.searchParams.delete('new');
+    url.searchParams.delete('text');
     if (url.pathname === '/') url.pathname = '/goals';
     history.replaceState(null, '', url);
   }
 
+  function loadJobs() {
+    api('GET', '/jobs').then(function (r) {
+      if (!r.ok) { page.innerHTML = '<p class="error">Could not load jobs: ' + esc(r.body.error || 'unknown error') + '</p>'; return; }
+      state.jobs = r.body.jobs || [];
+      state.jobsLoaded = true;
+      state.jobsStale = false;
+      render();
+    });
+  }
+
   function load(selectId) {
+    if (jobsView) { loadJobs(); return; }
     api('GET', '/goals').then(function (r) {
       if (!r.ok) { page.innerHTML = '<p class="error">Could not load goals: ' + esc(r.body.error || 'unknown error') + '</p>'; return; }
       state.goals = r.body.goals || [];
@@ -223,13 +246,31 @@ ${consoleShellScript}
       });
     }, planning ? 3000 : 4000);
   }
+  function watchJobs() {
+    if (state.poll) { clearTimeout(state.poll); state.poll = null; }
+    var going = state.jobs.some(function (x) { return x.job.state === 'active' && tryGoing(lastTry(x.job)); });
+    if (!going) return;
+    state.poll = setTimeout(function () {
+      var typing = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('gl-note');
+      if (typing) { watchJobs(); return; }
+      loadJobs();
+    }, 4000);
+  }
   function reloadSidebar() {
     if (window.leShell && window.leShell.reloadGoals) window.leShell.reloadGoals();
   }
   function replaceGoal(goal) {
+    // On the Jobs page, a job's goal coming back means the list changed.
+    if (jobsView) { state.jobsStale = true; return; }
     state.goals = state.goals.map(function (g) { return g.id === goal.id ? goal : g; });
     if (!state.goals.some(function (g) { return g.id === goal.id; })) state.goals.unshift(goal);
     state.current = goal;
+  }
+  // A job on this page, wherever it's listed.
+  function findJob(id) {
+    if (state.current) return (state.current.jobs || []).filter(function (j) { return j.id === id; })[0];
+    var hit = state.jobs.filter(function (x) { return x.job.id === id; })[0];
+    return hit ? hit.job : undefined;
   }
 
   function listHtml() {
@@ -253,7 +294,7 @@ ${consoleShellScript}
   function newGoalHtml() {
     return '<div class="gl-card">' +
       '<label for="glGoal"><strong>What do you want to achieve?</strong></label>' +
-      '<textarea id="glGoal" placeholder="e.g. Grow my LoopEngine Cloud users to 100"></textarea>' +
+      '<textarea id="glGoal" placeholder="e.g. Get 100 paying customers by the end of March">' + esc(startText) + '</textarea>' +
       '<details' + (state.about ? '' : ' open') + '><summary class="hint">About your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)') + '</summary>' +
         '<textarea id="glAbout" style="margin-top:8px" placeholder="What you sell, to whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
         '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
@@ -279,7 +320,7 @@ ${consoleShellScript}
   // it's kept; then its measure), its status, and the one action that
   // matters now. Click it for the rest: why, what it needs, how it's done,
   // and the other actions.
-  function jobHtml(w) {
+  function jobHtml(w, listed) {
     var once = w.kind === 'once';
     var doer = (w.doers || [])[0];
     var t = lastTry(w);
@@ -289,10 +330,14 @@ ${consoleShellScript}
       : w.state === 'active' && once && t && t.status === 'done' ? btn('accept', 'Accept')
       : w.state === 'active' && once && t && (t.status === 'error' || t.status === 'gone') ? btn('again', 'Try again')
       : w.state === 'discarded' ? btn('restore', 'Restore', 'plain') : '';
+    // On a goal's page, a job not yet on the person's list can be added to it.
+    var onList = !!(w.addedAt || ((w.state === 'active' || w.state === 'done') && (w.doers || []).length));
+    var listBtn = listed || w.state === 'discarded' ? '' : onList ? '<span class="gl-listed">In my jobs</span>' : btn('list', 'Add to my jobs', 'soft');
     var more = w.state === 'suggested' && once ? btn('build', 'Open in Chat', 'plain') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
       : w.state === 'suggested' ? btn('discard', 'Discard', 'plain')
       : w.state === 'active' && once ? (t && t.status === 'done' ? btn('again', 'Ask again', 'soft') : '') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
       : w.state === 'done' ? btn('undone', 'Reopen', 'plain') : '';
+    if (listed && listed.goalId !== 'g-my-jobs') more += btn('unlist', 'Remove from my jobs', 'plain');
     var pill = w.state === 'active' && once ? (t && t.status === 'done' ? '<span class="gl-state built">Result ready</span>' : t && t.status === 'awaiting_approval' ? '<span class="gl-state planning">Needs you</span>' : t && t.status === 'running' ? '<span class="gl-state saved">Working' + ELLIPSIS + '</span>' : '<span class="gl-state failed">Failed</span>')
       : w.state === 'active' ? '<span class="gl-state built">Running</span>'
       : w.state === 'done' ? '<span class="gl-state built">Done</span>'
@@ -302,13 +347,15 @@ ${consoleShellScript}
       : w.state === 'active' && doer && doer.type === 'workflow' ? howHtml(w)
       : w.state === 'done' && w.doneAt ? '<div class="gl-doer">Done ' + esc(new Date(w.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</div>' : '';
     var open = !!state.openJobs[w.id];
-    return '<div class="gl-wf gl-job' + (open ? ' is-open' : '') + (w.state === 'active' || w.state === 'done' ? ' built' : '') + '" data-wf="' + esc(w.id) + '">' +
+    return '<div class="gl-wf gl-job' + (open ? ' is-open' : '') + (w.state === 'active' || w.state === 'done' ? ' built' : '') + '" data-wf="' + esc(w.id) + '"' + (listed ? ' data-goal="' + esc(listed.goalId) + '"' : '') + '>' +
       '<div class="gl-job-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
         '<span class="gl-caret" aria-hidden="true"></span>' +
         '<div class="gl-job-main"><span class="gl-wf-title">' + esc(w.title) + '</span>' +
-          '<span class="gl-job-sub"><span class="gl-kind">' + (once ? 'One-off' : 'Recurring') + '</span>' + (sub ? '<span class="gl-job-line">' + esc(sub) + '</span>' : '') + '</span></div>' +
+          '<span class="gl-job-sub"><span class="gl-kind">' + (once ? 'One-off' : 'Recurring') + '</span>' + (sub ? '<span class="gl-job-line">' + esc(sub) + '</span>' : '') + '</span>' +
+          (listed ? '<span class="gl-job-from">Added ' + esc(new Date(listed.addedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) + ' ' + String.fromCharCode(183) + ' ' +
+            (listed.goal ? 'Goal: <a href="/goals?goal=' + encodeURIComponent(listed.goalId) + '">' + esc(listed.goal) + '</a>' : 'No goal') + '</span>' : '') + '</div>' +
         '<span class="gl-job-status">' + pill + '<span class="gl-state planning" data-attn hidden>Needs you</span></span>' +
-        '<span class="gl-job-primary">' + primary + '</span>' +
+        '<span class="gl-job-primary">' + listBtn + primary + '</span>' +
       '</div>' +
       '<div class="gl-job-body"' + (open ? '' : ' hidden') + '>' +
         (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? ' ' + String.fromCharCode(183) + ' ' + esc(w.added.note) : '') + (w.keepPrivate ? ' ' + String.fromCharCode(183) + ' kept to your workspace' : ' ' + String.fromCharCode(183) + ' its approach may be shared') + '</p>' : '') +
@@ -441,6 +488,52 @@ ${consoleShellScript}
     });
   }
 
+  // The Jobs page: submit a job (no goal needed), then every job on the
+  // person's list, newest added first, each with when and which goal.
+  function jobsHtml() {
+    var n = state.jobNotice;
+    var notice = !n ? '' : '<div class="gl-notice ' + (n.verdict === 'refused' ? 'bad' : n.verdict === 'added' ? 'good' : 'warn') + '">' +
+      '<strong>' + (n.verdict === 'refused' ? 'Not added' : n.verdict === 'changed' ? 'Added, with changes' : n.verdict === 'warned' ? 'Added, with a caution' : 'Added to your jobs') + '</strong>' +
+      (n.note ? '<span>' + esc(n.note) + '</span>' : '') +
+      (n.alternative ? '<span class="hint">Instead, you could: ' + esc(n.alternative) + '</span>' : '') + '</div>';
+    var items = state.jobs;
+    return '<div class="gl-card">' +
+      '<label for="glJobIdea"><strong>Submit a job</strong> <span class="hint">in your own words; LoopEngine shapes it into a job, with its measure and the agent that would do it</span></label>' +
+      '<textarea id="glJobIdea" rows="2" placeholder="e.g. Answer every customer email within an hour">' + esc(state.jobDraft || '') + '</textarea>' +
+      '<div class="gl-row"><button type="button" class="gl-btn" id="glJobSubmit">Submit job</button><span class="hint" id="glJobStatus"></span>' +
+        '<span class="hint gl-push">Not sure what to do? <a href="/goals?new=1">Start from a goal</a> and add the jobs it suggests.</span></div>' +
+      notice +
+    '</div>' +
+    '<div class="gl-section"><h3>My jobs <span class="gl-count">' + items.length + '</span></h3>' +
+      (items.length ? items.map(function (x) { return jobHtml(x.job, x); }).join('')
+        : '<p class="gl-empty">No jobs yet. Submit one above, or add jobs from a goal' + String.fromCharCode(8217) + 's suggestions with Add to my jobs.</p>') +
+    '</div>';
+  }
+
+  function wireJobs() {
+    var idea = document.getElementById('glJobIdea');
+    if (idea) idea.addEventListener('input', function () { state.jobDraft = idea.value; });
+    // The sidebar's Jobs "+ New" (?new=1): straight to the box, once.
+    if (idea && !state.jobFocused && new URLSearchParams(location.search).has('new')) { state.jobFocused = true; idea.focus(); }
+    var submit = document.getElementById('glJobSubmit');
+    if (submit) submit.addEventListener('click', function () {
+      var text = idea.value.trim();
+      var status = document.getElementById('glJobStatus');
+      if (text.length < 5) { status.textContent = 'Say what the job is first.'; return; }
+      submit.disabled = true;
+      status.textContent = 'Shaping it' + ELLIPSIS;
+      api('POST', '/jobs', { idea: text }).then(function (r) {
+        submit.disabled = false;
+        if (!r.ok) { status.textContent = r.body.error || 'Could not add it.'; return; }
+        state.jobNotice = { verdict: r.body.verdict, note: r.body.note, alternative: r.body.alternative };
+        if (r.body.jobId) { state.jobDraft = ''; state.openJobs[r.body.jobId] = true; }
+        loadJobs();
+      });
+    });
+    var cards = page.querySelectorAll('.gl-job[data-goal]');
+    for (var i = 0; i < cards.length; i++) wireCard(cards[i], '/goals/' + encodeURIComponent(cards[i].getAttribute('data-goal')));
+  }
+
   function goalHtml(g) {
     var jobs = g.jobs || [];
     var by = function (s) { return jobs.filter(function (w) { return w.state === s; }); };
@@ -465,15 +558,15 @@ ${consoleShellScript}
       REASONS.map(function (r) { return '<button type="button" class="gl-btn plain" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '<button type="button" class="gl-link" data-undo="1">Undo</button></div>' : '') +
     '<div class="gl-section"><h3>Suggested jobs <span class="gl-count">' + suggested.length + '</span></h3>' +
-      (suggested.length ? suggested.map(jobHtml).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
+      (suggested.length ? suggested.map(function (w) { return jobHtml(w); }).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
       '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">New ideas only: nothing already here, built or discarded comes back.</span></div>' +
       addJobHtml(planning) +
     '</div>' +
     '<div class="gl-section"><h3>Your jobs <span class="gl-count">' + kept.length + '</span></h3>' +
-      (kept.length ? kept.map(jobHtml).join('') : '<p class="gl-empty">Nothing running yet. Build it turns a recurring suggestion into a workflow on its agent; Assign gives a one-off one to its agent.</p>') +
+      (kept.length ? kept.map(function (w) { return jobHtml(w); }).join('') : '<p class="gl-empty">Nothing running yet. Build it turns a recurring suggestion into a workflow on its agent; Assign gives a one-off one to its agent.</p>') +
     '</div>' +
     (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
-      (state.showDiscarded ? discarded.map(jobHtml).join('') : '') + '</div>' : '') +
+      (state.showDiscarded ? discarded.map(function (w) { return jobHtml(w); }).join('') : '') + '</div>' : '') +
     '<div><button type="button" class="gl-link" id="glDelete" style="color:var(--bad)">Delete this goal</button></div>';
   }
 
@@ -481,6 +574,18 @@ ${consoleShellScript}
     var title = document.getElementById('glTitle');
     var lead = document.getElementById('glLead');
     var newBtn = document.getElementById('glNewBtn');
+    if (jobsView) {
+      if (state.jobsStale) { loadJobs(); return; }
+      if (title) title.textContent = 'Jobs';
+      if (lead) lead.textContent = 'Everything you want done. Submit a job in your own words, or add jobs from a goal' + String.fromCharCode(8217) + 's suggestions. Build a recurring job into a workflow, or give a one-off job to an agent.';
+      if (newBtn) newBtn.hidden = true;
+      page.innerHTML = state.jobsLoaded ? jobsHtml() + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '') : '<p class="hint">Loading' + ELLIPSIS + '</p>';
+      state.error = '';
+      wireJobs();
+      watchJobs();
+      fillEvidence();
+      return;
+    }
     // The list, unless there are no goals yet: then the new-goal form.
     var listing = !state.current && !state.creating && state.goals.length > 0;
     if (title) title.textContent = state.current ? 'Goal' : listing ? 'Goals' : 'New goal';
@@ -497,6 +602,7 @@ ${consoleShellScript}
     var submit = document.getElementById('glSubmit');
     if (submit) submit.addEventListener('click', function () {
       var goal = document.getElementById('glGoal').value.trim();
+      startText = '';
       var aboutBox = document.getElementById('glAbout');
       var status = document.getElementById('glSubmitStatus');
       if (goal.length < 5) { status.textContent = 'Say what you want to achieve first.'; return; }
@@ -667,7 +773,7 @@ ${consoleShellScript}
     var removes = card.querySelectorAll('[data-chain-remove]');
     for (var cr = 0; cr < removes.length; cr++) removes[cr].addEventListener('click', function (ev) {
       var stepId = ev.currentTarget.getAttribute('data-chain-remove');
-      var job = (state.current.jobs || []).filter(function (j) { return j.id === id; })[0];
+      var job = findJob(id);
       patch({ action: 'chain', chain: (job.chain || []).filter(function (st) { return st.id !== stepId; }) }, ev.currentTarget);
     });
     var unlinks = card.querySelectorAll('[data-unlink]');
@@ -689,7 +795,7 @@ ${consoleShellScript}
         return;
       }
       if (act === 'link' || act === 'savestep') {
-        var job = (state.current.jobs || []).filter(function (j) { return j.id === id; })[0];
+        var job = findJob(id);
         var body;
         if (act === 'link') {
           var pick = card.querySelector('[data-pick-workflow]').value;

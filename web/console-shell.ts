@@ -28,11 +28,20 @@ const BRAND_MARK =
   '<path d="M3 7a4 4 0 1 0 4-4" stroke="var(--on-accent)" stroke-width="1.8" stroke-linecap="round"/>' +
   '<path d="M7 1.2v3.6L9.2 3z" fill="var(--on-accent)"/></svg>'
 
+// Icons beside the sidebar's section heads: a target for Goals, a
+// briefcase for Jobs, a robot for Agents.
+const GOALS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'
+const JOBS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 13a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M7 6V5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v1h2a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3h2Zm2-1a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1H9V5Zm10 3a1 1 0 0 1 1 1v3.5a2.5 2.5 0 0 1-2.5 2.5H6a2 2 0 0 1-2-2V9a1 1 0 0 1 1-1h14ZM4 16.465c.588.34 1.271.535 2 .535h11.5c.925 0 1.785-.28 2.5-.758V18a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1.535Z"/></svg>'
+// The robot is drawn smaller in its 24 box than the others: cropped to
+// its middle 18, it shows at the same size.
+const AGENTS_ICON = '<svg class="le-nav-icon" viewBox="3 3 18 18" fill="currentColor" aria-hidden="true"><path d="M11 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm3.5 1.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M12 5.5a1 1 0 0 1 1 1V7h4a3 3 0 0 1 3 3v3.5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V10a3 3 0 0 1 3-3h4v-.5a1 1 0 0 1 1-1ZM7 9h10a1 1 0 0 1 1 1v3.5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V10a1 1 0 0 1 1-1Z"/></svg>'
+
 export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label="Console navigation">
   <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
-  <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
+  <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">${GOALS_ICON}Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
   <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
-  <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">Agents</a><a href="/agents?new=1">+ New</a></div>
+  <div class="le-nav-label"><a class="le-nav-head" href="/jobs" data-le-nav-head="jobs">${JOBS_ICON}Jobs</a><a href="/jobs?new=1" data-le-job-new>+ New</a></div>
+  <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">${AGENTS_ICON}Agents</a><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
   <nav class="le-foot" aria-label="Settings">
@@ -134,11 +143,15 @@ export const consoleShellScript: string = `<script>
       .then(function (r) { return r.ok ? r.json() : { goals: [] }; })
       .then(function (data) {
         var goals = data.goals || [];
-        var current = page === 'goals' ? new URLSearchParams(location.search).get('goal') : null;
+        // The Jobs page is the Goals page's jobs view; it marks Jobs instead.
+        var onJobs = location.pathname === '/jobs';
+        var current = page === 'goals' && !onJobs ? new URLSearchParams(location.search).get('goal') : null;
         var newLink = document.querySelector('[data-le-goal-new]');
-        var creating = page === 'goals' && !current && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
+        var creating = page === 'goals' && !onJobs && !current && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
         var head = document.querySelector('[data-le-nav-head="goals"]');
-        if (head) { if (page === 'goals' && !current && !creating) head.setAttribute('aria-current', 'page'); else head.removeAttribute('aria-current'); }
+        if (head) { if (page === 'goals' && !onJobs && !current && !creating) head.setAttribute('aria-current', 'page'); else head.removeAttribute('aria-current'); }
+        var jobsHead = document.querySelector('[data-le-nav-head="jobs"]');
+        if (jobsHead) { if (onJobs) jobsHead.setAttribute('aria-current', 'page'); else jobsHead.removeAttribute('aria-current'); }
         if (newLink) { if (creating) newLink.setAttribute('aria-current', 'page'); else newLink.removeAttribute('aria-current'); }
         goalList.innerHTML = goals.length ? goals.map(function (g) {
           return '<li><a class="le-agent-item le-goal-item" href="/goals?goal=' + enc(g.id) + '" title="' + esc(g.goal) + '"' + (g.id === current ? ' aria-current="page"' : '') + '>' +

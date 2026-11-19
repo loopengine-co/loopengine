@@ -177,9 +177,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wp-mono { font-family: var(--font-mono); font-size: 12.5px; }
   @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-  /* Triggers is a way in, not an edit: neutral, beside Edit's accent. */
-  .wf-row-actions .workflow-triggers-open { border-color: var(--line); background: var(--bg); color: var(--ink); }
-  .wf-row-actions .workflow-triggers-open:hover:not(:disabled) { border-color: var(--ink-muted); background: var(--surface); }
+  /* Triggers in the pink of .delete-btn, apart from Edit's accent. */
+  .wf-row-actions .workflow-triggers-open { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
+  .wf-row-actions .workflow-triggers-open:hover:not(:disabled) { background: var(--bad-soft); }
   .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
   .wf-row-foot .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   @media (max-width: 760px) {

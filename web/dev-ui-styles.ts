@@ -131,7 +131,8 @@ export const devUiCss: string = `
   .le-nav-label { padding: 10px 16px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; }
   .le-nav-label a { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; text-decoration: none; }
   .le-nav-label a[aria-current="page"] { font-weight: 700; }
-  .le-nav-label a.le-nav-head { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; font-weight: 600; color: inherit; }
+  .le-nav-label a.le-nav-head { display: inline-flex; align-items: center; gap: 7px; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; font-weight: 600; color: inherit; }
+  .le-nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
   .le-nav-label a.le-nav-head:hover { color: var(--ink); }
   .le-nav-label a.le-nav-head[aria-current="page"] { color: var(--accent-ink); font-weight: 700; }
   .le-agent-list.le-goal-list { flex: 0 1 auto; max-height: 34vh; }
