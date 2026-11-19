@@ -1614,6 +1614,7 @@ ${consoleShellScript}
           '</ol>'
         : (shownUrl ? hookUrlHtml(shownUrl) : '')) +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">' +
+        '<button type="button" class="hook-edit">Edit</button>' +
         (needsSecret ? '' : '<button type="button" class="hook-toggle">' + (t.enabled ? 'Turn off' : 'Turn on') + '</button>') +
         '<button type="button" class="hook-rotate">New URL</button>' +
         '<button type="button" class="delete-btn hook-delete">Delete</button></div></div>';
@@ -1621,15 +1622,19 @@ ${consoleShellScript}
 
   // The add-webhook dialog's form: where the events come from, which ones,
   // what the workflow gets from each, and what happens after each run.
-  function hookFormHtml(w) {
+  // With t, the same form changes that webhook (filled in by
+  // fillHookForm); its URL stays the same.
+  function hookFormHtml(w, t) {
     var params = Object.keys(w.parameters || {});
     var RSQ = String.fromCharCode(8217);
     var field = function (label, input, hint, attrs) {
       return '<div class="hd-field"' + (attrs || '') + '><label class="hd-label">' + label + input + '</label>' + (hint ? '<p class="hd-hint">' + hint + '</p>' : '') + '</div>';
     };
     return '<form class="hook-form hd">' +
-      '<header class="hd-head"><div><h3>Add a webhook</h3>' +
-        '<p>Another app calls a private URL when something happens, and each call starts a run of ' + String.fromCharCode(8220) + escapeHtml(w.title || w.id) + String.fromCharCode(8221) + '.</p></div>' +
+      '<header class="hd-head"><div><h3>' + (t ? 'Edit webhook' : 'Add a webhook') + '</h3>' +
+        (t
+          ? '<p>Changes apply from the next call. Its URL stays the same, so nothing changes in the sending app.</p></div>'
+          : '<p>Another app calls a private URL when something happens, and each call starts a run of ' + String.fromCharCode(8220) + escapeHtml(w.title || w.id) + String.fromCharCode(8221) + '.</p></div>') +
         '<button type="button" class="hd-close hook-dialog-close" aria-label="Close">&times;</button></header>' +
       '<div class="hd-body">' +
         '<section class="hd-section"><h4>Source</h4>' +
@@ -1671,14 +1676,41 @@ ${consoleShellScript}
         '</section>' +
       '</div>' +
       '<footer class="hd-foot"><span class="hook-form-result" role="status"></span>' +
-        '<div class="hd-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">Create webhook</button></div></footer>' +
+        '<div class="hd-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">' + (t ? 'Save' : 'Create webhook') + '</button></div></footer>' +
       '</form>';
   }
 
-  function openHookFormDialog(w, base, onCreated) {
+  // A webhook's saved settings, in the form. Its secret is never shown:
+  // left empty, the saved one is kept.
+  function fillHookForm(form, t) {
+    form.sender.value = t.verify ? t.verify.sender : '';
+    if (t.verify && t.verify.sender === 'custom') {
+      form.sig_header.value = t.verify.header || '';
+      form.sig_algorithm.value = t.verify.algorithm || 'sha256';
+      form.sig_encoding.value = t.verify.encoding || 'hex';
+      form.sig_prefix.value = t.verify.prefix || '';
+    }
+    if (t.verify && t.verify.secret_set) {
+      form.secret.placeholder = 'Saved. Leave empty to keep it';
+      var hint = form.querySelector('.hook-secret .hd-hint');
+      if (hint) hint.textContent = 'Paste a new one only if the sender gave you a new secret.';
+    }
+    if (t.filter) { form.filter_path.value = t.filter.path; form.filter_values.value = t.filter.values.join(', '); }
+    form.name.value = t.name || '';
+    Object.keys(t.mapping || {}).forEach(function (p) { var input = form.querySelector('input[name="map:' + p + '"]'); if (input) input.value = t.mapping[p]; });
+    if (form.payload_param && t.payload_param) form.payload_param.value = t.payload_param;
+    form.chat_notice.value = t.chat_notice || '';
+    form.result_to_chat.checked = Boolean(t.result_to_chat || t.notify);
+    form.callback_url.value = t.callback_url || '';
+    form.decisions_callback.checked = t.decisions_to === 'callback';
+  }
+
+  // existing: a webhook to change instead of making one; onDone then gets
+  // only its new settings.
+  function openHookFormDialog(w, base, onCreated, existing) {
     var dialog = document.createElement('dialog');
     dialog.className = 'le-dialog hook-dialog';
-    dialog.innerHTML = hookFormHtml(w);
+    dialog.innerHTML = hookFormHtml(w, existing);
     document.body.appendChild(dialog);
     dialog.addEventListener('close', function () { dialog.remove(); });
     dialog.addEventListener('click', function (ev) { if (ev.target === dialog) dialog.close(); });
@@ -1707,6 +1739,9 @@ ${consoleShellScript}
       if (form.decisions_callback.disabled) form.decisions_callback.checked = false;
     }
     form.callback_url.addEventListener('input', callbackChanged);
+    if (existing) fillHookForm(form, existing);
+    callbackChanged();
+    if (existing) form.decisions_callback.checked = existing.decisions_to === 'callback' && !form.decisions_callback.disabled;
     senderChanged();
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -1714,8 +1749,10 @@ ${consoleShellScript}
       var body = { name: form.name.value.trim() || defaultName() };
       if (form.sender.value) body.verify = { sender: form.sender.value, secret: form.secret.value.trim() };
       // No secret yet (most senders only show it once they have the URL):
-      // made turned off, with steps to finish it.
-      if (form.sender.value && !form.secret.value.trim()) { delete body.verify.secret; body.enabled = false; }
+      // made turned off, with steps to finish it. A change keeps the saved
+      // secret, unless the sender changed and there is none for it.
+      var keepsSecret = existing && existing.verify && existing.verify.secret_set && existing.verify.sender === form.sender.value;
+      if (form.sender.value && !form.secret.value.trim()) { delete body.verify.secret; if (!keepsSecret) body.enabled = false; }
       if (form.sender.value === 'custom') {
         body.verify.header = form.sig_header.value.trim();
         body.verify.algorithm = form.sig_algorithm.value;
@@ -1733,15 +1770,25 @@ ${consoleShellScript}
       if (form.callback_url.value.trim()) body.callback_url = form.callback_url.value.trim();
       if (body.callback_url && form.decisions_callback.checked) body.decisions = 'callback';
       if (form.chat_notice.value.trim()) body.chat_notice = form.chat_notice.value.trim();
-      result.textContent = 'Making it' + String.fromCharCode(8230);
+      // A change says what's cleared too; a setting left out is kept.
+      if (existing) {
+        ['verify', 'filter', 'mapping', 'callback_url', 'decisions', 'chat_notice'].forEach(function (k) { if (!(k in body)) body[k] = null; });
+        if (!('payload_param' in body)) body.payload_param = '';
+        if (!body.result_to_chat) body.result_to_chat = false;
+      }
+      var failed = existing ? 'Could not save it' : 'Could not make it';
+      result.textContent = (existing ? 'Saving' : 'Making it') + String.fromCharCode(8230);
       var submit = form.querySelector('button[type="submit"]');
       submit.disabled = true;
-      fetchJsonRetryOnce(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
-        if (!r.ok) { result.textContent = r.body.error || 'Could not make it'; submit.disabled = false; return; }
+      var request = existing
+        ? fetchJsonRetryOnce(base + '/' + encodeURIComponent(existing.trigger_id), { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        : fetchJsonRetryOnce(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      request.then(function (r) {
+        if (!r.ok) { result.textContent = r.body.error || failed; submit.disabled = false; return; }
         dialog.close();
         onCreated(r.body.url, r.body.trigger && r.body.trigger.trigger_id, r.body.trigger);
       }).catch(function (err) {
-        result.textContent = err && err.message ? err.message : 'Could not make it';
+        result.textContent = err && err.message ? err.message : failed;
         submit.disabled = false;
       });
     });
@@ -1804,6 +1851,9 @@ ${consoleShellScript}
       for (var i = 0; i < rows.length; i++) {
         (function (row) {
           var id = row.dataset.trigger;
+          row.querySelector('.hook-edit').addEventListener('click', function () {
+            if (hooksById[id]) openHookFormDialog(w, base, function () { render(null, null); }, hooksById[id]);
+          });
           var toggle = row.querySelector('.hook-toggle');
           if (toggle) toggle.addEventListener('click', function (ev) {
             act(id, '', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: ev.currentTarget.textContent === 'Turn on' }) });
