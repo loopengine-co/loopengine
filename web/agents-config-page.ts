@@ -1022,7 +1022,7 @@ ${consoleShellScript}
     return '<div class="wf-api">' +
       '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
       '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
-        'Optional: <code>"wait": true</code> answers with the result once the run finishes; <code>"result_to_chat": true</code> sends the result to the messaging app; <code>"callback_url"</code> tells your app when the run stops for a decision, finishes or fails. Add <code>"decisions": "callback"</code> to send the run' + String.fromCharCode(8217) + 's approvals and questions to that address instead of the messaging app, and <code>"chat_notice"</code> to post a message to the messaging app when it starts (<code>{{input}}</code> is filled in). These override the workflow' + String.fromCharCode(8217) + 's Messages tab for that run. Without <code>wait</code>, you get the run' + String.fromCharCode(8217) + 's id back at once.</p>' +
+        'Optional: <code>"wait": true</code> answers with the result once the run finishes; without it you get the run' + String.fromCharCode(8217) + 's id back at once. Each run follows this workflow' + String.fromCharCode(8217) + 's <strong>Messages</strong> tab for where its updates, approvals and result go. An app can send its own <code>"callback_url"</code> (and <code>"decisions": "callback"</code>) to get this run' + String.fromCharCode(8217) + 's updates itself.</p>' +
       '</div>';
   }
 
@@ -1157,7 +1157,10 @@ ${consoleShellScript}
     var d = w.delivery || {};
     var chat = workflowChatAppName();
     var chatLabel = escapeHtml(chat || 'chat');
-    var decisionsLabel = escapeHtml(workflowChatName() || 'the messaging app');
+    // With no messaging app, an unattended run's approvals are refused and
+    // its questions go unanswered (adapters/http.ts, executeUnattendedRun).
+    var decisionsLabel = workflowChatName() ? escapeHtml(workflowChatName())
+      : 'The messaging app <span class="hint">(none set up: approvals are refused and questions go unanswered)</span>';
     var noChat = chat ? '' : ' disabled';
     var RSQ = String.fromCharCode(8217);
     var row = function (label, body) { return '<div class="wf-msg-row"><div class="wf-msg-k">' + label + '</div><div class="wf-msg-v">' + body + '</div></div>'; };
@@ -1651,7 +1654,6 @@ ${consoleShellScript}
     if (t.mapping) rules.push(Object.keys(t.mapping).map(function (p) { return escapeHtml(p) + ' ' + String.fromCharCode(8592) + ' ' + escapeHtml(t.mapping[p]); }).join(', '));
     if (t.payload_param) rules.push('the whole payload goes to ' + escapeHtml(t.payload_param));
     if (t.chat_notice) rules.push('posts a notice to the messaging app when it starts');
-    if (t.result_to_chat || t.notify) rules.push('<span class="workflow-option-value">Send result to messaging app</span>');
     if (t.callback_url) rules.push('sends run updates to ' + escapeHtml(t.callback_url));
     if (t.decisions_to === 'callback') rules.push('approvals and questions go there too, not to the messaging app');
     // Made by the workflow planner without its secret: it turns on once
