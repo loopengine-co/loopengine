@@ -993,7 +993,6 @@ ${consoleShellScript}
         '<span><a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=schedules#schedule-' + escapeHtml(x.taskId) + '" class="workflow-schedule-link" data-task="' + escapeHtml(x.taskId) + '" title="See it in the Schedules tab">' +
           escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + '</a></span>' + state +
         (values ? '<span class="hint">' + values + '</span>' : '') +
-        (x.notify ? '<span class="workflow-option-value">Send result to messaging app</span>' : '') +
         '<span style="display:flex;gap:6px;margin-left:auto">' +
           (x.status === 'paused' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="resume">Resume</button>'
             : x.status === 'scheduled' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="pause">Pause</button>' : '') +
@@ -3420,11 +3419,11 @@ ${consoleShellScript}
           : t.workflow_missing
             ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
             : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') +
-        // A workflow's schedule follows its Messages tab; one ticked from
-        // before can still be turned off here.
-        (t.status !== 'cancelled' && t.status !== 'done' && (!t.workflow_id || t.notify)
+        // A workflow's schedule follows its Messages tab (an old tick here
+        // was moved there when the server started).
+        (t.status !== 'cancelled' && t.status !== 'done' && !t.workflow_id
           ? '<label class="schedule-notify hint" title="Sent through its Messaging tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send result to messaging app</label>'
-          : (t.notify ? '<div><span class="workflow-option-value">Send result to messaging app</span></div>' : '')) + '</td>' +
+          : (t.notify && !t.workflow_id ? '<div><span class="workflow-option-value">Send result to messaging app</span></div>' : '')) + '</td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
         (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +

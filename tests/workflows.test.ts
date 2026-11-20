@@ -6,7 +6,7 @@ import type { ModelCall, ModelResponse } from '#core/run-agent.js'
 import { WEBHOOK_WITHOUT_PARAMETERS, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlannerTools } from '#core/system-agents/workflow-planner.js'
 import { clearWorkflowFields, readWorkflow, readWorkflows, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, WorkflowParamsError } from '#core/workflows.js'
 import { FileSchedulerStore, cancelScheduledTask, createScheduledTask, getScheduledTask, listScheduledTasks, setSchedulerStore } from '#core/scheduler.js'
-import { checkWorkflowForAgent, checkWorkflowRequirements, forgetWorkflow, listAgentWorkflows, planWorkflow, prepareWorkflowRun, updateWorkflow, updateWorkflowMessages, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowPlanDeps } from '#web/workflow-admin.js'
+import { checkWorkflowForAgent, checkWorkflowRequirements, forgetWorkflow, listAgentWorkflows, moveScheduleResultsToWorkflows, planWorkflow, postWorkflowResults, prepareWorkflowRun, updateWorkflow, updateWorkflowMessages, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowPlanDeps } from '#web/workflow-admin.js'
 import { FileRunStore, WorkflowRunner, setRunStore } from '#core/workflow-runs.js'
 import { FileTriggerStore, createTrigger, listTriggers, setTriggerStore } from '#core/workflow-triggers.js'
 
@@ -402,6 +402,24 @@ describe('workflows are skills with a start message', () => {
     expect(readWorkflow(dir, 'refund-check')?.delivery).toEqual({ chat_notice: 'New one' })
     updateWorkflow(dir, 'refund-check', { instructions: 'Go.', delivery: null })
     expect(readWorkflow(dir, 'refund-check')?.delivery).toBeUndefined()
+  })
+
+  it("moves a workflow schedule's old send-result box onto the workflow, and leaves plain schedules alone", async () => {
+    setSchedulerStore(new FileSchedulerStore(dir))
+    writeSkill(dir, 'refund-check', 'workflow: true\ntitle: Refund check\ndelivery:\n  chat_notice: Refund asked\n', 'Check the refund.')
+    writeSkill(dir, 'weekly', 'workflow: true\ntitle: Weekly\n', 'Sum up the week.')
+    const ticked = await createScheduledTask({ agent: 'cs', workflow_id: 'refund-check', schedule: { every: '1d' }, notify: true })
+    const plain = await createScheduledTask({ agent: 'cs', message: 'Say hi', schedule: { every: '1d' }, notify: true })
+    await createScheduledTask({ agent: 'cs', workflow_id: 'weekly', schedule: { every: '1d' } })
+    expect(await moveScheduleResultsToWorkflows(() => dir)).toEqual(['cs/refund-check'])
+    expect(readWorkflow(dir, 'refund-check')?.delivery).toEqual({ chat_notice: 'Refund asked', result_to_chat: true })
+    expect(readWorkflow(dir, 'weekly')?.delivery).toBeUndefined()
+    expect((await getScheduledTask(ticked.task_id))?.notify).toBe(false)
+    expect((await getScheduledTask(plain.task_id))?.notify).toBe(true)
+    // Nothing left to move the second time.
+    expect(await moveScheduleResultsToWorkflows(() => dir)).toEqual([])
+    postWorkflowResults(dir, 'weekly')
+    expect(readWorkflow(dir, 'weekly')?.delivery).toEqual({ result_to_chat: true })
   })
 
   it('saves the Messages tab on its own, leaving the instructions as they are', () => {

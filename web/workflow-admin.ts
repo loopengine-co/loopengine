@@ -1056,3 +1056,30 @@ export async function forgetAgent(agentName: string, agentDir: string): Promise<
 export function agentDirIn(projectDir: string, name: string): string {
   return join(projectDir, 'agents', name)
 }
+
+/** Before 0.3.85 a workflow's schedule could post each run's result to
+ * chat itself (its notify box); that's the workflow's own setting now (its
+ * Messages tab, delivery.result_to_chat). Moves each live schedule's box
+ * onto its workflow and clears it from the schedule, so one setting
+ * decides. Returns the workflows turned on, as "agent/workflow". */
+export async function moveScheduleResultsToWorkflows(agentDirOf: (agent: string) => string | undefined): Promise<string[]> {
+  const moved: string[] = []
+  for (const task of await listScheduledTasks()) {
+    if (!task.workflow_id || !task.notify) continue
+    const dir = agentDirOf(task.agent)
+    const workflow = dir ? readWorkflow(dir, task.workflow_id) : undefined
+    if (dir && workflow && task.status !== 'cancelled' && task.status !== 'done' && !workflow.delivery?.result_to_chat) {
+      setWorkflowDelivery(dir, task.workflow_id, { ...(workflow.delivery ?? {}), result_to_chat: true })
+      moved.push(`${task.agent}/${task.workflow_id}`)
+    }
+    await getSchedulerStore().update(task.task_id, (t) => t && { ...t, notify: false })
+  }
+  return moved
+}
+
+/** A new schedule for a workflow asked to post its result: that turns on
+ * the workflow's own setting instead (see moveScheduleResultsToWorkflows). */
+export function postWorkflowResults(agentDir: string, workflowId: string): void {
+  const workflow = readWorkflow(agentDir, workflowId)
+  if (workflow && !workflow.delivery?.result_to_chat) setWorkflowDelivery(agentDir, workflowId, { ...(workflow.delivery ?? {}), result_to_chat: true })
+}

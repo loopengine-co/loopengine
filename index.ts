@@ -285,8 +285,7 @@ export {
   type WorkflowMcpDeps,
   type WorkflowMcpCreateDeps,
   resolveMcpServers,
-  prepareMcpAbilities,
-} from './web/workflow-admin.js'
+  prepareMcpAbilities, moveScheduleResultsToWorkflows, postWorkflowResults } from './web/workflow-admin.js'
 export { WORKFLOW_PLANNER_PROMPT, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep } from './core/system-agents/workflow-planner.js'
 export { WORKFLOW_EXAMPLES, workflowExample, type WorkflowExample } from './core/system-agents/workflow-examples.js'
 export { WORKFLOW_EXAMPLE_MESSAGES, type WorkflowExampleMessage } from './core/system-agents/workflow-example-messages.js'
