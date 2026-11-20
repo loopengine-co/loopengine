@@ -93,6 +93,29 @@ export const consoleShellScript: string = `<script>
   }
   function enc(s) { return encodeURIComponent(s); }
 
+  // The sidebar's lists, kept in this tab's session storage: a page shows
+  // the last ones at once, then fetches them again and redraws only if
+  // something changed. Each console page is a full page load, so without
+  // this every click would redraw the lists from empty.
+  function recall(key) {
+    try { var v = sessionStorage.getItem('le-side:' + key); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+  }
+  function remember(key, value) {
+    try { sessionStorage.setItem('le-side:' + key, JSON.stringify(value)); } catch (e) {}
+  }
+  function cachedFetch(key, url, render) {
+    var seen = recall(key);
+    if (seen) { try { render(seen); } catch (e) {} }
+    return fetch(url, { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        if (!seen || JSON.stringify(seen) !== JSON.stringify(data)) render(data);
+        remember(key, data);
+      })
+      .catch(function () {});
+  }
+
   // Who is signed in and their role (GET /config/settings), read once.
   var settings = fetch('/config/settings')
     .then(function (r) { return r.ok ? r.json() : null; })
@@ -157,8 +180,11 @@ export const consoleShellScript: string = `<script>
       fetch('/agents/' + enc(a.name) + '/env')
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (vars) {
-          toSet[a.name] = (vars || []).filter(function (v) { return v.slot === 'agent' && v.scope === 'agent' && !v.set; }).length;
-          renderList();
+          var n = (vars || []).filter(function (v) { return v.slot === 'agent' && v.scope === 'agent' && !v.set; }).length;
+          var changed = toSet[a.name] !== n;
+          toSet[a.name] = n;
+          remember('toSet', toSet);
+          if (changed) renderList();
           var slots = document.querySelectorAll('[data-le-env-count="' + a.name + '"]');
           for (var i = 0; i < slots.length; i++) slots[i].innerHTML = envCountHtml(a.name);
         })
@@ -174,9 +200,7 @@ export const consoleShellScript: string = `<script>
   var goalList = document.getElementById('leGoalList');
   function reloadGoals() {
     if (!goalList) return Promise.resolve();
-    return fetch('/goals', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : { goals: [] }; })
-      .then(function (data) {
+    return cachedFetch('goals', '/goals', function (data) {
         var goals = data.goals || [];
         // The Jobs page is the Goals page's jobs view; it marks Jobs instead.
         var onJobs = location.pathname === '/jobs';
@@ -190,8 +214,7 @@ export const consoleShellScript: string = `<script>
           return '<li><a class="le-agent-item le-goal-item" href="/goals?goal=' + enc(g.id) + '" title="' + esc(g.goal) + '"' + (g.id === current ? ' aria-current="page"' : '') + '>' +
             '<span class="le-dot' + (g.status === 'planning' ? ' warn' : '') + '" aria-hidden="true"></span><span class="le-name">' + esc(g.goal) + '</span></a></li>';
         }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No goals yet</span><span></span></li>';
-      })
-      .catch(function () { goalList.innerHTML = ''; });
+      });
   }
   fullAccess.then(function (full) { if (full) reloadGoals(); });
 
@@ -206,9 +229,7 @@ export const consoleShellScript: string = `<script>
     var current = onJobs ? new URLSearchParams(location.search).get('job') : null;
     var jobsHead = document.querySelector('[data-le-nav-head="jobs"]');
     if (jobsHead) { if (onJobs && !current) jobsHead.setAttribute('aria-current', 'page'); else jobsHead.removeAttribute('aria-current'); }
-    return fetch('/jobs', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : { jobs: [] }; })
-      .then(function (data) {
+    return cachedFetch('jobs', '/jobs', function (data) {
         var jobs = data.jobs || [];
         jobList.innerHTML = jobs.length ? jobs.map(function (x) {
           var j = x.job;
@@ -219,8 +240,7 @@ export const consoleShellScript: string = `<script>
           return '<li><a class="le-agent-item le-goal-item" href="/jobs?job=' + enc(j.id) + '" title="' + esc(j.title) + ' (' + label + ')"' + (j.id === current ? ' aria-current="page"' : '') + '>' +
             '<span class="le-dot' + dot + '" aria-hidden="true"></span><span class="le-name">' + esc(j.title) + '</span></a></li>';
         }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No jobs yet</span><span></span></li>';
-      })
-      .catch(function () { jobList.innerHTML = ''; });
+      });
   }
   fullAccess.then(function (full) { if (full) reloadJobs(); });
 
@@ -234,17 +254,14 @@ export const consoleShellScript: string = `<script>
     var q = new URLSearchParams(location.search);
     var currentAgent = page === 'agent-config' && q.get('tab') === 'workflows' ? q.get('agent') : null;
     var currentId = currentAgent ? q.get('workflow') : null;
-    return fetch('/workflows/overview', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : { workflows: [] }; })
-      .then(function (data) {
+    return cachedFetch('workflows', '/workflows/overview', function (data) {
         var list = (data.workflows || []).slice().sort(function (a, b) { return a.title.localeCompare(b.title); });
         workflowList.innerHTML = list.length ? list.map(function (w) {
           var on = w.agent === currentAgent && w.id === currentId;
           return '<li><a class="le-agent-item le-goal-item" href="/agents/config?agent=' + enc(w.agent) + '&tab=workflows&workflow=' + enc(w.id) + '" title="' + esc(w.title) + ' (' + esc(w.agentLabel) + DOT_SEP + (w.live ? 'Running' : 'Pending') + ')"' + (on ? ' aria-current="page"' : '') + '>' +
             '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-name">' + esc(w.title) + '</span></a></li>';
         }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No workflows yet</span><span></span></li>';
-      })
-      .catch(function () { workflowList.innerHTML = ''; });
+      });
   }
   var DOT_SEP = ', ';
   fullAccess.then(function (full) { if (full) reloadWorkflows(); });
@@ -258,24 +275,31 @@ export const consoleShellScript: string = `<script>
   if (workflowsHead && page === 'workflows-overview') workflowsHead.setAttribute('aria-current', 'page');
   function reloadInboxCount() {
     if (!inboxCount) return;
-    fetch('/inbox/count', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : { open: 0 }; })
-      .then(function (d) { inboxCount.textContent = String(d.open || 0); inboxCount.hidden = !d.open; inboxCount.title = (d.open || 0) + ' waiting for a decision'; })
-      .catch(function () {});
+    cachedFetch('inbox', '/inbox/count', function (d) { inboxCount.textContent = String(d.open || 0); inboxCount.hidden = !d.open; inboxCount.title = (d.open || 0) + ' waiting for a decision'; });
   }
   reloadInboxCount();
   setInterval(function () { if (!document.hidden) reloadInboxCount(); }, 30000);
 
   var loadError = null;
   var ready = fullAccess.then(function (full) { return full ? loadAgents() : []; });
-  function loadAgents() { return fetch('/agents', { headers: { accept: 'application/json' } })
+  function loadAgents() {
+    // The last list at once (with how many settings each still needs);
+    // the fresh one replaces it below.
+    var seen = recall('agents');
+    if (seen && seen.agents) {
+      agents = seen.agents;
+      toSet = recall('toSet') || {};
+      renderList();
+    }
+    return fetch('/agents', { headers: { accept: 'application/json' } })
     .then(function (r) {
       if (!r.ok) throw new Error(r.status === 401 ? 'sign-in required (HTTP 401)' : 'HTTP ' + r.status);
       return r.json();
     })
     .then(function (data) {
       agents = data.agents || [];
-      renderList();
+      if (!seen || JSON.stringify(seen.agents) !== JSON.stringify(agents)) renderList();
+      remember('agents', { agents: agents });
       loadToSet();
       return agents;
     })

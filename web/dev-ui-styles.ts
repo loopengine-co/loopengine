@@ -132,7 +132,7 @@ export const devUiCss: string = `
   .le-nav-label { padding: 10px 16px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; }
   .le-nav-label a { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; text-decoration: none; }
   .le-nav-label a[aria-current="page"] { font-weight: 700; }
-  .le-nav-label a.le-nav-head { display: inline-flex; align-items: center; gap: 7px; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; font-weight: 600; color: inherit; }
+  .le-nav-label a.le-nav-head { display: inline-flex; align-items: center; gap: 7px; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11.5px; font-weight: 600; color: inherit; }
   .le-nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
   .le-nav-label a.le-nav-head:hover { color: var(--ink); }
   .le-nav-label a.le-nav-head[aria-current="page"] { color: var(--accent-ink); font-weight: 700; }
@@ -143,11 +143,12 @@ export const devUiCss: string = `
   .le-find { margin: auto 16px 10px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
   .le-find[aria-current="page"] { font-weight: 600; }
   .le-find + .le-find { margin-top: -4px; }
-  .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+  /* List items read smaller than their section's head. */
+  .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; font-size: 12.5px; }
   .le-agent-item:hover { background: var(--surface-2); }
   .le-agent-item[aria-current="page"] { background: var(--accent-soft); }
   .le-agent-item .le-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .le-agent-item .le-meta { font-size: 12px; color: var(--ink-faint); }
+  .le-agent-item .le-meta { font-size: 11.5px; color: var(--ink-faint); }
   .le-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
   .le-dot.warn { background: var(--warn); }
   .le-dot.tint { background: var(--accent); }
@@ -156,7 +157,7 @@ export const devUiCss: string = `
   .le-inbox-only .le-nav-group, .le-inbox-only .le-nav-label:not(.le-inbox-nav), .le-inbox-only .le-agent-list, .le-inbox-only .le-find, .le-inbox-only .le-foot > a { display: none; }
   .le-dot.idle { background: var(--ink-faint); }
   .le-foot { border-top: 1px solid var(--line); padding: 8px; display: grid; gap: 2px; }
-  .le-foot a { padding: 7px 8px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; }
+  .le-foot a { padding: 6px 8px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; font-size: 13px; }
   .le-foot a:hover { background: var(--surface-2); color: var(--ink); }
   .le-foot a[aria-current="page"] { background: var(--accent-soft); color: var(--ink); }
   .le-who { padding: 10px 8px 4px; font-size: 12px; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
