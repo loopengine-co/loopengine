@@ -94,7 +94,13 @@ export const consoleShellScript: string = `<script>
   // On the Inbox, the lists wait for the role: an approver or viewer sees
   // the Inbox only, and the rest of the sidebar is hidden. Other pages
   // are only open to the roles that see everything.
-  var fullAccess = page === 'inbox' ? settings.then(function (s) {
+  // The server marks the page for an Inbox-only role before it's shown.
+  var markedInboxOnly = Boolean(app && app.classList.contains('le-inbox-only'));
+  if (markedInboxOnly) {
+    var inboxBrand = document.querySelector('.le-brand');
+    if (inboxBrand) inboxBrand.setAttribute('href', '/inbox');
+  }
+  var fullAccess = markedInboxOnly ? Promise.resolve(false) : page === 'inbox' ? settings.then(function (s) {
     var role = s && s.signIn && s.signIn.role;
     var only = role === 'approver' || role === 'viewer';
     if (only && app) {

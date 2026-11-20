@@ -59,6 +59,10 @@ describe('the Inbox', () => {
     expect(items[1]).toMatchObject({ title: 'New dispute du_1', lastBy: 'jane@example.com' })
     expect((await listInbox(deps(runs, [pending({})]), { open: true })).items.map((i) => i.id)).toEqual(['waiting'])
     expect((await listInbox(deps(runs, [pending({})]), { q: 'jane' })).items.map((i) => i.id)).toEqual(['old'])
+    // The workflow picker lists every workflow with a case, whatever the filter.
+    const waitingOnly = await listInbox(deps(runs, []), { open: true })
+    expect(waitingOnly.items).toEqual([])
+    expect(waitingOnly.workflows.map((w) => w.id).sort()).toEqual([...new Set(runs.map((r) => r.workflow_id))].sort())
   })
 
   it('lists a decision outside any run as a case of its own', async () => {

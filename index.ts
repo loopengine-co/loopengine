@@ -386,5 +386,6 @@ export { runGoalPipeline, shapeJob, type GoalPlan, type GoalContext, type Shaped
 export { LEVERS, PLAYBOOK_VERSION, activePlaybook, setPlaybookProjectDir, type Lever } from './core/system-agents/goal-playbooks.js'
 export { startPlaybookSync, syncPlaybook, playbookSyncConfig } from './core/playbook-sync.js'
 export { workspaceRole, canDecide, inboxOnly, inboxOnlyAllows, roleLabel, type WorkspaceRole } from './core/workspace-roles.js'
+export { readPeople, recordVisit, setPersonAgents, removePerson, agentsFor, type WorkspacePerson } from './core/workspace-people.js'
 export { inboxPageHtml, renderInboxOnlyPage } from './web/inbox-page.js'
 export { listInbox, getInboxCase, timelineOf, type InboxDeps, type InboxItem, type InboxCase, type InboxPending, type InboxStep } from './web/inbox-admin.js'

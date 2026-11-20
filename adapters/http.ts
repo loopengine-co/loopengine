@@ -97,6 +97,7 @@ import {
 } from '#core/workflow-triggers.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { canDecide, inboxOnly, inboxOnlyAllows, roleLabel, workspaceRole, type WorkspaceRole } from '#core/workspace-roles.js'
+import { agentsFor, readPeople, recordVisit, removePerson, setPersonAgents } from '#core/workspace-people.js'
 import { reportRun, usedTool } from '#core/run-events.js'
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
@@ -2343,6 +2344,20 @@ const inboxDeps: InboxDeps = {
   workflowTitle: (agent, workflowId) => (workflowId && getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.title : undefined),
 }
 
+// The Inbox as a caller sees it: an approver or viewer limited to some
+// agents (Settings → People) gets only those agents' cases.
+function inboxDepsFor(req: IncomingMessage): InboxDeps {
+  const caller = callerOf(req)
+  const allowed = agentsFor(process.cwd(), caller.role, caller.email)
+  if (!allowed) return inboxDeps
+  const sees = (agent: string) => allowed.includes(agent)
+  return {
+    ...inboxDeps,
+    runs: async () => (await inboxDeps.runs()).filter((r) => sees(r.agent)),
+    pending: async () => (await inboxDeps.pending()).filter((p) => sees(p.agent)),
+  }
+}
+
 // Workflow runs, whatever starts them, each recorded apart from schedules.
 const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun, onChange: reportWorkflowRun })
 
@@ -3693,19 +3708,28 @@ async function createCheckpointFromPending(
  * response here is authoritative on its own, not a fallback for some
  * other channel. */
 async function handlePendingApprovalResolve(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<void> {
-  const body = await decidingBody(req, res)
+  const body = await decidingBody(req, res, pendingId)
   if (!body) return
   await settleChatFromApi(pendingId, 'approval', body)
   await resolvePendingApproval(res, pendingId, body)
 }
 
 // A decision's body, with "by" set to the signed-in person deciding (what
-// a program sends is kept); undefined, answered 403, for a viewer.
-async function decidingBody(req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown> | undefined> {
+// a program sends is kept); undefined, answered 403, for a viewer or for
+// an approver deciding on an agent they don't see (Settings → People).
+async function decidingBody(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<Record<string, unknown> | undefined> {
   const caller = callerOf(req)
   if (!canDecide(caller.role)) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `Your role in this workspace is ${roleLabel(caller.role)}, which can't answer or approve.` }))
     return undefined
+  }
+  const allowed = agentsFor(process.cwd(), caller.role, caller.email)
+  if (allowed) {
+    const agent = (await checkpoints.get(pendingId))?.agent
+    if (agent && !allowed.includes(agent)) {
+      res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `You don't have access to ${agent}'s cases in this workspace. An owner or admin can add it in Settings → People.` }))
+      return undefined
+    }
   }
   const body = await readJsonBody(req)
   if (caller.person) return { ...body, by: caller.email ?? 'a signed-in person' }
@@ -3856,7 +3880,7 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
  * either answered or it isn't. Shares the same "outstanding empty →
  * resume, else report remaining count" tail via respondAfterResolution. */
 async function handlePendingQuestionAnswer(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<void> {
-  const body = await decidingBody(req, res)
+  const body = await decidingBody(req, res, pendingId)
   if (!body) return
   await settleChatFromApi(pendingId, 'question', body)
   await answerPendingQuestion(res, pendingId, body)
@@ -4865,6 +4889,13 @@ const server = createServer(async (req, res) => {
   // An approver or viewer sees the Inbox only: the front page opens it,
   // and anything else is refused, saying where to go.
   const caller = callerOf(req)
+  if (caller.person && caller.email) {
+    try {
+      recordVisit(process.cwd(), caller.email, caller.role)
+    } catch (err) {
+      console.error('[people] could not note a visit:', err instanceof Error ? err.message : err)
+    }
+  }
   if (inboxOnly(caller.role)) {
     const path = (req.url ?? '/').split('?')[0]
     if (req.method === 'GET' && path === '/') {
@@ -5117,17 +5148,20 @@ const server = createServer(async (req, res) => {
     // The Inbox (web/inbox-page.ts): every run as a case, the waiting ones
     // first; and its data.
     if (req.method === 'GET' && pathname === '/inbox') {
-      res.writeHead(200, { 'content-type': 'text/html' }).end(inboxPageHtml)
+      // An approver or viewer gets it Inbox-only from the start, so the
+      // rest of the sidebar never shows.
+      const page = inboxOnly(callerOf(req).role) ? inboxPageHtml.replace('<div class="le-app">', '<div class="le-app le-inbox-only">') : inboxPageHtml
+      res.writeHead(200, { 'content-type': 'text/html' }).end(page)
       return
     }
     if (req.method === 'GET' && (pathname === '/inbox/items' || pathname === '/inbox/count' || pathname.startsWith('/inbox/cases/'))) {
       const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
       if (pathname.startsWith('/inbox/cases/')) {
-        const found = await getInboxCase(inboxDeps, decodeURIComponent(pathname.slice('/inbox/cases/'.length)))
+        const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(pathname.slice('/inbox/cases/'.length)))
         return found ? json(200, found) : json(404, { error: 'No such case: it may have been removed.' })
       }
       const q = new URL(req.url ?? '/', 'http://localhost').searchParams
-      const listed = await listInbox(inboxDeps, { open: q.get('open') === '1', q: q.get('q') ?? undefined, workflow: q.get('workflow') ?? undefined })
+      const listed = await listInbox(inboxDepsFor(req), { open: q.get('open') === '1', q: q.get('q') ?? undefined, workflow: q.get('workflow') ?? undefined })
       return pathname === '/inbox/count' ? json(200, { open: listed.open }) : json(200, listed)
     }
     // The Jobs page (the same page as Goals, on its jobs view), and its API.
@@ -5328,6 +5362,33 @@ const server = createServer(async (req, res) => {
     }
     // Settings → Shared policies (web/global-config.ts): the business's
     // rules every workflow run reads (policies.md in the project).
+    // Settings → People: which agents each approver or viewer sees.
+    // Owners and admins change it; the list itself is for anyone with the
+    // full console.
+    if (pathname === '/config/people') {
+      const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      const role = callerOf(req).role
+      const canChange = role === 'owner' || role === 'admin' || role === 'api'
+      const listing = () => ({ people: readPeople(process.cwd()), agents: listAgents().sort(), canChange, hosted: Boolean(trustedProxySecret) })
+      if (req.method === 'GET') return json(200, listing())
+      if (req.method !== 'PUT' && req.method !== 'DELETE') return json(405, { error: 'Use GET, PUT or DELETE.' })
+      if (!canChange) return json(403, { error: `Your role in this workspace is ${roleLabel(role)}; only an owner or admin chooses which agents people see.` })
+      const body = await readJsonBody(req)
+      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'Give an email address, e.g. jane@example.com.' })
+      if (req.method === 'DELETE') {
+        removePerson(process.cwd(), email)
+        return json(200, listing())
+      }
+      let agents: string[] | undefined
+      if (body.agents === null || body.agents === 'all') agents = undefined
+      else if (Array.isArray(body.agents) && body.agents.every((a) => typeof a === 'string')) agents = body.agents as string[]
+      else return json(400, { error: 'agents must be a list of agent names, or null for every agent.' })
+      const unknown = (agents ?? []).filter((a) => !getEntry(a))
+      if (unknown.length) return json(400, { error: `No such agent: ${unknown.join(', ')}.` })
+      setPersonAgents(process.cwd(), email, agents)
+      return json(200, listing())
+    }
     if (req.method === 'GET' && pathname === '/config/policies') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))
       return

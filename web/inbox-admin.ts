@@ -64,7 +64,7 @@ function questionOf(p: InboxPending): string {
   return typeof p.args.question === 'string' ? p.args.question : p.reason
 }
 
-export async function listInbox(deps: InboxDeps, filter: { open?: boolean; q?: string; workflow?: string; limit?: number } = {}): Promise<{ items: InboxItem[]; open: number }> {
+export async function listInbox(deps: InboxDeps, filter: { open?: boolean; q?: string; workflow?: string; limit?: number } = {}): Promise<{ items: InboxItem[]; open: number; workflows: { id: string; title: string }[] }> {
   const [runs, pending] = await Promise.all([deps.runs(), deps.pending()])
   const bySession = new Map<string, InboxPending[]>()
   for (const p of pending) bySession.set(p.sessionId, [...(bySession.get(p.sessionId) ?? []), p])
@@ -94,7 +94,11 @@ export async function listInbox(deps: InboxDeps, filter: { open?: boolean; q?: s
     .filter((i) => !q || `${i.title} ${i.agent} ${i.workflowTitle} ${runParams.get(i.id) ?? ''} ${i.lastBy ?? ''}`.toLowerCase().includes(q))
     // Waiting first, newest first within each.
     .sort((a, b) => (b.waiting.length ? 1 : 0) - (a.waiting.length ? 1 : 0) || b.startedAt.localeCompare(a.startedAt))
-  return { items: shown.slice(0, filter.limit ?? 200), open }
+  // Every workflow with a case, whatever the filter, for the workflow picker.
+  const workflows = [...new Map(items.filter((i) => i.workflowId).map((i) => [i.workflowId, i.workflowTitle])).entries()]
+    .map(([id, title]) => ({ id, title }))
+    .sort((a, b) => a.title.localeCompare(b.title))
+  return { items: shown.slice(0, filter.limit ?? 200), open, workflows }
 }
 
 /** A step in a case's timeline. */

@@ -1016,6 +1016,7 @@ ${consoleShellScript}
       rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
+      (si.mode === 'hosted' ? '<section><h3>People</h3><div class="source" id="peopleBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
       '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
@@ -1203,6 +1204,126 @@ ${consoleShellScript}
     });
   }
 
+  // ---- People: which agents each approver or viewer sees (hosted
+  // workspaces; invites and roles are in the dashboard). ----
+  var peopleData = null;
+  var settingsDashboardUrl = '';
+  var peopleEditing = '';
+  function roleName(role) {
+    return role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Not here yet';
+  }
+  function limitedRole(role) {
+    return role === 'approver' || role === 'viewer';
+  }
+  function agentChecks(selected, all) {
+    if (!all.length) return '<p class="hint">No agents yet.</p>';
+    return '<div style="display:flex;flex-wrap:wrap;gap:6px 14px">' + all.map(function (a) {
+      return '<label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="agent" value="' + escapeHtml(a) + '"' + (selected.indexOf(a) !== -1 ? ' checked' : '') + '> ' + escapeHtml(a) + '</label>';
+    }).join('') + '</div>';
+  }
+  function agentsText(p) {
+    return p.agents ? (p.agents.length ? p.agents.map(escapeHtml).join(', ') : 'No agents') : 'All agents';
+  }
+  function renderPeople() {
+    var box = document.getElementById('peopleBox');
+    if (!box || !peopleData) return;
+    var d = peopleData;
+    var intro = '<p style="margin:0 0 10px">Choose which agents each approver or viewer sees. The Inbox shows them only those agents' + String.fromCharCode(8217) + ' cases, and an approver can decide only on those. Owners, admins and editors always see every agent. Invite people and set their role in the ' +
+      '<a href="#" id="peopleDashboard">dashboard</a>.</p>';
+    var rows = d.people.map(function (p) {
+      var editing = peopleEditing === p.email;
+      var full = p.role && !limitedRole(p.role);
+      var agentsCell = full
+        ? '<span class="hint">All agents (' + escapeHtml(roleName(p.role)) + ')</span>'
+        : editing
+          ? '<form class="peopleForm" data-email="' + escapeHtml(p.email) + '" style="display:flex;flex-direction:column;gap:8px">' +
+              '<label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="all"' + (p.agents ? '' : ' checked') + '> All agents, including new ones</label>' +
+              '<div class="peopleAgents"' + (p.agents ? '' : ' hidden') + '>' + agentChecks(p.agents || [], d.agents) + '</div>' +
+              '<div style="display:flex;gap:6px"><button type="submit" class="primary">Save</button><button type="button" data-people-cancel="1">Cancel</button></div>' +
+            '</form>'
+          : agentsText(p);
+      var actions = !d.canChange || full || editing ? ''
+        : '<button type="button" data-people-edit="' + escapeHtml(p.email) + '">Change</button>' +
+          (p.role ? '' : ' <button type="button" data-people-remove="' + escapeHtml(p.email) + '">Remove</button>');
+      return '<tr><td>' + escapeHtml(p.email) + '</td><td>' + escapeHtml(roleName(p.role)) + (p.seen ? '<div class="hint">last here ' + escapeHtml(new Date(p.seen).toLocaleDateString()) + '</div>' : '') + '</td><td>' + agentsCell + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
+    }).join('');
+    var table = d.people.length
+      ? '<table><thead><tr><th>Person</th><th>Role</th><th>Sees</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<p class="hint">Nobody else has signed in yet. People show here after their first visit, or add someone by email below.</p>';
+    var add = d.canChange
+      ? '<form id="peopleAddForm" style="display:flex;flex-direction:column;gap:8px;margin-top:12px;max-width:720px">' +
+          '<label for="peopleEmail" class="hint">Limit someone before their first visit</label>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="peopleEmail" type="email" placeholder="jane@example.com" style="flex:1;min-width:200px" required></div>' +
+          agentChecks([], d.agents) +
+          '<div><button type="submit">Add</button></div>' +
+        '</form>'
+      : '<p class="hint">Only an owner or admin can change who sees which agents.</p>';
+    box.innerHTML = intro + table + add + '<div id="peopleMsg" class="hint" style="margin-top:8px"></div>';
+    var dash = document.getElementById('peopleDashboard');
+    if (dash) {
+      if (settingsDashboardUrl) dash.setAttribute('href', settingsDashboardUrl);
+      else dash.outerHTML = 'dashboard';
+    }
+  }
+  function sendPeople(method, body) {
+    var msg = document.getElementById('peopleMsg');
+    if (msg) msg.textContent = 'Saving' + String.fromCharCode(8230);
+    return fetch('/config/people', { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body.error || 'Could not save');
+        peopleData = r.body;
+        peopleEditing = '';
+        renderPeople();
+        var m = document.getElementById('peopleMsg');
+        if (m) m.textContent = 'Saved. It applies on their next page load.';
+      })
+      .catch(function (err) {
+        var m = document.getElementById('peopleMsg');
+        if (m) m.innerHTML = '<span class="error">' + escapeHtml(err.message) + '</span>';
+      });
+  }
+  function checkedAgents(form) {
+    return Array.prototype.map.call(form.querySelectorAll('input[name="agent"]:checked'), function (i) { return i.value; });
+  }
+  document.getElementById('settingsContent').addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || !t.getAttribute) return;
+    if (t.getAttribute('data-people-edit')) { peopleEditing = t.getAttribute('data-people-edit'); renderPeople(); }
+    else if (t.getAttribute('data-people-cancel')) { peopleEditing = ''; renderPeople(); }
+    else if (t.getAttribute('data-people-remove')) sendPeople('DELETE', { email: t.getAttribute('data-people-remove') });
+  });
+  document.getElementById('settingsContent').addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (!t || t.name !== 'all') return;
+    var form = t.closest('.peopleForm');
+    var list = form && form.querySelector('.peopleAgents');
+    if (list) list.hidden = t.checked;
+  });
+  document.getElementById('settingsContent').addEventListener('submit', function (ev) {
+    var form = ev.target;
+    if (form.classList && form.classList.contains('peopleForm')) {
+      ev.preventDefault();
+      sendPeople('PUT', { email: form.getAttribute('data-email'), agents: form.querySelector('input[name="all"]').checked ? null : checkedAgents(form) });
+    } else if (form.id === 'peopleAddForm') {
+      ev.preventDefault();
+      sendPeople('PUT', { email: document.getElementById('peopleEmail').value, agents: checkedAgents(form) });
+    }
+  });
+  function loadPeople() {
+    if (!document.getElementById('peopleBox')) return;
+    fetch('/config/people', { cache: 'no-store' })
+      .then(function (r) {
+        if (r.status === 404) throw new Error('this server' + String.fromCharCode(8217) + 's template is older; update it (Updates, below) to choose who sees which agents');
+        return r.json();
+      })
+      .then(function (d) { peopleData = d; renderPeople(); })
+      .catch(function (err) {
+        var box = document.getElementById('peopleBox');
+        if (box) box.innerHTML = '<p class="hint">People aren' + String.fromCharCode(8217) + 't available: ' + escapeHtml(err.message) + '.</p>';
+      });
+  }
+
   function loadPolicies() {
     if (!document.getElementById('policiesBox')) return;
     fetch('/config/policies', { cache: 'no-store' })
@@ -1356,9 +1477,11 @@ ${consoleShellScript}
     fetch('/config/settings')
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        settingsDashboardUrl = d.signIn && d.signIn.dashboardUrl ? d.signIn.dashboardUrl : '';
         content.innerHTML = renderSettings(d);
         loadedSections.settings = true;
         loadTimeZone();
+        loadPeople();
         loadPolicies();
         loadAbilitySources();
         loadUpgrade();

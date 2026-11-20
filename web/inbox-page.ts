@@ -132,8 +132,8 @@ ${consoleShellScript}
 
   function renderList(data) {
     var items = data.items || [];
-    items.forEach(function (i) { if (i.workflowId) workflows[i.workflowId] = i.workflowTitle; });
-    var options = Object.keys(workflows).sort().map(function (id) { return '<option value="' + esc(id) + '"' + (id === state.workflow ? ' selected' : '') + '>' + esc(workflows[id]) + '</option>'; }).join('');
+    (data.workflows || []).forEach(function (w) { workflows[w.id] = w.title; });
+    var options = Object.keys(workflows).sort(function (a, b) { return workflows[a].localeCompare(workflows[b]); }).map(function (id) { return '<option value="' + esc(id) + '"' + (id === state.workflow ? ' selected' : '') + '>' + esc(workflows[id]) + '</option>'; }).join('');
     var rows = items.map(function (i) {
       return '<a class="ib-row" href="/inbox?case=' + encodeURIComponent(i.id) + '">' +
         '<span class="le-dot' + (i.waiting.length ? ' warn' : i.status === 'running' ? '' : ' idle') + '" aria-hidden="true"></span>' +
