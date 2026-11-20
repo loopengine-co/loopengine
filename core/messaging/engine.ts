@@ -82,7 +82,8 @@ export interface MessagingDeps {
   checkArgs(pendingId: string, args: Record<string, unknown>): Promise<string | undefined>
 }
 
-export type MessagingDecision = { kind: 'approve'; editedArgs?: Record<string, unknown> } | { kind: 'deny' } | { kind: 'answer'; answer: string }
+/** by: who decided, as the chat app names them. */
+export type MessagingDecision = ({ kind: 'approve'; editedArgs?: Record<string, unknown> } | { kind: 'deny' } | { kind: 'answer'; answer: string }) & { by?: string }
 
 export interface DecisionOutcome {
   /** Couldn't be recorded (an invalid request, a server error). */
@@ -195,7 +196,7 @@ export async function handleInboundMessage(message: InboundMessage, deps: Messag
       // Said before the decision goes in: the run carries on inside
       // deps.decide and may post its next request before it returns.
       await say(verdict.decision === 'deny' ? `Denied by ${who}. Letting the agent know…` : `Answered by ${who}: "${answer}". The agent is carrying on…`)
-      const outcome = await deps.decide(link.pendingId, verdict.decision === 'answer' ? { kind: 'answer', answer: verdict.answer } : { kind: 'deny' })
+      const outcome = await deps.decide(link.pendingId, verdict.decision === 'answer' ? { kind: 'answer', answer: verdict.answer, by: who } : { kind: 'deny', by: who })
       const after = followUpText(outcome)
       if (after) await say(after)
       if (!outcome.error && !outcome.alreadyResolved) {
@@ -292,7 +293,7 @@ async function runApproved(deps: MessagingDeps, link: ThreadLink, tool: string, 
   const { connector } = deps
   const edited = Boolean(link.proposedArgs)
   await connector.postInThread(link.conversation, link.ts, `Approved${edited ? ' as changed' : ''} by ${who}. Running \`${tool}\` with:\n${formatArgs(args, connector.escape, await deps.toolSchema(tool))}`)
-  const outcome = await deps.decide(link.pendingId, { kind: 'approve', ...(edited ? { editedArgs: args } : {}) })
+  const outcome = await deps.decide(link.pendingId, { kind: 'approve', ...(edited ? { editedArgs: args } : {}), by: who })
   const after = followUpText(outcome)
   if (after) await connector.postInThread(link.conversation, link.ts, after)
   if (!outcome.error && !outcome.alreadyResolved) {

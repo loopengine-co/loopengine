@@ -1157,10 +1157,10 @@ ${consoleShellScript}
     var d = w.delivery || {};
     var chat = workflowChatAppName();
     var chatLabel = escapeHtml(chat || 'chat');
-    // With no messaging app, an unattended run's approvals are refused and
-    // its questions go unanswered (adapters/http.ts, executeUnattendedRun).
+    // With no messaging app, an unattended run's approvals and questions
+    // wait in the Inbox (adapters/http.ts, executeUnattendedRun).
     var decisionsLabel = workflowChatName() ? escapeHtml(workflowChatName())
-      : 'The messaging app <span class="hint">(none set up: approvals are refused and questions go unanswered)</span>';
+      : 'The Inbox <span class="hint">(no messaging app is set up, so they wait in the Inbox)</span>';
     var noChat = chat ? '' : ' disabled';
     var RSQ = String.fromCharCode(8217);
     var row = function (label, body) { return '<div class="wf-msg-row"><div class="wf-msg-k">' + label + '</div><div class="wf-msg-v">' + body + '</div></div>'; };

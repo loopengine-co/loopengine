@@ -385,3 +385,6 @@ export { sendLeverEvents, sharesLeverStats, startLeverEventsSync } from './web/l
 export { runGoalPipeline, shapeJob, type GoalPlan, type GoalContext, type ShapedJob } from './core/system-agents/goal-planner.js'
 export { LEVERS, PLAYBOOK_VERSION, activePlaybook, setPlaybookProjectDir, type Lever } from './core/system-agents/goal-playbooks.js'
 export { startPlaybookSync, syncPlaybook, playbookSyncConfig } from './core/playbook-sync.js'
+export { workspaceRole, canDecide, inboxOnly, inboxOnlyAllows, roleLabel, type WorkspaceRole } from './core/workspace-roles.js'
+export { inboxPageHtml, renderInboxOnlyPage } from './web/inbox-page.js'
+export { listInbox, getInboxCase, timelineOf, type InboxDeps, type InboxItem, type InboxCase, type InboxPending, type InboxStep } from './web/inbox-admin.js'

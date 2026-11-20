@@ -325,7 +325,7 @@ describe('handleInboundMessage', () => {
     const { deps, posts, decided, replaced, choices } = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
     await handleInboundMessage(reply('Yes, go ahead!'), deps)
     expect(choices).toEqual([])
-    expect(decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve' } }])
+    expect(decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', by: '@U1' } }])
     expect(posts).toEqual(['C1/1.0: Approved by @U1. Running `stripe_refund` with:\n**Amount:** 60', 'C1/1.0: Done.\n> Refunded $60.00.'])
     expect(replaced).toEqual(['`stripe_refund` was approved by @U1 in the thread.'])
   })
@@ -339,7 +339,7 @@ describe('handleInboundMessage', () => {
     expect(calls).toEqual([])
 
     expect(await handleMessagingAction('confirm', 'p1', 'U1', deps)).toBe('Confirmed by @U1.')
-    expect(decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve' } }])
+    expect(decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', by: '@U1' } }])
     expect(posts).toEqual(['C1/1.0: Approved by @U1. Running `stripe_refund` with:\n**Amount:** 60', 'C1/1.0: Done.\n> Refunded $60.00.'])
     expect(replaced).toEqual(['`stripe_refund` was approved by @U1 in the thread.'])
   })
@@ -348,14 +348,14 @@ describe('handleInboundMessage', () => {
     mapRequest()
     const denied = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'deny' })
     await handleInboundMessage(reply('no, cancel it'), denied.deps)
-    expect(denied.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'deny' } }])
+    expect(denied.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'deny', by: '@U1' } }])
     expect(denied.posts[0]).toMatch(/^C1\/1.0: Denied by @U1\./)
 
     recordThread(dir, { app: 'chat', conversation: 'C1', ts: '5.0', pendingId: 'q1', kind: 'question' })
     const question: TurnCheckpoint = { ...checkpoint, outstanding: { q1: { kind: 'question', toolUseId: 'tq', tool: 'system_ask_user', args: { question: 'Which city?', options: ['Tokyo', 'Kyoto'] }, reason: 'question' } } }
     const answered = setup({ approvers: () => [{ user: 'U1' }], getCheckpoint: async (id) => (id === 'q1' ? question : undefined) }, { decision: 'answer', answer: 'Kyoto' })
     await handleInboundMessage(reply('Kyoto please', '5.0'), answered.deps)
-    expect(answered.decided).toEqual([{ pendingId: 'q1', decision: { kind: 'answer', answer: 'Kyoto' } }])
+    expect(answered.decided).toEqual([{ pendingId: 'q1', decision: { kind: 'answer', answer: 'Kyoto', by: '@U1' } }])
     expect(answered.decisionCalls[0].system).toContain('"Which city?"')
     expect(answered.replaced).toEqual(['The question was answered ("Kyoto") by @U1 in the thread.'])
   })
@@ -443,7 +443,7 @@ describe('handleInboundMessage', () => {
     const ok = setup({ approvers: () => [{ user: 'U1' }] }, { decision: 'approve' })
     await handleInboundMessage(reply('ok'), ok.deps)
     expect(ok.decisionCalls[0].system).toContain('just shown a proposed change')
-    expect(ok.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 } } }])
+    expect(ok.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 }, by: '@U1' } }])
     recordThread(dir, { app: 'chat', conversation: 'C1', ts: '1.0', pendingId: 'p1', kind: 'approval', proposedArgs: { amount: 40 } })
 
     // A yes that isn't plain asks to confirm the changed version, and Confirm runs it.
@@ -452,7 +452,7 @@ describe('handleInboundMessage', () => {
     expect(yes.decided).toEqual([])
     expect(yes.choices).toEqual([{ text: 'Confirm to run `stripe_refund` with:\n**Amount:** 40', actions: ['confirm', 'cancel_confirm'] }])
     await handleMessagingAction('confirm', 'p1', 'U1', yes.deps)
-    expect(yes.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 } } }])
+    expect(yes.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 }, by: '@U1' } }])
     expect(yes.posts[0]).toBe('C1/1.0: Approved as changed by @U1. Running `stripe_refund` with:\n**Amount:** 40')
     expect(yes.replaced).toEqual(['`stripe_refund` was approved as changed by @U1 in the thread.'])
   })
@@ -474,7 +474,7 @@ describe('handleInboundMessage', () => {
     mapRequest()
     const confirm = setup()
     expect(await handleMessagingAction('confirm', 'p1', 'U1', confirm.deps)).toBe('Confirmed by @U1.')
-    expect(confirm.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve' } }])
+    expect(confirm.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', by: '@U1' } }])
 
     const cancel = setup()
     expect(await handleMessagingAction('cancel_confirm', 'p1', 'U1', cancel.deps)).toMatch(/cancelled\. Nothing ran/)
@@ -489,7 +489,7 @@ describe('handleInboundMessage', () => {
     recordThread(dir, { app: 'chat', conversation: 'C1', ts: '1.0', pendingId: 'p1', kind: 'approval', proposedArgs: { amount: 40 } })
     const edited = setup()
     expect(await handleMessagingAction('approve_edited', 'p1', 'U1', edited.deps)).toBe('Approved as changed by @U1.')
-    expect(edited.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 } } }])
+    expect(edited.decided).toEqual([{ pendingId: 'p1', decision: { kind: 'approve', editedArgs: { amount: 40 }, by: '@U1' } }])
 
     const gone = setup({ getCheckpoint: async () => undefined })
     expect(await handleMessagingAction('confirm', 'p1', 'U1', gone.deps)).toBe('This request has already been decided.')

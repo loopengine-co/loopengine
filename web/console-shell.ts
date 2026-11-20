@@ -36,8 +36,12 @@ const JOBS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="currentCol
 // its middle 18, it shows at the same size.
 const AGENTS_ICON = '<svg class="le-nav-icon" viewBox="3 3 18 18" fill="currentColor" aria-hidden="true"><path d="M11 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm3.5 1.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M12 5.5a1 1 0 0 1 1 1V7h4a3 3 0 0 1 3 3v3.5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V10a3 3 0 0 1 3-3h4v-.5a1 1 0 0 1 1-1ZM7 9h10a1 1 0 0 1 1 1v3.5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V10a1 1 0 0 1 1-1Z"/></svg>'
 
+// An inbox tray, for the Inbox.
+const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
+
 export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label="Console navigation">
   <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
+  <div class="le-nav-label le-inbox-nav"><a class="le-nav-head" href="/inbox" data-le-nav-head="inbox">${INBOX_ICON}Inbox</a><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></div>
   <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">${GOALS_ICON}Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
   <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
   <div class="le-nav-label"><a class="le-nav-head" href="/jobs" data-le-nav-head="jobs">${JOBS_ICON}Jobs</a><a href="/jobs?new=1" data-le-job-new>+ New</a></div>
@@ -82,6 +86,24 @@ export const consoleShellScript: string = `<script>
     });
   }
   function enc(s) { return encodeURIComponent(s); }
+
+  // Who is signed in and their role (GET /config/settings), read once.
+  var settings = fetch('/config/settings')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .catch(function () { return null; });
+  // On the Inbox, the lists wait for the role: an approver or viewer sees
+  // the Inbox only, and the rest of the sidebar is hidden. Other pages
+  // are only open to the roles that see everything.
+  var fullAccess = page === 'inbox' ? settings.then(function (s) {
+    var role = s && s.signIn && s.signIn.role;
+    var only = role === 'approver' || role === 'viewer';
+    if (only && app) {
+      app.classList.add('le-inbox-only');
+      var brand = document.querySelector('.le-brand');
+      if (brand) brand.setAttribute('href', '/inbox');
+    }
+    return !only;
+  }) : Promise.resolve(true);
 
   function tabHref(name, tab) {
     if (tab === 'chat') return '/playground?agent=' + enc(name);
@@ -159,7 +181,7 @@ export const consoleShellScript: string = `<script>
       })
       .catch(function () { goalList.innerHTML = ''; });
   }
-  reloadGoals();
+  fullAccess.then(function (full) { if (full) reloadGoals(); });
 
   // ---- Jobs, listed under Goals: the person's own jobs (GET /jobs), newest
   // added first, each opening on the Jobs page; its dot says whether it's
@@ -188,10 +210,26 @@ export const consoleShellScript: string = `<script>
       })
       .catch(function () { jobList.innerHTML = ''; });
   }
-  reloadJobs();
+  fullAccess.then(function (full) { if (full) reloadJobs(); });
+
+  // ---- The Inbox, at the top: how many cases wait on a person, kept
+  // current. The Inbox page marks itself.
+  var inboxCount = document.getElementById('leInboxCount');
+  var inboxHead = document.querySelector('[data-le-nav-head="inbox"]');
+  if (inboxHead && page === 'inbox') inboxHead.setAttribute('aria-current', 'page');
+  function reloadInboxCount() {
+    if (!inboxCount) return;
+    fetch('/inbox/count', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { open: 0 }; })
+      .then(function (d) { inboxCount.textContent = String(d.open || 0); inboxCount.hidden = !d.open; inboxCount.title = (d.open || 0) + ' waiting for a decision'; })
+      .catch(function () {});
+  }
+  reloadInboxCount();
+  setInterval(function () { if (!document.hidden) reloadInboxCount(); }, 30000);
 
   var loadError = null;
-  var ready = fetch('/agents', { headers: { accept: 'application/json' } })
+  var ready = fullAccess.then(function (full) { return full ? loadAgents() : []; });
+  function loadAgents() { return fetch('/agents', { headers: { accept: 'application/json' } })
     .then(function (r) {
       if (!r.ok) throw new Error(r.status === 401 ? 'sign-in required (HTTP 401)' : 'HTTP ' + r.status);
       return r.json();
@@ -207,6 +245,7 @@ export const consoleShellScript: string = `<script>
       if (list) list.innerHTML = '<li class="le-agent-item"><span></span><span class="le-meta">Could not load agents: ' + esc(err.message) + '</span><span></span></li>';
       return [];
     });
+  }
 
   // opts: { name, displayName, prompt, chips: [{ text, mono }], tab, counts: { tools, skills, abilities, actauth } }
   function renderHead(opts) {
@@ -277,13 +316,13 @@ export const consoleShellScript: string = `<script>
   // hosting router signs requests, otherwise how this server is protected.
   var who = document.getElementById('leWho');
   if (who) {
-    fetch('/config/settings')
-      .then(function (r) { return r.ok ? r.json() : null; })
+    settings
       .then(function (s) {
         if (!s || !s.signIn) return;
         var si = s.signIn;
         if (si.mode === 'hosted') {
-          who.innerHTML = '<span class="le-who-name" title="' + esc(si.email || '') + '">' + esc(si.email || 'Signed in') + '</span>' +
+          var roleName = si.role && si.role !== 'owner' ? si.role.charAt(0).toUpperCase() + si.role.slice(1) : '';
+          who.innerHTML = '<span class="le-who-name" title="' + esc(si.email || '') + '">' + esc(si.email || 'Signed in') + (roleName ? ' (' + esc(roleName) + ')' : '') + '</span>' +
             (si.dashboardUrl ? '<a href="' + esc(si.dashboardUrl) + '">Dashboard</a>' : '');
         } else {
           who.innerHTML = '<span class="le-who-name">' + (si.mode === 'basic' ? 'Signed in with Basic Auth' : 'No sign-in configured') + '</span>';
@@ -533,6 +572,6 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, reloadJobs: reloadJobs, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`

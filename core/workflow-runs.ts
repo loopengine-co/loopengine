@@ -75,8 +75,11 @@ export interface WorkflowRun {
   warnings?: string[]
   /** Each callback delivery, oldest first (the latest 10). */
   callbacks?: CallbackDelivery[]
-  /** Each approval decided while it ran, oldest first. */
-  decisions?: { tool: string; approved: boolean; at: string }[]
+  /** Each approval decided while it ran, oldest first, with who decided
+   * (an email, or a chat name) when known. */
+  decisions?: { tool: string; approved: boolean; at: string; by?: string; edited?: boolean }[]
+  /** Each question it asked that was answered, oldest first. */
+  answers?: { question: string; answer: string; at: string; by?: string }[]
   /** What the app or person reported after it ended
    * (POST /agents/:name/runs/:id/feedback): the text actually used, how
    * much it was edited from the result, and a verdict. */
@@ -355,10 +358,19 @@ export class WorkflowRunner {
   }
 
   /** Records an approval decided in a run's session. */
-  async recordDecision(sessionId: string, decision: { tool: string; approved: boolean }): Promise<void> {
+  async recordDecision(sessionId: string, decision: { tool: string; approved: boolean; by?: string; edited?: boolean }): Promise<void> {
     const run = await this.forSession(sessionId)
     if (!run) return
-    await getRunStore().update(run.run_id, (r) => r && { ...r, decisions: [...(r.decisions ?? []), { ...decision, at: new Date().toISOString() }].slice(-50) })
+    const entry = { tool: decision.tool, approved: decision.approved, at: new Date().toISOString(), ...(decision.by ? { by: decision.by } : {}), ...(decision.edited ? { edited: true } : {}) }
+    await getRunStore().update(run.run_id, (r) => r && { ...r, decisions: [...(r.decisions ?? []), entry].slice(-50) })
+  }
+
+  /** Records a question answered in a run's session. */
+  async recordAnswer(sessionId: string, answer: { question: string; answer: string; by?: string }): Promise<void> {
+    const run = await this.forSession(sessionId)
+    if (!run) return
+    const entry = { question: answer.question.slice(0, 4000), answer: answer.answer.slice(0, 4000), at: new Date().toISOString(), ...(answer.by ? { by: answer.by } : {}) }
+    await getRunStore().update(run.run_id, (r) => r && { ...r, answers: [...(r.answers ?? []), entry].slice(-50) })
   }
 
   /** On startup: a run a restart cut off can't continue, so it's an
