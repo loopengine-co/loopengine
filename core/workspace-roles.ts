@@ -32,6 +32,14 @@ export function inboxOnly(role: WorkspaceRole): boolean {
   return role === 'approver' || role === 'viewer'
 }
 
+/** The agents a caller may see, or undefined for every agent: only an
+ * approver or viewer is ever limited, to the agents their signed identity
+ * lists (chosen in the host's dashboard). */
+export function agentsFor(role: WorkspaceRole, agents: unknown): string[] | undefined {
+  if (!inboxOnly(role) || !Array.isArray(agents)) return undefined
+  return agents.filter((a): a is string => typeof a === 'string')
+}
+
 /** A role's name for people. */
 export function roleLabel(role: WorkspaceRole): string {
   return role === 'api' ? 'API key' : role.charAt(0).toUpperCase() + role.slice(1)

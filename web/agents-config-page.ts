@@ -1464,6 +1464,8 @@ ${consoleShellScript}
   function loadWorkflowsSection(name) {
     var el = detail.querySelector('#workflowsContent');
     if (!el) return;
+    // Keep the sidebar's workflow list in step (running or pending).
+    if (window.leShell && window.leShell.reloadWorkflows) window.leShell.reloadWorkflows();
     if (workflowsRefreshTimer) { clearTimeout(workflowsRefreshTimer); workflowsRefreshTimer = null; }
     fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows').then(function (r) {
       if (currentName !== name) return;

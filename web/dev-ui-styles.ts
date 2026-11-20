@@ -150,6 +150,8 @@ export const devUiCss: string = `
   .le-agent-item .le-meta { font-size: 12px; color: var(--ink-faint); }
   .le-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
   .le-dot.warn { background: var(--warn); }
+  .le-dot.tint { background: var(--accent); }
+  .le-dot.pending { background: #E8B06A; }
   .le-inbox-count { margin-left: auto; font-size: 11px; padding: 0 7px; }
   .le-inbox-only .le-nav-group, .le-inbox-only .le-nav-label:not(.le-inbox-nav), .le-inbox-only .le-agent-list, .le-inbox-only .le-find, .le-inbox-only .le-foot > a { display: none; }
   .le-dot.idle { background: var(--ink-faint); }

@@ -17,6 +17,9 @@ export interface WorkflowOverviewRow {
   /** How it starts, in words: its schedules and webhooks; "Run now" when
    * nothing else starts it. */
   starts: string[]
+  /** Running: a run under way, or a schedule or webhook on to start it.
+   * Otherwise it's pending: it only runs when someone starts it. */
+  live: boolean
   /** Runs started in the last 7 days, and how many of them failed. */
   runsThisWeek: number
   failedThisWeek: number
@@ -61,6 +64,7 @@ export function workflowsOverview(input: {
       id: view.id,
       title: view.title || view.id,
       starts: startsOf(view),
+      live: own.some((r) => r.status === 'running') || view.webhooks > 0 || view.schedules.some((s) => s.status !== 'paused' && s.status !== 'done' && s.status !== 'cancelled'),
       runsThisWeek: week.length,
       failedThisWeek: week.filter((r) => r.status === 'error').length,
       ...(latest ? { lastRun: { status: latest.status, at: latest.started_at } } : {}),

@@ -96,8 +96,7 @@ import {
   publicTrigger, recordDelivery, resultToChat, rotateTrigger, updateTrigger, verifySenderSignature,
 } from '#core/workflow-triggers.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
-import { canDecide, inboxOnly, inboxOnlyAllows, roleLabel, workspaceRole, type WorkspaceRole } from '#core/workspace-roles.js'
-import { agentsFor, readPeople, recordVisit, removePerson, setPersonAgents } from '#core/workspace-people.js'
+import { agentsFor, canDecide, inboxOnly, inboxOnlyAllows, roleLabel, workspaceRole, type WorkspaceRole } from '#core/workspace-roles.js'
 import { reportRun, usedTool } from '#core/run-events.js'
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
@@ -129,6 +128,7 @@ import { activePlaybook, setPlaybookProjectDir } from '#core/system-agents/goal-
 import { startPlaybookSync } from '#core/playbook-sync.js'
 import { GoalError, acceptJob, addJob, assignJob, chainedRuns, editJob, goalView, listJob, listJobs, migrateGoalFiles, submitJob, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
 import { sharesLeverStats, startLeverEventsSync } from '#web/lever-events-sync.js'
+import { createAgentNamesReporter } from '#web/agent-names-sync.js'
 import { MAX_UPLOAD_BYTES, installUploadedAbility, installWorkspaceAbility, type AbilityUpload } from '#web/workspace-abilities-admin.js'
 import { WorkspaceAbilityError, addWorkspaceAbility, listWorkspaceAbilities, removeWorkspaceAbility } from '#core/workspace-abilities.js'
 import { WORKFLOW_EXAMPLES } from '#core/system-agents/workflow-examples.js'
@@ -970,6 +970,7 @@ async function handleInterviews(req: IncomingMessage, res: ServerResponse, pathn
           if (!parsed.ok) throw new InterviewError(parsed.error)
           const indexPath = await scaffoldAgent(projectDir(), name, parsed.value)
           registerAgent(await loadAgentModule(indexPath, indexPath))
+          reportAgentNames()
         },
       })
       return json(200, created)
@@ -1026,6 +1027,7 @@ const goalsDeps: GoalsDeps = {
     if (!parsed.ok) throw new GoalError(parsed.error)
     const indexPath = await scaffoldAgent(projectDir(), name, parsed.value)
     registerAgent(await loadAgentModule(indexPath, indexPath))
+    reportAgentNames()
   },
   // A once job assigned to its agent: one unattended run, recorded like a
   // workflow run (source "assignment").
@@ -1687,6 +1689,7 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           if (getEntry(name)) return
           const indexPath = join(dirOf(name), 'index.ts')
           registerAgent(await loadAgentModule(indexPath, indexPath))
+          reportAgentNames()
         },
         // As for templates and the Apps tab: installing runs
         // third-party code, so only behind the admin login.
@@ -1955,6 +1958,7 @@ async function handleCreateAgent(req: IncomingMessage, res: ServerResponse): Pro
 
   try {
     registerAgent(await loadAgentModule(indexPath, indexPath))
+    reportAgentNames()
   } catch (err) {
     res
       .writeHead(200, { 'content-type': 'application/json' })
@@ -2019,6 +2023,7 @@ async function handleDeleteAgent(req: IncomingMessage, res: ServerResponse, agen
   try {
     const forgotten = await forgetAgent(agentName, agentDir(agentName))
     unregisterAgent(agentName)
+    reportAgentNames()
     return json(200, { deleted: agentName, ...forgotten })
   } catch (err) {
     return json(err instanceof WorkflowError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2346,11 +2351,15 @@ const inboxDeps: InboxDeps = {
   workflowTitle: (agent, workflowId) => (workflowId && getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.title : undefined),
 }
 
+// The agents' names, for the host's dashboard (web/agent-names-sync.ts):
+// sent at start and whenever an agent is added or removed.
+const agentNames = createAgentNamesReporter(() => listAgents(), { log: (m) => console.log(m) })
+const reportAgentNames = (): void => void agentNames.report()
+
 // The Inbox as a caller sees it: an approver or viewer limited to some
-// agents (Settings → People) gets only those agents' cases.
+// agents (in the host's dashboard) gets only those agents' cases.
 function inboxDepsFor(req: IncomingMessage): InboxDeps {
-  const caller = callerOf(req)
-  const allowed = agentsFor(process.cwd(), caller.role, caller.email)
+  const allowed = callerOf(req).agents
   if (!allowed) return inboxDeps
   const sees = (agent: string) => allowed.includes(agent)
   return {
@@ -3381,11 +3390,13 @@ function messageCaller(req: IncomingMessage): 'api' | 'console' | 'unknown' {
 // Who is making a request, and their role in the workspace
 // (core/workspace-roles.ts): from the router's signed identity when hosted
 // (a "callback" route, a program like an API key); otherwise the one admin.
-function callerOf(req: IncomingMessage): { role: WorkspaceRole; email?: string; person: boolean } {
+function callerOf(req: IncomingMessage): { role: WorkspaceRole; email?: string; person: boolean; agents?: string[] } {
   const identity = trustedProxySecret ? verifyProxyIdentity(req.headers[TRUSTED_PROXY_IDENTITY_HEADER], trustedProxySecret) : undefined
   if (!identity) return { role: 'owner', person: false }
   if (identity.role === 'callback' || identity.role === 'api' || identity.sub.startsWith('apikey:')) return { role: 'api', person: false }
-  return { role: workspaceRole(identity.role), ...(identity.email ? { email: identity.email } : {}), person: true }
+  const role = workspaceRole(identity.role)
+  const agents = agentsFor(role, identity.agents)
+  return { role, ...(identity.email ? { email: identity.email } : {}), person: true, ...(agents ? { agents } : {}) }
 }
 
 // For a host's run observer (core/run-events.ts).
@@ -3718,18 +3729,18 @@ async function handlePendingApprovalResolve(req: IncomingMessage, res: ServerRes
 
 // A decision's body, with "by" set to the signed-in person deciding (what
 // a program sends is kept); undefined, answered 403, for a viewer or for
-// an approver deciding on an agent they don't see (Settings → People).
+// an approver deciding on an agent they don't see (set in the dashboard).
 async function decidingBody(req: IncomingMessage, res: ServerResponse, pendingId: string): Promise<Record<string, unknown> | undefined> {
   const caller = callerOf(req)
   if (!canDecide(caller.role)) {
     res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `Your role in this workspace is ${roleLabel(caller.role)}, which can't answer or approve.` }))
     return undefined
   }
-  const allowed = agentsFor(process.cwd(), caller.role, caller.email)
+  const allowed = caller.agents
   if (allowed) {
     const agent = (await checkpoints.get(pendingId))?.agent
     if (agent && !allowed.includes(agent)) {
-      res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `You don't have access to ${agent}'s cases in this workspace. An owner or admin can add it in Settings → People.` }))
+      res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `You don't have access to ${agent}'s cases in this workspace. An owner or admin can add it in the dashboard, under People.` }))
       return undefined
     }
   }
@@ -4891,13 +4902,6 @@ const server = createServer(async (req, res) => {
   // An approver or viewer sees the Inbox only: the front page opens it,
   // and anything else is refused, saying where to go.
   const caller = callerOf(req)
-  if (caller.person && caller.email) {
-    try {
-      recordVisit(process.cwd(), caller.email, caller.role)
-    } catch (err) {
-      console.error('[people] could not note a visit:', err instanceof Error ? err.message : err)
-    }
-  }
   if (inboxOnly(caller.role)) {
     const path = (req.url ?? '/').split('?')[0]
     if (req.method === 'GET' && path === '/') {
@@ -5373,33 +5377,6 @@ const server = createServer(async (req, res) => {
     }
     // Settings → Shared policies (web/global-config.ts): the business's
     // rules every workflow run reads (policies.md in the project).
-    // Settings → People: which agents each approver or viewer sees.
-    // Owners and admins change it; the list itself is for anyone with the
-    // full console.
-    if (pathname === '/config/people') {
-      const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
-      const role = callerOf(req).role
-      const canChange = role === 'owner' || role === 'admin' || role === 'api'
-      const listing = () => ({ people: readPeople(process.cwd()), agents: listAgents().sort(), canChange, hosted: Boolean(trustedProxySecret) })
-      if (req.method === 'GET') return json(200, listing())
-      if (req.method !== 'PUT' && req.method !== 'DELETE') return json(405, { error: 'Use GET, PUT or DELETE.' })
-      if (!canChange) return json(403, { error: `Your role in this workspace is ${roleLabel(role)}; only an owner or admin chooses which agents people see.` })
-      const body = await readJsonBody(req)
-      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'Give an email address, e.g. jane@example.com.' })
-      if (req.method === 'DELETE') {
-        removePerson(process.cwd(), email)
-        return json(200, listing())
-      }
-      let agents: string[] | undefined
-      if (body.agents === null || body.agents === 'all') agents = undefined
-      else if (Array.isArray(body.agents) && body.agents.every((a) => typeof a === 'string')) agents = body.agents as string[]
-      else return json(400, { error: 'agents must be a list of agent names, or null for every agent.' })
-      const unknown = (agents ?? []).filter((a) => !getEntry(a))
-      if (unknown.length) return json(400, { error: `No such agent: ${unknown.join(', ')}.` })
-      setPersonAgents(process.cwd(), email, agents)
-      return json(200, listing())
-    }
     if (req.method === 'GET' && pathname === '/config/policies') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))
       return
@@ -5938,6 +5915,7 @@ server.listen(port, () => {
   checkGoals()
   setInterval(checkGoals, 24 * 60 * 60 * 1000).unref()
   startLeverEventsSync(projectDir(), (m) => console.log(m))
+  reportAgentNames()
   // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.
   // Workflows from before they were skills move into their skills first,
   // so their schedules run them.

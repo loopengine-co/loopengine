@@ -23,6 +23,9 @@ export interface ProxyIdentity {
   /** Where the person manages this workspace on the host, shown as the
    * console's "Dashboard" link. */
   dashboardUrl?: string
+  /** For an approver or viewer limited to some agents (set in the host's
+   * dashboard): the ones they see. Absent for every agent. */
+  agents?: string[]
   /** Expiry, Unix seconds. */
   exp: number
 }

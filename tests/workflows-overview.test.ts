@@ -38,6 +38,14 @@ describe('workflows overview', () => {
     expect(out.workflows.map((w) => w.id)).toEqual(['orders', 'disputes'])
     expect(out.workflows[1]).toMatchObject({ runsThisWeek: 2, failedThisWeek: 1, lastRun: { status: 'error', at: '2026-11-20T09:00:00Z' }, waiting: 0, approved: 2, refused: 1, starts: ['Run now'] })
     expect(out.workflows[0]).toMatchObject({ waiting: 1, runsThisWeek: 1 })
+    expect(out.workflows.map((w) => w.live)).toEqual([false, false])
+    const live = workflowsOverview({ runs: [run({ status: 'running' })], waiting: [], workflows: [
+      { agent: 'cs', agentLabel: 'cs', view: view({ id: 'disputes' }) },
+      { agent: 'cs', agentLabel: 'cs', view: view({ id: 'weekly', schedules: [{ describe: 'Every Monday', status: 'scheduled' }] as never }) },
+      { agent: 'cs', agentLabel: 'cs', view: view({ id: 'hooked', webhooks: 1 }) },
+      { agent: 'cs', agentLabel: 'cs', view: view({ id: 'paused', schedules: [{ describe: 'Daily', status: 'paused' }] as never }) },
+    ] })
+    expect(Object.fromEntries(live.workflows.map((w) => [w.id, w.live]))).toEqual({ disputes: true, weekly: true, hooked: true, paused: false })
     expect(out.summary).toEqual({ workflows: 2, runsThisWeek: 3, failedThisWeek: 1, waiting: 1 })
   })
 })

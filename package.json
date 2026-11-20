@@ -47,8 +47,6 @@
     "dist/core/trusted-proxy.d.ts",
     "dist/core/workspace-roles.js",
     "dist/core/workspace-roles.d.ts",
-    "dist/core/workspace-people.js",
-    "dist/core/workspace-people.d.ts",
     "dist/core/unattended.js",
     "dist/core/unattended.d.ts",
     "dist/core/usage.js",

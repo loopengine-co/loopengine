@@ -45,9 +45,10 @@ const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" str
 export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label="Console navigation">
   <a class="le-brand" href="/"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
   <div class="le-nav-label le-inbox-nav"><a class="le-nav-head" href="/inbox" data-le-nav-head="inbox">${INBOX_ICON}Inbox</a><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></div>
-  <div class="le-nav-label"><a class="le-nav-head" href="/workflows" data-le-nav-head="workflows">${WORKFLOWS_ICON}Workflows</a><a href="/workflows/new">+ New</a></div>
   <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">${AGENTS_ICON}Agents</a><a href="/agents?new=1">+ New</a></div>
   <ul class="le-agent-list" id="leAgentList"></ul>
+  <div class="le-nav-label"><a class="le-nav-head" href="/workflows" data-le-nav-head="workflows">${WORKFLOWS_ICON}Workflows</a><a href="/workflows/new">+ New</a></div>
+  <ul class="le-agent-list le-goal-list" id="leWorkflowList"></ul>
   <div class="le-nav-group">Plan</div>
   <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">${GOALS_ICON}Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
   <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
@@ -222,6 +223,31 @@ export const consoleShellScript: string = `<script>
       .catch(function () { jobList.innerHTML = ''; });
   }
   fullAccess.then(function (full) { if (full) reloadJobs(); });
+
+  // ---- Workflows, listed under the agents (GET /workflows/overview),
+  // each opening on its agent's Workflows tab. A tinted dot is running (a
+  // run under way, or a schedule or webhook on); yellow is pending (it
+  // only runs when someone starts it).
+  var workflowList = document.getElementById('leWorkflowList');
+  function reloadWorkflows() {
+    if (!workflowList) return Promise.resolve();
+    var q = new URLSearchParams(location.search);
+    var currentAgent = page === 'agent-config' && q.get('tab') === 'workflows' ? q.get('agent') : null;
+    var currentId = currentAgent ? q.get('workflow') : null;
+    return fetch('/workflows/overview', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { workflows: [] }; })
+      .then(function (data) {
+        var list = (data.workflows || []).slice().sort(function (a, b) { return a.title.localeCompare(b.title); });
+        workflowList.innerHTML = list.length ? list.map(function (w) {
+          var on = w.agent === currentAgent && w.id === currentId;
+          return '<li><a class="le-agent-item le-goal-item" href="/agents/config?agent=' + enc(w.agent) + '&tab=workflows&workflow=' + enc(w.id) + '" title="' + esc(w.title) + ' (' + esc(w.agentLabel) + DOT_SEP + (w.live ? 'Running' : 'Pending') + ')"' + (on ? ' aria-current="page"' : '') + '>' +
+            '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-name">' + esc(w.title) + '</span></a></li>';
+        }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No workflows yet</span><span></span></li>';
+      })
+      .catch(function () { workflowList.innerHTML = ''; });
+  }
+  var DOT_SEP = ', ';
+  fullAccess.then(function (full) { if (full) reloadWorkflows(); });
 
   // ---- The Inbox, at the top: how many cases wait on a person, kept
   // current. The Inbox page marks itself.
@@ -585,6 +611,6 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadWorkflows: reloadWorkflows, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`
