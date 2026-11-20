@@ -388,4 +388,6 @@ export { startPlaybookSync, syncPlaybook, playbookSyncConfig } from './core/play
 export { workspaceRole, canDecide, inboxOnly, inboxOnlyAllows, roleLabel, type WorkspaceRole } from './core/workspace-roles.js'
 export { readPeople, recordVisit, setPersonAgents, removePerson, agentsFor, type WorkspacePerson } from './core/workspace-people.js'
 export { inboxPageHtml, renderInboxOnlyPage } from './web/inbox-page.js'
+export { workflowsOverviewPageHtml } from './web/workflows-overview-page.js'
+export { workflowsOverview, startsOf, type WorkflowsOverview, type WorkflowOverviewRow } from './web/workflows-overview.js'
 export { listInbox, getInboxCase, timelineOf, type InboxDeps, type InboxItem, type InboxCase, type InboxPending, type InboxStep } from './web/inbox-admin.js'

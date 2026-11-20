@@ -36,18 +36,23 @@ const JOBS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="currentCol
 // its middle 18, it shows at the same size.
 const AGENTS_ICON = '<svg class="le-nav-icon" viewBox="3 3 18 18" fill="currentColor" aria-hidden="true"><path d="M11 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm3.5 1.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M12 5.5a1 1 0 0 1 1 1V7h4a3 3 0 0 1 3 3v3.5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V10a3 3 0 0 1 3-3h4v-.5a1 1 0 0 1 1-1ZM7 9h10a1 1 0 0 1 1 1v3.5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V10a1 1 0 0 1 1-1Z"/></svg>'
 
+// Two linked steps going round, for Workflows.
+const WORKFLOWS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3.5 3.5 0 0 1 3.5 3.5v4"/><path d="M14 17.5h-4A3.5 3.5 0 0 1 6.5 14v-4"/></svg>'
+
 // An inbox tray, for the Inbox.
 const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
 
 export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label="Console navigation">
-  <a class="le-brand" href="/agents"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
+  <a class="le-brand" href="/"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
   <div class="le-nav-label le-inbox-nav"><a class="le-nav-head" href="/inbox" data-le-nav-head="inbox">${INBOX_ICON}Inbox</a><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></div>
+  <div class="le-nav-label"><a class="le-nav-head" href="/workflows" data-le-nav-head="workflows">${WORKFLOWS_ICON}Workflows</a><a href="/workflows/new">+ New</a></div>
+  <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">${AGENTS_ICON}Agents</a><a href="/agents?new=1">+ New</a></div>
+  <ul class="le-agent-list" id="leAgentList"></ul>
+  <div class="le-nav-group">Plan</div>
   <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">${GOALS_ICON}Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
   <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
   <div class="le-nav-label"><a class="le-nav-head" href="/jobs" data-le-nav-head="jobs">${JOBS_ICON}Jobs</a><a href="/jobs?new=1" data-le-job-new>+ New</a></div>
   <ul class="le-agent-list le-goal-list" id="leJobList"></ul>
-  <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">${AGENTS_ICON}Agents</a><a href="/agents?new=1">+ New</a></div>
-  <ul class="le-agent-list" id="leAgentList"></ul>
   <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
   <nav class="le-foot" aria-label="Settings">
     <a href="/config?section=models" data-le-nav="models">Models</a>
@@ -223,6 +228,8 @@ export const consoleShellScript: string = `<script>
   var inboxCount = document.getElementById('leInboxCount');
   var inboxHead = document.querySelector('[data-le-nav-head="inbox"]');
   if (inboxHead && page === 'inbox') inboxHead.setAttribute('aria-current', 'page');
+  var workflowsHead = document.querySelector('[data-le-nav-head="workflows"]');
+  if (workflowsHead && page === 'workflows-overview') workflowsHead.setAttribute('aria-current', 'page');
   function reloadInboxCount() {
     if (!inboxCount) return;
     fetch('/inbox/count', { headers: { accept: 'application/json' } })

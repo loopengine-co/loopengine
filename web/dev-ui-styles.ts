@@ -128,6 +128,7 @@ export const devUiCss: string = `
   .le-brand { display: flex; align-items: center; gap: 8px; padding: 16px 16px 12px; text-decoration: none; color: var(--ink); }
   .le-brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
   .le-brand-name { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+  .le-nav-group { margin: 14px 16px 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
   .le-nav-label { padding: 10px 16px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; }
   .le-nav-label a { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; text-decoration: none; }
   .le-nav-label a[aria-current="page"] { font-weight: 700; }
@@ -137,8 +138,9 @@ export const devUiCss: string = `
   .le-nav-label a.le-nav-head[aria-current="page"] { color: var(--accent-ink); font-weight: 700; }
   .le-agent-list.le-goal-list { flex: 0 1 auto; max-height: 34vh; }
   .le-goal-item .le-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 1; min-height: 0; }
-  .le-find { margin: 6px 16px 10px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
+  .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 0 1 auto; max-height: 40vh; min-height: 0; }
+  /* The lists sit together at the top; the rest goes to the bottom. */
+  .le-find { margin: auto 16px 10px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
   .le-find[aria-current="page"] { font-weight: 600; }
   .le-find + .le-find { margin-top: -4px; }
   .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; }
@@ -149,7 +151,7 @@ export const devUiCss: string = `
   .le-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
   .le-dot.warn { background: var(--warn); }
   .le-inbox-count { margin-left: auto; font-size: 11px; padding: 0 7px; }
-  .le-inbox-only .le-nav-label:not(.le-inbox-nav), .le-inbox-only .le-agent-list, .le-inbox-only .le-find, .le-inbox-only .le-foot > a { display: none; }
+  .le-inbox-only .le-nav-group, .le-inbox-only .le-nav-label:not(.le-inbox-nav), .le-inbox-only .le-agent-list, .le-inbox-only .le-find, .le-inbox-only .le-foot > a { display: none; }
   .le-dot.idle { background: var(--ink-faint); }
   .le-foot { border-top: 1px solid var(--line); padding: 8px; display: grid; gap: 2px; }
   .le-foot a { padding: 7px 8px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; }
