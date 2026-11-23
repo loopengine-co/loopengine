@@ -28,6 +28,7 @@
 import { WORKFLOW_SECTIONS_CSS, WORKFLOW_SECTIONS_SCRIPT } from './workflow-sections.js'
 import { devUiCss } from './dev-ui-styles.js'
 import { MESSAGING_ICONS } from './messaging-icons.js'
+import { renderMarkdownScript } from './markdown-script.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { REASONING_PROVIDERS } from './agent-file-admin.js'
 
@@ -121,14 +122,27 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-tab:hover:not(:disabled) { background: none; color: var(--ink); }
   .wf-tab[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
   .wf-msg-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
-  .wf-msg-row { display: grid; grid-template-columns: 190px 1fr; gap: 12px; align-items: start; }
-  .wf-msg-k { font-weight: 600; font-size: 13px; padding-top: 7px; }
-  .wf-msg-v { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .wf-msg-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
-  .wf-msg-check input { width: auto; margin: 0; }
+  .wf-msg-dests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .wf-msg-dest { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+  .wf-msg-dest-k { font-weight: 600; font-size: 13px; }
+  .wf-msg-dest input[name="msgUrl"] { margin-top: 4px; }
+  .wf-msg-grid-wrap { overflow-x: auto; }
+  .wf-msg-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .wf-msg-grid th, .wf-msg-grid td { padding: 10px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  .wf-msg-grid thead th { border-top: 0; font-weight: 600; text-align: center; }
+  .wf-msg-grid th { background: none; }
+  .wf-msg-grid tbody th { text-align: left; font-weight: 600; }
+  .wf-msg-grid tbody th .hint { font-weight: 400; }
+  .wf-msg-grid td { text-align: center; width: 110px; }
+  .wf-msg-cell { display: inline-flex; justify-content: center; }
+  .wf-msg-cell input { width: auto; margin: 0; }
+  .wf-msg-appcell.is-off { opacity: .35; }
+  .wf-msg-notice { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-weight: 400; }
+  .wf-msg-notice[hidden] { display: none; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .wf-msg-own { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); }
   .wf-msg-foot { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
-  @media (max-width: 640px) { .wf-msg-row { grid-template-columns: 1fr; gap: 4px; } .wf-msg-k { padding-top: 0; } }
+  @media (max-width: 640px) { .wf-msg-dests { grid-template-columns: 1fr; } .wf-msg-grid td { width: 64px; } }
   .wf-tab-count { margin-left: 4px; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
   .wf-row .workflow-steps-text { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); font-size: 13px; line-height: 1.6; max-height: 420px; overflow: auto; white-space: pre-wrap; }
   .wf-original { margin-top: 10px; }
@@ -687,162 +701,7 @@ ${consoleShellScript}
     return attempt().catch(function () { return attempt(); });
   }
 
-  // A small, deliberately non-CommonMark markdown-to-HTML renderer for
-  // the skill Body field's Preview toggle (see wireSkillsHandlers) — this
-  // page stays a self-contained string, no build step, no CDN (same
-  // reasoning as devUiCss's own header comment), so pulling in a real
-  // markdown library isn't an option without breaking that. Covers what
-  // an actual SKILL.md body realistically uses (headings, bold/italic,
-  // inline code, fenced code blocks, links, lists, rules, paragraphs) —
-  // good enough for "does this read the way it will on GitHub", not a
-  // spec-complete parser. Escapes first, so no markdown source can inject
-  // raw HTML into the preview.
-  function renderMarkdownPreview(md) {
-    var lines = escapeHtml(md).split('\\n');
-    var html = '';
-    var inCode = false;
-    var codeBuffer = '';
-    var listType = null;
-    var paragraph = [];
-
-    // This whole page is one outer TS template literal AND its output is
-    // itself served as JS source text a browser then parses again — two
-    // layers of "escape sequences get processed", not one. The unicode
-    // escape used for the backtick patterns below survives both layers fine, since
-    // it's a real, recognized escape at both of them. A star/bracket/
-    // paren/s/d/dot escape (\*, \[, \s, \d, \.) is *not* a recognized
-    // escape at either layer, so each layer that touches it silently
-    // drops the backslash and keeps just the character — confirmed by
-    // extracting and executing the actually-served page during
-    // development, where every regex built the "obvious" way here ended
-    // up with its escapes stripped entirely, sometimes still parsing
-    // (silently wrong) and sometimes throwing ("nothing to repeat").
-    // Building these particular patterns from a runtime backslash
-    // character instead sidesteps the whole problem: there is no
-    // backslash-followed-by-letter sequence anywhere in this source for
-    // either layer to misinterpret.
-    var bs = String.fromCharCode(92);
-    var inlineCodePattern = new RegExp('\\u0060([^\\u0060]+)\\u0060', 'g');
-    var fencePattern = new RegExp('^\\u0060\\u0060\\u0060');
-    var boldPattern = new RegExp(bs + '*' + bs + '*([^*]+)' + bs + '*' + bs + '*', 'g');
-    var italicPattern = new RegExp(bs + '*([^*]+)' + bs + '*', 'g');
-    var linkPattern = new RegExp(bs + '[([^' + bs + ']]+)' + bs + ']' + bs + '(([^)]+)' + bs + ')', 'g');
-    var headingPattern = new RegExp('^(#{1,6})' + bs + 's+(.*)$');
-    var hrPattern = new RegExp('^(---|' + bs + '*' + bs + '*' + bs + '*)' + bs + 's*$');
-    var ulPattern = new RegExp('^[-*]' + bs + 's+(.*)$');
-    var olPattern = new RegExp('^' + bs + 'd+' + bs + '.' + bs + 's+(.*)$');
-    function inlineFormat(text) {
-      return text
-        .replace(inlineCodePattern, '<code>$1</code>')
-        .replace(boldPattern, '<strong>$1</strong>')
-        .replace(italicPattern, '<em>$1</em>')
-        .replace(linkPattern, function (_, label, href) {
-          var lowerHref = href.toLowerCase();
-          var safeHref = lowerHref.indexOf('https://') === 0 || lowerHref.indexOf('http://') === 0 || lowerHref.indexOf('mailto:') === 0;
-          return safeHref ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a>' : label;
-        });
-    }
-    function flushParagraph() {
-      if (paragraph.length) {
-        html += '<p>' + inlineFormat(paragraph.join(' ')) + '</p>';
-        paragraph = [];
-      }
-    }
-    function closeList() {
-      if (listType) {
-        html += '</' + listType + '>';
-        listType = null;
-      }
-    }
-    function tableCells(line) {
-      var value = line.trim();
-      if (value.charAt(0) === '|') value = value.slice(1);
-      if (value.charAt(value.length - 1) === '|') value = value.slice(0, -1);
-      return value.split('|').map(function (cell) { return cell.trim(); });
-    }
-    function isTableDivider(line) {
-      if (line.indexOf('|') < 0) return false;
-      var cells = tableCells(line);
-      return cells.length > 0 && cells.every(function (cell) {
-        var value = cell.replace(/:/g, '').replace(/-/g, '').trim();
-        return cell.indexOf('-') >= 0 && value === '';
-      });
-    }
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (fencePattern.test(line)) {
-        if (!inCode) {
-          flushParagraph();
-          closeList();
-          inCode = true;
-          codeBuffer = '';
-        } else {
-          html += '<pre><code>' + codeBuffer + '</code></pre>';
-          inCode = false;
-        }
-        continue;
-      }
-      if (inCode) {
-        codeBuffer += line + '\\n';
-        continue;
-      }
-
-      if (line.indexOf('|') >= 0 && i + 1 < lines.length && isTableDivider(lines[i + 1])) {
-        flushParagraph();
-        closeList();
-        var headers = tableCells(line);
-        html += '<div class="workflow-markdown-table"><table><thead><tr>' + headers.map(function (cell) { return '<th>' + inlineFormat(cell) + '</th>'; }).join('') + '</tr></thead><tbody>';
-        i += 2;
-        while (i < lines.length && lines[i].indexOf('|') >= 0 && lines[i].trim() !== '') {
-          var cells = tableCells(lines[i]);
-          html += '<tr>' + headers.map(function (_, index) { return '<td>' + inlineFormat(cells[index] || '') + '</td>'; }).join('') + '</tr>';
-          i++;
-        }
-        html += '</tbody></table></div>';
-        i--;
-        continue;
-      }
-
-      var heading = line.match(headingPattern);
-      if (heading) {
-        flushParagraph();
-        closeList();
-        var level = heading[1].length;
-        html += '<h' + level + '>' + inlineFormat(heading[2]) + '</h' + level + '>';
-        continue;
-      }
-      if (hrPattern.test(line)) {
-        flushParagraph();
-        closeList();
-        html += '<hr>';
-        continue;
-      }
-      var ul = line.match(ulPattern);
-      var ol = line.match(olPattern);
-      if (ul || ol) {
-        flushParagraph();
-        var wantType = ul ? 'ul' : 'ol';
-        if (listType !== wantType) {
-          closeList();
-          html += '<' + wantType + '>';
-          listType = wantType;
-        }
-        html += '<li>' + inlineFormat((ul || ol)[1]) + '</li>';
-        continue;
-      }
-      closeList();
-
-      if (line.trim() === '') {
-        flushParagraph();
-        continue;
-      }
-      paragraph.push(line.trim());
-    }
-    flushParagraph();
-    closeList();
-    return html || '<p class="hint">Nothing to preview yet.</p>';
-  }
+${renderMarkdownScript}
 
   // ---- Overview tab ----
 
@@ -971,7 +830,7 @@ ${consoleShellScript}
     '</div>';
   }
 
-  var APP_NAMES = { slack: 'Slack', lark: 'Lark', webhook: 'Webhook', email: 'Email', database: 'Database', redis: 'Redis' };
+  var APP_NAMES = { slack: 'Slack', telegram: 'Telegram', lark: 'Lark', webhook: 'Webhook', email: 'Email', database: 'Database', redis: 'Redis' };
 
   // Messaging and Schedules come from their own endpoints, so their
   // cards are filled in once those answer. Called after every render of
@@ -1149,34 +1008,58 @@ ${consoleShellScript}
     return ['slack', 'telegram', 'lark'].indexOf(workflowsMeta.messaging) !== -1 ? workflowChatName() : null;
   }
 
-  // Its Messages tab: where every run's updates go, however it starts:
-  // your app's address, a chat message when it starts, where approvals
-  // and questions go, and whether the result is posted to chat.
+  // Its Messages tab: where every run's messages go, however it starts,
+  // as a grid of what happens in a run (rows) by where it can go
+  // (columns): the agent's messaging app, the Inbox and your app's
+  // address. What can't be turned off is shown ticked and locked: the
+  // Inbox keeps every run (web/inbox-admin.ts); your app gets nothing
+  // without an address, and with one gets every decision, finish and
+  // failure (adapters/http.ts, reportWorkflowRun).
   function workflowMessagesHtml(w, agentName) {
     var d = w.delivery || {};
-    var chat = workflowChatAppName();
-    var chatLabel = escapeHtml(chat || 'chat');
-    // With no messaging app, an unattended run's approvals and questions
-    // wait in the Inbox (adapters/http.ts, executeUnattendedRun).
-    var decisionsLabel = workflowChatName() ? escapeHtml(workflowChatName())
-      : 'The Inbox <span class="hint">(no messaging app is set up, so they wait in the Inbox)</span>';
-    var noChat = chat ? '' : ' disabled';
     var RSQ = String.fromCharCode(8217);
-    var row = function (label, body) { return '<div class="wf-msg-row"><div class="wf-msg-k">' + label + '</div><div class="wf-msg-v">' + body + '</div></div>'; };
+    var chatName = workflowChatName();
+    var chat = workflowChatAppName();
+    var chatCol = escapeHtml(chatName || 'Messaging app');
+    var toApp = d.decisions_to === 'callback';
+    var box = function (name, checked, locked, label, extra) {
+      return '<label class="wf-msg-cell"><input type="checkbox"' + (name ? ' name="' + name + '"' : '') + (checked ? ' checked' : '') + (locked ? ' disabled' : '') + ' aria-label="' + label + '"' + (extra || '') + '></label>';
+    };
+    var none = '<span class="wf-msg-cell hint" aria-label="Not sent">' + String.fromCharCode(8212) + '</span>';
+    var always = function (label) { return box('', true, true, label + ': always'); };
+    var appCell = function (key, label) { return '<span class="wf-msg-appcell" data-app="' + key + '">' + box('', Boolean(d.callback_url), true, label + ', when an address is set') + '</span>'; };
+    var row = function (what, hint, chatCell, inboxCell, appCellHtml, below) {
+      return '<tr><th scope="row"><div>' + what + '</div><div class="hint">' + hint + '</div>' + (below || '') + '</th>' +
+        '<td>' + chatCell + '</td><td>' + inboxCell + '</td><td>' + appCellHtml + '</td></tr>';
+    };
     // Webhooks saved with settings of their own: their runs use those.
     var own = (w.triggers || []).filter(function (t) { return t.callback || t.decisions_to || t.chat_notice || t.result_to_chat; });
     return '<form class="wf-msg-form">' +
-      '<p class="hint" style="margin:0 0 12px">For every run, whether it' + RSQ + 's started by Run now, a schedule, a webhook or the API.' +
-        (chat ? '' : ' This agent has no chat app (Slack, Telegram or Lark): <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">set one up in Messaging</a> to post to chat.') + '</p>' +
-      row('Your app', '<input name="msgUrl" inputmode="url" placeholder="https://example.com/hooks/loopengine" value="' + escapeHtml(d.callback_url || '') + '">' +
-        '<span class="hint">Optional. Gets every run' + RSQ + 's updates as signed JSON: when it stops for a decision, finishes or fails.</span>') +
-      row('When a run starts', '<label class="wf-msg-check"><input type="checkbox" name="msgNoticeOn"' + (d.chat_notice ? ' checked' : noChat) + '> Post to ' + chatLabel + '</label>' +
-        '<input name="msgNotice" maxlength="1000" placeholder="New dispute {{dispute_id}}" value="' + escapeHtml(d.chat_notice || '') + '"' + (d.chat_notice ? '' : ' disabled') + '>' +
-        '<span class="hint">{{name}} puts in an input' + RSQ + 's value.</span>') +
-      row('Approvals and questions', '<label class="wf-msg-check"><input type="radio" name="msgDecisions" value="chat"' + (d.decisions_to === 'callback' ? '' : ' checked') + '> ' + decisionsLabel + '</label>' +
-        '<label class="wf-msg-check"><input type="radio" name="msgDecisions" value="callback"' + (d.decisions_to === 'callback' ? ' checked' : '') + (d.callback_url ? '' : ' disabled') + '> Your app <span class="hint">(it shows them and answers through the API; needs the address above)</span></label>') +
-      row('When a run finishes', '<label class="wf-msg-check"><input type="checkbox" name="msgResult"' + (d.result_to_chat ? ' checked' : noChat) + '> Post the result to ' + chatLabel + '</label>' +
-        '<span class="hint">Your app gets it too, when an address is set.</span>') +
+      '<p class="hint" style="margin:0">Where this workflow' + RSQ + 's messages go, for every run: started by Run now, a schedule, a webhook or the API. A ticked, greyed box can' + RSQ + 't be turned off. Your app gets nothing until you give it an address.</p>' +
+      '<div class="wf-msg-dests">' +
+        '<div class="wf-msg-dest"><div class="wf-msg-dest-k">' + chatCol + '</div><div class="hint">' +
+          (chatName ? 'The agent' + RSQ + 's messaging app, set in its <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">Messaging</a> tab.'
+            : 'Not set up. <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">Set one up in Messaging</a> (Slack, Telegram or Lark) to post to chat.') + '</div></div>' +
+        '<div class="wf-msg-dest"><div class="wf-msg-dest-k">Inbox</div><div class="hint">Always. Every run is kept as a case, and approvals and questions can be answered there.</div></div>' +
+        '<div class="wf-msg-dest"><div class="wf-msg-dest-k">Your app</div><div class="hint">Optional. Only when you set an address: it then gets each update as signed JSON (a webhook).</div>' +
+          '<input name="msgUrl" inputmode="url" placeholder="https://example.com/hooks/loopengine" value="' + escapeHtml(d.callback_url || '') + '"></div>' +
+      '</div>' +
+      '<div class="wf-msg-grid-wrap"><table class="wf-msg-grid"><thead><tr><th scope="col"><span class="sr-only">When</span></th><th scope="col">' + chatCol + '</th><th scope="col">Inbox</th><th scope="col">Your app</th></tr></thead><tbody>' +
+        row('A run starts', 'A short note that it began.',
+          chat ? box('msgNoticeOn', Boolean(d.chat_notice), false, 'Post a start note to ' + chatCol) : none,
+          always('Shown in the Inbox'),
+          '<span class="wf-msg-appcell" data-app="start">' + box('', toApp, true, 'Sent to your app when it answers approvals and questions') + '</span>',
+          chat ? '<div class="wf-msg-notice"' + (d.chat_notice ? '' : ' hidden') + '><input name="msgNotice" maxlength="1000" placeholder="Run started" value="' + escapeHtml(d.chat_notice || '') + '"><span class="hint">{{name}} puts in an input' + RSQ + 's value.</span></div>' : '') +
+        row('Approvals and questions', 'Someone answers in one place; the Inbox can always answer too.',
+          chatName ? box('msgDecisionsChat', !toApp, !d.callback_url, 'Send approvals and questions to ' + chatCol, ' data-locked-without-app="1"') : none,
+          always('Approvals and questions in the Inbox'),
+          appCell('decisions', 'Approvals and questions sent to your app')) +
+        row('A run finishes or fails', 'Its result, or what went wrong.',
+          chatName ? box('msgResult', Boolean(d.result_to_chat), false, 'Post the result to ' + chatCol) : none,
+          always('Results in the Inbox'),
+          appCell('finish', 'Results sent to your app')) +
+      '</tbody></table></div>' +
+      '<p class="hint wf-msg-decide-note" style="margin:0"></p>' +
       (own.length
         ? '<div class="wf-msg-own">' + own.map(function (t) {
             return '<p class="hint" style="margin:0">The ' + escapeHtml(t.name) + ' webhook has settings of its own, so its runs use those instead. ' +
@@ -1197,7 +1080,7 @@ ${consoleShellScript}
     };
     return '<div class="wf-ways">' +
       way('run', 'Run now', 'Starts a run right away, from here. It shows under Evidence as it goes.', workflowRunBarHtml(w, params)) +
-      way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go to ' + workflowDecisionsTo(w) + '.',
+      way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go where its Messages tab says.',
         (schedules || '<p class="hint" style="margin:0">None yet.</p>') +
         '<div><button type="button" class="workflow-add-schedule">+ Schedule</button></div>') +
       way('webhook', 'Webhook', 'Another app (Stripe, GitHub, Shopify or your own) calls a private address when something happens, and each call starts a run.',
@@ -1958,25 +1841,47 @@ ${consoleShellScript}
     var msgForm = card.querySelector('.wf-msg-form');
     if (msgForm) {
       var msgResult = msgForm.querySelector('.wf-msg-result');
-      var appRadio = msgForm.querySelector('input[name="msgDecisions"][value="callback"]');
-      // Decisions can only go to an address that's given.
-      msgForm.msgUrl.addEventListener('input', function () {
-        appRadio.disabled = !msgForm.msgUrl.value.trim();
-        if (appRadio.disabled && appRadio.checked) msgForm.querySelector('input[name="msgDecisions"][value="chat"]').checked = true;
-      });
-      msgForm.msgNoticeOn.addEventListener('change', function () {
-        msgForm.msgNotice.disabled = !msgForm.msgNoticeOn.checked;
+      var decideChat = msgForm.msgDecisionsChat || null;
+      var decideNote = msgForm.querySelector('.wf-msg-decide-note');
+      var hasChat = Boolean(decideChat);
+      // Your app's column follows its address; approvals and questions
+      // can leave the chat app only for an address that's given, and
+      // your app hears of a run starting only when it answers them.
+      var syncMsgForm = function () {
+        var url = msgForm.msgUrl.value.trim();
+        var toApp = Boolean(url) && (!hasChat || !decideChat.checked);
+        if (decideChat) {
+          decideChat.disabled = !url;
+          if (!url) decideChat.checked = true;
+        }
+        msgForm.querySelectorAll('.wf-msg-appcell').forEach(function (cell) {
+          var input = cell.querySelector('input');
+          var on = Boolean(url) && (cell.dataset.app !== 'start' || toApp);
+          input.checked = on;
+          cell.classList.toggle('is-off', !url);
+        });
+        decideNote.textContent = !url
+          ? (hasChat ? 'Add your app' + String.fromCharCode(8217) + 's address to answer approvals and questions there instead.' : 'With no messaging app, approvals and questions wait in the Inbox.')
+          : toApp ? 'Your app answers approvals and questions (through the API), and gets a note when each run starts.' + (hasChat ? ' Nothing goes to chat for them.' : '')
+          : 'Approvals and questions are answered in chat; your app is told about them too.';
+      };
+      msgForm.msgUrl.addEventListener('input', syncMsgForm);
+      if (decideChat) decideChat.addEventListener('change', syncMsgForm);
+      if (msgForm.msgNoticeOn) msgForm.msgNoticeOn.addEventListener('change', function () {
+        var notice = msgForm.querySelector('.wf-msg-notice');
+        notice.hidden = !msgForm.msgNoticeOn.checked;
         if (msgForm.msgNoticeOn.checked) msgForm.msgNotice.focus();
       });
+      syncMsgForm();
       var reloadOnMessages = function () { workflowTabs[id] = 'messages'; loadWorkflowsSection(name); };
       msgForm.addEventListener('submit', function (ev) {
         ev.preventDefault();
         var url = msgForm.msgUrl.value.trim();
         var body = {};
         if (url) body.callback_url = url;
-        if (url && appRadio.checked) body.decisions = 'callback';
-        if (msgForm.msgNoticeOn.checked && msgForm.msgNotice.value.trim()) body.chat_notice = msgForm.msgNotice.value.trim();
-        if (msgForm.msgResult.checked) body.result_to_chat = true;
+        if (url && (!decideChat || !decideChat.checked)) body.decisions = 'callback';
+        if (msgForm.msgNoticeOn && msgForm.msgNoticeOn.checked && msgForm.msgNotice.value.trim()) body.chat_notice = msgForm.msgNotice.value.trim();
+        if (msgForm.msgResult && msgForm.msgResult.checked) body.result_to_chat = true;
         msgResult.textContent = 'Saving' + String.fromCharCode(8230);
         fetchJsonRetryOnce(base + '/messages', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
           if (!r.ok) { msgResult.textContent = r.body.error || 'Could not save'; return; }

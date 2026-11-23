@@ -1,5 +1,5 @@
 // The console's Inbox: /inbox lists every workflow run as a case, the ones
-// waiting on a person first; /inbox?case=<id> opens one, with what it was
+// waiting on a person first (?open=1 shows only those); /inbox?case=<id> opens one, with what it was
 // given, what the agent did, what it asks now (answer, approve, approve
 // as changed, deny) and who decided what (web/inbox-admin.ts behind
 // /inbox/*). An approver or viewer sees only this page; a viewer can't
@@ -8,6 +8,7 @@
 // literal.
 import { devUiCss } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { renderMarkdownScript } from './markdown-script.js'
 
 export const inboxPageHtml: string = `<!doctype html>
 <html lang="en">
@@ -46,7 +47,7 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-kv dt { color: var(--ink-muted); font-family: var(--font-mono); font-size: 12.5px; padding-top: 1px; }
   .ib-kv dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .ib-pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; background: var(--surface); padding: 10px 12px; border-radius: 8px; max-height: 360px; overflow: auto; }
-  .ib-question { margin: 0; font-size: 14.5px; white-space: pre-wrap; }
+  .ib-question { margin: 0; font-size: 14.5px; }
   .ib-card textarea { width: 100%; box-sizing: border-box; min-height: 80px; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
   .ib-card textarea.mono { font-family: var(--font-mono); font-size: 12.5px; min-height: 200px; }
   .ib-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -61,6 +62,22 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-step details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
   .ib-who { font-size: 13px; display: grid; gap: 4px; }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
+  .ib-md { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+  .ib-md > :first-child { margin-top: 0; }
+  .ib-md > :last-child { margin-bottom: 0; }
+  .ib-md p, .ib-md ul, .ib-md ol, .ib-md pre { margin: 0 0 .6em; }
+  .ib-md ul, .ib-md ol { padding-left: 1.4em; }
+  .ib-md li + li { margin-top: .25em; }
+  .ib-md h1, .ib-md h2, .ib-md h3, .ib-md h4, .ib-md h5, .ib-md h6 { margin: .8em 0 .4em; font-size: 15px; line-height: 1.35; }
+  .ib-md h1, .ib-md h2 { font-size: 16px; }
+  .ib-md a { color: var(--accent-ink); }
+  .ib-md code { font-family: var(--font-mono); font-size: .9em; background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+  .ib-md pre { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+  .ib-md pre code { background: none; padding: 0; }
+  .ib-md hr { border: 0; border-top: 1px solid var(--line); margin: .8em 0; }
+  .ib-md .workflow-markdown-table { overflow-x: auto; margin: 0 0 .6em; }
+  .ib-md table { border-collapse: collapse; font-size: 13px; }
+  .ib-md th, .ib-md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
   @media (max-width: 640px) { .ib-row { grid-template-columns: 12px minmax(0, 1fr); } .ib-row-side { grid-column: 2; align-items: flex-start; flex-direction: row; gap: 8px; } .ib-kv { grid-template-columns: 1fr; } }
 </style>
@@ -82,11 +99,12 @@ ${consoleSidebarHtml}
 ${consoleShellScript}
 <script>
 (function () {
+${renderMarkdownScript}
   var page = document.getElementById('ibPage');
   var ELLIPSIS = String.fromCharCode(8230);
   var DOT = ' ' + String.fromCharCode(183) + ' ';
   var params = new URLSearchParams(location.search);
-  var state = { open: params.get('all') !== '1', q: params.get('q') || '', workflow: params.get('workflow') || '' };
+  var state = { open: params.get('open') === '1', q: params.get('q') || '', workflow: params.get('workflow') || '' };
   var role = 'owner';
   var workflows = {};
 
@@ -123,7 +141,7 @@ ${consoleShellScript}
   }
   function pageUrl() {
     var q = new URLSearchParams();
-    if (!state.open) q.set('all', '1');
+    if (state.open) q.set('open', '1');
     if (state.q) q.set('q', state.q);
     if (state.workflow) q.set('workflow', state.workflow);
     var s = q.toString();
@@ -143,7 +161,7 @@ ${consoleShellScript}
     }).join('');
     page.innerHTML =
       '<div class="ib-bar">' +
-        '<span class="ib-filter" role="group" aria-label="Show"><button type="button" data-open="1" aria-pressed="' + state.open + '">Needs you (' + (data.open || 0) + ')</button><button type="button" data-open="0" aria-pressed="' + !state.open + '">All</button></span>' +
+        '<span class="ib-filter" role="group" aria-label="Show"><button type="button" data-open="0" aria-pressed="' + !state.open + '">All</button><button type="button" data-open="1" aria-pressed="' + state.open + '">Needs you (' + (data.open || 0) + ')</button></span>' +
         '<select id="ibWorkflow" aria-label="Workflow"><option value="">All workflows</option>' + options + '</select>' +
         '<input id="ibSearch" type="search" placeholder="Search cases, inputs or people" value="' + esc(state.q) + '" aria-label="Search">' +
       '</div>' +
@@ -187,7 +205,7 @@ ${consoleShellScript}
     var locked = canDecide() ? '' : '<p class="hint" style="margin:0">Your role can see this but not decide.</p>';
     if (p.kind === 'question') {
       return '<div class="ib-card needs" data-pending="' + esc(p.pendingId) + '" data-kind="question"><h3>Question for you</h3>' +
-        '<p class="ib-question">' + esc(p.question) + '</p>' +
+        '<div class="ib-question ib-md">' + renderMarkdownPreview(p.question || '') + '</div>' +
         (canDecide()
           ? (p.options && p.options.length ? '<div class="ib-actions">' + p.options.map(function (o) { return '<button type="button" class="ib-btn opt" data-option="' + esc(o) + '">' + esc(o) + '</button>'; }).join('') + '</div>' : '') +
             '<textarea class="ib-answer" placeholder="Your answer"></textarea>' +
@@ -207,8 +225,8 @@ ${consoleShellScript}
   }
 
   function stepHtml(s) {
-    if (s.kind === 'text') return '<li class="ib-step"><span class="ib-step-k">Agent</span><div style="white-space:pre-wrap">' + esc(s.text) + '</div></li>';
-    if (s.kind === 'question') return '<li class="ib-step q"><span class="ib-step-k">Asked</span><div style="white-space:pre-wrap">' + esc(s.question) + '</div>' +
+    if (s.kind === 'text') return '<li class="ib-step"><span class="ib-step-k">Agent</span><div class="ib-md">' + renderMarkdownPreview(s.text) + '</div></li>';
+    if (s.kind === 'question') return '<li class="ib-step q"><span class="ib-step-k">Asked</span><div class="ib-md">' + renderMarkdownPreview(s.question) + '</div>' +
       (s.answer != null ? '<span class="ib-step-k">Answer</span><div style="white-space:pre-wrap">' + esc(s.answer) + '</div>' : '<span class="hint">Waiting for an answer</span>') + '</li>';
     return '<li class="ib-step"><span class="ib-step-k">Used ' + esc(s.tool) + (s.failed ? ' (failed)' : '') + '</span>' +
       '<details><summary>What it sent' + (s.result != null ? ' and got back' : '') + '</summary><pre class="ib-pre">' + esc(JSON.stringify(s.args, null, 2)) + '</pre>' +
@@ -236,7 +254,7 @@ ${consoleShellScript}
       (run && run.params ? '<div class="ib-card"><h3>Inputs</h3>' + kvHtml(run.params) + '</div>' : '') +
       (c.steps.length ? '<div class="ib-card"><h3>What the agent did</h3><ol class="ib-steps">' + c.steps.map(stepHtml).join('') + '</ol></div>' : '') +
       (run ? decidedHtml(run) : '') +
-      (run && run.result ? '<div class="ib-card"><h3>Result</h3><div style="white-space:pre-wrap;font-size:14px">' + esc(run.result) + '</div></div>' : '') +
+      (run && run.result ? '<div class="ib-card"><h3>Result</h3><div class="ib-md">' + renderMarkdownPreview(run.result) + '</div></div>' : '') +
       (run && run.error ? '<div class="ib-card"><h3>Failed</h3><p class="error">' + esc(run.error) + '</p></div>' : '');
     wireCase(c);
   }

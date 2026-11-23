@@ -111,6 +111,16 @@ describe('workflow runs', () => {
     expect(run).toMatchObject({ source: 'schedule', task_id: 'task-1', task_name: 'EU digest', params: { region: 'EU' }, status: 'done', result: 'Digest sent.', session_id: 'sched-task1-1' })
   })
 
+  it("carry the workflow's send-result setting onto a scheduled run, so its result reaches chat", async () => {
+    const seen: string[] = []
+    const runner = new WorkflowRunner({ execute: async () => ({ kind: 'done', text: 'Digest sent.' }), onChange: (r) => { if (r.status === 'done' && r.result_to_chat) seen.push(r.run_id) } })
+    await runner.runForSchedule({ agent: 'cs', workflow_id: 'weekly-digest', task_id: 'task-1', message: 'x', session_id: 'sched-task1-4', result_to_chat: true })
+    await runner.idle()
+    const [run] = await listRuns('cs')
+    expect(run).toMatchObject({ source: 'schedule', result_to_chat: true, status: 'done' })
+    expect(seen).toEqual([run.run_id])
+  })
+
   it('record a scheduled run that fails, and still throw so the schedule records it', async () => {
     const runner = new WorkflowRunner({ execute: async () => { throw new Error('model unavailable') } })
     await expect(runner.runForSchedule({ agent: 'cs', workflow_id: 'weekly-digest', task_id: 'task-1', message: 'x', session_id: 'sched-task1-2' })).rejects.toThrow('model unavailable')
