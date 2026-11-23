@@ -132,6 +132,9 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-again { display: grid; gap: 6px; }
   .gl-again[hidden] { display: none; }
   .gl-setup { margin: 0; padding-left: 18px; font-size: 13.5px; display: grid; gap: 4px; }
+  .gl-setup-more { margin-top: 4px; font-size: 13px; }
+  .gl-setup-more summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; }
+  .gl-setup-more .gl-setup { margin-top: 4px; }
   .gl-select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   .gl-share { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; line-height: 1.45; }
   .gl-share input { margin-top: 2px; }
@@ -630,7 +633,8 @@ ${consoleShellScript}
       (g.message ? '<p class="gl-why">' + esc(g.message) + '</p>' : '') +
       (planning ? '<p class="gl-status">Suggesting jobs' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
       (g.status === 'failed' ? '<p class="error">' + esc(g.error || 'Planning failed.') + '</p>' : '') +
-      (g.setup && g.setup.length ? '<div><strong style="font-size:13.5px">Before you start</strong><ol class="gl-setup">' + g.setup.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></div>' : '') +
+      (g.setup && g.setup.length ? '<div><strong style="font-size:13.5px">Before you start</strong><ol class="gl-setup">' + g.setup.slice(0, 4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+        (g.setup.length > 4 ? '<details class="gl-setup-more"><summary>' + (g.setup.length - 4) + ' more</summary><ol class="gl-setup" start="5">' + g.setup.slice(4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></details>' : '') + '</div>' : '') +
     '</div>' +
     (state.justDiscarded ? '<div class="gl-discarded-note" data-discarded="' + esc(state.justDiscarded.id) + '"><span>Discarded <strong>' + esc(state.justDiscarded.title) + '</strong>. Why?</span>' +
       REASONS.map(function (r) { return '<button type="button" class="gl-btn plain" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +

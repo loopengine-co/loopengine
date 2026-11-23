@@ -92,6 +92,11 @@ describe('a goal and its workflows', () => {
     expect(plans[1]).toContain('- B (lever: b; discarded)')
     expect(goal.jobs.map((w) => [w.title, w.state, w.round])).toEqual([['A', 'suggested', 1], ['B', 'discarded', 1], ['C', 'suggested', 2]])
     expect(goal.rounds).toBe(2)
+    // It was shown the setup already listed, and the same step isn't listed twice.
+    expect(plans[0]).not.toContain('Setup already on this goal')
+    expect(plans[1]).toContain('Setup already on this goal')
+    expect(plans[1]).toContain('- Record today’s signups as a baseline')
+    expect(goal.setup).toEqual(['Record today’s signups as a baseline'])
   })
 
   it('builds a suggestion straight away: makes its suggested agent when missing, then hands over to Build a workflow', async () => {

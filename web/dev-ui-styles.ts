@@ -148,7 +148,6 @@ export const devUiCss: string = `
   .le-pane-head a.le-pane-new { font-size: 12.5px; font-weight: 600; color: var(--accent-ink); }
   .le-pane-head a.le-pane-new[aria-current="page"] { text-decoration: underline; }
   .le-pane .le-agent-list { max-height: none; }
-  .le-name.le-slug { font-family: var(--font-mono); font-size: 12.5px; }
   .le-goal-item .le-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 0 1 auto; max-height: 40vh; min-height: 0; }
   /* Find your first agent: one more item under Agents. */

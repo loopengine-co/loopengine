@@ -1,7 +1,6 @@
 // The console's front page: / and /workflows list every workflow in the
 // workspace with how it starts, how it's been running and what's waiting
 // in the Inbox (web/workflows-overview.ts behind /workflows/overview).
-// Goals and Jobs are the way in when there's nothing to automate yet.
 // Like the other console pages, its inline script avoids backslashes and
 // template placeholders, since it lives inside a template literal.
 import { devUiCss } from './dev-ui-styles.js'
@@ -29,7 +28,6 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
   .wo-head { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); background: var(--surface); }
   .wo-head:hover { background: var(--surface); }
   .wo-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wo-slug { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
   .wo-sub { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wo-runs { font-size: 13px; display: grid; gap: 2px; }
   .wo-side { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
@@ -46,8 +44,6 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
   .wo-way:hover { border-color: var(--accent); }
   .wo-way b { font-size: 14px; }
   .wo-way span { font-size: 12.5px; color: var(--ink-muted); }
-  .wo-plan { border-radius: 12px; background: var(--surface); padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; font-size: 13.5px; }
-  .wo-plan a { font-weight: 600; color: var(--accent-ink); text-decoration: none; }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
   @media (max-width: 760px) { .wo-row { grid-template-columns: minmax(0, 1fr) auto; } .wo-row .wo-col-starts, .wo-row .wo-col-runs { display: none; } .wo-head { display: none; } }
@@ -96,8 +92,6 @@ ${consoleShellScript}
   }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
-  var PLAN = '<div class="wo-plan"><span>Not sure what to automate next? Say what you want to achieve, and LoopEngine suggests the jobs that move it.</span><a href="/goals?new=1">Start from a goal &rarr;</a></div>';
-
   function renderEmpty() {
     page.innerHTML =
       '<div class="wo-empty"><h2>No workflows yet</h2>' +
@@ -105,7 +99,6 @@ ${consoleShellScript}
         '<div class="wo-ways">' +
           '<a class="wo-way" href="/workflows/new"><b>Describe a workflow</b><span>Say what the agent should do in a sentence or two and review the plan.</span></a>' +
           '<a class="wo-way" href="/workflows/new#examples"><b>Start from an example</b><span>A ready-made workflow for a common task.</span></a>' +
-          '<a class="wo-way" href="/goals?new=1"><b>Start from a goal</b><span>Not sure what to automate? Get jobs suggested for what you want to achieve.</span></a>' +
         '</div></div>';
   }
 
@@ -122,7 +115,7 @@ ${consoleShellScript}
     var rows = d.workflows.map(function (w) {
       var decided = w.approved + w.refused;
       return '<a class="wo-row" href="' + href(w) + '">' +
-        '<span style="min-width:0"><div class="wo-title wo-slug" title="' + esc(w.title) + '">' + esc(w.id) + '</div><div class="wo-sub">' + esc(w.agentLabel) + '</div></span>' +
+        '<span style="min-width:0"><div class="wo-title">' + esc(w.title) + '</div><div class="wo-sub">' + esc(w.agentLabel) + '</div></span>' +
         '<span class="wo-col-starts wo-sub" title="' + esc(w.starts.join(', ')) + '">' + esc(w.starts.join(DOT)) + '</span>' +
         '<span class="wo-col-runs wo-runs"><span>' + plural(w.runsThisWeek, 'run', 'runs') + ' this week' + (w.failedThisWeek ? ', <span style="color:var(--bad)">' + w.failedThisWeek + ' failed</span>' : '') + '</span>' +
           '<span class="wo-sub">' + (w.lastRun ? 'Last ' + esc(ago(w.lastRun.at)) : 'Not run yet') + (decided ? DOT + w.approved + ' of ' + decided + ' approved' : '') + '</span></span>' +
@@ -130,8 +123,7 @@ ${consoleShellScript}
       '</a>';
     }).join('');
     page.innerHTML = stats +
-      '<div class="wo-list"><div class="wo-row wo-head"><span>Workflow</span><span class="wo-col-starts">Starts</span><span class="wo-col-runs">Runs</span><span></span></div>' + rows + '</div>' +
-      PLAN;
+      '<div class="wo-list"><div class="wo-row wo-head"><span>Workflow</span><span class="wo-col-starts">Starts</span><span class="wo-col-runs">Runs</span><span></span></div>' + rows + '</div>';
   }
 
   // The sidebar asks for the same list as the page opens: one request.

@@ -398,6 +398,7 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
         goal: planning.goal,
         context,
         saved: planning.jobs.map((w) => ({ title: w.title, lever: w.lever, ...(w.leverId ? { leverId: w.leverId } : {}), state: w.state })),
+        ...(planning.setup.length ? { setup: planning.setup } : {}),
         ...(planning.focus ? { focus: planning.focus } : {}),
       })
       // A focus or levers the planner wrote, because the playbook had none
@@ -416,7 +417,7 @@ function startPlanning(deps: GoalsDeps, goal: Goal): Goal {
       const updated: Goal = {
         ...latest,
         brief: plan.brief,
-        setup: [...new Set([...latest.setup, ...plan.setup])],
+        setup: [...new Set([...latest.setup, ...plan.setup.slice(0, 4)])],
         message: plan.message,
         playbookVersion: plan.playbookVersion,
         status: 'ready',

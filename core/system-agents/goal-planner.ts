@@ -153,6 +153,8 @@ export interface GoalPipelineInput {
   goal: string
   context: GoalContext
   saved?: SavedGoalWorkflow[]
+  /** Setup steps the goal already lists, from earlier rounds. */
+  setup?: string[]
   /** The focus the person chose, instead of the one the brief reads. */
   focus?: GoalFocus | 'other'
 }
@@ -188,6 +190,7 @@ Rules:
 6. needs: what each workflow uses, each with a kind from the playbook's vocabulary and connected true only when the context lists that kind as connected.
 7. Every request that posts, sends or publishes says nothing goes out without the person's approval.
 8. The measure must be readable. When measureSourceConnected is false, setup says how the number will be read: connecting that source (name it, e.g. "connect Clerk's user.created webhook so signups and their ref are recorded"), or, when it can't be connected, a light manual record the person updates weekly (kept with the Records ability). Always record a baseline: the number today. Tag what workflows produce (ref=<channel>) so each one's effect can be told apart.
+8b. setup: what the person does once before the jobs start, at most four steps, each one short sentence (about 20 words at most) saying the action, not the reasoning. When the request lists setup already on the goal, add only what those steps don't cover, usually nothing: never repeat or reword one (the baseline, the signup link, the manual record are said once).
 8b. Every qualifier in the brief is covered by at least one workflow that addresses it directly; list it in that workflow's covers.
 9. "partial" scope: at most three workflows, only ones that help the person pursue the goal, and say so in the message ("helps you pursue", never "achieves"). "out" scope: no workflows; the message says plainly why, and offers a smaller or related goal.
 10. agent: an existing agent's exact name when its work fits. When none fits, or there are no agents yet, suggest a new one: agent and newAgent.name the same short lowercase name with hyphens (e.g. "community-agent"), and newAgent.instructions two or three sentences on what it does and how it behaves. Group workflows that belong together in one agent rather than one agent each.
@@ -201,7 +204,8 @@ export const GOAL_CRITIQUE_PROMPT = `You check a goal plan against its rules bef
 - a need marked connected that the context doesn't list as connected;
 - a request that posts, sends or publishes without saying it waits for approval;
 - review time over three quarters of the weekly budget;
-- a measure whose source isn't connected, with no setup step that connects it or a manual record, or no baseline;
+- a measure whose source isn't connected, with no setup step (new or already on the goal) that connects it or a manual record, or no baseline;
+- more than four setup steps, a step longer than a sentence, or one that repeats or rewords a step already on the goal;
 - a qualifier from the brief no workflow addresses;
 - a recurring job on a finite list that will run out (it should be kind "once");
 - a job title longer than six words, or one that names the mechanism ("Send welcome emails", "Lead scan") instead of the result it brings ("Get new signups started");
@@ -272,7 +276,7 @@ const planTool = (): ToolSchema => ({
   input_schema: {
     type: 'object',
     properties: {
-      setup: { type: 'array', items: { type: 'string' } },
+      setup: { type: 'array', items: { type: 'string' }, description: 'at most four short steps, only ones not already on the goal' },
       workflows: {
         type: 'array',
         items: {
@@ -454,6 +458,11 @@ function leversText(focus: GoalBrief['focus'], saved: SavedGoalWorkflow[] = []):
   ).join('\n')
 }
 
+function setupText(setup: string[] | undefined): string {
+  if (!setup?.length) return ''
+  return 'Setup already on this goal (don\'t repeat or reword these; add only what they don\'t cover):\n' + setup.map((s) => `- ${s}`).join('\n')
+}
+
 function savedText(saved: SavedGoalWorkflow[] | undefined): string {
   if (!saved?.length) return 'Already saved under this goal: nothing yet.'
   return 'Already saved under this goal (never propose these levers again):\n' + saved.map((s) => `- ${s.title} (lever: ${s.lever}${s.leverId ? `, ${s.leverId}` : ''}; ${s.state})`).join('\n')
@@ -627,6 +636,7 @@ export async function draftGoalPlan(modelCall: ModelCall, input: GoalPipelineInp
     briefText(brief),
     leversText(brief.focus, input.saved),
     savedText(input.saved),
+    setupText(input.setup),
     `The goal, as the person said it:\n${input.goal}`,
     issues.length ? `A check found these issues in your last plan; fix every one:\n${issues.map((i) => `- ${i}`).join('\n')}` : '',
   ].filter(Boolean).join('\n\n')
@@ -634,7 +644,7 @@ export async function draftGoalPlan(modelCall: ModelCall, input: GoalPipelineInp
 }
 
 export async function critiqueGoalPlan(modelCall: ModelCall, input: GoalPipelineInput, brief: GoalBrief, plan: Omit<GoalPlan, 'brief' | 'critique' | 'playbookVersion'>): Promise<{ passed: boolean; issues: string[] }> {
-  const user = [contextText(input.context), briefText(brief), savedText(input.saved), `The plan:\n${JSON.stringify(plan, null, 2)}`].join('\n\n')
+  const user = [contextText(input.context), briefText(brief), savedText(input.saved), setupText(input.setup), `The plan:\n${JSON.stringify(plan, null, 2)}`].join('\n\n')
   const raw = await callTool(modelCall, GOAL_CRITIQUE_PROMPT, user, REVIEW_TOOL)
   const issues = strings(raw.issues)
   return { passed: raw.passed === true && issues.length === 0, issues }

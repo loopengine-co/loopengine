@@ -39,6 +39,8 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-empty { padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
   .ib-back { font-size: 13px; color: var(--accent-ink); text-decoration: none; font-weight: 600; }
   .ib-case-head h2 { margin: 4px 0 6px; font-size: 20px; letter-spacing: -0.01em; }
+  .ib-link { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+  .ib-link:hover { text-decoration: underline; }
   .ib-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
   .ib-card { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 14px 16px; display: grid; gap: 10px; }
   .ib-card h3 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
@@ -244,12 +246,21 @@ ${renderMarkdownScript}
     }).join('') + '</div></div>';
   }
 
+  // The case's workflow and agent, each opening its page. An approver or
+  // viewer can open only the Inbox, so for them they're plain text.
+  function caseLinks(c) {
+    if (document.querySelector('.le-app.le-inbox-only')) return esc(c.workflowTitle) + DOT + esc(c.agent);
+    var agentUrl = '/agents/config?agent=' + encodeURIComponent(c.agent);
+    var wf = c.workflowId ? '<a class="ib-link" href="' + agentUrl + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId) + '">' + esc(c.workflowTitle) + '</a>' : esc(c.workflowTitle);
+    return wf + DOT + '<a class="ib-link" href="' + agentUrl + '">' + esc(c.agent) + '</a>';
+  }
+
   function renderCase(c) {
     var run = c.run;
     var status = run ? stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: run.status }) : stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: 'awaiting_approval' });
     page.innerHTML =
       '<a class="ib-back" href="' + pageUrl() + '">' + String.fromCharCode(8592) + ' Inbox</a>' +
-      '<div class="ib-case-head"><h2>' + esc(c.title) + '</h2><div class="ib-chips">' + status + '<span>' + esc(c.workflowTitle) + DOT + esc(c.agent) + (run ? DOT + 'started ' + esc(when(run.started_at)) + (run.source ? ' by ' + esc(run.source === 'webhook' ? 'a webhook' : run.source === 'schedule' ? 'a schedule' : run.source === 'console' ? 'Run now' : run.source === 'api' ? 'an app' : run.source) : '') : '') + '</span></div></div>' +
+      '<div class="ib-case-head"><h2>' + esc(c.title) + '</h2><div class="ib-chips">' + status + '<span>' + caseLinks(c) + (run ? DOT + 'started ' + esc(when(run.started_at)) + (run.source ? ' by ' + esc(run.source === 'webhook' ? 'a webhook' : run.source === 'schedule' ? 'a schedule' : run.source === 'console' ? 'Run now' : run.source === 'api' ? 'an app' : run.source) : '') : '') + '</span></div></div>' +
       c.pending.map(pendingHtml).join('') +
       (run && run.params ? '<div class="ib-card"><h3>Inputs</h3>' + kvHtml(run.params) + '</div>' : '') +
       (c.steps.length ? '<div class="ib-card"><h3>What the agent did</h3><ol class="ib-steps">' + c.steps.map(stepHtml).join('') + '</ol></div>' : '') +

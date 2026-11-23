@@ -28,12 +28,8 @@ const BRAND_MARK =
   '<path d="M3 7a4 4 0 1 0 4-4" stroke="var(--on-accent)" stroke-width="1.8" stroke-linecap="round"/>' +
   '<path d="M7 1.2v3.6L9.2 3z" fill="var(--on-accent)"/></svg>'
 
-// Icons beside the sidebar's section heads: a target for Goals, a
-// briefcase for Jobs, a robot for Agents.
-const GOALS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'
-const JOBS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 13a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M7 6V5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v1h2a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3h2Zm2-1a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1H9V5Zm10 3a1 1 0 0 1 1 1v3.5a2.5 2.5 0 0 1-2.5 2.5H6a2 2 0 0 1-2-2V9a1 1 0 0 1 1-1h14ZM4 16.465c.588.34 1.271.535 2 .535h11.5c.925 0 1.785-.28 2.5-.758V18a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1.535Z"/></svg>'
-// The robot is drawn smaller in its 24 box than the others: cropped to
-// its middle 18, it shows at the same size.
+// A robot for Agents. It's drawn smaller in its 24 box than the other
+// icons: cropped to its middle 18, it shows at the same size.
 const AGENTS_ICON = '<svg class="le-nav-icon" viewBox="3 3 18 18" fill="currentColor" aria-hidden="true"><path d="M11 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm3.5 1.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M12 5.5a1 1 0 0 1 1 1V7h4a3 3 0 0 1 3 3v3.5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V10a3 3 0 0 1 3-3h4v-.5a1 1 0 0 1 1-1ZM7 9h10a1 1 0 0 1 1 1v3.5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V10a1 1 0 0 1 1-1Z"/></svg>'
 
 // Two linked steps going round, for Workflows.
@@ -45,8 +41,9 @@ const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" str
 // A gear, for Settings.
 const SETTINGS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 
-// Two columns: the sections (Inbox, Goals, Jobs, Agents, Workflows,
-// Settings), and beside them what's in the current one. Pointing at
+// Two columns: the sections (Inbox, Agents, Workflows, Settings), and
+// beside them what's in the current one. Goals and Jobs stay at /goals
+// and /jobs, out of the menu: LoopEngine is about workflows. Pointing at
 // another section shows its column instead, until the pointer leaves.
 // Inbox and Home have no second column; pointing at a section there
 // opens its column over the page.
@@ -54,8 +51,6 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <nav class="le-rail" aria-label="Sections">
     <a class="le-brand" href="/" title="Home"><span class="le-brand-mark">${BRAND_MARK}</span></a>
     <a class="le-rail-item" href="/inbox" data-le-nav-head="inbox" data-le-section="inbox">${INBOX_ICON}<span>Inbox</span><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></a>
-    <a class="le-rail-item" href="/goals" data-le-nav-head="goals" data-le-section="goals">${GOALS_ICON}<span>Goals</span></a>
-    <a class="le-rail-item" href="/jobs" data-le-nav-head="jobs" data-le-section="jobs">${JOBS_ICON}<span>Jobs</span></a>
     <a class="le-rail-item" href="/agents" data-le-nav-head="agents" data-le-section="agents">${AGENTS_ICON}<span>Agents</span></a>
     <a class="le-rail-item" href="/workflows" data-le-nav-head="workflows" data-le-section="workflows">${WORKFLOWS_ICON}<span>Workflows</span></a>
     <span class="le-rail-gap"></span>
@@ -63,14 +58,6 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     <div class="le-who" id="leWho" hidden></div>
   </nav>
   <div class="le-panel" hidden>
-    <section class="le-pane" data-le-pane="goals">
-      <div class="le-pane-head"><a href="/goals">Goals</a><a class="le-pane-new" href="/goals?new=1" data-le-goal-new>+ New</a></div>
-      <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
-    </section>
-    <section class="le-pane" data-le-pane="jobs">
-      <div class="le-pane-head"><a href="/jobs">Jobs</a><a class="le-pane-new" href="/jobs?new=1" data-le-job-new>+ New</a></div>
-      <ul class="le-agent-list le-goal-list" id="leJobList"></ul>
-    </section>
     <section class="le-pane" data-le-pane="agents">
       <div class="le-pane-head"><a href="/agents">Agents</a><a class="le-pane-new" href="/agents?new=1">+ New</a></div>
       <ul class="le-agent-list" id="leAgentList"></ul>
@@ -284,11 +271,11 @@ export const consoleShellScript: string = `<script>
     var currentAgent = page === 'agent-config' && q.get('tab') === 'workflows' ? q.get('agent') : null;
     var currentId = currentAgent ? q.get('workflow') : null;
     return cachedFetch('workflows', '/workflows/overview', function (data) {
-        var list = (data.workflows || []).slice().sort(function (a, b) { return a.id.localeCompare(b.id); });
+        var list = (data.workflows || []).slice().sort(function (a, b) { return a.title.localeCompare(b.title); });
         workflowList.innerHTML = list.length ? list.map(function (w) {
           var on = w.agent === currentAgent && w.id === currentId;
           return '<li><a class="le-agent-item le-goal-item" href="/agents/config?agent=' + enc(w.agent) + '&tab=workflows&workflow=' + enc(w.id) + '" title="' + esc(w.title) + ' (' + esc(w.agentLabel) + DOT_SEP + (w.live ? 'Running' : 'Pending') + ')"' + (on ? ' aria-current="page"' : '') + '>' +
-            '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-name le-slug">' + esc(w.id) + '</span></a></li>';
+            '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-name">' + esc(w.title) + '</span></a></li>';
         }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No workflows yet</span><span></span></li>';
       });
   }
