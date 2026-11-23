@@ -133,25 +133,16 @@ export const consoleShellScript: string = `<script>
   // Who is signed in and their role (GET /config/settings), read once;
   // pages read it through leShell.settings() rather than asking again.
   var settings = getJson('/config/settings');
-  // On the Inbox, the lists wait for the role: an approver or viewer sees
-  // the Inbox only, and the rest of the sidebar is hidden. Other pages
-  // are only open to the roles that see everything.
-  // The server marks the page for an Inbox-only role before it's shown.
+  // An approver or viewer sees the Inbox only, with the rest of the
+  // sidebar hidden. The server knows the role from the request and marks
+  // the page before it's sent (and those roles can't open any other
+  // page), so the lists draw at once instead of waiting on a role check.
   var markedInboxOnly = Boolean(app && app.classList.contains('le-inbox-only'));
   if (markedInboxOnly) {
     var inboxBrand = document.querySelector('.le-brand');
     if (inboxBrand) inboxBrand.setAttribute('href', '/inbox');
   }
-  var fullAccess = markedInboxOnly ? Promise.resolve(false) : page === 'inbox' ? settings.then(function (s) {
-    var role = s && s.signIn && s.signIn.role;
-    var only = role === 'approver' || role === 'viewer';
-    if (only && app) {
-      app.classList.add('le-inbox-only');
-      var brand = document.querySelector('.le-brand');
-      if (brand) brand.setAttribute('href', '/inbox');
-    }
-    return !only;
-  }) : Promise.resolve(true);
+  var fullAccess = Promise.resolve(!markedInboxOnly);
 
   function tabHref(name, tab) {
     if (tab === 'chat') return '/playground?agent=' + enc(name);
