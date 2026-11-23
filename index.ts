@@ -378,7 +378,7 @@ export type { AgentTemplateOptions } from './bin/cli.js'
 // Goals (web/goals-admin.ts, web/goals-page.ts) and the goal planner's
 // playbook, kept current on Cloud by core/playbook-sync.ts: a project's
 // own adapters/http.ts imports these.
-export { goalsPageHtml } from './web/goals-page.js'
+export { goalsPageHtml, goalsPageAs, type GoalsPageView } from './web/goals-page.js'
 export { GoalError, acceptJob, addJob, assignJob, assignmentMessage, listJob, listJobs, submitJob, MY_JOBS_ID, type ListedJob, chainedRuns, chainConditionMet, checkChain, editJob, MAX_CHAIN_DEPTH, type ChainStep, goalView, type AssignmentView, checkBuiltWorkflows, createGoal, deleteGoal, editAmount, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeAbout, writeGoalSettings, type Goal, type GoalJob, type GoalJobState, type JobDoer, type GoalWorkflow, type GoalsDeps, type LeverEvent, migrateGoal, migrateGoalFiles } from './web/goals-admin.js'
 export { sendLeverEvents, sharesLeverStats, startLeverEventsSync } from './web/lever-events-sync.js'
 export { createAgentNamesReporter, type AgentNamesReporter } from './web/agent-names-sync.js'
