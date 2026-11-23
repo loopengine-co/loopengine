@@ -95,7 +95,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-row-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) 210px 200px auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
   .wf-row-head:hover, .wf-row.is-open .wf-row-head { background: var(--surface); }
   .wf-row-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .wf-slug { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; }
   .wf-row-job { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wf-row-job a { color: var(--accent-ink); }
   .wf-row-caret { width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; }
@@ -124,7 +123,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 10px; margin-bottom: -1px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
   .wf-tab:hover:not(:disabled) { background: none; color: var(--ink); }
   .wf-tab[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
-  .wf-msg-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+  .wf-msg-form { display: flex; flex-direction: column; gap: 14px; }
   .wf-msg-dests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .wf-msg-dest { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
   .wf-msg-dest-k { font-weight: 600; font-size: 13px; }
@@ -584,6 +583,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     align-items: center;
     gap: 6px;
   }
+  form.add-source label.http-tool-inline-label[hidden] { display: none; }
   /* These three are plain <div>s of sibling inputs/selects/buttons, not
      <label>s, so none of the rules above touch them — without an explicit
      row layout they just wrap at the browser's default inline spacing,
@@ -1239,7 +1239,7 @@ ${renderMarkdownScript}
       return '<article class="workflow-card wf-row' + (open ? ' is-open' : '') + '" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div class="wf-row-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
           '<span class="wf-row-caret" aria-hidden="true"></span>' +
-          '<div class="wf-row-main"><strong class="wf-slug" title="' + escapeHtml(w.title) + '">' + escapeHtml(w.id) + '</strong>' +
+          '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong>' +
             // The job(s) it does, linking back to each job's page.
             (w.jobs && w.jobs.length ? '<span class="wf-row-job">For job: ' + w.jobs.map(function (j) { return '<a href="/jobs?job=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span>' : '') + '</div>' +
           '<span class="wf-row-starts">' + workflowStartsSummary(w) + '</span>' +
@@ -3356,7 +3356,7 @@ ${renderMarkdownScript}
             ? '<div class="body-field">Runs' +
                 '<div class="schedule-when"><input type="radio" name="runs" value="workflow" id="runsWorkflow" checked><label for="runsWorkflow">A workflow</label>' +
                   '<select name="workflow_id" aria-label="Workflow">' + schedulesWorkflows.map(function (w) {
-                    return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.id) + '</option>';
+                    return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.title) + '</option>';
                   }).join('') + '</select></div>' +
                 '<div class="workflow-params" id="scheduleParams" style="margin:0 0 4px 22px"></div>' +
                 '<p class="hint" style="margin:0 0 4px 22px">Each run follows the workflow&#39;s instructions as they are then, so changing the workflow changes what runs.</p>' +
