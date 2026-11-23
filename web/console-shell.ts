@@ -103,11 +103,25 @@ export const consoleShellScript: string = `<script>
   function remember(key, value) {
     try { sessionStorage.setItem('le-side:' + key, JSON.stringify(value)); } catch (e) {}
   }
+  // A list asked for again while it's still loading, or within a couple
+  // of seconds of arriving (a page reloading the sidebar as it opens),
+  // reuses that answer instead of another round trip.
+  var recent = {};
+  function getJson(url) {
+    var hit = recent[url];
+    if (hit && (!hit.at || Date.now() - hit.at < 2000)) return hit.promise;
+    var entry = { at: 0, promise: null };
+    entry.promise = fetch(url, { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (data) { entry.at = Date.now(); return data; });
+    recent[url] = entry;
+    return entry.promise;
+  }
   function cachedFetch(key, url, render) {
     var seen = recall(key);
     if (seen) { try { render(seen); } catch (e) {} }
-    return fetch(url, { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null; })
+    return getJson(url)
       .then(function (data) {
         if (!data) return;
         if (!seen || JSON.stringify(seen) !== JSON.stringify(data)) render(data);
@@ -116,10 +130,9 @@ export const consoleShellScript: string = `<script>
       .catch(function () {});
   }
 
-  // Who is signed in and their role (GET /config/settings), read once.
-  var settings = fetch('/config/settings')
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .catch(function () { return null; });
+  // Who is signed in and their role (GET /config/settings), read once;
+  // pages read it through leShell.settings() rather than asking again.
+  var settings = getJson('/config/settings');
   // On the Inbox, the lists wait for the role: an approver or viewer sees
   // the Inbox only, and the rest of the sidebar is hidden. Other pages
   // are only open to the roles that see everything.
@@ -175,20 +188,17 @@ export const consoleShellScript: string = `<script>
     return n ? '<span class="le-count warn">' + n + ' to set</span>' : '';
   }
 
+  // Each agent's count comes with GET /agents (toSet).
   function loadToSet() {
+    var next = {};
+    agents.forEach(function (a) { next[a.name] = a.toSet || 0; });
+    var changed = JSON.stringify(next) !== JSON.stringify(toSet);
+    toSet = next;
+    remember('toSet', toSet);
+    if (changed) renderList();
     agents.forEach(function (a) {
-      fetch('/agents/' + enc(a.name) + '/env')
-        .then(function (r) { return r.ok ? r.json() : []; })
-        .then(function (vars) {
-          var n = (vars || []).filter(function (v) { return v.slot === 'agent' && v.scope === 'agent' && !v.set; }).length;
-          var changed = toSet[a.name] !== n;
-          toSet[a.name] = n;
-          remember('toSet', toSet);
-          if (changed) renderList();
-          var slots = document.querySelectorAll('[data-le-env-count="' + a.name + '"]');
-          for (var i = 0; i < slots.length; i++) slots[i].innerHTML = envCountHtml(a.name);
-        })
-        .catch(function () {});
+      var slots = document.querySelectorAll('[data-le-env-count="' + a.name + '"]');
+      for (var i = 0; i < slots.length; i++) slots[i].innerHTML = envCountHtml(a.name);
     });
   }
 
@@ -635,6 +645,6 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { loadError: function () { return loadError; }, ready: ready, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadWorkflows: reloadWorkflows, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  window.leShell = { loadError: function () { return loadError; }, ready: ready, settings: function () { return settings; }, getJson: getJson, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadWorkflows: reloadWorkflows, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`

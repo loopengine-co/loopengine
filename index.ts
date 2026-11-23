@@ -387,6 +387,7 @@ export { LEVERS, PLAYBOOK_VERSION, activePlaybook, setPlaybookProjectDir, type L
 export { startPlaybookSync, syncPlaybook, playbookSyncConfig } from './core/playbook-sync.js'
 export { workspaceRole, canDecide, inboxOnly, inboxOnlyAllows, roleLabel, agentsFor, type WorkspaceRole } from './core/workspace-roles.js'
 export { inboxPageHtml, renderInboxOnlyPage } from './web/inbox-page.js'
+export { compressResponses, serveConsoleAsset } from './web/response-compression.js'
 export { workflowsOverviewPageHtml } from './web/workflows-overview-page.js'
 export { workflowsOverview, startsOf, type WorkflowsOverview, type WorkflowOverviewRow } from './web/workflows-overview.js'
 export { listInbox, getInboxCase, timelineOf, type InboxDeps, type InboxItem, type InboxCase, type InboxPending, type InboxStep } from './web/inbox-admin.js'

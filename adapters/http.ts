@@ -87,6 +87,7 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
+import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
 import { EvidenceError, addEvalCase, readEvals, removeEvalCase, runFeedbackFrom, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
@@ -2172,6 +2173,16 @@ function handleSkillDelete(res: ServerResponse, agentName: string, skillId: stri
 // (see ABILITIES.md, bin/ability-manager.ts) declared it needs for this
 // agent, with set/not-set status only. Read-only, so no extra auth gate
 // beyond the normal Basic Auth middleware every admin route already has.
+// How many of an agent's own settings are still unset (the sidebar's
+// "n to set"), sent with GET /agents so the sidebar needs no call per agent.
+function agentSettingsToSet(agentName: string): number {
+  try {
+    return listDeclaredEnvVars(agentName).filter((v) => v.slot === 'agent' && v.scope === 'agent' && !v.set).length
+  } catch {
+    return 0
+  }
+}
+
 function handleEnvGet(res: ServerResponse, agentName: string): void {
   if (!getEntry(agentName)) {
     res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `unknown agent '${agentName}'` }))
@@ -4824,6 +4835,12 @@ async function handleWorkflowTriggers(req: IncomingMessage, res: ServerResponse,
 let shuttingDown = false
 
 const server = createServer(async (req, res) => {
+  // Pages and JSON answers gzipped, pages kept by the browser until they
+  // change, and their code served as files it keeps for good
+  // (web/response-compression.ts). That code is the console's own, the
+  // same for everyone, so it needs no login.
+  compressResponses(req, res)
+  if (serveConsoleAsset(req, res)) return
   // Liveness for whatever runs this server (Docker, Fly, a router): no
   // login, nothing about the server in the answer, and not counted as
   // activity, so polling it never keeps an idle server awake.
@@ -5144,7 +5161,7 @@ const server = createServer(async (req, res) => {
         return
       }
       res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({ agents: listAgents().map((name) => ({ name, ...(getEntry(name)!.config.displayName ? { displayName: getEntry(name)!.config.displayName } : {}), systemPrompt: getEntry(name)!.config.systemPrompt })) }),
+        JSON.stringify({ agents: listAgents().map((name) => ({ name, ...(getEntry(name)!.config.displayName ? { displayName: getEntry(name)!.config.displayName } : {}), systemPrompt: getEntry(name)!.config.systemPrompt, toSet: agentSettingsToSet(name) })) }),
       )
       return
     }

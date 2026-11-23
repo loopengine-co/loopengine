@@ -133,8 +133,10 @@ ${consoleShellScript}
       PLAN;
   }
 
-  fetch('/workflows/overview', { cache: 'no-store' })
-    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  // The sidebar asks for the same list as the page opens: one request.
+  (window.leShell && window.leShell.getJson
+    ? window.leShell.getJson('/workflows/overview').then(function (d) { if (!d) throw new Error('could not reach the server'); return d; })
+    : fetch('/workflows/overview', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }))
     .then(render)
     .catch(function (err) { page.innerHTML = '<p class="error">Couldn' + String.fromCharCode(8217) + 't load your workflows: ' + esc(err.message) + '</p>'; });
 })();

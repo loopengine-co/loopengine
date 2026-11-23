@@ -340,8 +340,7 @@ ${renderMarkdownScript}
     }, 15000);
   }
 
-  fetch('/config/settings')
-    .then(function (r) { return r.ok ? r.json() : null; })
+  (window.leShell && window.leShell.settings ? window.leShell.settings() : fetch('/config/settings').then(function (r) { return r.ok ? r.json() : null; }))
     .then(function (s) { if (s && s.signIn && s.signIn.role) role = s.signIn.role; })
     .catch(function () {})
     .then(start);
