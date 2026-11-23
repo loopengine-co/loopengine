@@ -614,6 +614,26 @@ export function listJob(deps: GoalsDeps, id: string, jobId: string, on: boolean)
 
 /** When a job joined the list: when added, else when it was first built
  * or assigned (jobs built before the list existed). */
+/** The jobs each workflow does, keyed "agent|workflowId": every job
+ * (not discarded) that lists it as a doer, for "For job" on the
+ * workflow's page. */
+export function jobsByWorkflow(deps: GoalsDeps): Map<string, { id: string; title: string }[]> {
+  const out = new Map<string, { id: string; title: string }[]>()
+  for (const goal of listGoals(deps)) {
+    for (const job of goal.jobs) {
+      if (job.state === 'discarded') continue
+      for (const d of job.doers) {
+        if (d.type !== 'workflow') continue
+        const key = `${d.agent}|${d.workflowId}`
+        const list = out.get(key) ?? []
+        if (!list.some((j) => j.id === job.id)) list.push({ id: job.id, title: job.title })
+        out.set(key, list)
+      }
+    }
+  }
+  return out
+}
+
 function addedWhen(job: GoalJob): string | undefined {
   return job.addedAt ?? (job.state === 'active' || job.state === 'done' ? job.doers[0]?.at : undefined)
 }

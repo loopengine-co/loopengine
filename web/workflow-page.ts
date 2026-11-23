@@ -532,8 +532,8 @@ ${consoleShellScript}
           : '') +
         paramsSectionHtml(p) +
         '<h3>What it will use</h3>' +
-        '<p class="hint" style="margin:0">The tools for each part of the job, and where you decide. The agent works out the order for each case from its instructions, below.</p>' +
-        '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th>Part of the job</th><th>Uses</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
+        '<p class="hint" style="margin:0">The tools for each step, and where you decide. The agent works out the order for each case from its instructions, below.</p>' +
+        '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th>Step</th><th>Uses</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
         (p.abilities.length ? '<h3>Abilities it uses</h3><ul class="wf-list">' + p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; }).join('') + '</ul>' + (state.canInstall ? '' : '<p class="hint">Installing abilities needs LOOPENGINE_ADMIN_AUTH set; otherwise they head the checklist.</p>') : '') +
         (p.skills && p.skills.length ? '<h3>Skills it comes with</h3><ul class="wf-list">' + p.skills.map(function (sk) { return '<li><code>' + esc(sk.id) + '</code> <span class="hint">' + esc(sk.description) + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">An agent that already has one keeps its own.</p>' : '') +
         (p.keys.length ? '<h3>Keys it needs</h3><p class="hint" style="margin:0">' + p.keys.map(esc).join(', ') + ' ' + DASH + ' you add them after, from the checklist.</p>' : '') +
@@ -541,14 +541,14 @@ ${consoleShellScript}
         contractExtrasHtml(p) +
       '</div>' +
       '<div class="wf-card"><h3 style="margin:0">Goes into ' + esc(agentLabel(agent)) + '</h3>' +
-        (context ? '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">Short facts the job needs that the agent' + String.fromCharCode(8217) + 's own instructions don' + String.fromCharCode(8217) + 't say, like your company' + String.fromCharCode(8217) + 's name or who signs messages. They go at the top of this workflow' + String.fromCharCode(8217) + 's instructions. It' + String.fromCharCode(8217) + 's left empty when the agent already knows enough. Longer rules, special cases and examples go in the instructions, below.</span></label>' +
+        (context ? '<div class="wf-instructions"><label for="wfContext"><strong>Rules and facts for this workflow</strong> <span class="hint">Short facts the workflow needs that the agent' + String.fromCharCode(8217) + 's own instructions don' + String.fromCharCode(8217) + 't say, like your company' + String.fromCharCode(8217) + 's name or who signs messages. They go at the top of this workflow' + String.fromCharCode(8217) + 's instructions. It' + String.fromCharCode(8217) + 's left empty when the agent already knows enough. Longer rules, special cases and examples go in the instructions, below.</span></label>' +
           '<textarea id="wfContext">' + esc(context) + '</textarea></div>' : '') +
         (conflicts.length ? '<p class="hint" style="margin:0"><strong>Kept as they are:</strong> ' + conflicts.map(function (c) { return '<code>' + esc(c.tool) + '</code> stays ' + esc(LABELS[c.has]) + ' (the workflow wants ' + esc(LABELS[c.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
         '<p class="hint" style="margin:0">It keeps every decision the agent already has.</p>' +
         (misfit && !fitPending ? '<p class="hint" style="margin:0">You chose to add it here, though it' + String.fromCharCode(8217) + 's not this agent' + String.fromCharCode(8217) + 's usual work.</p>' : '') +
       '</div>' +
       needsHtml(reqs) +
-      '<div class="wf-part"><h3>Brief</h3><span class="hint">What the agent reads on every run: the job, its rules, and what it needs to know about your business.</span></div>' +
+      '<div class="wf-part"><h3>Brief</h3><span class="hint">What the agent reads on every run: what to do, its rules, and what it needs to know about your business.</span></div>' +
       '<div class="wf-card"><label for="wfSkill"><strong>Instructions</strong> <span class="hint">(what the agent gets done, the rules it keeps, and what it needs to know about your business. Add your policies and special cases with the buttons below: the agent only knows what' + String.fromCharCode(8217) + 's written here. Saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit.)</span></label>' +
         '<textarea id="wfSkill" class="wf-skill-edit">' + esc(p.skill.body) + '</textarea>' +
         '<div class="wp-sections"><span class="hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +

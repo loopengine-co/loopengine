@@ -6,6 +6,7 @@
 import type { WorkflowRun } from '../core/workflow-runs.js'
 import type { InboxItem } from './inbox-admin.js'
 import type { AgentWorkflowView } from './workflow-admin.js'
+import type { Goal, GoalJob } from './goals-admin.js'
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -84,4 +85,67 @@ export function workflowsOverview(input: {
       waiting: input.waiting.filter((i) => i.waiting.length).length,
     },
   }
+}
+
+// The front page's tree: each goal, its jobs, and the workflows that do
+// each job (a chained one right after the one that starts it); then jobs
+// with no goal, and workflows no job points to.
+export interface HomeFlow {
+  agent: string
+  id: string
+  starts: string[]
+  waiting: number
+  /** Started by the workflow listed before it, when that one finishes. */
+  then: boolean
+  /** No longer on its agent. */
+  gone?: true
+}
+
+export interface HomeJob {
+  id: string
+  title: string
+  kind: 'recurring' | 'once'
+  measure: string
+  state: string
+  agent: string
+  flows: HomeFlow[]
+}
+
+export interface HomeOverview extends WorkflowsOverview {
+  goals: { id: string; goal: string; measure: string; jobs: HomeJob[] }[]
+  jobs: HomeJob[]
+  loose: WorkflowOverviewRow[]
+}
+
+type TreeJob = Pick<GoalJob, 'id' | 'title' | 'kind' | 'measure' | 'state' | 'agent' | 'doers' | 'chain' | 'addedAt'>
+
+export function homeOverview(overview: WorkflowsOverview, goals: (Pick<Goal, 'id' | 'goal' | 'standalone'> & { brief?: { measure?: string }; jobs: TreeJob[] })[]): HomeOverview {
+  const rows = new Map(overview.workflows.map((r) => [`${r.agent}|${r.id}`, r]))
+  const used = new Set<string>()
+  const toJob = (j: TreeJob): HomeJob => {
+    const flows = j.doers.flatMap((d) => (d.type === 'workflow' ? [`${d.agent}|${d.workflowId}`] : []))
+    const after = new Map((j.chain ?? []).map((st) => [`${st.run.agent}|${st.run.workflowId}`, `${st.after.agent}|${st.after.workflowId}`]))
+    const ordered = flows.filter((k) => !after.has(k) || !flows.includes(after.get(k)!))
+    for (let i = 0; i < ordered.length; i++) for (const k of flows) if (after.get(k) === ordered[i] && !ordered.includes(k)) ordered.splice(i + 1, 0, k)
+    for (const k of flows) if (!ordered.includes(k)) ordered.push(k)
+    return {
+      id: j.id,
+      title: j.title,
+      kind: j.kind,
+      measure: j.measure,
+      state: j.state,
+      agent: j.agent.name,
+      flows: ordered.map((k, i) => {
+        used.add(k)
+        const [agent, id] = k.split('|') as [string, string]
+        const row = rows.get(k)
+        return { agent, id, starts: row?.starts ?? [], waiting: row?.waiting ?? 0, then: i > 0 && after.get(k) === ordered[i - 1], ...(row ? {} : { gone: true as const }) }
+      }),
+    }
+  }
+  // A goal's suggestions not taken up yet stay on its own page.
+  const shown = (j: TreeJob, standalone: boolean) => j.state !== 'discarded' && (standalone || j.state === 'active' || j.state === 'done' || Boolean(j.addedAt))
+  const tree = goals.filter((g) => !g.standalone).map((g) => ({ id: g.id, goal: g.goal, measure: g.brief?.measure ?? '', jobs: g.jobs.filter((j) => shown(j, false)).map(toJob) }))
+  const jobs = goals.filter((g) => g.standalone).flatMap((g) => g.jobs.filter((j) => shown(j, true)).map(toJob))
+  return { ...overview, goals: tree, jobs, loose: overview.workflows.filter((r) => !used.has(`${r.agent}|${r.id}`)) }
 }

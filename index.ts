@@ -379,7 +379,7 @@ export type { AgentTemplateOptions } from './bin/cli.js'
 // playbook, kept current on Cloud by core/playbook-sync.ts: a project's
 // own adapters/http.ts imports these.
 export { goalsPageHtml, goalsPageAs, type GoalsPageView } from './web/goals-page.js'
-export { GoalError, acceptJob, addJob, assignJob, assignmentMessage, listJob, listJobs, submitJob, MY_JOBS_ID, type ListedJob, chainedRuns, chainConditionMet, checkChain, editJob, MAX_CHAIN_DEPTH, type ChainStep, goalView, type AssignmentView, checkBuiltWorkflows, createGoal, deleteGoal, editAmount, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeAbout, writeGoalSettings, type Goal, type GoalJob, type GoalJobState, type JobDoer, type GoalWorkflow, type GoalsDeps, type LeverEvent, migrateGoal, migrateGoalFiles } from './web/goals-admin.js'
+export { GoalError, acceptJob, addJob, assignJob, assignmentMessage, listJob, listJobs, submitJob, MY_JOBS_ID, type ListedJob, chainedRuns, jobsByWorkflow, chainConditionMet, checkChain, editJob, MAX_CHAIN_DEPTH, type ChainStep, goalView, type AssignmentView, checkBuiltWorkflows, createGoal, deleteGoal, editAmount, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readAbout, readGoalSettings, readLeverEvents, setWorkflowState, writeAbout, writeGoalSettings, type Goal, type GoalJob, type GoalJobState, type JobDoer, type GoalWorkflow, type GoalsDeps, type LeverEvent, migrateGoal, migrateGoalFiles } from './web/goals-admin.js'
 export { sendLeverEvents, sharesLeverStats, startLeverEventsSync } from './web/lever-events-sync.js'
 export { createAgentNamesReporter, type AgentNamesReporter } from './web/agent-names-sync.js'
 export { runGoalPipeline, shapeJob, type GoalPlan, type GoalContext, type ShapedJob } from './core/system-agents/goal-planner.js'
@@ -389,5 +389,6 @@ export { workspaceRole, canDecide, inboxOnly, inboxOnlyAllows, roleLabel, agents
 export { inboxPageHtml, renderInboxOnlyPage } from './web/inbox-page.js'
 export { compressResponses, serveConsoleAsset } from './web/response-compression.js'
 export { workflowsOverviewPageHtml } from './web/workflows-overview-page.js'
-export { workflowsOverview, startsOf, type WorkflowsOverview, type WorkflowOverviewRow } from './web/workflows-overview.js'
+export { homeOverview, workflowsOverview, startsOf, type HomeOverview, type WorkflowsOverview, type WorkflowOverviewRow } from './web/workflows-overview.js'
+export { homePageHtml } from './web/home-page.js'
 export { listInbox, getInboxCase, timelineOf, type InboxDeps, type InboxItem, type InboxCase, type InboxPending, type InboxStep } from './web/inbox-admin.js'

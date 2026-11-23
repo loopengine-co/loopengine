@@ -137,6 +137,7 @@ export const devUiCss: string = `
   .le-nav-label a.le-nav-head:hover { color: var(--ink); }
   .le-nav-label a.le-nav-head[aria-current="page"] { color: var(--accent-ink); font-weight: 700; }
   .le-agent-list.le-goal-list { flex: 0 1 auto; max-height: 34vh; }
+  .le-name.le-slug { font-family: var(--font-mono); font-size: 12.5px; }
   .le-goal-item .le-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 0 1 auto; max-height: 40vh; min-height: 0; }
   /* The lists sit together at the top; the rest goes to the bottom. */

@@ -66,6 +66,15 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-job-detail .gl-wf-title { font-size: 17px; }
   .gl-job-detail .gl-job-body, .gl-job-detail .gl-job-status-line { padding-left: 14px; }
   .gl-job-link { color: inherit; text-decoration: none; }
+  .gl-define { margin: 0; max-width: 72ch; }
+  .gl-doneby { display: grid; gap: 3px; justify-items: start; font-size: 13px; margin-top: 4px; }
+  .gl-doneby-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .gl-doneby-row a { color: var(--ink); font-weight: 600; }
+  .gl-slug { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; }
+  .gl-tag-wf { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+  .gl-doneby-then { font-size: 12px; color: var(--ink-muted); padding-left: 4px; }
+  .gl-agent-pill { font-size: 11.5px; font-weight: 600; padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .gl-doneby-manage { font-size: 12.5px; color: var(--accent-ink); }
   .gl-job-link:hover { text-decoration: underline; }
   .gl-job-main { display: grid; gap: 3px; min-width: 0; }
   .gl-job-sub { display: flex; gap: 8px; align-items: center; min-width: 0; font-size: 12.5px; color: var(--ink-muted); }
@@ -334,17 +343,19 @@ ${consoleShellScript}
   }
 
   // A job: one piece of the goal, with its measure, and what does it.
-  // A job as one row: its title, kind and one line (why it helps, until
-  // it's kept; then its measure), its status, and the one action that
-  // matters now. Click it for the rest: why, what it needs, how it's done,
-  // and the other actions.
+  // A job as one row: its title, kind and one line (its measure, else why
+  // it helps), what does it (Done by), its status, and the one action
+  // that matters now. Click it for the rest: why, what it needs and the
+  // other actions; its own page also manages its workflows.
   function jobHtml(w, listed) {
+    // On its own page a job is shown whole, not folded, with its workflows.
+    var detail = jobPage === w.id;
     var once = w.kind === 'once';
     var doer = (w.doers || [])[0];
     var t = lastTry(w);
     var btn = function (act, label, cls) { return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '">' + label + '</button>'; };
-    var primary = w.state === 'suggested' && once ? btn('assign', 'Assign')
-      : w.state === 'suggested' ? btn('build', 'Build it')
+    var primary = w.state === 'suggested' && once ? btn('assign', 'Give it to an agent')
+      : w.state === 'suggested' ? btn('build', 'Build a workflow')
       : w.state === 'active' && once && t && t.status === 'done' ? btn('accept', 'Accept')
       : w.state === 'active' && once && t && (t.status === 'error' || t.status === 'gone') ? btn('again', 'Try again')
       : w.state === 'discarded' ? btn('restore', 'Restore', 'plain') : '';
@@ -360,18 +371,19 @@ ${consoleShellScript}
       : w.state === 'active' ? '<span class="gl-state built">Running</span>'
       : w.state === 'done' ? '<span class="gl-state built">Done</span>'
       : w.state === 'discarded' ? '<span class="gl-state">Discarded</span>' : '';
-    var sub = w.state === 'suggested' || w.state === 'discarded' ? (w.why || w.measure || '') : (w.measure ? (once ? '' : 'Measured by ') + w.measure : w.why || '');
+    // A job is about its outcome: its measure leads, then why it matters.
+    var sub = w.measure ? (once ? '' : 'Measured by ') + w.measure : w.why || '';
     var doneBy = once && (w.state === 'active' || w.state === 'done') && w.tries && w.tries.length ? triesHtml(w)
-      : w.state === 'active' && doer && doer.type === 'workflow' ? howHtml(w)
+      : w.state === 'active' && doer && doer.type === 'workflow' ? (detail ? howHtml(w) : '')
       : w.state === 'done' && w.doneAt ? '<div class="gl-doer">Done ' + esc(new Date(w.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</div>' : '';
-    // On its own page a job is shown whole, not folded.
-    var detail = jobPage === w.id;
     var open = detail || !!state.openJobs[w.id];
     return '<div class="gl-wf gl-job' + (open ? ' is-open' : '') + (detail ? ' gl-job-detail' : '') + (w.state === 'active' || w.state === 'done' ? ' built' : '') + '" data-wf="' + esc(w.id) + '"' + (listed ? ' data-goal="' + esc(listed.goalId) + '"' : '') + '>' +
       (detail ? '<div class="gl-job-head">' : '<div class="gl-job-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
         '<span class="gl-caret" aria-hidden="true"></span>') +
         '<div class="gl-job-main">' + (listed && !detail ? '<a class="gl-wf-title gl-job-link" href="/jobs?job=' + encodeURIComponent(w.id) + '">' + esc(w.title) + '</a>' : '<span class="gl-wf-title">' + esc(w.title) + '</span>') +
           '<span class="gl-job-sub"><span class="gl-kind">' + (once ? 'One-off' : 'Recurring') + '</span>' + (sub ? '<span class="gl-job-line">' + esc(sub) + '</span>' : '') + '</span>' +
+          (!detail && w.state === 'active' && !once && doer && doer.type === 'workflow' ? doneByHtml(w) : '') +
+          (!detail && once && (w.state === 'active' || w.state === 'done') && w.tries && w.tries.length ? assignedHtml(w) : '') +
           (listed ? '<span class="gl-job-from">Added ' + esc(new Date(listed.addedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) + ' ' + String.fromCharCode(183) + ' ' +
             (listed.goal ? 'Goal: <a href="/goals?goal=' + encodeURIComponent(listed.goalId) + '">' + esc(listed.goal) + '</a>' : 'No goal') + '</span>' : '') + '</div>' +
         '<span class="gl-job-status">' + pill + '<span class="gl-state planning" data-attn hidden>Needs you</span></span>' +
@@ -437,9 +449,37 @@ ${consoleShellScript}
   // How a recurring job is done: each workflow that does it, on its agent,
   // with how it starts and how it's doing. The detail (its instructions,
   // tools, runs) is on the workflow itself: Open.
+  // On a job's card: what does it, in one line per workflow, each with
+  // how it's going (filled by fillEvidence) and a link to manage them on
+  // the job's page.
+  function doneByHtml(w) {
+    var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
+    // A chained workflow follows the one that starts it, marked "then".
+    var after = {};
+    (w.chain || []).forEach(function (st) { after[st.run.agent + '|' + st.run.workflowId] = st.after.agent + '|' + st.after.workflowId; });
+    var keyOf = function (d) { return d.agent + '|' + d.workflowId; };
+    var ordered = flows.filter(function (d) { return !after[keyOf(d)]; });
+    for (var i = 0; i < ordered.length; i++) {
+      flows.forEach(function (d) { if (after[keyOf(d)] === keyOf(ordered[i]) && ordered.indexOf(d) < 0) ordered.splice(i + 1, 0, d); });
+    }
+    flows.forEach(function (d) { if (ordered.indexOf(d) < 0) ordered.push(d); });
+    return '<span class="gl-doneby">' + ordered.map(function (d, i) {
+      var then = i > 0 && after[keyOf(d)] === keyOf(ordered[i - 1]);
+      return '<span class="gl-doneby-row" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' +
+        (then ? '<span class="gl-doneby-then">then ' + String.fromCharCode(8594) + '</span>' : '<span class="gl-tag-wf">Workflow</span>') +
+        '<a href="/agents/config?agent=' + encodeURIComponent(d.agent) + '&tab=workflows&workflow=' + encodeURIComponent(d.workflowId) + '" class="gl-slug">' + esc(d.workflowId) + '</a>' +
+        '<span class="gl-agent-pill">' + esc(d.agent) + '</span><span class="hint" data-how-meta>' + ELLIPSIS + '</span></span>';
+    }).join('') + '<a class="gl-doneby-manage" href="/jobs?job=' + encodeURIComponent(w.id) + '">Manage</a></span>';
+  }
+
+  // A one-off job's card: the agent it's assigned to.
+  function assignedHtml(w) {
+    return '<span class="gl-doneby"><span class="gl-doneby-row"><span class="gl-tag-wf">Assignment</span><span class="gl-agent-pill">' + esc(w.agent.name) + '</span><span class="hint">one run, its result kept with the job</span></span></span>';
+  }
+
   function howHtml(w) {
     var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
-    var titleOf = function (r) { var d = flows.filter(function (x) { return x.agent === r.agent && x.workflowId === r.workflowId; })[0]; return d ? d.title : r.workflowId; };
+    var titleOf = function (r) { return r.workflowId; };
     var whenText = function (wh) { return wh.kind === 'always' ? '' : wh.kind === 'contains' ? ', when its result contains ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221) : ', when its result has a line starting ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221); };
     var chain = (w.chain || []).map(function (st) {
       var inputs = Object.keys(st.with || {}).map(function (p) { var src = st.with[p]; return esc(p) + ' ' + String.fromCharCode(8592) + ' ' + (src === 'result' ? 'its result' : 'its ' + esc(src.slice(6))); }).join(', ');
@@ -447,7 +487,7 @@ ${consoleShellScript}
     }).join('');
     return '<div class="gl-how"><div class="gl-how-head">Workflows</div>' + flows.map(function (d) {
       return '<div class="gl-how-row" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' +
-        '<div class="gl-how-main"><span class="gl-how-wf">' + esc(d.title) + '</span><span class="gl-how-agent">on <strong>' + esc(d.agent) + '</strong></span></div>' +
+        '<div class="gl-how-main"><span class="gl-how-wf gl-slug">' + esc(d.workflowId) + '</span><span class="gl-how-agent">on <strong>' + esc(d.agent) + '</strong></span></div>' +
         '<span class="gl-how-meta" data-how-meta>' + ELLIPSIS + '</span>' +
         '<span class="gl-how-actions"><a class="gl-how-open" href="/agents/config?agent=' + encodeURIComponent(d.agent) + '&tab=workflows&workflow=' + encodeURIComponent(d.workflowId) + '">Open</a>' +
         (flows.length > 1 ? '<button type="button" class="gl-link gl-unlink" data-unlink="' + esc(d.agent) + '|' + esc(d.workflowId) + '">Remove</button>' : '') + '</span></div>';
@@ -458,9 +498,9 @@ ${consoleShellScript}
       '<div class="gl-row"><select class="gl-select" id="addwf-' + esc(w.id) + '" data-pick-workflow><option value="">Loading' + ELLIPSIS + '</option></select><button type="button" class="gl-btn soft" data-act="link">Add it</button></div>' +
       '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for this job</button></div></div>' +
     '<div class="gl-panel" data-panel="addstep" hidden>' +
-      '<div class="gl-row"><span class="hint">After</span><select class="gl-select" data-step-after>' + flows.map(function (d) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' + esc(d.title) + '</option>'; }).join('') + '</select>' +
+      '<div class="gl-row"><span class="hint">After</span><select class="gl-select" data-step-after>' + flows.map(function (d) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' + esc(d.workflowId) + '</option>'; }).join('') + '</select>' +
         '<span class="hint">finishes</span><select class="gl-select" data-step-when><option value="always">every time</option><option value="contains">when its result contains</option><option value="line_starts">when its result has a line starting</option></select><input class="gl-input" data-step-text placeholder="e.g. Lead:" hidden></div>' +
-      '<div class="gl-row"><span class="hint">run</span><select class="gl-select" data-step-run>' + flows.map(function (d, i) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '"' + (i === 1 ? ' selected' : '') + '>' + esc(d.title) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="gl-row"><span class="hint">run</span><select class="gl-select" data-step-run>' + flows.map(function (d, i) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '"' + (i === 1 ? ' selected' : '') + '>' + esc(d.workflowId) + '</option>'; }).join('') + '</select></div>' +
       '<div class="gl-step-inputs" data-step-inputs></div>' +
       '<div class="gl-row"><button type="button" class="gl-btn soft" data-act="savestep">Save the step</button></div></div>' +
     '</div>';
@@ -531,6 +571,7 @@ ${consoleShellScript}
         (here ? jobHtml(here.job, here) : '<p class="gl-empty">This job isn' + String.fromCharCode(8217) + 't on your list any more: it may have been removed or discarded.</p>');
     }
     return notice +
+    '<p class="hint gl-define">A job is something that needs doing, with a way to tell it' + String.fromCharCode(8217) + 's done. Workflows and agents do jobs: a workflow for a recurring job, an agent for a one-off.</p>' +
     '<div class="gl-section"><h3>My jobs <span class="gl-count">' + items.length + '</span></h3>' +
       (items.length ? items.map(function (x) { return jobHtml(x.job, x); }).join('')
         : '<p class="gl-empty">No jobs yet. <a href="/jobs?new=1">Submit one</a>, or add jobs from a goal' + String.fromCharCode(8217) + 's suggestions with Add to my jobs.</p>') +
@@ -600,7 +641,7 @@ ${consoleShellScript}
       addJobHtml(planning) +
     '</div>' +
     '<div class="gl-section"><h3>Your jobs <span class="gl-count">' + kept.length + '</span></h3>' +
-      (kept.length ? kept.map(function (w) { return jobHtml(w); }).join('') : '<p class="gl-empty">Nothing running yet. Build it turns a recurring suggestion into a workflow on its agent; Assign gives a one-off one to its agent.</p>') +
+      (kept.length ? kept.map(function (w) { return jobHtml(w); }).join('') : '<p class="gl-empty">Nothing running yet. Build a workflow for a recurring job, or give a one-off job to an agent.</p>') +
     '</div>' +
     (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
       (state.showDiscarded ? discarded.map(function (w) { return jobHtml(w); }).join('') : '') + '</div>' : '') +

@@ -256,11 +256,11 @@ export const consoleShellScript: string = `<script>
     var currentAgent = page === 'agent-config' && q.get('tab') === 'workflows' ? q.get('agent') : null;
     var currentId = currentAgent ? q.get('workflow') : null;
     return cachedFetch('workflows', '/workflows/overview', function (data) {
-        var list = (data.workflows || []).slice().sort(function (a, b) { return a.title.localeCompare(b.title); });
+        var list = (data.workflows || []).slice().sort(function (a, b) { return a.id.localeCompare(b.id); });
         workflowList.innerHTML = list.length ? list.map(function (w) {
           var on = w.agent === currentAgent && w.id === currentId;
           return '<li><a class="le-agent-item le-goal-item" href="/agents/config?agent=' + enc(w.agent) + '&tab=workflows&workflow=' + enc(w.id) + '" title="' + esc(w.title) + ' (' + esc(w.agentLabel) + DOT_SEP + (w.live ? 'Running' : 'Pending') + ')"' + (on ? ' aria-current="page"' : '') + '>' +
-            '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-name">' + esc(w.title) + '</span></a></li>';
+            '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-name le-slug">' + esc(w.id) + '</span></a></li>';
         }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No workflows yet</span><span></span></li>';
       });
   }

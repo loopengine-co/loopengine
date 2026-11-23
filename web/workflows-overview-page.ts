@@ -29,6 +29,7 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
   .wo-head { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); background: var(--surface); }
   .wo-head:hover { background: var(--surface); }
   .wo-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wo-slug { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
   .wo-sub { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wo-runs { font-size: 13px; display: grid; gap: 2px; }
   .wo-side { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
@@ -59,7 +60,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Workflows</h1><p>Every job your agents run: how each one starts, how it's been going, and what's waiting for you.</p></div>
+        <div><h1>Workflows</h1><p>Every workflow your agents run: how each one starts, how it's been going, and what's waiting for you.</p></div>
       </div>
       <a class="wo-new" href="/workflows/new">New workflow</a>
     </div>
@@ -100,10 +101,10 @@ ${consoleShellScript}
   function renderEmpty() {
     page.innerHTML =
       '<div class="wo-empty"><h2>No workflows yet</h2>' +
-        '<p class="hint" style="margin:0">A workflow is a job an agent does again and again: it runs on a schedule, from a webhook or from your app, asks you when it needs to, and every run is kept to check and improve.</p>' +
+        '<p class="hint" style="margin:0">A workflow is how an agent does something again and again: it runs on a schedule, from a webhook or from your app, asks you when it needs to, and every run is kept to check and improve.</p>' +
         '<div class="wo-ways">' +
-          '<a class="wo-way" href="/workflows/new"><b>Describe a workflow</b><span>Write the job in a sentence or two and review the plan.</span></a>' +
-          '<a class="wo-way" href="/workflows/new#examples"><b>Start from an example</b><span>A ready-made workflow for a common job.</span></a>' +
+          '<a class="wo-way" href="/workflows/new"><b>Describe a workflow</b><span>Say what the agent should do in a sentence or two and review the plan.</span></a>' +
+          '<a class="wo-way" href="/workflows/new#examples"><b>Start from an example</b><span>A ready-made workflow for a common task.</span></a>' +
           '<a class="wo-way" href="/goals?new=1"><b>Start from a goal</b><span>Not sure what to automate? Get jobs suggested for what you want to achieve.</span></a>' +
         '</div></div>';
   }
@@ -121,7 +122,7 @@ ${consoleShellScript}
     var rows = d.workflows.map(function (w) {
       var decided = w.approved + w.refused;
       return '<a class="wo-row" href="' + href(w) + '">' +
-        '<span style="min-width:0"><div class="wo-title">' + esc(w.title) + '</div><div class="wo-sub">' + esc(w.agentLabel) + '</div></span>' +
+        '<span style="min-width:0"><div class="wo-title wo-slug" title="' + esc(w.title) + '">' + esc(w.id) + '</div><div class="wo-sub">' + esc(w.agentLabel) + '</div></span>' +
         '<span class="wo-col-starts wo-sub" title="' + esc(w.starts.join(', ')) + '">' + esc(w.starts.join(DOT)) + '</span>' +
         '<span class="wo-col-runs wo-runs"><span>' + plural(w.runsThisWeek, 'run', 'runs') + ' this week' + (w.failedThisWeek ? ', <span style="color:var(--bad)">' + w.failedThisWeek + ' failed</span>' : '') + '</span>' +
           '<span class="wo-sub">' + (w.lastRun ? 'Last ' + esc(ago(w.lastRun.at)) : 'Not run yet') + (decided ? DOT + w.approved + ' of ' + decided + ' approved' : '') + '</span></span>' +

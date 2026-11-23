@@ -95,6 +95,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-row-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) 210px 200px auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
   .wf-row-head:hover, .wf-row.is-open .wf-row-head { background: var(--surface); }
   .wf-row-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .wf-slug { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; }
+  .wf-row-job { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wf-row-job a { color: var(--accent-ink); }
   .wf-row-caret { width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; }
   .wf-row.is-open .wf-row-caret { transform: rotate(45deg); }
   .wf-row-main { min-width: 0; display: grid; gap: 2px; }
@@ -1198,7 +1201,7 @@ ${renderMarkdownScript}
 
   function renderWorkflowsHtml(name, workflows) {
     if (!workflows.length) {
-      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Describe a job in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
+      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Say what this agent should do in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
     }
     // Those that need someone first: waiting for a decision, then failed.
     var rank = function (w) { return workflowNeedsDecision(w) ? 0 : (workflowLastRun(w) || {}).status === 'error' ? 1 : 2; };
@@ -1236,7 +1239,9 @@ ${renderMarkdownScript}
       return '<article class="workflow-card wf-row' + (open ? ' is-open' : '') + '" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div class="wf-row-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
           '<span class="wf-row-caret" aria-hidden="true"></span>' +
-          '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong></div>' +
+          '<div class="wf-row-main"><strong class="wf-slug" title="' + escapeHtml(w.title) + '">' + escapeHtml(w.id) + '</strong>' +
+            // The job(s) it does, linking back to each job's page.
+            (w.jobs && w.jobs.length ? '<span class="wf-row-job">For job: ' + w.jobs.map(function (j) { return '<a href="/jobs?job=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span>' : '') + '</div>' +
           '<span class="wf-row-starts">' + workflowStartsSummary(w) + '</span>' +
           '<span class="wf-row-last">' + workflowLastRunHtml(last) + '</span>' +
           '<span class="wf-row-actions"><button type="button" class="workflow-triggers-open">Triggers</button><button type="button" class="workflow-edit">Edit</button></span>' +
@@ -1276,7 +1281,7 @@ ${renderMarkdownScript}
     var parts = [];
     if (waiting) parts.push(waiting + ' waiting for a decision');
     if (next) parts.push('next run ' + new Date(next).toLocaleString());
-    detailEl.textContent = parts.join(' \u00b7 ') || (workflows.length ? 'Run by hand, by an app or a webhook' : 'Describe a job for this agent to do');
+    detailEl.textContent = parts.join(' \u00b7 ') || (workflows.length ? 'Run by hand, by an app or a webhook' : 'Build a workflow for this agent');
   }
 
   var workflowsRefreshTimer = null;
@@ -1387,7 +1392,7 @@ ${renderMarkdownScript}
     return '<form class="add-source workflow-editor-form">' +
       '<label>Title<input name="title" maxlength="120" value="' + escapeHtml(w.title) + '">' +
         '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
-      '<label>Description <span class="hint">(one line on what this job is; the agent uses it to recognise the job when you ask in Chat)</span>' +
+      '<label>Description <span class="hint">(one line on what this workflow does; the agent uses it to recognise the workflow when you ask in Chat)</span>' +
         '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
       '<h4 class="wf-editor-part">Brief <span class="hint">what the agent reads on every run</span></h4>' +
       '<div class="body-field"><div class="wp-instructions-head"><label for="wpInstructions">Instructions <span class="hint">(everything the agent needs for this job: what to get done, the rules it keeps, and your policies, special cases and examples. It handles each case on its own judgment, so describe the job rather than every step. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span></label>' +
@@ -1439,7 +1444,7 @@ ${renderMarkdownScript}
     // in the card. Closing it any way (Esc, the backdrop, x, Cancel)
     // discards the edits.
     var dialog = document.createElement('dialog');
-    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (the job, its rules, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
+    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (what to do, its rules, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
     dialog = dialog.firstChild;
     dialog.classList.add('workflow-editor-dialog');
     document.body.appendChild(dialog);
@@ -1821,7 +1826,7 @@ ${renderMarkdownScript}
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
     var head = card.querySelector('.wf-row-head');
     head.addEventListener('click', function (ev) {
-      if (ev.target.closest('button')) return;
+      if (ev.target.closest('button, a')) return;
       setWorkflowOpen(card, !card.classList.contains('is-open'));
     });
     head.addEventListener('keydown', function (ev) {
@@ -3351,7 +3356,7 @@ ${renderMarkdownScript}
             ? '<div class="body-field">Runs' +
                 '<div class="schedule-when"><input type="radio" name="runs" value="workflow" id="runsWorkflow" checked><label for="runsWorkflow">A workflow</label>' +
                   '<select name="workflow_id" aria-label="Workflow">' + schedulesWorkflows.map(function (w) {
-                    return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.title) + '</option>';
+                    return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.id) + '</option>';
                   }).join('') + '</select></div>' +
                 '<div class="workflow-params" id="scheduleParams" style="margin:0 0 4px 22px"></div>' +
                 '<p class="hint" style="margin:0 0 4px 22px">Each run follows the workflow&#39;s instructions as they are then, so changing the workflow changes what runs.</p>' +
@@ -5427,7 +5432,7 @@ ${renderMarkdownScript}
       '<div class="tab-panel" data-tab-panel="overview">' + renderOverviewHtml(cfg) + '</div>' +
       // Workflows: the jobs this agent does, each with what starts it.
       '<div class="tab-panel" data-tab-panel="workflows">' +
-        '<div class="wf-tab-head"><p class="muted">The jobs this agent does on its own: what it does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
+        '<div class="wf-tab-head"><p class="muted">What this agent does on its own, as workflows: what each does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
           '<a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(cfg.name) + '">Build a workflow</a></div>' +
         '<section id="workflowsSection"><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '</div>' +

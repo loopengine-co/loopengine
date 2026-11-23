@@ -183,6 +183,7 @@ Rules:
 4. Three to five workflows for an "in" goal, ordered by impact against effort, quickest useful one first; startsAfter when one depends on another. Their humanMinutesPerWeek together stay within three quarters of the brief's weeklyHours, so the plan survives a busy week.
 4b. Each one is a job: kind "recurring" when it runs again and again (a weekly scan, a reply to each signup), kind "once" for work on a finite list or done one time (submitting to a set of directories, a one-time audit, researching a list of communities). A once job is done by an agent once, in Chat; never make it a weekly job that runs out of things to do.
 4c. measure: the job's own number, in the person's terms, that shows it's working ("replies per week", "signups tagged ref=directories"); for a once job, what done looks like ("done when: listed in 15 directories"). A playbook lever says the kind and measure it usually has: start from those, and change them only when the context calls for it.
+4d. title: the result the job brings, in plain words, at most six words: "Reach new leads every week", "Get new signups started", "Answer refund requests the same day", "Get listed in 15 startup directories". Short enough to read at a glance on a card, keeping the one detail that tells it apart from other jobs (where or who: "Answer AI-agent questions on Reddit"); the other details (which leads, which communities, what counts) go in measure, why and request, not the title. Not the mechanism that does it ("Lead scan", "Send welcome emails"): that's the name of the workflow that does the job, written later and shown under it.
 5. Specific to this context: name the person's own communities, systems, products and channels in each request. A request anyone could use unchanged is wrong.
 6. needs: what each workflow uses, each with a kind from the playbook's vocabulary and connected true only when the context lists that kind as connected.
 7. Every request that posts, sends or publishes says nothing goes out without the person's approval.
@@ -203,6 +204,7 @@ export const GOAL_CRITIQUE_PROMPT = `You check a goal plan against its rules bef
 - a measure whose source isn't connected, with no setup step that connects it or a manual record, or no baseline;
 - a qualifier from the brief no workflow addresses;
 - a recurring job on a finite list that will run out (it should be kind "once");
+- a job title longer than six words, or one that names the mechanism ("Send welcome emails", "Lead scan") instead of the result it brings ("Get new signups started");
 - a lever in newLevers that names this business, its products, people, places or sites, mixes several approaches, or has no way to see its effect;
 - a workflow made from no lever when the request listed none for this focus (it should come from one of newLevers);
 - a plan claiming to achieve a goal that is only partly in scope, or workflows for an out-of-scope goal.
@@ -276,7 +278,7 @@ const planTool = (): ToolSchema => ({
         items: {
           type: 'object',
           properties: {
-            title: { type: 'string' },
+            title: { type: 'string', description: 'the result the job brings, at most six words ("Reach new leads every week", "Get new signups started"); details go in measure and request, and the mechanism ("Lead scan") is its workflow\'s name' },
             kind: { type: 'string', enum: ['recurring', 'once'] },
             measure: { type: 'string', description: "the job's own number, or for a once job what done looks like" },
             leverId: { type: 'string', description: "the playbook lever's id, or the key of one of your newLevers" },
@@ -313,7 +315,8 @@ const planTool = (): ToolSchema => ({
 export const GOAL_ADD_JOB_PROMPT = `A person adds a job of their own to a goal in LoopEngine, in their own words. Shape it into one job like a planner's, and judge it honestly; it's their business, so advise, don't lecture.
 
 Shape it:
-- title, kind ("recurring" when it repeats, "once" for finite work), measure (its own number, or for a once job what done looks like), why it moves the goal (mechanism), the agent (an existing agent's exact name when its work fits, else newAgent with a short name and two or three sentences of instructions), needs (connected only when the context lists it), humanMinutesPerWeek, and a request specific to this business that the agent can act on. Anything that posts, sends or publishes says nothing goes out without the person's approval.
+- title: the result the job brings, in plain words, at most six words ("Get weekly sales to the team", "Answer customer emails within an hour"). When the person wrote a long or mechanism-style idea ("send a weekly sales summary to the team every Monday"), keep their meaning and the detail that sets it apart (where or who) in a short title, and put the details in measure and request; the mechanism becomes the workflow's name later.
+- kind ("recurring" when it repeats, "once" for finite work), measure (its own number, or for a once job what done looks like), why it moves the goal (mechanism), the agent (an existing agent's exact name when its work fits, else newAgent with a short name and two or three sentences of instructions), needs (connected only when the context lists it), humanMinutesPerWeek, and a request specific to this business that the agent can act on. Anything that posts, sends or publishes says nothing goes out without the person's approval.
 - lever: when it's one of the playbook levers listed, its id in leverId. When none fits, write one generic lever in newLever (one approach, no names of this business, its products, people, places or sites; when it fits and doesn't; what it needs; how its effect shows up; guardrails; a generic template) and put its key in leverId.
 
 Judge it, in verdict:
