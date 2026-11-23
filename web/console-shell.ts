@@ -42,26 +42,54 @@ const WORKFLOWS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none"
 // An inbox tray, for the Inbox.
 const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
 
+// A gear, for Settings.
+const SETTINGS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+
+// Two columns: the sections (Inbox, Goals, Jobs, Agents, Workflows,
+// Settings), and beside them what's in the current one. Pointing at
+// another section shows its column instead, until the pointer leaves.
+// Inbox and Home have no second column; pointing at a section there
+// opens its column over the page.
 export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label="Console navigation">
-  <a class="le-brand" href="/"><span class="le-brand-mark">${BRAND_MARK}</span><span class="le-brand-name">LoopEngine</span></a>
-  <div class="le-nav-label le-inbox-nav"><a class="le-nav-head" href="/inbox" data-le-nav-head="inbox">${INBOX_ICON}Inbox</a><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></div>
-  <div class="le-nav-label"><a class="le-nav-head" href="/agents" data-le-nav-head="agents">${AGENTS_ICON}Agents</a><a href="/agents?new=1">+ New</a></div>
-  <ul class="le-agent-list" id="leAgentList"></ul>
-  <div class="le-nav-label"><a class="le-nav-head" href="/workflows" data-le-nav-head="workflows">${WORKFLOWS_ICON}Workflows</a><a href="/workflows/new">+ New</a></div>
-  <ul class="le-agent-list le-goal-list" id="leWorkflowList"></ul>
-  <div class="le-nav-group">Plan</div>
-  <div class="le-nav-label"><a class="le-nav-head" href="/goals" data-le-nav-head="goals">${GOALS_ICON}Goals</a><a href="/goals?new=1" data-le-goal-new>+ New</a></div>
-  <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
-  <div class="le-nav-label"><a class="le-nav-head" href="/jobs" data-le-nav-head="jobs">${JOBS_ICON}Jobs</a><a href="/jobs?new=1" data-le-job-new>+ New</a></div>
-  <ul class="le-agent-list le-goal-list" id="leJobList"></ul>
-  <a class="le-find" href="/interview" data-le-nav="interview">Find your first agent</a>
-  <nav class="le-foot" aria-label="Settings">
-    <a href="/config?section=models" data-le-nav="models">Models</a>
-    <a href="/config?section=apps" data-le-nav="apps">Apps</a>
-    <a href="/config?section=abilities" data-le-nav="abilities">Abilities</a>
-    <a href="/config?section=settings" data-le-nav="settings">Settings</a>
+  <nav class="le-rail" aria-label="Sections">
+    <a class="le-brand" href="/" title="Home"><span class="le-brand-mark">${BRAND_MARK}</span></a>
+    <a class="le-rail-item" href="/inbox" data-le-nav-head="inbox" data-le-section="inbox">${INBOX_ICON}<span>Inbox</span><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></a>
+    <a class="le-rail-item" href="/goals" data-le-nav-head="goals" data-le-section="goals">${GOALS_ICON}<span>Goals</span></a>
+    <a class="le-rail-item" href="/jobs" data-le-nav-head="jobs" data-le-section="jobs">${JOBS_ICON}<span>Jobs</span></a>
+    <a class="le-rail-item" href="/agents" data-le-nav-head="agents" data-le-section="agents">${AGENTS_ICON}<span>Agents</span></a>
+    <a class="le-rail-item" href="/workflows" data-le-nav-head="workflows" data-le-section="workflows">${WORKFLOWS_ICON}<span>Workflows</span></a>
+    <span class="le-rail-gap"></span>
+    <a class="le-rail-item" href="/config?section=settings" data-le-nav-head="settings" data-le-section="settings">${SETTINGS_ICON}<span>Settings</span></a>
     <div class="le-who" id="leWho" hidden></div>
   </nav>
+  <div class="le-panel" hidden>
+    <section class="le-pane" data-le-pane="goals">
+      <div class="le-pane-head"><a href="/goals">Goals</a><a class="le-pane-new" href="/goals?new=1" data-le-goal-new>+ New</a></div>
+      <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
+    </section>
+    <section class="le-pane" data-le-pane="jobs">
+      <div class="le-pane-head"><a href="/jobs">Jobs</a><a class="le-pane-new" href="/jobs?new=1" data-le-job-new>+ New</a></div>
+      <ul class="le-agent-list le-goal-list" id="leJobList"></ul>
+    </section>
+    <section class="le-pane" data-le-pane="agents">
+      <div class="le-pane-head"><a href="/agents">Agents</a><a class="le-pane-new" href="/agents?new=1">+ New</a></div>
+      <ul class="le-agent-list" id="leAgentList"></ul>
+      <a class="le-sub-link" href="/interview" data-le-nav="interview">Find your first agent</a>
+    </section>
+    <section class="le-pane" data-le-pane="workflows">
+      <div class="le-pane-head"><a href="/workflows">Workflows</a><a class="le-pane-new" href="/workflows/new">+ New</a></div>
+      <ul class="le-agent-list le-goal-list" id="leWorkflowList"></ul>
+    </section>
+    <section class="le-pane" data-le-pane="settings">
+      <div class="le-pane-head"><a href="/config?section=settings">Settings</a></div>
+      <nav class="le-settings-menu" aria-label="Settings">
+        <a href="/config?section=models" data-le-nav="models">Models</a>
+        <a href="/config?section=apps" data-le-nav="apps">Apps</a>
+        <a href="/config?section=abilities" data-le-nav="abilities">Abilities</a>
+        <a href="/config?section=settings" data-le-nav="settings">General settings</a>
+      </nav>
+    </section>
+  </div>
 </aside>`
 
 export const consoleShellScript: string = `<script>
@@ -371,26 +399,65 @@ export const consoleShellScript: string = `<script>
 
   var section = params.get('section');
   var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' ? 'abilities' : section === 'apps' ? 'apps' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'workflows' ? page : '';
+  // The section this page is in, whose column shows beside the sections.
+  var sidebar = document.querySelector('.le-sidebar');
+  var panel = document.querySelector('.le-panel');
+  var section0 = page === 'goals' ? (location.pathname === '/jobs' ? 'jobs' : 'goals')
+    : page === 'agent-config' && params.get('tab') === 'workflows' && params.get('workflow') ? 'workflows'
+    : page === 'agents' || page === 'agent-config' || page === 'chat' || page === 'interview' ? 'agents'
+    : page === 'workflows' || page === 'workflows-overview' ? 'workflows'
+    : page === 'config' ? 'settings'
+    : page === 'inbox' ? 'inbox' : '';
+  var railItems = document.querySelectorAll('[data-le-section]');
+  for (var ri = 0; ri < railItems.length; ri++) {
+    if (railItems[ri].getAttribute('data-le-section') === section0) railItems[ri].classList.add('is-current');
+  }
+  function showPane(name, preview) {
+    if (!panel || markedInboxOnly) return;
+    var pane = name ? document.querySelector('[data-le-pane="' + name + '"]') : null;
+    if (!pane && preview) return;
+    var panes = document.querySelectorAll('[data-le-pane]');
+    for (var pi = 0; pi < panes.length; pi++) panes[pi].classList.toggle('is-shown', panes[pi] === pane);
+    panel.hidden = !pane;
+    // With no column of its own, the page gets one over it while pointing.
+    sidebar.classList.toggle('previewing', Boolean(pane) && name !== section0 && !document.querySelector('[data-le-pane="' + section0 + '"]'));
+  }
+  showPane(section0, false);
+  if (sidebar) {
+    for (var rj = 0; rj < railItems.length; rj++) {
+      railItems[rj].addEventListener('mouseenter', function (ev) { showPane(ev.currentTarget.getAttribute('data-le-section'), true); });
+      railItems[rj].addEventListener('focus', function (ev) { showPane(ev.currentTarget.getAttribute('data-le-section'), true); });
+    }
+    sidebar.addEventListener('mouseleave', function () { showPane(section0, false); });
+  }
+  var settingsHead = document.querySelector('[data-le-nav-head="settings"]');
+  if (settingsHead && page === 'config') settingsHead.setAttribute('aria-current', 'page');
   var footLinks = document.querySelectorAll('[data-le-nav]');
   for (var i = 0; i < footLinks.length; i++) {
     if (footLinks[i].getAttribute('data-le-nav') === foot) footLinks[i].setAttribute('aria-current', 'page');
   }
 
-  // Who is signed in: the email and a link back to the dashboard when a
-  // hosting router signs requests, otherwise how this server is protected.
+  // Who is signed in, at the foot of the sections: a round badge with
+  // their initial, and on pointing, the email and a link back to the
+  // dashboard when a hosting router signs requests, otherwise how this
+  // server is protected.
   var who = document.getElementById('leWho');
   if (who) {
     settings
       .then(function (s) {
         if (!s || !s.signIn) return;
         var si = s.signIn;
+        var card, initial;
         if (si.mode === 'hosted') {
           var roleName = si.role && si.role !== 'owner' ? si.role.charAt(0).toUpperCase() + si.role.slice(1) : '';
-          who.innerHTML = '<span class="le-who-name" title="' + esc(si.email || '') + '">' + esc(si.email || 'Signed in') + (roleName ? ' (' + esc(roleName) + ')' : '') + '</span>' +
+          initial = (si.email || '?').charAt(0).toUpperCase();
+          card = '<span class="le-who-name">' + esc(si.email || 'Signed in') + (roleName ? ' (' + esc(roleName) + ')' : '') + '</span>' +
             (si.dashboardUrl ? '<a href="' + esc(si.dashboardUrl) + '">Dashboard</a>' : '');
         } else {
-          who.innerHTML = '<span class="le-who-name">' + (si.mode === 'basic' ? 'Signed in with Basic Auth' : 'No sign-in configured') + '</span>';
+          initial = '?';
+          card = '<span class="le-who-name">' + (si.mode === 'basic' ? 'Signed in with Basic Auth' : 'No sign-in configured') + '</span>';
         }
+        who.innerHTML = '<button type="button" class="le-who-badge" aria-label="Account">' + esc(initial) + '</button><span class="le-who-card">' + card + '</span>';
         who.hidden = false;
       })
       .catch(function () {});

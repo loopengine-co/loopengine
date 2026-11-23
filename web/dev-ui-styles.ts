@@ -123,27 +123,38 @@ export const devUiCss: string = `
   .le-pill.accent { background: var(--accent-soft); color: var(--accent-ink); }
 
   /* ---------- app shell (web/console-shell.ts) ---------- */
-  .le-app { display: grid; grid-template-columns: 240px minmax(0, 1fr); height: 100%; }
-  .le-sidebar { background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-  .le-brand { display: flex; align-items: center; gap: 8px; padding: 16px 16px 12px; text-decoration: none; color: var(--ink); }
-  .le-brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
-  .le-brand-name { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
-  .le-nav-group { margin: 14px 16px 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
-  .le-nav-label { padding: 10px 16px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; }
-  .le-nav-label a { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; text-decoration: none; }
-  .le-nav-label a[aria-current="page"] { font-weight: 700; }
-  .le-nav-label a.le-nav-head { display: inline-flex; align-items: center; gap: 7px; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11.5px; font-weight: 600; color: inherit; }
+  .le-app { display: grid; grid-template-columns: auto minmax(0, 1fr); height: 100%; }
+  /* Two columns: the sections, and what's in the current one. */
+  .le-sidebar { position: relative; background: var(--sidebar); border-right: 1px solid var(--line); display: flex; min-height: 0; }
+  .le-rail { width: 76px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 12px 6px 10px; min-height: 0; }
+  .le-brand { display: grid; place-items: center; height: 36px; margin-bottom: 8px; text-decoration: none; }
+  .le-brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
+  .le-rail-item { position: relative; display: grid; justify-items: center; gap: 3px; padding: 8px 2px 7px; border-radius: 8px; color: var(--ink-muted); text-decoration: none; font-size: 11px; font-weight: 600; }
+  .le-rail-item .le-nav-icon { width: 19px; height: 19px; }
+  .le-rail-item:hover { background: var(--surface-2); color: var(--ink); }
+  .le-rail-item.is-current { background: var(--accent-soft); color: var(--accent-ink); }
+  .le-rail-item .le-inbox-count { position: absolute; top: 3px; right: 6px; margin: 0; padding: 0 6px; font-size: 10.5px; }
+  .le-inbox-count[hidden] { display: none; }
+  .le-rail-gap { flex: 1; }
   .le-nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
-  .le-nav-label a.le-nav-head:hover { color: var(--ink); }
-  .le-nav-label a.le-nav-head[aria-current="page"] { color: var(--accent-ink); font-weight: 700; }
-  .le-agent-list.le-goal-list { flex: 0 1 auto; max-height: 34vh; }
+  .le-panel { width: 228px; flex: none; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); padding-top: 14px; }
+  .le-panel[hidden] { display: none; }
+  .le-sidebar.previewing .le-panel { position: absolute; left: 100%; top: 0; bottom: 0; z-index: 30; background: var(--sidebar); border: 1px solid var(--line); border-width: 0 1px 0 0; box-shadow: 8px 0 24px rgba(0, 0, 0, .12); }
+  .le-pane { display: none; flex-direction: column; min-height: 0; flex: 1; }
+  .le-pane.is-shown { display: flex; }
+  .le-pane-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 16px 10px; }
+  .le-pane-head a { color: var(--ink); font-size: 15px; font-weight: 650; text-decoration: none; }
+  .le-pane-head a:hover { text-decoration: underline; }
+  .le-pane-head a.le-pane-new { font-size: 12.5px; font-weight: 600; color: var(--accent-ink); }
+  .le-pane-head a.le-pane-new[aria-current="page"] { text-decoration: underline; }
+  .le-pane .le-agent-list { max-height: none; }
   .le-name.le-slug { font-family: var(--font-mono); font-size: 12.5px; }
   .le-goal-item .le-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 0 1 auto; max-height: 40vh; min-height: 0; }
-  /* The lists sit together at the top; the rest goes to the bottom. */
-  .le-find { margin: auto 16px 10px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
-  .le-find[aria-current="page"] { font-weight: 600; }
-  .le-find + .le-find { margin-top: -4px; }
+  /* Find your first agent: one more item under Agents. */
+  .le-sub-link { margin: 2px 8px 0; padding: 5px 8px 5px 26px; flex: none; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
+  .le-sub-link:hover { background: var(--surface-2); }
+  .le-sub-link[aria-current="page"] { background: var(--accent-soft); font-weight: 600; }
   /* List items read smaller than their section's head. */
   .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; font-size: 12.5px; }
   .le-agent-item:hover { background: var(--surface-2); }
@@ -155,17 +166,19 @@ export const devUiCss: string = `
   .le-dot.tint { background: var(--accent); }
   .le-dot.pending { background: #E8B06A; }
   .le-inbox-count { margin-left: auto; font-size: 11px; padding: 0 7px; }
-  .le-inbox-only .le-nav-group, .le-inbox-only .le-nav-label:not(.le-inbox-nav), .le-inbox-only .le-agent-list, .le-inbox-only .le-find, .le-inbox-only .le-foot > a { display: none; }
+  .le-inbox-only .le-rail-item:not([data-le-section="inbox"]), .le-inbox-only .le-panel { display: none; }
   .le-dot.idle { background: var(--ink-faint); }
-  .le-foot { border-top: 1px solid var(--line); padding: 8px; display: grid; gap: 2px; }
-  .le-foot a { padding: 6px 8px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; font-size: 13px; }
-  .le-foot a:hover { background: var(--surface-2); color: var(--ink); }
-  .le-foot a[aria-current="page"] { background: var(--accent-soft); color: var(--ink); }
-  .le-who { padding: 10px 8px 4px; font-size: 12px; color: var(--ink-faint); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
+  .le-settings-menu { display: grid; gap: 2px; padding: 0 8px; }
+  .le-settings-menu a { padding: 6px 10px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; font-size: 13px; }
+  .le-settings-menu a:hover { background: var(--surface-2); color: var(--ink); }
+  .le-settings-menu a[aria-current="page"] { background: var(--accent-soft); color: var(--ink); }
+  .le-who { position: relative; display: grid; place-items: center; padding-top: 8px; }
   .le-who[hidden] { display: none; }
+  .le-who-badge { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; font-weight: 700; cursor: default; }
+  .le-who-card { position: absolute; left: calc(100% - 4px); bottom: 0; z-index: 40; display: none; gap: 6px; min-width: 200px; max-width: 280px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .14); font-size: 12.5px; color: var(--ink-muted); }
+  .le-who:hover .le-who-card, .le-who:focus-within .le-who-card { display: grid; }
   .le-who-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .le-foot .le-who a { padding: 0; flex: none; color: var(--accent-ink); }
-  .le-foot .le-who a:hover { background: none; text-decoration: underline; }
+  .le-who-card a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
   .le-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
   .le-scroll { flex: 1; min-height: 0; overflow-y: auto; }
   .le-page { padding: 24px; max-width: 1100px; display: grid; gap: 24px; }
@@ -197,8 +210,9 @@ export const devUiCss: string = `
   .le-empty { color: var(--ink-faint); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); }
   @media (max-width: 860px) {
     .le-app { grid-template-columns: minmax(0, 1fr); }
-    .le-sidebar { position: fixed; inset: 0 auto 0 0; width: 264px; z-index: 20; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 24px rgba(0, 0, 0, .25); }
+    .le-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 24px rgba(0, 0, 0, .25); }
     .le-app.nav-open .le-sidebar { transform: none; }
+    .le-panel { width: 204px; }
     .le-menu-btn { display: block; }
     .le-head, .le-page { padding-left: 16px; padding-right: 16px; }
   }
