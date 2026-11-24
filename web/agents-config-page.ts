@@ -211,6 +211,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
   .wf-case-standins { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
   .wf-panel { min-width: 0; }
+  .wf-section { display: grid; gap: 10px; min-width: 0; }
+  .wf-panel > .wf-section + .wf-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .wf-section .wf-sub { margin: 0; }
   .wf-run-lines, .wf-cand-list, .wf-change-list { min-width: 0; }
   .wf-run-line, .wf-run-link { min-width: 0; overflow: hidden; }
   .wf-run-lines, .wf-cand-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -1401,12 +1404,13 @@ ${renderMarkdownScript}
   // and changes, and the way to the report and the full log.
   function workflowAuditHtml(w, runsHtml, name) {
     var auditHref = '/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id);
-    return (workflowPageId ? '<section class="wf-audit-summary"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></section>' : '') +
-      (workflowPageId ? '<section class="wf-health"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></section>' : '') +
-      '<h4 class="wf-sub">Latest runs</h4>' +
-      (runsHtml ? '<ul class="wf-run-lines">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') +
-      (workflowPageId ? '<h4 class="wf-sub">Latest changes</h4><div class="wf-changes-latest"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>' : '') +
-      (workflowPageId ? '<div class="wf-audit-tools"><a class="primary" href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">See everything in Audit ' + String.fromCharCode(8594) + '</a></div>' : '');
+    var loading = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
+    return (workflowPageId ? '<section class="wf-section wf-audit-summary">' + loading + '</section>' : '') +
+      (workflowPageId ? '<section class="wf-section wf-health">' + loading + '</section>' : '') +
+      '<section class="wf-section"><h4 class="wf-sub">Latest runs</h4>' +
+        (runsHtml ? '<ul class="wf-run-lines">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') + '</section>' +
+      (workflowPageId ? '<section class="wf-section"><h4 class="wf-sub">Latest changes</h4><div class="wf-changes-latest">' + loading + '</div></section>' : '') +
+      (workflowPageId ? '<section class="wf-section"><div class="wf-audit-tools"><a class="primary" href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">See everything in Audit ' + String.fromCharCode(8594) + '</a></div></section>' : '');
   }
 
   // The Improve tab: the checklist, the eval cases (suggested from real
@@ -1471,14 +1475,14 @@ ${renderMarkdownScript}
       : '<p class="wf-eval-last"><strong>Last evaluation: ' + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (round.briefVersion ? ', version ' + round.briefVersion + ' of its instructions' : '') + '</strong>' +
         (checked ? String.fromCharCode(8212) + ' ' + round.allPassed + ' of ' + round.cases.length + ' cases passed every checklist item.' : '') +
         ' <details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details></p>';
-    return critSection +
-      '<h4 class="wf-sub">Eval cases' + (evals.cases.length ? ' (' + evals.cases.length + ')' : '') + '</h4>' +
-      '<p class="hint" style="margin:0">Real runs saved to check every change against.</p>' +
-      (workflowPageId ? '<div class="wf-sub-sub">Suggested from real runs</div><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
-      (cases ? '<div class="wf-sub-sub">Saved</div><ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None saved yet: add suggested ones above, or save any run from its case page.</p>') +
-      '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
-        '<span class="hint">Runs every eval case again with the current instructions and checks each result against the checklist. Nothing is sent, refunded or submitted.</span></div>' +
-      lastLine;
+    return '<section class="wf-section">' + critSection + '</section>' +
+      '<section class="wf-section"><h4 class="wf-sub">Eval cases' + (evals.cases.length ? ' (' + evals.cases.length + ')' : '') + '</h4>' +
+        '<p class="hint" style="margin:0">Real runs saved to check every change against.</p>' +
+        (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet: add suggested ones below, or save any run from its case page.</p>') +
+        '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
+          '<span class="hint">Runs every eval case again with the current instructions and checks each result against the checklist. Nothing is sent, refunded or submitted.</span></div>' +
+        lastLine + '</section>' +
+      (workflowPageId ? '<section class="wf-section"><h4 class="wf-sub">Suggested eval cases</h4><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div></section>' : '');
   }
 
   // Worth testing: runs from the last 30 days that would make good eval
@@ -1493,12 +1497,12 @@ ${renderMarkdownScript}
       .then(function (data) {
         var list = data.candidates || [];
         if (!list.length) { box.innerHTML = '<p class="hint" style="margin:0">Nothing new to suggest from the last 30 days.</p>'; return; }
-        box.innerHTML = '<p class="hint" style="margin:0 0 6px">From the last 30 days, best first. Open one to read it in full before saving.</p><ul class="wf-cand-list">' + list.map(function (c) {
+        box.innerHTML = '<p class="hint" style="margin:0 0 6px">Runs from the last 30 days worth adding, best first: where a person denied or changed what it did, a bad result, a question it asked, or a typical good run. Open one to read it in full first.</p><ul class="wf-cand-list">' + list.map(function (c) {
           var why = WHY[c.why] || ['', c.why];
           return '<li><span class="le-pill ' + why[0] + '">' + why[1] + '</span>' +
             '<span class="wf-cand-text"><strong>' + escapeHtml(c.detail) + '</strong><span class="hint">' + escapeHtml(new Date(c.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (c.inputs ? DOT + escapeHtml(c.inputs) : '') + '</span></span>' +
             '<a class="wf-link" href="' + caseHref(c.runId) + '">Open</a>' +
-            '<button type="button" class="wf-link wf-save-case" data-run="' + escapeHtml(c.runId) + '">Save as eval case</button></li>';
+            '<button type="button" class="wf-link wf-save-case" data-run="' + escapeHtml(c.runId) + '">Add as eval case</button></li>';
         }).join('') + '</ul>';
       })
       .catch(function (err) { box.innerHTML = '<p class="error">Could not look through its runs: ' + escapeHtml(err.message) + '</p>'; });
