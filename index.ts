@@ -19,7 +19,9 @@ export type { AgentConfig, AgentModelConfig, ToolSchema, ToolDefinition, ToolCon
 export { createAgentEnv, agentDirFor, envScopeOf, type EnvScope } from '#core/agent-env.js'
 export { FileSecretStore, setSecretStore, getSecretStore, type SecretStore } from '#core/secret-store.js'
 export { signProxyIdentity, verifyProxyIdentity, TRUSTED_PROXY_IDENTITY_HEADER, type ProxyIdentity } from '#core/trusted-proxy.js'
-export { setUsageSink, recordUsage, type UsageEvent, type UsageSink } from '#core/usage.js'
+export { setUsageSink, recordUsage, sessionUsage, usageBySession, type UsageEvent, type UsageSink, type UsageRow } from '#core/usage.js'
+export { changeOf, keptBody, type Change } from '#web/change-log.js'
+export { workflowHealth, healthAlerts, type WorkflowHealth, type HealthNumbers, type HealthVersion, type HealthDay, type HealthAlert, type HealthMeasure } from '#web/workflow-health.js'
 export { setRunObserver, reportRun, usedTool, type RunEvent, type RunEventSource, type RunObserver } from '#core/run-events.js'
 export { readNotifierFile, writeNotifierFile, removeNotifierFile, validateNotifierFile, notifierConfigFromFile, NotifierFileError, NOTIFIER_SECRET_VARS, type NotifierFile, type MessagingApprover } from '#core/notifier-file.js'
 export { listDeliveries, recordDelivery, type NotifierDelivery } from '#core/notifier-deliveries.js'
@@ -77,7 +79,7 @@ export type {
   StreamMessageCallbacks,
 } from './core/client.js'
 
-export { FileSessionStore, RedisSessionStore, createSessionStore } from './core/session-store.js'
+export { FileSessionStore, RedisSessionStore, SqliteSessionStore, createSessionStore } from './core/session-store.js'
 export type { SessionStore, SessionResult, RedisSessionStoreOptions } from './core/session-store.js'
 
 export { SessionKnit, FileStorage, MemoryStorage, reconstructChain } from './core/sessionknit.js'
@@ -291,8 +293,8 @@ export { WORKFLOW_EXAMPLES, workflowExample, type WorkflowExample } from './core
 export { WORKFLOW_EXAMPLE_MESSAGES, type WorkflowExampleMessage } from './core/system-agents/workflow-example-messages.js'
 export { createTrigger, updateTrigger, rotateTrigger, listTriggers, findTriggerByToken, publicTrigger, checkTriggerSettings, verifySenderSignature, parsePayload, valueAt, deliveryId, passesFilter, paramsFromPayload, checkRunDelivery, fillChatNotice, resultToChat, recordDelivery as recordTriggerDelivery, FileTriggerStore, getTriggerStore, setTriggerStore, TriggerError, type WorkflowTrigger, type PublicTrigger, type TriggerSettings, type TriggerVerify, type TriggerFilter, type TriggerSender, type SignatureAlgorithm, type TriggerDelivery, type TriggerOutcome, type TriggerStore } from './core/workflow-triggers.js'
 export { checkCallbackUrl, callbackSecret, signCallback, deliverCallback, runCallbackPayload, isPrivateAddress, CallbackUrlError, type CallbackDelivery, type CallbackPending, type RunCallbackEvent } from './core/run-callbacks.js'
-export { auditDb, openAuditDb, setAuditDb, recordEvent, runEvents, noteVersion, listVersions, getVersion, briefContent, briefFromContent, retentionDays, type Version, type VersionKind, type AuditEvent, type AuditEventKind } from './core/audit-store.js'
-export { WorkflowRunner, FileRunStore, SqliteRunStore, getRunStore, setRunStore, listRuns, getRun, isUnderWay, RunError, type WorkflowRun, type WorkflowRunStatus, type RunVersions, type RunDecision, type RunStore, type ExecuteRun, type RunOutcome, type StartRunInput } from './core/workflow-runs.js'
+export { auditDb, openAuditDb, setAuditDb, recordEvent, runEvents, listEvents, readMeta, writeMeta, type EventFilter, noteVersion, listVersions, getVersion, briefContent, briefFromContent, retentionDays, type Version, type VersionKind, type AuditEvent, type AuditEventKind } from './core/audit-store.js'
+export { WorkflowRunner, FileRunStore, SqliteRunStore, getRunStore, setRunStore, listRuns, runsSince, getRun, isUnderWay, RunError, type WorkflowRun, type WorkflowRunStatus, type RunVersions, type RunDecision, type RunStore, type ExecuteRun, type RunOutcome, type StartRunInput } from './core/workflow-runs.js'
 export { readWorkflows, readWorkflow, setWorkflowFields, setWorkflowDelivery, clearWorkflowFields, validateParams, workflowRunMessage, workflowPreviewMessage, migrateWorkflowsFile, WorkflowParamsError, readWorkspacePolicies, writeWorkspacePolicies, type Workflow, type WorkflowFields, type WorkflowParameter, type WorkflowModel, type WorkflowDelivery, type RunMessageExtras } from './core/workflows.js'
 export { EvidenceError, workflowScores, runFeedbackFrom, readEvals, addEvalCase, updateEvalCase, removeEvalCase, setEvalCriteria, effectiveCriteria, codeCheck, judgeCriteria, checkCase, roundSummary, draftCriteria, startEvalRound, EVAL_CRITERIA_PROMPT, DRAFT_CRITERIA_PROMPT, REFERENCE_CRITERION, type WorkflowScores, type EvalCase, type EvalCaseResult, type EvalCheck, type EvalCriterion, type CriterionKind, type EvalRound, type WorkflowEvals, type EvalRunDeps } from './web/workflow-evidence.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
@@ -365,10 +367,10 @@ export { startMcpSignIn, finishMcpSignIn, mcpSignInSupport, mcpOAuthEnvName, par
 export { abilityDetails } from './web/ability-details-admin.js'
 export { WorkspaceAbilityError, listWorkspaceAbilities, addWorkspaceAbility, removeWorkspaceAbility, workspaceAbilitiesDir, type WorkspaceAbility } from './core/workspace-abilities.js'
 export { installWorkspaceAbility, installUploadedAbility, MAX_UPLOAD_BYTES, type AbilityUpload } from './web/workspace-abilities-admin.js'
-export { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from './web/global-config.js'
+export { callCost, modelPrice, describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from './web/global-config.js'
 export { loopengineVersion } from './core/version.js'
 export { describeUpgrade, runUpgrade, UpgradeError } from './web/upgrade-admin.js'
-export type { ModelProviderInfo, AgentModelUsage, ModelsView, ProviderModelsView, GatewayProviderInfo, GatewaysView, TimeZoneView } from './web/global-config.js'
+export type { ModelPrice, ModelPrices, ModelProviderInfo, AgentModelUsage, ModelsView, ProviderModelsView, GatewayProviderInfo, GatewaysView, TimeZoneView } from './web/global-config.js'
 export { workspaceTimeZone, serverTimeZone, isValidTimeZone, TIME_ZONE_ENV } from '#core/time-zone.js'
 
 export { createTrackedApprover, listApprovals, decideApproval, findApproval } from './web/web-approver.js'
