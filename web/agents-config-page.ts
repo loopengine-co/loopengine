@@ -210,6 +210,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
   .wf-case-standins { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
+  .wf-panel { min-width: 0; }
+  .wf-run-lines, .wf-cand-list, .wf-change-list { min-width: 0; }
+  .wf-run-line, .wf-run-link { min-width: 0; overflow: hidden; }
   .wf-run-lines, .wf-cand-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   .wf-run-line, .wf-cand-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; }
   .wf-run-line:first-child, .wf-cand-list li:first-child { border-top: 0; }
@@ -229,8 +232,16 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-health-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .wf-health-table th { text-align: left; font-weight: 600; color: var(--ink-muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .wf-health-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  .wf-audit-link { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; margin-right: 8px; }
-  .wf-audit-link:hover { background: var(--surface); }
+  .wf-audit-summary ul.wf-audit-lines { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; }
+  .wf-audit-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .wf-audit-tools a { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
+  .wf-audit-tools a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .wf-health-more summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent-ink); }
+  .wf-health-more .wf-health-table { margin-top: 8px; }
+  .wf-sub-sub { font-size: 12px; font-weight: 700; color: var(--ink-muted); margin-top: 6px; }
+  .wf-eval-last { margin: 0; font-size: 13px; }
+  .wf-eval-details { display: inline; }
+  .wf-eval-details summary { display: inline; cursor: pointer; color: var(--accent-ink); font-size: 12.5px; }
   .chg { display: grid; gap: 6px; margin-top: 4px; font-size: 12.5px; flex-basis: 100%; }
   .chg-field del { color: var(--bad); }
   .chg-field ins { color: var(--good); text-decoration: none; }
@@ -972,7 +983,9 @@ ${renderMarkdownScript}
   // header and list. Every link to a workflow lands here.
   var pageParams = new URLSearchParams(location.search);
   var workflowPageId = pageParams.get('tab') === 'workflows' && pageParams.get('workflow') || null;
-  if (workflowPageId && pageParams.get('wtab')) workflowTabs[workflowPageId] = pageParams.get('wtab');
+  // Evidence and Changes became Audit and Improve: old links still open.
+  var OLD_TABS = { evidence: 'audit', changes: 'audit' };
+  if (workflowPageId && pageParams.get('wtab')) workflowTabs[workflowPageId] = OLD_TABS[pageParams.get('wtab')] || pageParams.get('wtab');
   // A case's page, with a back link to here.
   function caseHref(runId) {
     return '/cases/' + encodeURIComponent(runId) + '?back=' + encodeURIComponent(location.pathname + location.search);
@@ -1066,7 +1079,6 @@ ${renderMarkdownScript}
     for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute('aria-selected', String(tabs[i].dataset.tab === key));
     var panels = card.querySelectorAll('.wf-panel');
     for (var j = 0; j < panels.length; j++) panels[j].hidden = panels[j].dataset.panel !== key;
-    if (key === 'changes') loadWorkflowChanges(card);
   }
 
   // The Health panel: the last 30 days of runs, as totals, day by day and
@@ -1076,7 +1088,7 @@ ${renderMarkdownScript}
     if (!box) return;
     fetch(base + '/health', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (h) { box.innerHTML = '<h4 class="wf-sub">Health, last ' + h.days + ' days</h4>' + workflowHealthHtml(h); })
+      .then(function (h) { box.innerHTML = '<h4 class="wf-sub">At a glance</h4>' + workflowHealthHtml(h); })
       .catch(function (err) { box.innerHTML = '<h4 class="wf-sub">Health</h4><p class="error">Could not load it: ' + escapeHtml(err.message) + '</p>'; });
   }
 
@@ -1122,26 +1134,36 @@ ${renderMarkdownScript}
       '</div>';
     var rows = h.versions.map(function (v) {
       var d = v.approved + v.denied;
-      return '<tr><td>' + (v.version == null ? '<span class="hint">before versions</span>' : 'v' + v.version) + '</td><td>' + v.runs + '</td><td>' + healthPct(v.failed, v.finished) + '</td><td>' + healthPct(v.approved, d) + '</td><td>' + healthPct(v.changed + v.denied, d) + '</td>' +
+      return '<tr><td>' + (v.version == null ? '<span class="hint">before versions</span>' : 'Version ' + v.version) + '</td><td>' + v.runs + '</td><td>' + healthPct(v.failed, v.finished) + '</td><td>' + healthPct(v.approved, d) + '</td><td>' + healthPct(v.changed + v.denied, d) + '</td>' +
         '<td>' + (v.runs ? (v.questions / v.runs).toFixed(1) : '0') + '</td><td>' + (v.feedback ? healthPct(v.unedited, v.feedback) : String.fromCharCode(8212)) + '</td><td>' + healthTime(v.medianMs) + '</td><td>' + healthCost(v.costPerRunUsd) + '</td></tr>';
     }).join('');
     return alerts + stats + healthChartHtml(h.daily) +
-      '<div class="wf-health-table"><table><thead><tr><th>Brief</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<details class="wf-health-more"><summary>By version of its instructions</summary><div class="wf-health-table"><table><thead><tr><th>Version</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
   }
 
-  // The Changes tab: every change to this workflow's settings, and every
-  // decision, answer and feedback in its runs, newest first, with who.
-  function loadWorkflowChanges(card) {
-    var box = card.querySelector('.wf-changes');
-    if (!box || box.getAttribute('data-loaded') === '1') return;
-    box.setAttribute('data-loaded', '1');
-    var agent = pageParams.get('agent');
-    fetch('/audit?agent=' + encodeURIComponent(agent) + '&workflow=' + encodeURIComponent(card.dataset.workflow) + '&limit=200', { headers: { accept: 'application/json' } })
+  // The Audit tab's summary: the workflow's last 30 days in sentences, the
+  // same as the Audit page's.
+  function loadAuditSummary(card, base) {
+    var box = card.querySelector('.wf-audit-summary');
+    if (!box) return;
+    fetch(base + '/audit', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (data) { box.innerHTML = workflowChangesHtml(data.events || []); })
-      .catch(function (err) { box.setAttribute('data-loaded', '0'); box.innerHTML = '<p class="error">Could not load the changes: ' + escapeHtml(err.message) + '</p>'; });
+      .then(function (a) { box.innerHTML = '<h4 class="wf-sub">In the last 30 days</h4><ul class="wf-audit-lines">' + a.summary.map(function (line) { return '<li>' + escapeHtml(line) + '</li>'; }).join('') + '</ul>'; })
+      .catch(function (err) { box.innerHTML = '<p class="error">Could not load its summary: ' + escapeHtml(err.message) + '</p>'; });
   }
 
+  // The Audit tab's latest few settings changes, with what changed.
+  function loadLatestChanges(card, name) {
+    var box = card.querySelector('.wf-changes-latest');
+    if (!box) return;
+    fetch('/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(card.dataset.workflow) + '&kind=change&limit=3', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (data) { box.innerHTML = (data.events || []).length ? workflowChangesHtml(data.events) : '<p class="hint" style="margin:0">No settings changed yet.</p>'; })
+      .catch(function (err) { box.innerHTML = '<p class="error">Could not load its changes: ' + escapeHtml(err.message) + '</p>'; });
+  }
+
+  // A list of changes (and decisions): every change to this workflow's settings, and every
+  // decision, answer and feedback in its runs, newest first, with who.
   function changeText(e) {
     var d = e.data || {};
     if (e.kind === 'change') return escapeHtml(d.label || 'Changed a setting');
@@ -1350,10 +1372,6 @@ ${renderMarkdownScript}
       (w.originalRequest ? '<details class="wf-original"><summary>Original message</summary><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></details>' : '');
   }
 
-  function scoreTileHtml(label, value, detail) {
-    return '<div class="wf-score"><span class="wf-score-k">' + label + '</span><strong class="wf-score-v">' + value + '</strong>' + (detail ? '<span class="hint">' + detail + '</span>' : '') + '</div>';
-  }
-
   // A criterion's kind, in words, for its row and its editor.
   var CRIT_KINDS = [
     ['judge', 'Judge decides'],
@@ -1364,6 +1382,7 @@ ${renderMarkdownScript}
     ['reference', 'Matches the good result'],
   ];
   function critKindText(c) {
+    if (c.kind === 'reference') return 'Checked against each eval case' + RSQ + 's saved good result';
     var label = (CRIT_KINDS.filter(function (k) { return k[0] === c.kind; })[0] || CRIT_KINDS[0])[1];
     return c.value ? label + ' ' + String.fromCharCode(8220) + c.value + String.fromCharCode(8221) : label;
   }
@@ -1377,23 +1396,26 @@ ${renderMarkdownScript}
   }
   var REFERENCE_CRIT = { id: 'reference', text: 'Matches the good result: the same facts and decisions', kind: 'reference' };
 
-  function workflowEvidenceHtml(w, runsHtml) {
-    var s = w.scores || { runs: 0, done: 0, failed: 0, approvals: { approved: 0, refused: 0 }, feedback: { count: 0, good: 0, bad: 0, edits: { none: 0, light: 0, heavy: 0 } } };
+  // The Audit tab: what happened and whether it can be trusted. The same
+  // summary as the Audit page's, its health over 30 days, its latest runs
+  // and changes, and the way to the report and the full log.
+  function workflowAuditHtml(w, runsHtml, name) {
+    var auditHref = '/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id);
+    return (workflowPageId ? '<section class="wf-audit-summary"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></section>' : '') +
+      (workflowPageId ? '<section class="wf-health"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></section>' : '') +
+      '<h4 class="wf-sub">Latest runs</h4>' +
+      (runsHtml ? '<ul class="wf-run-lines">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') +
+      (workflowPageId ? '<h4 class="wf-sub">Latest changes</h4><div class="wf-changes-latest"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>' : '') +
+      (workflowPageId ? '<div class="wf-audit-tools"><a class="primary" href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">See everything in Audit ' + String.fromCharCode(8594) + '</a></div>' : '');
+  }
+
+  // The Improve tab: the checklist, the eval cases (suggested from real
+  // runs, and saved), and Evaluate.
+  function workflowImproveHtml(w) {
     var evals = w.evals || { cases: [], criteria: [], rounds: [] };
     var criteria = evals.criteria && evals.criteria.length ? evals.criteria : [REFERENCE_CRIT];
     var round = evals.rounds[0];
     var checked = round && round.passRates;
-    var decided = s.approvals.approved + s.approvals.refused;
-    var f = s.feedback;
-    var evalsValue = !round ? String.fromCharCode(8212) : checked ? round.allPassed + ' / ' + round.cases.length : typeof round.average === 'number' ? round.average.toFixed(1) + ' / 5' : String.fromCharCode(8212);
-    var evalsDetail = !round ? (evals.cases.length ? 'not run yet' : 'no cases yet') : (checked ? 'passed every check' + DOT : '') + new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    var tiles = '<div class="wf-scores">' +
-      scoreTileHtml('Runs', String(s.runs), s.runs ? s.done + ' done' + DOT + s.failed + ' failed' : 'none yet') +
-      scoreTileHtml('Approvals', decided ? Math.round(100 * s.approvals.approved / decided) + '%' : String.fromCharCode(8212), decided ? s.approvals.approved + ' approved' + DOT + s.approvals.refused + ' refused' : 'none asked yet') +
-      scoreTileHtml('Feedback', f.count ? String(f.count) : String.fromCharCode(8212), f.count ? (f.good + f.bad ? f.good + ' good' + DOT + f.bad + ' bad' + DOT : '') + f.edits.none + ' unedited' + DOT + f.edits.light + ' light' + DOT + f.edits.heavy + ' heavy edits' : 'none reported yet') +
-      scoreTileHtml('Evals', evalsValue, evalsDetail) +
-      '</div>';
-    var feedbackHint = f.count ? '' : '<p class="hint" style="margin:0">An app reports what happened to a result with <code>POST /agents/' + escapeHtml(currentName || '') + '/runs/&lt;runId&gt;/feedback</code> and <code>{"final": "the text it sent"}</code> or <code>{"verdict": "good"}</code>.</p>';
     // Each criterion, with how often the latest round passed it.
     var rateOf = {};
     (checked ? round.passRates : []).forEach(function (r) { rateOf[r.criterionId] = r; });
@@ -1402,16 +1424,16 @@ ${renderMarkdownScript}
       var pill = !r || !r.total ? '' : '<span class="le-pill ' + (r.passed === r.total ? 'good' : r.passed * 2 >= r.total ? 'ask' : 'bad') + ' wf-crit-rate">' + r.passed + ' / ' + r.total + '</span>';
       return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
     }).join('');
-    var critSection = '<h4 class="wf-sub">Criteria</h4>' +
+    var critSection = '<h4 class="wf-sub">Checklist</h4>' +
       '<p class="hint" style="margin:0">' + (evals.criteria && evals.criteria.length
-        ? 'Every result is checked on each of these, yes or no. Exact text and tool checks are checked directly; the rest by a judge model from another provider.'
-        : 'No criteria yet, so each result is only compared with its case' + RSQ + 's good result. Add the checks that matter, or draft them from the brief.') + '</p>' +
+        ? 'What every good result must get right. Each eval case is checked against every item, yes or no.'
+        : 'What every good result must get right. Nothing on it yet, so each eval case is only compared with its good result. Add the items that matter, or have them suggested from its instructions.') + '</p>' +
       '<ul class="wf-crits">' + critList + '</ul>' +
-      '<div class="wf-crit-bar"><button type="button" class="wf-crit-edit">' + (evals.criteria && evals.criteria.length ? 'Edit criteria' : 'Add criteria') + '</button></div>' +
+      '<div class="wf-crit-bar"><button type="button" class="wf-crit-edit">' + (evals.criteria && evals.criteria.length ? 'Edit the checklist' : 'Add to the checklist') + '</button></div>' +
       '<div class="wf-crit-form" hidden>' +
         '<div class="wf-crit-rows">' + (evals.criteria && evals.criteria.length ? evals.criteria : []).map(critRowHtml).join('') + '</div>' +
-        '<div class="wf-crit-bar"><button type="button" class="plain wf-crit-add">+ Add a check</button><button type="button" class="plain wf-crit-draft">Draft from the brief</button>' +
-          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save criteria</button></div>' +
+        '<div class="wf-crit-bar"><button type="button" class="plain wf-crit-add">+ Add an item</button><button type="button" class="plain wf-crit-draft">Suggest from its instructions</button>' +
+          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save the checklist</button></div>' +
         '<span class="hint wf-crit-status"></span>' +
       '</div>';
     var latest = {};
@@ -1424,7 +1446,7 @@ ${renderMarkdownScript}
       var values = Object.keys(c.params || {}).map(function (k) { var v = String(c.params[k]); return escapeHtml(k) + ': ' + escapeHtml(v.length > 60 ? v.slice(0, 60) + String.fromCharCode(8230) : v); }).join(DOT);
       var fails = last && last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
       var pill = !last ? ''
-        : last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' checks failed</span>' : '<span class="le-pill good">All ' + last.checks.length + ' checks passed</span>')
+        : last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' items missed</span>' : '<span class="le-pill good">Passed all ' + last.checks.length + '</span>')
         : typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>';
       var why = !last ? ''
         : last.checks ? (fails.length ? '<ul class="wf-case-fails">' + fails.map(function (x) { return '<li><strong>' + escapeHtml(critName[x.criterionId] || x.criterionId) + '</strong>' + (x.reason ? ': ' + escapeHtml(x.reason) : '') + '</li>'; }).join('') + '</ul>' : '')
@@ -1445,17 +1467,18 @@ ${renderMarkdownScript}
           (last && last.result ? '<div class="workflow-run-entry-label">Latest result' + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div>' : '') +
         '</details></li>';
     }).join('');
-    // On the workflow's page: its health, filled by loadWorkflowHealth.
-    return (workflowPageId ? '<section class="wf-health"><h4 class="wf-sub">Health, last 30 days</h4><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></section>' : '') +
-      tiles + feedbackHint + critSection +
-      '<h4 class="wf-sub">Eval cases</h4>' +
-      '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Running ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Run evals') + '</button>' +
-        '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + (round.briefVersion ? DOT + 'brief v' + round.briefVersion : '') + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: only tools that just read data run. Anything that would send, write or change something, or need approval, isn' + RSQ + 't done, and nobody is asked anything.') + '</span></div>' +
-      (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save runs worth testing (below) as cases, then run them after each change to the brief or model.</p>') +
-      (workflowPageId ? '<h4 class="wf-sub">Worth testing</h4><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
-      '<h4 class="wf-sub">Recent runs</h4>' +
-      (runsHtml ? '<ul class="wf-run-lines">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') +
-      (workflowPageId ? '<p class="hint" style="margin:0"><a href="/audit?tab=cases&agent=' + encodeURIComponent(pageParams.get('agent') || '') + '&workflow=' + encodeURIComponent(w.id) + '">See all its runs in Audit ' + String.fromCharCode(8594) + '</a></p>' : '');
+    var lastLine = !round ? ''
+      : '<p class="wf-eval-last"><strong>Last evaluation: ' + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (round.briefVersion ? ', version ' + round.briefVersion + ' of its instructions' : '') + '</strong>' +
+        (checked ? String.fromCharCode(8212) + ' ' + round.allPassed + ' of ' + round.cases.length + ' cases passed every checklist item.' : '') +
+        ' <details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details></p>';
+    return critSection +
+      '<h4 class="wf-sub">Eval cases' + (evals.cases.length ? ' (' + evals.cases.length + ')' : '') + '</h4>' +
+      '<p class="hint" style="margin:0">Real runs saved to check every change against.</p>' +
+      (workflowPageId ? '<div class="wf-sub-sub">Suggested from real runs</div><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
+      (cases ? '<div class="wf-sub-sub">Saved</div><ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None saved yet: add suggested ones above, or save any run from its case page.</p>') +
+      '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
+        '<span class="hint">Runs every eval case again with the current instructions and checks each result against the checklist. Nothing is sent, refunded or submitted.</span></div>' +
+      lastLine;
   }
 
   // Worth testing: runs from the last 30 days that would make good eval
@@ -1490,7 +1513,7 @@ ${renderMarkdownScript}
     }
     if ((r.decisions || []).length) parts.push('<span class="hint">' + r.decisions.map(function (d) { return escapeHtml(d.tool) + (d.approved ? ' approved' : ' refused'); }).join(DOT) + '</span>');
     var saved = ((w.evals && w.evals.cases) || []).some(function (c) { return c.fromRun === r.run_id; });
-    if (r.status === 'done' && r.result) parts.push(saved ? '<span class="hint">Saved as an eval case</span>' : '<button type="button" class="wf-link wf-save-case" data-run="' + escapeHtml(r.run_id) + '">Save as eval case</button>');
+    if (saved) parts.push('<span class="hint">An eval case</span>');
     return parts.length ? '<div class="wf-run-evidence">' + parts.join('') + '</div>' : '';
   }
 
@@ -1544,7 +1567,7 @@ ${renderMarkdownScript}
             '<div class="wf-page-crumb-row"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
             '<a class="wf-page-crumb" href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows">' + String.fromCharCode(8592) + ' ' + escapeHtml(agentLabel) + ' ' + String.fromCharCode(183) + ' Workflows</a></div>' +
             '<div class="wf-page-title-row"><h1>' + escapeHtml(w.title) + '</h1>' +
-              '<span class="wf-row-actions"><a class="wf-audit-link" href="/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id) + '">Audit</a><button type="button" class="workflow-edit">Edit</button></span></div>' +
+              '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit</button></span></div>' +
             (w.description && w.description !== w.title ? '<p class="wf-page-desc">' + escapeHtml(w.description) + '</p>' : '') +
             '<div class="wf-page-meta">' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Agent</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '">' + escapeHtml(agentLabel) + '</a></span>' +
@@ -1554,13 +1577,13 @@ ${renderMarkdownScript}
             '</div>' +
           '</header>' +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + tabBtn('changes', 'Changes') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('audit', 'Audit') + tabBtn('improve', 'Improve') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
-            panel('evidence', workflowEvidenceHtml(w, runs)) +
+            panel('audit', workflowAuditHtml(w, runs, name)) +
+            panel('improve', workflowImproveHtml(w)) +
             panel('triggers', workflowTriggersHtml(w, name, params)) +
             panel('messages', workflowMessagesHtml(w, name)) +
             panel('contract', workflowContractHtml(w, name, params)) +
-            panel('changes', '<div class="wf-changes"><span class="hint">Loading' + String.fromCharCode(8230) + '</span></div>') +
             '<div class="hint workflow-result"></div>' +
             '<div class="wf-row-foot"><span class="hint">ID <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks</span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
           '</div>' +
@@ -1579,12 +1602,13 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('audit', 'Audit') + tabBtn('improve', 'Improve') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('messages', workflowMessagesHtml(w, name)) +
           panel('brief', workflowBriefHtml(w)) +
-          panel('evidence', workflowEvidenceHtml(w, runs)) +
+          panel('audit', workflowAuditHtml(w, runs, name)) +
+          panel('improve', workflowImproveHtml(w)) +
           '<div class="hint workflow-result"></div>' +
           '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
         '</div>' +
@@ -2215,7 +2239,8 @@ ${renderMarkdownScript}
     loadBriefVersions(card, base);
     loadWorkflowHealth(card, base);
     loadCandidates(card, base);
-    if (workflowTabs[id] === 'changes') loadWorkflowChanges(card);
+    loadAuditSummary(card, base);
+    loadLatestChanges(card, name);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // Opens the workflow's page on its Triggers tab.
     var triggersBtn = card.querySelector('.workflow-triggers-open');
@@ -2309,7 +2334,7 @@ ${renderMarkdownScript}
       }
       if (cbtn.classList.contains('wf-crit-add')) { rows.insertAdjacentHTML('beforeend', critRowHtml({ kind: 'judge' })); return; }
       if (cbtn.classList.contains('wf-crit-remove')) { cbtn.closest('.wf-crit-row').remove(); return; }
-      if (cbtn.classList.contains('wf-crit-cancel')) { workflowTabs[id] = 'evidence'; loadWorkflowsSection(name); return; }
+      if (cbtn.classList.contains('wf-crit-cancel')) { workflowTabs[id] = 'improve'; loadWorkflowsSection(name); return; }
       cbtn.disabled = true;
       if (cbtn.classList.contains('wf-crit-draft')) {
         critStatus.textContent = 'Drafting from the brief' + String.fromCharCode(8230);
@@ -2327,7 +2352,7 @@ ${renderMarkdownScript}
       fetchJsonRetryOnce(base + '/evals/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) }).then(function (r) {
         cbtn.disabled = false;
         if (!r.ok) { critStatus.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't save.'; return; }
-        workflowTabs[id] = 'evidence';
+        workflowTabs[id] = 'improve';
         loadWorkflowsSection(name);
       });
     });
@@ -2347,7 +2372,7 @@ ${renderMarkdownScript}
       if (request[1].body) opts.body = JSON.stringify(request[1].body);
       fetchJsonRetryOnce(request[0], opts).then(function (r) {
         if (!r.ok) { btn.disabled = false; result.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't work.'; return; }
-        workflowTabs[id] = 'evidence';
+        workflowTabs[id] = 'improve';
         loadWorkflowsSection(name);
       });
     });
