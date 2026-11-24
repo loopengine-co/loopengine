@@ -43,6 +43,7 @@ const LABELS: [RegExp, string | ((method: string, m: RegExpMatchArray) => string
   [/^\/agents\/[^/]+\/abilities/, 'Changed abilities'],
   [/^\/agents\/[^/]+\/notifier/, 'Changed the messaging app'],
   [/^\/agents\/[^/]+\/env/, 'Changed agent secrets'],
+  [/^\/config\/policies\/versions\/(\d+)\/restore$/, (_method, m) => `Restored shared policies version ${m[1]}`],
   [/^\/config\/policies$/, 'Changed shared policies'],
   [/^\/config\/models/, 'Changed models'],
   [/^\/config\/time-zone$/, 'Changed the time zone'],

@@ -30,6 +30,11 @@ export const globalConfigPageHtml: string = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Settings</title>
 <style>${devUiCss}
+  .policy-versions { margin-top: 12px; max-width: 720px; font-size: 13px; }
+  .policy-versions summary { cursor: pointer; font-weight: 600; color: var(--accent-ink); }
+  .policy-versions ol { list-style: none; margin: 10px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); display: grid; gap: 10px; }
+  .policy-versions pre { white-space: pre-wrap; margin: 4px 0 0; }
+  .policy-versions .link-btn { background: none; border: 0; padding: 0; height: auto; color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; }
   section { margin-bottom: 28px; }
   .provider-name { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
   .le-provider-icon { width: 18px; height: 18px; flex: none; }
@@ -1185,7 +1190,9 @@ ${consoleShellScript}
         '<textarea id="policiesText" rows="8" placeholder="- Refunds within 30 days of purchase.&#10;- Never share customer details with other customers.&#10;- Reply in the language the customer wrote in.&#10;- Sign emails: The Support Team">' + escapeHtml(p.policies || '') + '</textarea>' +
         '<div><button type="submit" class="primary">Save</button></div>' +
         '<div id="policiesMsg" class="hint"></div>' +
-      '</form>';
+      '</form>' +
+      '<div id="policiesVersions" class="policy-versions"></div>';
+    loadPolicyVersions();
     var form = document.getElementById('policiesForm');
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -1198,9 +1205,42 @@ ${consoleShellScript}
         .then(function (r) {
           btn.disabled = false;
           msg.innerHTML = r.ok ? 'Saved. Every workflow' + String.fromCharCode(8217) + 's next run reads them.' : '<span class="error">' + escapeHtml(r.body.error || 'Could not save') + '</span>';
+          if (r.ok) loadPolicyVersions();
         })
         .catch(function (err) { btn.disabled = false; msg.innerHTML = '<span class="error">' + escapeHtml(err.message) + '</span>'; });
     });
+  }
+
+  // Every saved version of the policies: who saved it, when and why; any
+  // earlier one can be read or restored (saved as a new version).
+  function loadPolicyVersions() {
+    var box = document.getElementById('policiesVersions');
+    if (!box) return;
+    fetch('/config/policies/versions', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        var versions = (data && data.versions) || [];
+        if (versions.length < 2) { box.innerHTML = ''; return; }
+        var when = function (v) { return new Date(v.at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+        box.innerHTML = '<details><summary>History (' + versions.length + ' versions)</summary><ol>' + versions.map(function (v) {
+          var current = v.number === data.current;
+          return '<li data-version="' + v.number + '"><div><strong>v' + v.number + '</strong> <span class="hint">' + [v.by ? 'by ' + escapeHtml(v.by) : '', escapeHtml(when(v)), v.reason ? escapeHtml(v.reason) : ''].filter(Boolean).join(' ' + String.fromCharCode(183) + ' ') + '</span>' +
+            (current ? ' <span class="le-pill good">In use</span>' : ' <button type="button" class="link-btn" data-restore>Restore</button>') + '</div>' +
+            '<pre class="hint">' + escapeHtml(v.content || '(empty)') + '</pre></li>';
+        }).join('') + '</ol></details>';
+        box.querySelectorAll('[data-restore]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            if (btn.getAttribute('data-confirming') !== '1') { btn.setAttribute('data-confirming', '1'); btn.textContent = 'Click again to restore'; return; }
+            btn.disabled = true;
+            var n = btn.closest('li').getAttribute('data-version');
+            fetch('/config/policies/versions/' + n + '/restore', { method: 'POST' })
+              .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'Could not restore'); }); })
+              .then(loadPolicies)
+              .catch(function (err) { btn.disabled = false; btn.textContent = err.message; });
+          });
+        });
+      })
+      .catch(function () {});
   }
 
   function loadPolicies() {

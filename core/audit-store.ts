@@ -278,6 +278,13 @@ export function listEvents(filter: EventFilter = {}, database = auditDb()): Audi
   return (database.prepare(sql).all(...args) as Record<string, unknown>[]).map(eventOf)
 }
 
+/** Everyone named on an event, most recent first (for a filter). */
+export function eventPeople(limit = 200, database = auditDb()): string[] {
+  if (!database) return []
+  const rows = database.prepare('SELECT by, MAX(id) AS last FROM events WHERE by IS NOT NULL GROUP BY by ORDER BY last DESC LIMIT ?').all(limit) as { by: string }[]
+  return rows.map((r) => r.by)
+}
+
 function eventOf(r: Record<string, unknown>): AuditEvent {
   return {
     id: Number(r.id),

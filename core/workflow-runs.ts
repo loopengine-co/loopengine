@@ -150,6 +150,40 @@ export interface RunStore {
   prune?(): Promise<void>
   /** A workflow's runs started at or after `since`, however many. */
   since?(agent: string, workflowId: string, since: string): Promise<WorkflowRun[]>
+  /** Every kept run matching the filter, newest first. */
+  search?(filter: RunSearch): Promise<WorkflowRun[]>
+}
+
+/** What to look for among the runs kept (the Audit page's Cases). */
+export interface RunSearch {
+  /** Text anywhere in the run: inputs, result, error, decisions. */
+  q?: string
+  agent?: string
+  /** Only these agents' runs. */
+  agents?: string[]
+  workflowId?: string
+  status?: WorkflowRunStatus
+  /** Someone who decided or answered something in it. */
+  by?: string
+  /** Started within these ISO times, inclusive. */
+  since?: string
+  until?: string
+  /** Started before this ISO time (the next page). */
+  before?: string
+  limit?: number
+}
+
+function matchesSearch(run: WorkflowRun, f: RunSearch): boolean {
+  const people = [...(run.decisions ?? []), ...(run.answers ?? [])].map((d) => d.by)
+  return (!f.agent || run.agent === f.agent)
+    && (!f.agents || f.agents.includes(run.agent))
+    && (!f.workflowId || run.workflow_id === f.workflowId)
+    && (!f.status || run.status === f.status)
+    && (!f.by || people.includes(f.by))
+    && (!f.since || run.started_at >= f.since)
+    && (!f.until || run.started_at <= f.until)
+    && (!f.before || run.started_at < f.before)
+    && (!f.q || JSON.stringify(run).toLowerCase().includes(f.q.toLowerCase()))
 }
 
 const fileMutex = new KeyedMutex()
@@ -288,6 +322,27 @@ export class SqliteRunStore implements RunStore {
     return this.db.prepare('SELECT data FROM runs WHERE agent = ? AND workflow_id = ? AND started_at >= ? ORDER BY started_at').all(agent, workflowId, since).map((r) => this.read(r))
   }
 
+  async search(f: RunSearch): Promise<WorkflowRun[]> {
+    const where: string[] = []
+    const args: string[] = []
+    const add = (clause: string, ...values: string[]) => {
+      where.push(clause)
+      args.push(...values)
+    }
+    if (f.agent) add('agent = ?', f.agent)
+    if (f.agents) add(`agent IN (${f.agents.map(() => '?').join(', ') || "''"})`, ...f.agents)
+    if (f.workflowId) add('workflow_id = ?', f.workflowId)
+    if (f.status) add('status = ?', f.status)
+    if (f.since) add('started_at >= ?', f.since)
+    if (f.until) add('started_at <= ?', f.until)
+    if (f.before) add('started_at < ?', f.before)
+    if (f.by) add("(EXISTS (SELECT 1 FROM json_each(runs.data, '$.decisions') WHERE json_extract(value, '$.by') = ?) OR EXISTS (SELECT 1 FROM json_each(runs.data, '$.answers') WHERE json_extract(value, '$.by') = ?))", f.by, f.by)
+    if (f.q) add("data LIKE ? ESCAPE '\\'", `%${f.q.replace(/[\\%_]/g, (c) => '\\' + c)}%`)
+    const limit = Math.min(Math.max(f.limit ?? 50, 1), 200)
+    const sql = `SELECT data FROM runs${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY started_at DESC LIMIT ${limit}`
+    return this.db.prepare(sql).all(...args).map((r) => this.read(r))
+  }
+
   async bySession(sessionId: string): Promise<WorkflowRun | undefined> {
     const row = this.db.prepare('SELECT data FROM runs WHERE session_id = ? ORDER BY started_at DESC LIMIT 1').get(sessionId)
     return row ? this.read(row) : undefined
@@ -354,6 +409,15 @@ export async function runsSince(agent: string, workflowId: string, since: string
   const store = getRunStore()
   if (store.since) return store.since(agent, workflowId, since)
   return (await listRuns(agent, { workflowId })).filter((r) => r.started_at >= since).reverse()
+}
+
+/** Runs matching the filter, newest first: every one the store keeps
+ * (the console's list where it keeps no more). */
+export async function searchRuns(filter: RunSearch): Promise<WorkflowRun[]> {
+  const store = getRunStore()
+  if (store.search) return store.search(filter)
+  const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200)
+  return (await store.list()).filter((r) => matchesSearch(r, filter)).slice(0, limit)
 }
 
 /** One of an agent's runs; undefined for another agent's. */

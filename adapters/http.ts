@@ -87,14 +87,16 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
-import { briefContent, briefFromContent, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind } from '#core/audit-store.js'
+import { briefContent, briefFromContent, eventPeople, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
+import { caseRow, eventsCsv } from '#web/audit-admin.js'
+import { auditPageHtml } from '#web/audit-page.js'
 import { changeOf, keptBody } from '#web/change-log.js'
 import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
 import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
 import { EvidenceError, type StandIn, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
-import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, type WorkflowRun } from '#core/workflow-runs.js'
+import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
 import {
   TriggerError, checkRunDelivery, createTrigger, deliveryId, fillChatNotice, findTriggerByToken, getTriggerStore, listTriggers, paramsFromPayload, parsePayload, passesFilter,
@@ -2504,6 +2506,24 @@ function noteBrief(agent: string, workflowId: string, about: { by?: string; reas
 }
 function notePolicies(about: { by?: string; reason?: string } = {}): number | undefined {
   return noteVersion({ agent: '', workflowId: '', kind: 'policies' }, readWorkspacePolicies(process.cwd()), about)
+}
+
+// The Audit log's filters, from a request's query (?agent, workflow,
+// kind, by, since, until, q, before, limit).
+function eventFilterOf(req: IncomingMessage): EventFilter {
+  const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+  const kind = q.get('kind')
+  return {
+    ...(q.get('agent') ? { agent: q.get('agent')! } : {}),
+    ...(q.get('workflow') ? { workflowId: q.get('workflow')! } : {}),
+    ...(kind === 'decision' || kind === 'answer' || kind === 'feedback' || kind === 'change' ? { kind: kind as AuditEventKind } : {}),
+    ...(q.get('by') ? { by: q.get('by')! } : {}),
+    ...(q.get('since') ? { since: q.get('since')! } : {}),
+    ...(q.get('until') ? { until: q.get('until')! } : {}),
+    ...(q.get('q') ? { q: q.get('q')! } : {}),
+    ...(Number(q.get('before')) > 0 ? { before: Number(q.get('before')) } : {}),
+    ...(Number(q.get('limit')) > 0 ? { limit: Number(q.get('limit')) } : {}),
+  }
 }
 
 // Who made a change, for its version: the signed-in person, else what a
@@ -5591,24 +5611,78 @@ const server = createServer(async (req, res) => {
     }
     // Settings → Shared policies (web/global-config.ts): the business's
     // rules every workflow run reads (policies.md in the project).
-    // The audit log: changes, decisions, answers and feedback, newest
-    // first, filtered (core/audit-store.ts's listEvents).
-    if (req.method === 'GET' && pathname === '/audit') {
+    // The Audit page (web/audit-page.ts) for a browser; for anything
+    // else the log itself: changes, decisions, answers and feedback,
+    // newest first, filtered (core/audit-store.ts's listEvents).
+    if (req.method === 'GET' && pathname === '/audit' && String(req.headers.accept ?? '').includes('text/html')) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(auditPageHtml)
+      return
+    }
+    if (req.method === 'GET' && (pathname === '/audit' || pathname === '/audit/events')) {
+      const events = listEvents(eventFilterOf(req))
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ events, next: events.length ? events.at(-1)!.id : null }))
+      return
+    }
+    // The same log as a CSV file, up to 10,000 rows.
+    if (req.method === 'GET' && pathname === '/audit/events.csv') {
+      const filter = eventFilterOf(req)
+      const events: ReturnType<typeof listEvents> = []
+      let before = filter.before
+      while (events.length < 10_000) {
+        const page = listEvents({ ...filter, limit: 500, ...(before ? { before } : {}) })
+        events.push(...page)
+        if (page.length < 500) break
+        before = page.at(-1)!.id
+      }
+      const name = `audit-${new Date().toISOString().slice(0, 10)}.csv`
+      res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="${name}"` }).end('\ufeff' + eventsCsv(events))
+      return
+    }
+    // Every case kept, searched (the Audit page's Cases).
+    if (req.method === 'GET' && pathname === '/audit/cases') {
       const q = new URL(req.url ?? '/', 'http://localhost').searchParams
-      const kind = q.get('kind')
-      const events = listEvents({
+      const status = q.get('status')
+      const runs = await searchRuns({
+        ...(q.get('q') ? { q: q.get('q')! } : {}),
         ...(q.get('agent') ? { agent: q.get('agent')! } : {}),
         ...(q.get('workflow') ? { workflowId: q.get('workflow')! } : {}),
-        ...(kind === 'decision' || kind === 'answer' || kind === 'feedback' || kind === 'change' ? { kind: kind as AuditEventKind } : {}),
+        ...(status === 'running' || status === 'awaiting_approval' || status === 'done' || status === 'error' ? { status } : {}),
         ...(q.get('by') ? { by: q.get('by')! } : {}),
         ...(q.get('since') ? { since: q.get('since')! } : {}),
         ...(q.get('until') ? { until: q.get('until')! } : {}),
-        ...(q.get('q') ? { q: q.get('q')! } : {}),
-        ...(Number(q.get('before')) > 0 ? { before: Number(q.get('before')) } : {}),
-        ...(Number(q.get('limit')) > 0 ? { limit: Number(q.get('limit')) } : {}),
+        ...(q.get('before') ? { before: q.get('before')! } : {}),
+        limit: 50,
       })
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ events, next: events.length ? events.at(-1)!.id : null }))
+      const cases = runs.map((r) => caseRow(r, inboxDeps.workflowTitle(r.agent, r.workflow_id)))
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ cases, next: runs.length === 50 ? runs.at(-1)!.started_at : null }))
       return
+    }
+    // What the Audit page's filters offer: agents, workflows, people.
+    if (req.method === 'GET' && pathname === '/audit/filters') {
+      const agents = listAgents().filter((name) => getEntry(name))
+      const workflows = agents.flatMap((agent) => readWorkflows(agentDir(agent)).map((w) => ({ agent, id: w.id, title: w.title })))
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({
+        agents: agents.map((name) => ({ name, label: getEntry(name)?.config.displayName ?? name })),
+        workflows,
+        people: eventPeople(),
+      }))
+      return
+    }
+    // Shared policies' versions, newest first, and restoring one.
+    if (req.method === 'GET' && pathname === '/config/policies/versions') {
+      const current = notePolicies()
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ current: current ?? null, versions: listVersions({ agent: '', workflowId: '', kind: 'policies' }) }))
+      return
+    }
+    const policyRestore = req.method === 'POST' && pathname.match(/^\/config\/policies\/versions\/([1-9][0-9]*)\/restore$/)
+    if (policyRestore) {
+      const version = getVersion({ agent: '', workflowId: '', kind: 'policies' }, Number(policyRestore[1]))
+      const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      if (!version) return void json(404, { error: `No version ${policyRestore[1]} of the shared policies.` })
+      notePolicies()
+      writeWorkspacePolicies(process.cwd(), version.content)
+      const current = notePolicies({ by: changedBy(req), reason: `Restored version ${version.number}` })
+      return void json(200, { current: current ?? null, versions: listVersions({ agent: '', workflowId: '', kind: 'policies' }) })
     }
     if (req.method === 'GET' && pathname === '/config/policies') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))

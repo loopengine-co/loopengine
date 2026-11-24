@@ -38,10 +38,13 @@ const WORKFLOWS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none"
 // An inbox tray, for the Inbox.
 const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
 
+// A clipboard with a tick, for Audit.
+const AUDIT_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/></svg>'
+
 // A gear, for Settings.
 const SETTINGS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 
-// Two columns: the sections (Inbox, Agents, Workflows, Settings), and
+// Two columns: the sections (Inbox, Agents, Workflows, Audit, Settings), and
 // beside them what's in the current one. Goals and Jobs stay at /goals
 // and /jobs, out of the menu: LoopEngine is about workflows. Pointing at
 // another section shows its column instead, until the pointer leaves.
@@ -53,6 +56,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     <a class="le-rail-item" href="/inbox" data-le-nav-head="inbox" data-le-section="inbox">${INBOX_ICON}<span>Inbox</span><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></a>
     <a class="le-rail-item" href="/agents" data-le-nav-head="agents" data-le-section="agents">${AGENTS_ICON}<span>Agents</span></a>
     <a class="le-rail-item" href="/workflows" data-le-nav-head="workflows" data-le-section="workflows">${WORKFLOWS_ICON}<span>Workflows</span></a>
+    <a class="le-rail-item" href="/audit" data-le-nav-head="audit" data-le-section="audit">${AUDIT_ICON}<span>Audit</span></a>
     <span class="le-rail-gap"></span>
     <a class="le-rail-item" href="/config?section=settings" data-le-nav-head="settings" data-le-section="settings">${SETTINGS_ICON}<span>Settings</span></a>
     <div class="le-who" id="leWho" hidden></div>
@@ -394,7 +398,8 @@ export const consoleShellScript: string = `<script>
     : page === 'agents' || page === 'agent-config' || page === 'chat' || page === 'interview' ? 'agents'
     : page === 'workflows' || page === 'workflows-overview' ? 'workflows'
     : page === 'config' ? 'settings'
-    : page === 'inbox' ? 'inbox' : '';
+    : page === 'inbox' ? 'inbox'
+    : page === 'audit' ? 'audit' : '';
   var railItems = document.querySelectorAll('[data-le-section]');
   for (var ri = 0; ri < railItems.length; ri++) {
     if (railItems[ri].getAttribute('data-le-section') === section0) railItems[ri].classList.add('is-current');
