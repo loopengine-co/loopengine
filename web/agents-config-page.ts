@@ -209,6 +209,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
   .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
+  .wf-health { display: grid; gap: 12px; margin-bottom: 8px; }
+  .wf-health-alert { padding: 10px 12px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); font-size: 13px; font-weight: 600; }
+  .wf-health-chart { margin: 0; display: grid; gap: 4px; }
+  .wf-health-chart svg { width: 100%; height: 96px; display: block; border-bottom: 1px solid var(--line); }
+  .wf-health-chart figcaption { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-faint); }
+  .wf-health-table { overflow-x: auto; }
+  .wf-health-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .wf-health-table th { text-align: left; font-weight: 600; color: var(--ink-muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .wf-health-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .wf-change-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 13px; }
   .wf-change-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
   .wf-change-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); min-width: 64px; }
@@ -1034,6 +1043,66 @@ ${renderMarkdownScript}
     if (key === 'changes') loadWorkflowChanges(card);
   }
 
+  // The Health panel: the last 30 days of runs, as totals, day by day and
+  // per brief version, and any alert (a rate that just got worse).
+  function loadWorkflowHealth(card, base) {
+    var box = card.querySelector('.wf-health');
+    if (!box) return;
+    fetch(base + '/health', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (h) { box.innerHTML = '<h4 class="wf-sub">Health, last ' + h.days + ' days</h4>' + workflowHealthHtml(h); })
+      .catch(function (err) { box.innerHTML = '<h4 class="wf-sub">Health</h4><p class="error">Could not load it: ' + escapeHtml(err.message) + '</p>'; });
+  }
+
+  function healthPct(part, whole) { return whole ? Math.round(100 * part / whole) + '%' : String.fromCharCode(8212); }
+  function healthTime(ms) {
+    if (ms == null) return String.fromCharCode(8212);
+    if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
+    var min = Math.round(ms / 60000);
+    return min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
+  }
+  function healthCost(usd) { return usd == null ? String.fromCharCode(8212) : '$' + (usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3)); }
+
+  // Runs per day as bars, the failed part of each in red.
+  function healthChartHtml(daily) {
+    var max = 1;
+    daily.forEach(function (d) { if (d.runs > max) max = d.runs; });
+    var w = 600, h = 96, gap = 2, bw = (w - gap * (daily.length - 1)) / daily.length;
+    var bars = daily.map(function (d, i) {
+      var x = (i * (bw + gap)).toFixed(1);
+      var all = d.runs / max * (h - 4), bad = d.failed / max * (h - 4);
+      var tip = '<title>' + escapeHtml(d.date) + ': ' + d.runs + ' run' + (d.runs === 1 ? '' : 's') + (d.failed ? ', ' + d.failed + ' failed' : '') + '</title>';
+      return '<g>' + tip + '<rect x="' + x + '" y="0" width="' + bw.toFixed(1) + '" height="' + h + '" fill="transparent"/>' +
+        (d.runs ? '<rect x="' + x + '" y="' + (h - all).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + all.toFixed(1) + '" rx="1.5" fill="var(--accent)" opacity="0.75"/>' : '') +
+        (d.failed ? '<rect x="' + x + '" y="' + (h - bad).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bad.toFixed(1) + '" rx="1.5" fill="var(--bad)"/>' : '') + '</g>';
+    }).join('');
+    var first = daily[0] ? daily[0].date.slice(5) : '', last = daily.length ? daily[daily.length - 1].date.slice(5) : '';
+    return '<figure class="wf-health-chart"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="Runs per day, failed in red">' + bars + '</svg>' +
+      '<figcaption><span>' + escapeHtml(first) + '</span><span class="hint">Runs per day' + DOT + 'failed in red' + DOT + 'most ' + max + '</span><span>' + escapeHtml(last) + '</span></figcaption></figure>';
+  }
+
+  function workflowHealthHtml(h) {
+    var t = h.total;
+    if (!t.runs) return '<p class="hint" style="margin:0">No runs in the last ' + h.days + ' days.</p>';
+    var decided = t.approved + t.denied;
+    var alerts = (h.alerts || []).map(function (a) { return '<div class="wf-health-alert" role="alert">' + escapeHtml(a.text) + '</div>'; }).join('');
+    var stat = function (label, value, detail) { return '<div class="wf-score"><span class="wf-score-k">' + label + '</span><strong class="wf-score-v">' + value + '</strong>' + (detail ? '<span class="hint">' + detail + '</span>' : '') + '</div>'; };
+    var stats = '<div class="wf-scores">' +
+      stat('Runs', String(t.runs), t.failed + ' failed (' + healthPct(t.failed, t.finished) + ')') +
+      stat('Approved', healthPct(t.approved, decided), decided ? t.changed + ' changed first' + DOT + t.denied + ' denied' : 'none asked') +
+      stat('Questions', t.runs ? (t.questions / t.runs).toFixed(1) : '0', 'per run') +
+      stat('Time', healthTime(t.medianMs), 'middle run, start to finish') +
+      stat('Cost', healthCost(t.costPerRunUsd), t.costPerRunUsd == null ? 'no price for its model' : 'per run' + (t.pricedRuns < t.runs ? ', from ' + t.pricedRuns + ' of ' + t.runs + ' runs' : '')) +
+      '</div>';
+    var rows = h.versions.map(function (v) {
+      var d = v.approved + v.denied;
+      return '<tr><td>' + (v.version == null ? '<span class="hint">before versions</span>' : 'v' + v.version) + '</td><td>' + v.runs + '</td><td>' + healthPct(v.failed, v.finished) + '</td><td>' + healthPct(v.approved, d) + '</td><td>' + healthPct(v.changed + v.denied, d) + '</td>' +
+        '<td>' + (v.runs ? (v.questions / v.runs).toFixed(1) : '0') + '</td><td>' + (v.feedback ? healthPct(v.unedited, v.feedback) : String.fromCharCode(8212)) + '</td><td>' + healthTime(v.medianMs) + '</td><td>' + healthCost(v.costPerRunUsd) + '</td></tr>';
+    }).join('');
+    return alerts + stats + healthChartHtml(h.daily) +
+      '<div class="wf-health-table"><table><thead><tr><th>Brief</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
   // The Changes tab: every change to this workflow's settings, and every
   // decision, answer and feedback in its runs, newest first, with who.
   function loadWorkflowChanges(card) {
@@ -1322,7 +1391,9 @@ ${renderMarkdownScript}
           (last && last.result ? '<div class="workflow-run-entry-label">Latest result' + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div>' : '') +
         '</details></li>';
     }).join('');
-    return tiles + feedbackHint + critSection +
+    // On the workflow's page: its health, filled by loadWorkflowHealth.
+    return (workflowPageId ? '<section class="wf-health"><h4 class="wf-sub">Health, last 30 days</h4><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></section>' : '') +
+      tiles + feedbackHint + critSection +
       '<h4 class="wf-sub">Eval cases</h4>' +
       '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Running ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Run evals') + '</button>' +
         '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + (round.briefVersion ? DOT + 'brief v' + round.briefVersion : '') + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: tools that need approval aren' + RSQ + 't run, and nobody is asked anything.') + '</span></div>' +
@@ -2063,6 +2134,7 @@ ${renderMarkdownScript}
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
     loadBriefVersions(card, base);
+    loadWorkflowHealth(card, base);
     if (workflowTabs[id] === 'changes') loadWorkflowChanges(card);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // Opens the workflow's page on its Triggers tab.

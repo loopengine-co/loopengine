@@ -249,11 +249,13 @@ ${renderMarkdownScript}
     return min < 60 ? min + ' min' : Math.floor(min / 60) + ' h' + (min % 60 ? ' ' + (min % 60) + ' min' : '');
   }
   function count(n) { return Number(n).toLocaleString(); }
+  // Dollars: cents to the cent, smaller amounts to a tenth of a cent.
+  function dollars(n) { return '$' + (n >= 0.1 ? n.toFixed(2) : n >= 0.001 ? n.toFixed(3) : n > 0 ? '<0.001' : '0'); }
 
   // A step's model call (tokens, time) and the wait after it.
   function stepMeta(s) {
     var parts = [];
-    if (s.call) parts.push('model ' + (s.call.durationMs != null ? duration(s.call.durationMs) + ', ' : '') + count(s.call.inputTokens) + ' in ' + String.fromCharCode(183) + ' ' + count(s.call.outputTokens) + ' out tokens');
+    if (s.call) parts.push('model ' + (s.call.durationMs != null ? duration(s.call.durationMs) + ', ' : '') + count(s.call.inputTokens) + ' in ' + String.fromCharCode(183) + ' ' + count(s.call.outputTokens) + ' out tokens' + (s.call.costUsd != null ? ', ' + dollars(s.call.costUsd) : ''));
     if (s.waitMs != null) parts.push((s.kind === 'question' ? 'answered after ' : 'took ') + duration(s.waitMs));
     return parts.length ? '<span class="ib-step-meta">' + esc(parts.join(DOT)) + '</span>' : '';
   }
@@ -307,6 +309,7 @@ ${renderMarkdownScript}
       t.calls + (t.calls === 1 ? ' model call' : ' model calls'),
       count(t.inputTokens) + ' tokens in, ' + count(t.outputTokens) + ' out',
       'model time ' + duration(t.modelMs),
+      t.costUsd != null ? 'cost ' + dollars(t.costUsd) : '',
       t.elapsedMs != null ? 'start to finish ' + duration(t.elapsedMs) : '',
     ].filter(Boolean).join(DOT)) + '</p>';
   }

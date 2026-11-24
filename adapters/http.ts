@@ -87,13 +87,14 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
-import { briefContent, briefFromContent, getVersion, listEvents, listVersions, noteVersion, recordEvent, runEvents, type AuditEventKind } from '#core/audit-store.js'
+import { briefContent, briefFromContent, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind } from '#core/audit-store.js'
 import { changeOf, keptBody } from '#web/change-log.js'
-import { sessionUsage } from '#core/usage.js'
+import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
+import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
 import { EvidenceError, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
-import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
+import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
 import {
   TriggerError, checkRunDelivery, createTrigger, deliveryId, fillChatNotice, findTriggerByToken, getTriggerStore, listTriggers, paramsFromPayload, parsePayload, passesFilter,
@@ -179,7 +180,7 @@ import {
   ActauthRuleExistsError,
   ActauthRuleNotFoundError,
 } from '#web/actauth-admin.js'
-import { describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from '#web/global-config.js'
+import { callCost, describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from '#web/global-config.js'
 import { workspaceTimeZone } from '#core/time-zone.js'
 import { scaffoldAgent, AgentNameError, AgentExistsError, AgentModelError, type AgentTemplateOptions } from '#bin/cli.js'
 import { createTrackedApprover, listApprovals, decideApproval, findApproval } from '#web/web-approver.js'
@@ -1911,6 +1912,11 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   try {
     if (!id && req.method === 'GET') return json(200, await workflowsView(agentName))
     if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
+    if (id && action === 'health' && req.method === 'GET') {
+      if (!readWorkflow(dir, id)) return json(404, { error: `No workflow ${id}.` })
+      const days = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('days'))
+      return json(200, await healthOf(agentName, id, days > 0 && days <= 400 ? Math.round(days) : 30))
+    }
     // The Messages tab: where every run's updates and decisions go.
     if (id && action === 'messages' && req.method === 'PUT') return json(200, updateWorkflowMessages(dir, id, await readJsonBody(req)))
     if (id && action === 'run' && req.method === 'POST') {
@@ -2414,7 +2420,49 @@ const inboxDeps: InboxDeps = {
   history: (run) => sessions.getHistory(`default:${process.env.LOOPENGINE_ENV ?? 'production'}:${run.agent}:${run.session_id}`),
   workflowTitle: (agent, workflowId) => (workflowId && getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.title : undefined),
   run: (runId) => (/^[A-Za-z0-9_-]+$/.test(runId) ? getRunStore().get(runId) : Promise.resolve(undefined)),
-  usage: (run) => sessionUsage(run.agent, run.session_id),
+  usage: (run) => pricedUsage(sessionUsage(run.agent, run.session_id)),
+}
+
+// A workflow's health over the last `days` days (web/workflow-health.ts):
+// its runs, and each run's cost where every model call has a price.
+async function healthOf(agent: string, workflowId: string, days = 30): Promise<WorkflowHealth> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+  const runs = await runsSince(agent, workflowId, since)
+  const calls = usageBySession(agent, runs.map((r) => r.session_id))
+  const costs = new Map<string, number>()
+  for (const run of runs) {
+    const rows = pricedUsage(calls.get(run.session_id) ?? [])
+    if (rows.length && rows.every((u) => u.costUsd != null)) costs.set(run.run_id, rows.reduce((n, u) => n + u.costUsd!, 0))
+  }
+  return workflowHealth(runs, costs, { days })
+}
+
+// Hourly: a workflow whose health just got worse (a health alert) says
+// so in its agent's messaging app, at most once a week per measure.
+async function sendHealthAlerts(): Promise<void> {
+  for (const agent of listAgents()) {
+    const entry = getEntry(agent)
+    if (!entry) continue
+    for (const workflow of readWorkflows(agentDir(agent))) {
+      const { alerts } = await healthOf(agent, workflow.id)
+      for (const alert of alerts) {
+        const key = `health_alert:${agent}:${workflow.id}:${alert.measure}`
+        const last = readMeta(key)
+        if (last && Date.now() - Date.parse(last) < 7 * 24 * 60 * 60 * 1000) continue
+        const base = process.env.LOOPENGINE_PUBLIC_URL?.trim().replace(/\/+$/, '')
+        const page = base ? ` ${base}/agents/config?agent=${encodeURIComponent(agent)}&tab=workflows&workflow=${encodeURIComponent(workflow.id)}&wtab=evidence` : ''
+        if (announceToChat(entry.config, `Health alert for ${workflow.title}: ${alert.text}${page}`)) writeMeta(key, new Date().toISOString())
+      }
+    }
+  }
+}
+
+// Model calls with what each cost, where models.yaml has its price.
+function pricedUsage(rows: UsageRow[]): UsageRow[] {
+  return rows.map((u) => {
+    const costUsd = callCost(u.provider, u.model, u.inputTokens, u.outputTokens)
+    return costUsd === undefined ? u : { ...u, costUsd }
+  })
 }
 
 // The agents' names, for the host's dashboard (web/agent-names-sync.ts):
@@ -5412,7 +5460,7 @@ const server = createServer(async (req, res) => {
       await handleWorkflowTriggers(req, res, decodeURIComponent(triggersMatch[1]), triggersMatch[2], triggersMatch[3], triggersMatch[4])
       return
     }
-    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions))?(?:\/([1-9][0-9]*)\/restore)?$/)
+    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions|health))?(?:\/([1-9][0-9]*)\/restore)?$/)
     if (agentWorkflowsMatch && (!agentWorkflowsMatch[4] || agentWorkflowsMatch[3] === 'versions')) {
       await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3], agentWorkflowsMatch[4] ? Number(agentWorkflowsMatch[4]) : undefined)
       return
@@ -6105,6 +6153,8 @@ server.listen(port, () => {
   const checkGoals = () => void checkBuiltWorkflows(goalsDeps).catch((err) => console.error('[loopengine] checking goal workflows failed:', err))
   checkGoals()
   setInterval(checkGoals, 24 * 60 * 60 * 1000).unref()
+  const checkHealth = () => void sendHealthAlerts().catch((err) => console.error('[loopengine] checking workflow health failed:', err))
+  setInterval(checkHealth, 60 * 60 * 1000).unref()
   startLeverEventsSync(projectDir(), (m) => console.log(m))
   reportAgentNames()
   // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.

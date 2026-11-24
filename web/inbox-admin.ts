@@ -113,7 +113,7 @@ export type InboxStep = (
   | { kind: 'question'; question: string; answer?: string }
 ) & {
   /** On the first step of each model reply: that model call. */
-  call?: { inputTokens: number; outputTokens: number; durationMs?: number; model?: string }
+  call?: { inputTokens: number; outputTokens: number; durationMs?: number; model?: string; costUsd?: number }
   /** On the first tool or question step of a reply: the time from the
    * end of that model call to the start of the next (the tools running,
    * or a person deciding). */
@@ -129,6 +129,8 @@ export interface InboxTotals {
   modelMs: number
   /** Start to finish (or to now, for one still open). */
   elapsedMs?: number
+  /** US dollars, when every call's model has a price. */
+  costUsd?: number
 }
 
 /** What the agent did, in order: its words, the tools it used with what
@@ -156,7 +158,7 @@ export function timelineOf(history: Message[], usage: UsageRow[] = []): InboxSte
     let first = true
     let waitShown = false
     const mark = (step: InboxStep, action: boolean): InboxStep => {
-      if (first && call) step.call = { inputTokens: call.inputTokens, outputTokens: call.outputTokens, ...(call.durationMs != null ? { durationMs: call.durationMs } : {}), ...(call.model ? { model: call.model } : {}) }
+      if (first && call) step.call = { inputTokens: call.inputTokens, outputTokens: call.outputTokens, ...(call.durationMs != null ? { durationMs: call.durationMs } : {}), ...(call.model ? { model: call.model } : {}), ...(call.costUsd != null ? { costUsd: call.costUsd } : {}) }
       if (action && !waitShown && (!asks || step.kind === 'question') && call && next) {
         step.waitMs = Math.max(0, startOf(next) - endOf(call))
         waitShown = true
@@ -208,6 +210,7 @@ export function totalsOf(run: WorkflowRun, usage: UsageRow[]): InboxTotals | und
     outputTokens: usage.reduce((n, u) => n + u.outputTokens, 0),
     modelMs: usage.reduce((n, u) => n + (u.durationMs ?? 0), 0),
     elapsedMs: Math.max(0, end - Date.parse(run.started_at)),
+    ...(usage.every((u) => u.costUsd != null) ? { costUsd: usage.reduce((n, u) => n + u.costUsd!, 0) } : {}),
   }
 }
 

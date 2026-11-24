@@ -148,6 +148,8 @@ export interface RunStore {
   bySession?(sessionId: string): Promise<WorkflowRun | undefined>
   /** Drops what's past keeping, instead of the runner's per-agent cap. */
   prune?(): Promise<void>
+  /** A workflow's runs started at or after `since`, however many. */
+  since?(agent: string, workflowId: string, since: string): Promise<WorkflowRun[]>
 }
 
 const fileMutex = new KeyedMutex()
@@ -282,6 +284,10 @@ export class SqliteRunStore implements RunStore {
     return rows.map((r) => this.read(r))
   }
 
+  async since(agent: string, workflowId: string, since: string): Promise<WorkflowRun[]> {
+    return this.db.prepare('SELECT data FROM runs WHERE agent = ? AND workflow_id = ? AND started_at >= ? ORDER BY started_at').all(agent, workflowId, since).map((r) => this.read(r))
+  }
+
   async bySession(sessionId: string): Promise<WorkflowRun | undefined> {
     const row = this.db.prepare('SELECT data FROM runs WHERE session_id = ? ORDER BY started_at DESC LIMIT 1').get(sessionId)
     return row ? this.read(row) : undefined
@@ -340,6 +346,14 @@ export async function listRuns(agent: string, filter: { workflowId?: string; lim
   if (store.forAgent) return store.forAgent(agent, filter)
   const runs = (await getRunStore().list()).filter((r) => r.agent === agent && (!filter.workflowId || r.workflow_id === filter.workflowId))
   return filter.limit ? runs.slice(0, filter.limit) : runs
+}
+
+/** A workflow's runs started at or after `since` (an ISO time), oldest
+ * first; from the console's list where the store keeps no more. */
+export async function runsSince(agent: string, workflowId: string, since: string): Promise<WorkflowRun[]> {
+  const store = getRunStore()
+  if (store.since) return store.since(agent, workflowId, since)
+  return (await listRuns(agent, { workflowId })).filter((r) => r.started_at >= since).reverse()
 }
 
 /** One of an agent's runs; undefined for another agent's. */

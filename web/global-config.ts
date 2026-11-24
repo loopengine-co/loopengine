@@ -219,15 +219,66 @@ export function setDefaultModelsFile(path: string | null): void {
  * reported in `error` and ignored as a whole, so a typo can't hide one
  * provider's models while the rest still load.
  */
-export function readModelsFile(): { models: Partial<Record<ModelProviderInfo['provider'], string[]>>; error?: string } {
+export function readModelsFile(): { models: Partial<Record<ModelProviderInfo['provider'], string[]>>; prices: ModelPrices; error?: string } {
   const shipped = defaultModelsFile ? parseModelsFile(defaultModelsFile, 'models.yaml (shipped)') : { models: {} }
   const path = modelsFilePath()
   const own = path === defaultModelsFile ? { models: {} } : parseModelsFile(path, process.env[MODELS_FILE_ENV]?.trim() || 'models.yaml')
   const error = [shipped.error, own.error].filter(Boolean).join(' ')
-  return { models: { ...shipped.models, ...own.models }, ...(error ? { error } : {}) }
+  const prices: ModelPrices = {}
+  for (const from of [shipped.prices, own.prices]) {
+    for (const [provider, models] of Object.entries(from ?? {})) prices[provider] = { ...prices[provider], ...models }
+  }
+  return { models: { ...shipped.models, ...own.models }, prices, ...(error ? { error } : {}) }
 }
 
-function parseModelsFile(path: string, name: string): { models: Partial<Record<ModelProviderInfo['provider'], string[]>>; error?: string } {
+/** A model's price, in US dollars per million tokens. */
+export interface ModelPrice {
+  input: number
+  output: number
+  /** Input read from the provider's prompt cache, where it's cheaper. */
+  cachedInput?: number
+}
+
+/** provider -> model -> price, from models.yaml's `prices` section:
+ *
+ *   prices:
+ *     openai:
+ *       gpt-6.2-sol: { input: 5, output: 40, cached_input: 0.5 }
+ *
+ * The workspace's file overrides the shipped one model by model. */
+export type ModelPrices = Record<string, Record<string, ModelPrice>>
+
+/** The price of a provider's model, or undefined when none is listed. */
+export function modelPrice(provider: string | undefined, model: string | undefined): ModelPrice | undefined {
+  if (!provider || !model) return undefined
+  return readModelsFile().prices[provider]?.[model]
+}
+
+/** What a call cost in US dollars, or undefined without a price. */
+export function callCost(provider: string | undefined, model: string | undefined, inputTokens: number, outputTokens: number): number | undefined {
+  const price = modelPrice(provider, model)
+  return price ? (inputTokens * price.input + outputTokens * price.output) / 1_000_000 : undefined
+}
+
+function parsePrices(value: unknown, name: string): { prices: ModelPrices; error?: string } {
+  if (value == null) return { prices: {} }
+  const bad = { prices: {}, error: `${name}: 'prices' should map each provider to its models, each { input, output } in US dollars per million tokens.` }
+  if (typeof value !== 'object' || Array.isArray(value)) return bad
+  const prices: ModelPrices = {}
+  for (const [provider, models] of Object.entries(value as Record<string, unknown>)) {
+    if (models == null) continue
+    if (typeof models !== 'object' || Array.isArray(models)) return bad
+    for (const [model, p] of Object.entries(models as Record<string, unknown>)) {
+      const r = p as Record<string, unknown> | null
+      const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0
+      if (!r || typeof r !== 'object' || !num(r.input) || !num(r.output) || (r.cached_input !== undefined && !num(r.cached_input))) return bad
+      ;(prices[provider] ??= {})[model] = { input: r.input as number, output: r.output as number, ...(r.cached_input !== undefined ? { cachedInput: r.cached_input as number } : {}) }
+    }
+  }
+  return { prices }
+}
+
+function parseModelsFile(path: string, name: string): { models: Partial<Record<ModelProviderInfo['provider'], string[]>>; prices?: ModelPrices; error?: string } {
   if (!existsSync(path)) return { models: {} }
   let data: unknown
   try {
@@ -238,8 +289,11 @@ function parseModelsFile(path: string, name: string): { models: Partial<Record<M
   if (data == null) return { models: {} }
   if (typeof data !== 'object' || Array.isArray(data)) return { models: {}, error: `${name} should map each provider to a list of models.` }
 
+  const { prices: priceSection, ...lists } = data as Record<string, unknown>
+  const parsedPrices = parsePrices(priceSection, name)
+  if (parsedPrices.error) return { models: {}, error: parsedPrices.error }
   const models: Partial<Record<ModelProviderInfo['provider'], string[]>> = {}
-  for (const [provider, list] of Object.entries(data as Record<string, unknown>)) {
+  for (const [provider, list] of Object.entries(lists)) {
     if (!modelKeyEnvVar(provider)) {
       return { models: {}, error: `${name}: unknown provider '${provider}'. Use one of ${KNOWN_PROVIDERS.map((p) => p.provider).join(', ')}.` }
     }
@@ -250,7 +304,7 @@ function parseModelsFile(path: string, name: string): { models: Partial<Record<M
     }
     models[provider as ModelProviderInfo['provider']] = [...new Set(list.map((m: string) => m.trim()))]
   }
-  return { models }
+  return { models, prices: parsedPrices.prices }
 }
 
 /**

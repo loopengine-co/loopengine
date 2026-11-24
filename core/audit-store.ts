@@ -195,6 +195,17 @@ export function auditDb(): DatabaseSync | undefined {
   return db ?? undefined
 }
 
+/** A small value kept in the database's meta table (what's been
+ * imported, when an alert was last sent). */
+export function readMeta(key: string, database = auditDb()): string | undefined {
+  const row = database?.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined
+  return row?.value
+}
+
+export function writeMeta(key: string, value: string, database = auditDb()): void {
+  database?.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value)
+}
+
 /** Tests: use this database (or none). */
 export function setAuditDb(next: DatabaseSync | undefined): void {
   db = next ?? null

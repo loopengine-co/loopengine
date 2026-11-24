@@ -79,7 +79,7 @@ describe('models.yaml', () => {
   it('treats an empty entry as left out, and drops duplicates and padding', () => {
     writeModelsFile('openai:\nmeta:\n  - " muse-spark-1.3 "\n  - muse-spark-1.3\n')
 
-    expect(readModelsFile()).toEqual({ models: { meta: ['muse-spark-1.3'] } })
+    expect(readModelsFile()).toEqual({ models: { meta: ['muse-spark-1.3'] }, prices: {} })
   })
 
   it('reports a malformed file, ignores all of it, and still lists models', async () => {
@@ -99,6 +99,32 @@ describe('models.yaml', () => {
     const view = await listProviderModels('anthropic')
     expect(view.models).toContain('claude-sonnet-5-5')
     expect(view.error).toMatch(/unknown provider 'acme'/)
+  })
+})
+
+describe('model prices', () => {
+  it("reads the file's prices, the workspace's overriding the shipped ones model by model", async () => {
+    const { callCost, modelPrice } = await import('#web/global-config.js')
+    const shipped = join(dir, 'shipped.yaml')
+    writeFileSync(shipped, 'openai:\n  - gpt-a\nprices:\n  openai:\n    gpt-a: { input: 2, output: 10 }\n    gpt-b: { input: 1, output: 5 }\n')
+    setDefaultModelsFile(shipped)
+    writeModelsFile('prices:\n  openai:\n    gpt-a: { input: 4, output: 20, cached_input: 0.4 }\n')
+    expect(readModelsFile().error).toBeUndefined()
+    expect(modelPrice('openai', 'gpt-a')).toEqual({ input: 4, output: 20, cachedInput: 0.4 })
+    expect(callCost('openai', 'gpt-b', 1_000_000, 100_000)).toBeCloseTo(1.5)
+    expect(callCost('openai', 'unknown', 10, 10)).toBeUndefined()
+  })
+
+  it('reports a malformed price', () => {
+    writeModelsFile('prices:\n  openai:\n    gpt-a: { input: cheap }\n')
+    expect(readModelsFile().error).toMatch(/prices/)
+  })
+
+  it('ships a price for every listed model but one', () => {
+    setDefaultModelsFile(SHIPPED)
+    const { models, prices } = readModelsFile()
+    const missing = Object.entries(models).flatMap(([provider, list]) => list!.filter((m) => !prices[provider]?.[m]).map((m) => `${provider}/${m}`))
+    expect(missing).toEqual(['gemini/gemini-3.7-flash'])
   })
 })
 

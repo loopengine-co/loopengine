@@ -24,6 +24,8 @@ export interface UsageEvent {
 
 export interface UsageRow extends UsageEvent {
   id: number
+  /** What it cost in US dollars, where the model's price is known. */
+  costUsd?: number
 }
 
 export type UsageSink = (event: UsageEvent) => void
@@ -68,7 +70,27 @@ export function sessionUsage(agent: string, sessionId: string): UsageRow[] {
   const db = auditDb()
   if (!db) return []
   const rows = db.prepare('SELECT * FROM usage WHERE agent = ? AND session_id = ? ORDER BY id').all(agent, sessionId) as Record<string, unknown>[]
-  return rows.map((r) => ({
+  return rows.map(rowOf)
+}
+
+/** Several sessions' model calls, by session, oldest first. */
+export function usageBySession(agent: string, sessionIds: string[]): Map<string, UsageRow[]> {
+  const out = new Map<string, UsageRow[]>()
+  const db = auditDb()
+  if (!db || !sessionIds.length) return out
+  for (let i = 0; i < sessionIds.length; i += 500) {
+    const chunk = sessionIds.slice(i, i + 500)
+    const rows = db.prepare(`SELECT * FROM usage WHERE agent = ? AND session_id IN (${chunk.map(() => '?').join(', ')}) ORDER BY id`).all(agent, ...chunk) as Record<string, unknown>[]
+    for (const r of rows) {
+      const row = rowOf(r)
+      out.set(row.sessionId!, [...(out.get(row.sessionId!) ?? []), row])
+    }
+  }
+  return out
+}
+
+function rowOf(r: Record<string, unknown>): UsageRow {
+  return {
     id: Number(r.id),
     at: String(r.at),
     agent: String(r.agent),
@@ -79,5 +101,5 @@ export function sessionUsage(agent: string, sessionId: string): UsageRow[] {
     inputTokens: Number(r.input_tokens),
     outputTokens: Number(r.output_tokens),
     ...(r.duration_ms != null ? { durationMs: Number(r.duration_ms) } : {}),
-  }))
+  }
 }
