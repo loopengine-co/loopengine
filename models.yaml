@@ -17,10 +17,14 @@
 
 # Taken from each provider's model pages and agent guides (2026-10-31),
 # trimmed to models for agents and checked against the live model lists
-# (2026-11-10). Older generations, "lite" and "mini" models are left out;
-# type one under "Other…" to use it.
+# (2026-11-10), with later models added on 2026-11-24 (OpenAI's GPT-6.2
+# and Gemini 4, both checked against the live lists). Older
+# generations, "lite" and "mini" models are left out; type one under
+# "Other…" to use it.
 
 openai:
+  - gpt-6.2-sol
+  - gpt-6.2-astra
   - gpt-6.1-terra
   - gpt-6.1-sol
   - gpt-6-luna
@@ -38,7 +42,10 @@ anthropic:
   - claude-haiku-5-5
 
 gemini:
+  - gemini-4-neon
   - gemini-4-argon
+  - gemini-4-carbon
+  - gemini-4-hydrogen
   - gemini-3.8-flash
   - gemini-3.7-flash
   - gemini-3.6-flash
