@@ -12,7 +12,9 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
 import { Redis } from 'ioredis'
+import { auditDb } from './audit-store.js'
 import type { ModelContentBlock } from './run-agent.js'
 import { KeyedMutex } from './session-store.js'
 
@@ -185,6 +187,114 @@ export class FileCheckpointStore implements CheckpointStore {
   async close(): Promise<void> {}
 }
 
+/** Checkpoints in the workspace's database (core/audit-store.ts): one
+ * row per open checkpoint, and one per outstanding pendingId pointing at
+ * it. One process, like FileCheckpointStore (`fn` runs tools, so a
+ * checkpoint is held with a mutex, not a transaction). The files of a
+ * FileCheckpointStore in `importFrom` are copied in the first time. */
+export class SqliteCheckpointStore implements CheckpointStore {
+  private readonly db: DatabaseSync
+
+  constructor(db: DatabaseSync, options: { importFrom?: string } = {}) {
+    this.db = db
+    if (options.importFrom) this.importFiles(options.importFrom)
+  }
+
+  private importFiles(dir: string): void {
+    if (this.db.prepare("SELECT value FROM meta WHERE key = 'checkpoints_imported'").get()) return
+    const checkpointsDir = path.join(dir, 'checkpoints')
+    let count = 0
+    if (existsSync(checkpointsDir)) {
+      this.db.exec('BEGIN')
+      try {
+        for (const name of readdirSync(checkpointsDir)) {
+          if (!name.endsWith('.json')) continue
+          try {
+            const checkpoint = JSON.parse(readFileSync(path.join(checkpointsDir, name), 'utf8')) as TurnCheckpoint
+            if (checkpoint.id && !checkpoint.closed && Object.keys(checkpoint.outstanding ?? {}).length) {
+              this.save(checkpoint, true)
+              count++
+            }
+          } catch {
+            // Not a checkpoint: skip it.
+          }
+        }
+        this.db.exec('COMMIT')
+      } catch (err) {
+        this.db.exec('ROLLBACK')
+        throw err
+      }
+    }
+    this.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('checkpoints_imported', ?)").run(`${new Date().toISOString()} ${count}`)
+  }
+
+  private save(checkpoint: TurnCheckpoint, index: boolean): void {
+    this.db.prepare('INSERT OR REPLACE INTO checkpoints (id, agent, session_id, created_at, data) VALUES (?, ?, ?, ?, ?)')
+      .run(checkpoint.id, checkpoint.agent, checkpoint.sessionId, checkpoint.createdAt ?? '', JSON.stringify(checkpoint))
+    if (!index) return
+    const point = this.db.prepare('INSERT OR REPLACE INTO pending (pending_id, checkpoint_id) VALUES (?, ?)')
+    for (const pendingId of Object.keys(checkpoint.outstanding)) point.run(pendingId, checkpoint.id)
+  }
+
+  private load(checkpointId: string): TurnCheckpoint | undefined {
+    const row = this.db.prepare('SELECT data FROM checkpoints WHERE id = ?').get(checkpointId) as { data: string } | undefined
+    return row ? (JSON.parse(row.data) as TurnCheckpoint) : undefined
+  }
+
+  private checkpointIdOf(pendingId: string): string | undefined {
+    const row = this.db.prepare('SELECT checkpoint_id FROM pending WHERE pending_id = ?').get(pendingId) as { checkpoint_id: string } | undefined
+    return row?.checkpoint_id
+  }
+
+  async create(input: CreateCheckpointInput): Promise<TurnCheckpoint> {
+    const checkpoint: TurnCheckpoint = { id: randomUUID(), closed: false, createdAt: new Date().toISOString(), ...input }
+    this.db.exec('BEGIN')
+    try {
+      this.save(checkpoint, true)
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+    return checkpoint
+  }
+
+  async withCheckpoint<T>(
+    pendingId: string,
+    fn: (checkpoint: TurnCheckpoint | undefined) => Promise<{ checkpoint: TurnCheckpoint | undefined; result: T }>,
+  ): Promise<T> {
+    const checkpointId = this.checkpointIdOf(pendingId)
+    if (!checkpointId) return (await fn(undefined)).result
+    return fileMutex.run(checkpointId, async () => {
+      // A sibling's resolution may have closed it while this call waited.
+      const current = this.load(checkpointId)
+      const { checkpoint, result } = await fn(current && !current.closed ? current : undefined)
+      if (checkpoint) {
+        if (checkpoint.closed) {
+          this.db.prepare('DELETE FROM checkpoints WHERE id = ?').run(checkpointId)
+          this.db.prepare('DELETE FROM pending WHERE checkpoint_id = ?').run(checkpointId)
+        } else {
+          this.save(checkpoint, false)
+        }
+      }
+      return result
+    })
+  }
+
+  async get(pendingId: string): Promise<TurnCheckpoint | undefined> {
+    const checkpointId = this.checkpointIdOf(pendingId)
+    const checkpoint = checkpointId ? this.load(checkpointId) : undefined
+    return checkpoint && !checkpoint.closed && checkpoint.outstanding[pendingId] ? checkpoint : undefined
+  }
+
+  async listOpen(): Promise<TurnCheckpoint[]> {
+    const rows = this.db.prepare('SELECT data FROM checkpoints ORDER BY created_at').all() as { data: string }[]
+    return sortOldestFirst(rows.map((r) => JSON.parse(r.data) as TurnCheckpoint).filter((c) => !c.closed && Object.keys(c.outstanding).length))
+  }
+
+  async close(): Promise<void> {}
+}
+
 /** Redis-backed store for multi-instance deployments. Unlike
  * RedisSessionStore's lock (held for an entire turn, including however
  * long a live human takes), this one only ever needs to be held for a
@@ -304,9 +414,13 @@ export class RedisCheckpointStore implements CheckpointStore {
 }
 
 /** Same REDIS_URL-gated pattern as session-store.ts's own
- * createSessionStore(): set -> RedisCheckpointStore, otherwise
- * FileCheckpointStore under .checkpoints. */
+ * createSessionStore(): set -> RedisCheckpointStore; otherwise the
+ * workspace's database, copying in what's under .checkpoints the first
+ * time; FileCheckpointStore under .checkpoints where there's no
+ * database. */
 export function createCheckpointStore(): CheckpointStore {
   const redisUrl = process.env.REDIS_URL
-  return redisUrl ? new RedisCheckpointStore(redisUrl) : new FileCheckpointStore('.checkpoints')
+  if (redisUrl) return new RedisCheckpointStore(redisUrl)
+  const db = auditDb()
+  return db ? new SqliteCheckpointStore(db, { importFrom: '.checkpoints' }) : new FileCheckpointStore('.checkpoints')
 }

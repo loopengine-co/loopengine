@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { FileCheckpointStore, type CreateCheckpointInput } from '../core/durable-approvals.js'
+import { openAuditDb } from '../core/audit-store.js'
+import { FileCheckpointStore, SqliteCheckpointStore, type CheckpointStore, type CreateCheckpointInput } from '../core/durable-approvals.js'
 
 const dirs: string[] = []
 function tmpDir(): string {
@@ -26,9 +27,14 @@ function makeInput(overrides: Partial<CreateCheckpointInput> = {}): CreateCheckp
   }
 }
 
-describe('FileCheckpointStore', () => {
+const stores: [string, (dir: string) => CheckpointStore][] = [
+  ['FileCheckpointStore', (dir) => new FileCheckpointStore(dir)],
+  ['SqliteCheckpointStore', (dir) => new SqliteCheckpointStore(openAuditDb(dir)!)],
+]
+
+describe.each(stores)('%s', (_name, makeStore) => {
   it('gets the open checkpoint a pendingId belongs to, and nothing once it is decided', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     const created = await store.create(makeInput())
     expect((await store.get('p1'))?.id).toBe(created.id)
     expect(await store.get('unknown')).toBeUndefined()
@@ -37,7 +43,7 @@ describe('FileCheckpointStore', () => {
   })
 
   it('lists only checkpoints still waiting on a decision, oldest first', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     const first = await store.create(makeInput({ outstanding: { a1: { toolUseId: 't', tool: 'x', args: {}, reason: 'r' } } }))
     await new Promise((resolve) => setTimeout(resolve, 5))
     const second = await store.create(makeInput({ agent: 'other', outstanding: { b1: { toolUseId: 't', tool: 'y', args: {}, reason: 'r' } } }))
@@ -51,7 +57,7 @@ describe('FileCheckpointStore', () => {
   })
 
   it('creates a checkpoint reachable by each of its pendingIds', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     const created = await store.create(makeInput())
 
     const seen = await store.withCheckpoint('p1', async (checkpoint) => ({ checkpoint, result: checkpoint }))
@@ -59,13 +65,13 @@ describe('FileCheckpointStore', () => {
   })
 
   it('passes undefined to fn for an unknown pendingId', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     const seen = await store.withCheckpoint('nonexistent', async (checkpoint) => ({ checkpoint, result: checkpoint }))
     expect(seen).toBeUndefined()
   })
 
   it('persists whatever checkpoint fn returns', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     await store.create(makeInput())
 
     await store.withCheckpoint('p1', async (checkpoint) => {
@@ -79,7 +85,7 @@ describe('FileCheckpointStore', () => {
   })
 
   it('removes a checkpoint (and every pendingId pointing at it) once fn marks it closed', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     await store.create(makeInput({ outstanding: { p1: { toolUseId: 't2', tool: 'a', args: {}, reason: 'r' }, p2: { toolUseId: 't3', tool: 'b', args: {}, reason: 'r' } } }))
 
     await store.withCheckpoint('p1', async (checkpoint) => ({ checkpoint: { ...checkpoint!, closed: true }, result: undefined }))
@@ -89,7 +95,7 @@ describe('FileCheckpointStore', () => {
   })
 
   it('treats a pendingId whose checkpoint is already closed as unknown (graceful no-op case)', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     await store.create(makeInput({ outstanding: { p1: { toolUseId: 't2', tool: 'a', args: {}, reason: 'r' }, p2: { toolUseId: 't3', tool: 'b', args: {}, reason: 'r' } } }))
 
     // p1 resolves first and closes the checkpoint (simulating a denial).
@@ -105,7 +111,7 @@ describe('FileCheckpointStore', () => {
   })
 
   it('serializes concurrent withCheckpoint calls for the same checkpoint', async () => {
-    const store = new FileCheckpointStore(tmpDir())
+    const store = makeStore(tmpDir())
     await store.create(makeInput({ outstanding: { p1: { toolUseId: 't2', tool: 'a', args: {}, reason: 'r' }, p2: { toolUseId: 't3', tool: 'b', args: {}, reason: 'r' } } }))
     const order: string[] = []
 
@@ -124,5 +130,23 @@ describe('FileCheckpointStore', () => {
 
     await Promise.all([first, second])
     expect(order).toEqual(['first:start', 'first:end', 'second:start'])
+  })
+})
+
+describe('SqliteCheckpointStore', () => {
+  it('copies open checkpoints from a FileCheckpointStore once', async () => {
+    const dir = tmpDir()
+    const files = new FileCheckpointStore(dir)
+    const open = await files.create(makeInput())
+    await files.create(makeInput({ outstanding: { p9: { toolUseId: 't9', tool: 'x', args: {}, reason: 'r' } } }))
+    await files.withCheckpoint('p9', async (checkpoint) => ({ checkpoint: { ...checkpoint!, closed: true, outstanding: {} }, result: undefined }))
+
+    const db = openAuditDb(dir)!
+    const store = new SqliteCheckpointStore(db, { importFrom: dir })
+    expect((await store.listOpen()).map((c) => c.id)).toEqual([open.id])
+    expect(await store.get('p1')).toMatchObject({ id: open.id })
+    await store.withCheckpoint('p1', async (checkpoint) => ({ checkpoint: { ...checkpoint!, closed: true, outstanding: {} }, result: undefined }))
+    // Decided here, it isn't copied back in on the next start.
+    expect(await new SqliteCheckpointStore(db, { importFrom: dir }).listOpen()).toEqual([])
   })
 })

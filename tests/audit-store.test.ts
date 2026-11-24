@@ -111,3 +111,19 @@ describe('versions', () => {
     expect(listVersions(key)).toEqual([])
   })
 })
+
+describe('message threads in the database', () => {
+  it('copy an agent’s old thread files once, and find the latest record', async () => {
+    const { findJobThreadBySession, findThread, findThreadByPending, recordThread } = await import('#core/messaging/threads.js')
+    const agentDir = join(dir, 'agents', 'cs')
+    mkdirSync(join(agentDir, '.messaging'), { recursive: true })
+    writeFileSync(join(agentDir, '.messaging', 'threads.jsonl'), JSON.stringify({ app: 'telegram', conversation: 'c1', ts: '10', pendingId: 'p1', kind: 'approval' }) + '\n')
+    writeFileSync(join(agentDir, '.messaging', 'jobs.jsonl'), JSON.stringify({ app: 'telegram', conversation: 'c1', ts: '20', sessionId: 's1' }) + '\n')
+
+    expect(findThreadByPending(agentDir, 'p1')).toMatchObject({ ts: '10', kind: 'approval' })
+    expect(findJobThreadBySession(agentDir, 's1')).toEqual({ app: 'telegram', conversation: 'c1', ts: '20', sessionId: 's1' })
+    recordThread(agentDir, { app: 'telegram', conversation: 'c1', ts: '10', pendingId: 'p1', kind: 'approval', proposedArgs: { amount: 42 } })
+    expect(findThread(agentDir, 'telegram', 'c1', '10')).toMatchObject({ proposedArgs: { amount: 42 } })
+    expect(db.prepare("SELECT count(*) AS n FROM threads WHERE agent = 'cs'").get()).toMatchObject({ n: 2 })
+  })
+})

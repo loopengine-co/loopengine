@@ -8,6 +8,11 @@
 // - events: what people did in or about a run (an approval decided, with
 //   the tool's input before and after a change and any reason; a question
 //   answered; feedback on the result), appended and never changed;
+// - checkpoints and pending: turns paused on an approval or a question
+//   (core/durable-approvals.ts's SqliteCheckpointStore), removed once
+//   decided;
+// - threads and job_threads: which chat message each request or job is
+//   (core/messaging/threads.ts);
 // - versions: each workflow's brief (its instructions and result format)
 //   and the workspace's shared policies, numbered. A new version is noted
 //   whenever the text differs from the latest, however it changed: saved
@@ -72,6 +77,41 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_run ON events (run_id);
 CREATE INDEX IF NOT EXISTS events_workflow ON events (agent, workflow_id, at);
+CREATE TABLE IF NOT EXISTS checkpoints (
+  id TEXT PRIMARY KEY,
+  agent TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pending (
+  pending_id TEXT PRIMARY KEY,
+  checkpoint_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pending_checkpoint ON pending (checkpoint_id);
+CREATE TABLE IF NOT EXISTS threads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL,
+  app TEXT NOT NULL,
+  conversation TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  pending_id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS threads_pending ON threads (agent, pending_id);
+CREATE INDEX IF NOT EXISTS threads_message ON threads (agent, app, conversation, ts);
+CREATE TABLE IF NOT EXISTS job_threads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL,
+  app TEXT NOT NULL,
+  conversation TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS job_threads_message ON job_threads (agent, app, conversation, ts);
+CREATE INDEX IF NOT EXISTS job_threads_session ON job_threads (agent, session_id);
 CREATE TABLE IF NOT EXISTS versions (
   agent TEXT NOT NULL,
   workflow_id TEXT NOT NULL,

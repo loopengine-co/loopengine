@@ -149,7 +149,7 @@ export type { Summarizer, RecoverResult, RecoverAction } from './core/compaction
 export { LLMSummarizer } from './core/llm-summarizer.js'
 export type { LLMSummarizerOptions } from './core/llm-summarizer.js'
 
-export { createCheckpointStore } from './core/durable-approvals.js'
+export { createCheckpointStore, SqliteCheckpointStore } from './core/durable-approvals.js'
 export type { TurnCheckpoint, CheckpointStore, OutstandingItem } from './core/durable-approvals.js'
 
 export {
