@@ -119,12 +119,22 @@ export interface EvalCheck {
   reason?: string
 }
 
+export interface StandIn {
+  tool: string
+  input: Record<string, unknown>
+  replayed: boolean
+}
+
 export interface EvalCaseResult {
   caseId: string
   result?: string
   error?: string
   /** The tools the test run called. */
   tools?: string[]
+  /** The calls a test run doesn't make (they'd change something, or
+   * need approval): each with whether it got its reply from the case's
+   * own run, or a note to assume it worked. */
+  standIns?: StandIn[]
   checks?: EvalCheck[]
   /** Rounds from before criteria: a 1-5 score. */
   score?: number
@@ -373,9 +383,10 @@ export interface EvalRunDeps {
   model: string
   judgeLabel: string
   judge: ModelCall
-  /** One test run of the workflow with these inputs: its result, and
-   * the tools it called. */
-  runCase(params: Record<string, string>): Promise<{ result: string; tools: string[] }>
+  /** One test run of the workflow for this case (its inputs, and the run
+   * it came from to replay): its result, the tools it called, and the
+   * calls it didn't make. */
+  runCase(c: EvalCase): Promise<{ result: string; tools: string[]; standIns?: StandIn[] }>
 }
 
 /** Runs every case once and scores it, recording progress as it goes.
@@ -392,16 +403,16 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
   return (async () => {
     const results: EvalCaseResult[] = []
     for (const c of cases) {
-      let run: { result: string; tools: string[] } | { error: string }
+      let run: { result: string; tools: string[]; standIns?: StandIn[] } | { error: string }
       try {
-        run = await deps.runCase(c.params)
+        run = await deps.runCase(c)
       } catch (err) {
         run = { error: err instanceof Error ? err.message : String(err) }
       }
       const checks = await checkCase(deps.judge, { instructions: deps.instructions, criteria, reference: c.reference ?? '', run })
       results.push({
         caseId: c.id,
-        ...('error' in run ? { error: run.error } : { result: run.result.slice(0, 20000), tools: [...new Set(run.tools)] }),
+        ...('error' in run ? { error: run.error } : { result: run.result.slice(0, 20000), tools: [...new Set(run.tools)], ...(run.standIns?.length ? { standIns: run.standIns.slice(0, 50) } : {}) }),
         checks,
       })
       const now = readEvals(deps.agentDir, deps.workflowId)

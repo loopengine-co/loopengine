@@ -44,7 +44,7 @@ import {
 } from '#web/agent-file-admin.js'
 import { createSessionStore } from '../core/session-store.js'
 import { createCheckpointStore, type TurnCheckpoint } from '#core/durable-approvals.js'
-import { runAgent, resumeAgent, loadRules, loadDefaultTools, loadSubagentAsTools, systemTools, systemSkillsDir } from '#core/run-agent.js'
+import { runAgent, resumeAgent, recordedCalls, loadRules, loadDefaultTools, loadSubagentAsTools, systemTools, systemSkillsDir } from '#core/run-agent.js'
 import type { AgentConfig, AgentModelConfig, ToolDefinition } from '#core/agent-config.js'
 import type { Message, ModelCall, ModelContentBlock, RunAgentResult } from '#core/run-agent.js'
 import { SkillGarden } from '../core/skillgarden/index.js'
@@ -92,7 +92,7 @@ import { changeOf, keptBody } from '#web/change-log.js'
 import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
 import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
-import { EvidenceError, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
+import { EvidenceError, type StandIn, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
@@ -1876,21 +1876,26 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
         model: modelLabelOf(tested.config),
         judgeLabel: judge.label,
         judge: judge.call,
-        runCase: async (params) => {
+        runCase: async (c) => {
           const current = readWorkflow(dir, id) ?? workflow
-          const message = await composeWorkflowMessage(agentName, current, params)
+          const message = await composeWorkflowMessage(agentName, current, c.params)
           const { config, modelCall } = await runModel(agentName, id)
+          // The case's own run's calls, replayed for the calls a test
+          // doesn't make.
+          const source = c.fromRun ? await getRun(agentName, c.fromRun) : undefined
+          const replay = source ? recordedCalls(await sessions.getHistory(`default:${process.env.LOOPENGINE_ENV ?? 'production'}:${agentName}:${source.session_id}`).catch(() => [])) : []
+          const standIns: StandIn[] = []
           const result = await runAgent(config, modelCall, message, [], {
             tenant: 'default',
             sessionId: `eval-${randomUUID().slice(0, 8)}`,
-            evalMode: true,
+            evalMode: { replay, onStandIn: (call) => standIns.push(call) },
             approver: { requestApproval: async () => false },
             questionHandler: { requestQuestion: async () => NO_HUMAN_ANSWER },
           })
           // Every call it made, run or not (a test run doesn't run those
           // that need approval; asking counts as calling).
           const tools = result.newMessages.flatMap((m) => (m.role === 'assistant' && Array.isArray(m.content) ? m.content.flatMap((b) => (b.type === 'tool_use' && b.name ? [b.name] : [])) : []))
-          return { result: result.text, tools }
+          return { result: result.text, tools, standIns }
         },
       })
       void round.catch((err) => console.error(`[loopengine] eval round for ${agentName}/${id} failed:`, err))

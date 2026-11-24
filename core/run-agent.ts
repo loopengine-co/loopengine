@@ -215,12 +215,16 @@ export interface RunAgentOptions {
    * that genuinely has an answering mechanism (adapters/http.ts, for both
    * its routes) should pass this. */
   onQuestionPending?: (question: PendingQuestion) => void
-  /** A test run (a workflow's eval cases, web/workflow-evals.ts): tools
-   * its rules allow run as usual; any other call, and the schedule tools,
-   * aren't run and aren't asked about. The model is told so and carries
-   * on, so the run still reaches a result instead of stopping at a
-   * denial. */
-  evalMode?: boolean
+  /** A test run (a workflow's eval cases, web/workflow-evidence.ts):
+   * only calls that just read (a tool marked `safe`, or isSafeTool) and
+   * that its rules allow are made. Every other call (anything that sends,
+   * writes or changes something, one that would need approval, the
+   * schedule tools) isn't made and isn't asked about: the model gets
+   * the reply that call got in the run the case came from (`replay`,
+   * the same tool with the same input), else a note to assume it worked,
+   * and carries on, so a test never touches the outside world and still
+   * reaches a result. `true` is a test run with nothing to replay. */
+  evalMode?: boolean | EvalModeOptions
   /** Nobody is watching this run (core/unattended.ts): a final reply that
    * asks the person something is sent back for the agent to make the
    * call (the tool, or system_ask_user) instead. */
@@ -612,8 +616,9 @@ interface TurnContext {
   toolContext: ToolContext
   /** AgentConfig.model's provider/model, for usage events (core/usage.ts). */
   modelLabel: { provider?: string; model?: string }
-  /** RunAgentOptions.evalMode: what's checked, and the tools never run. */
-  evalMode?: { rules: RuleSet; neverRun: Set<ToolDefinition> }
+  /** RunAgentOptions.evalMode: what's checked, the tools never run,
+   * which calls only read, and what to replay. */
+  evalMode?: { rules: RuleSet; neverRun: Set<ToolDefinition>; readOnly: SafetyClassifier; replay: RecordedCall[]; onStandIn?: EvalModeOptions['onStandIn'] }
   /** RunAgentOptions.unattended. */
   unattended?: boolean
 }
@@ -832,7 +837,15 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     questionHandler,
     httpNotifier,
     modelLabel: { provider: config.model?.provider, model: config.model?.model },
-    ...(options.evalMode ? { evalMode: { rules, neverRun: new Set<ToolDefinition>(scheduleTools) } } : {}),
+    ...(options.evalMode ? {
+      evalMode: {
+        rules,
+        neverRun: new Set<ToolDefinition>(scheduleTools),
+        readOnly: isSafeTool,
+        replay: [...(typeof options.evalMode === 'object' ? options.evalMode.replay ?? [] : [])],
+        ...(typeof options.evalMode === 'object' && options.evalMode.onStandIn ? { onStandIn: options.evalMode.onStandIn } : {}),
+      },
+    } : {}),
     ...(options.unattended ? { unattended: true } : {}),
     toolContext: {
       agentName: config.name,
@@ -1037,15 +1050,23 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
         continue
       }
 
-      // A test run: a call its rules don't allow (or a schedule tool) isn't
-      // run or asked about; the model hears what happened and carries on.
+      // A test run: only an allowed call that just reads is made. Any
+      // other gets what it got in the case's own run (same tool, same
+      // input), else a note; it never reaches the outside world.
       if (evalMode) {
         const tool = toolsByName.get(block.name!)
-        const blocked = tool && (evalMode.neverRun.has(tool) || (!systemToolInstances.has(tool) && evalMode.rules.resolve(block.name!, block.input ?? {}, scope)[0] !== 'allow'))
-        if (blocked) {
-          const note = "not run: this is a test run, and this call would need approval (or isn't allowed) in a real one. Assume it would have been approved as you asked, carry on, and say in your result that you would have made it."
-          resultBlocks.push({ type: 'tool_result', tool_use_id: block.id!, content: note })
-          log({ type: 'tool:result', id: block.id!, tool: block.name!, args: block.input ?? {}, detailText: 'test run', statusText: 'Not run (test run).' })
+        const input = block.input ?? {}
+        const reads = tool && !evalMode.neverRun.has(tool) && evalMode.readOnly({ id: block.id!, name: block.name!, execute: async () => undefined })
+        const standIn = tool && !(systemToolInstances.has(tool) && !evalMode.neverRun.has(tool)) && !(reads && evalMode.rules.resolve(block.name!, input, scope)[0] === 'allow')
+        if (standIn) {
+          const at = evalMode.replay.findIndex((c) => c.tool === block.name && sameInput(c.input, input))
+          const recorded = at >= 0 ? evalMode.replay.splice(at, 1)[0] : undefined
+          const content = recorded
+            ? recorded.result
+            : "not run: this is a test run, so a call that changes something, or would need approval, isn't made. Assume it worked as you asked, carry on, and say in your result that you would have made it."
+          resultBlocks.push({ type: 'tool_result', tool_use_id: block.id!, content, ...(recorded?.failed ? { is_error: true } : {}) })
+          evalMode.onStandIn?.({ tool: block.name!, input, replayed: Boolean(recorded) })
+          log({ type: 'tool:result', id: block.id!, tool: block.name!, args: input, detailText: 'test run', statusText: recorded ? 'Not run (test run): replayed its reply from the original run.' : 'Not run (test run).' })
           continue
         }
       }
@@ -1404,4 +1425,49 @@ export async function resumeAgent(
     )
   }
   return result
+}
+
+/** A call made in a real run, with what came back: replayed in a test
+ * run of the same case (RunAgentOptions.evalMode). */
+export interface RecordedCall {
+  tool: string
+  input: Record<string, unknown>
+  result: string
+  failed?: boolean
+}
+
+export interface EvalModeOptions {
+  /** The case's own run's calls, each replayed at most once. */
+  replay?: RecordedCall[]
+  /** Told of each call that wasn't made, and whether its reply was
+   * replayed. */
+  onStandIn?: (call: { tool: string; input: Record<string, unknown>; replayed: boolean }) => void
+}
+
+// The same input, whatever order its keys are in.
+function sameInput(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown): unknown => (Array.isArray(v) ? v.map(norm) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([x], [y]) => x.localeCompare(y)).map(([k, x]) => [k, norm(x)])) : v)
+  return JSON.stringify(norm(a)) === JSON.stringify(norm(b))
+}
+
+/** What a run's session shows of its calls, for replaying them in a test
+ * run: each tool call with the reply it got. Questions are left out. */
+export function recordedCalls(history: Message[]): RecordedCall[] {
+  const calls: RecordedCall[] = []
+  const byId = new Map<string, RecordedCall>()
+  for (const m of history) {
+    if (typeof m.content === 'string') continue
+    for (const b of m.content) {
+      if (b.type === 'tool_use' && b.name && b.id && b.name !== 'system_ask_user') {
+        const call: RecordedCall = { tool: b.name, input: (b.input ?? {}) as Record<string, unknown>, result: '' }
+        byId.set(b.id, call)
+        calls.push(call)
+      } else if (b.type === 'tool_result' && b.tool_use_id && byId.has(b.tool_use_id)) {
+        const call = byId.get(b.tool_use_id)!
+        call.result = typeof b.content === 'string' ? b.content : JSON.stringify(b.content ?? '')
+        if (b.is_error) call.failed = true
+      }
+    }
+  }
+  return calls.filter((c) => c.result)
 }

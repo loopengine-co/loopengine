@@ -209,6 +209,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
   .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
+  .wf-case-standins { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
   .wf-health { display: grid; gap: 12px; margin-bottom: 8px; }
   .wf-health-alert { padding: 10px 12px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); font-size: 13px; font-weight: 600; }
   .wf-health-chart { margin: 0; display: grid; gap: 4px; }
@@ -785,7 +786,7 @@ ${renderMarkdownScript}
         '<td>' + runsPill(t.name) + '</td>' +
         '<td>' + (t.safe ? 'yes' : 'no') + '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Parallel-safe</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Only reads</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // Local tools' own table, unlike renderTools above (shared by Agent as
@@ -808,7 +809,7 @@ ${renderMarkdownScript}
         '<td>' + (t.safe ? 'yes' : 'no') + '</td>' +
         '<td>' + actions + '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Parallel-safe</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Only reads</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // Overview's own tools table, unlike the Tools tab's three separately-
@@ -841,7 +842,7 @@ ${renderMarkdownScript}
     addRows(cfg.gatewayTools, 'Gateway');
     addRows(cfg.agentAsTools, 'Agent as Tool');
     if (!rows.length) return '<p class="muted">No tools.</p>';
-    return '<table><thead><tr><th>Name</th><th>Description</th><th>Type</th><th>Parallel-safe</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th>Description</th><th>Type</th><th>Only reads</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
   }
 
   function renderSkills(skills) {
@@ -1382,9 +1383,16 @@ ${renderMarkdownScript}
       var why = !last ? ''
         : last.checks ? (fails.length ? '<ul class="wf-case-fails">' + fails.map(function (x) { return '<li><strong>' + escapeHtml(critName[x.criterionId] || x.criterionId) + '</strong>' + (x.reason ? ': ' + escapeHtml(x.reason) : '') + '</li>'; }).join('') + '</ul>' : '')
         : '<p class="hint" style="margin:0">' + escapeHtml(last.reason || last.error || '') + '</p>';
+      // The calls the test didn't make: what it would have done.
+      var standIns = last && last.standIns && last.standIns.length
+        ? '<p class="wf-case-standins">Not made in the test: ' + last.standIns.map(function (x) {
+            var shown = JSON.stringify(x.input);
+            return '<code title="' + escapeHtml(shown) + '">' + escapeHtml(x.tool) + '</code>' + (x.replayed ? ' <span class="hint">(reply from its run)</span>' : '');
+          }).join(', ') + '</p>'
+        : '';
       return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '"><div class="wf-case-head"><strong>Case ' + (i + 1) + '</strong>' + pill +
         '<span class="hint">' + (values || 'no inputs') + '</span><button type="button" class="wf-link wf-case-remove">Remove</button></div>' +
-        why +
+        why + standIns +
         '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (last && last.result ? ' and its latest result' : '') + '</summary>' +
           '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '" placeholder="Optional: what a good result says, to compare against">' + escapeHtml(c.reference || '') + '</textarea>' +
           '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>' +
@@ -1396,7 +1404,7 @@ ${renderMarkdownScript}
       tiles + feedbackHint + critSection +
       '<h4 class="wf-sub">Eval cases</h4>' +
       '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Running ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Run evals') + '</button>' +
-        '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + (round.briefVersion ? DOT + 'brief v' + round.briefVersion : '') + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: tools that need approval aren' + RSQ + 't run, and nobody is asked anything.') + '</span></div>' +
+        '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + (round.briefVersion ? DOT + 'brief v' + round.briefVersion : '') + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: only tools that just read data run. Anything that would send, write or change something, or need approval, isn' + RSQ + 't done, and nobody is asked anything.') + '</span></div>' +
       (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save a run from History below as a case, then run the cases after each change to the instructions or model.</p>') +
       '<h4 class="wf-sub">History</h4>' +
       (runsHtml ? '<ul class="schedule-history">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>');
@@ -5115,7 +5123,7 @@ ${renderMarkdownScript}
         '<button type="button" id="httpToolAddHeaderBtn" class="hint-btn">Add header</button>' +
       '</label>' +
       '<label class="http-tool-inline-label"><input type="checkbox" name="sendFieldsAsJsonBody"> Send fields as a JSON body (POST/PUT/PATCH only)</label>' +
-      '<label class="http-tool-inline-label"><input type="checkbox" name="safe"> Parallel-safe <span class="hint">(read-only, no side effects &mdash; safe to run alongside other calls)</span></label>' +
+      '<label class="http-tool-inline-label"><input type="checkbox" name="safe"> Only reads data <span class="hint">(changes nothing: it runs in test runs, and alongside other calls)</span></label>' +
       '<label>Response JSON path <span class="hint">(optional &mdash; e.g. data.status; leave blank to return the raw response text)</span>' +
         '<input type="text" name="responseJsonPath" placeholder="data.status">' +
       '</label>' +

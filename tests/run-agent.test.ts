@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { runAgent, resumeAgent, type Message, type ModelCall, type ModelResponse, type ModelContentBlock } from '#core/run-agent.js'
+import { runAgent, resumeAgent, recordedCalls, type Message, type ModelCall, type ModelResponse, type ModelContentBlock } from '#core/run-agent.js'
 import type { AgentConfig, ToolDefinition, PendingQuestion } from '#core/agent-config.js'
 import type { LoopEvent } from '#core/loop-events.js'
 import { answerQuestion } from '#core/system-tools/index.js'
@@ -1668,26 +1668,58 @@ describe('runAgent usage events', () => {
 })
 
 describe('runAgent in a test run (evalMode)', () => {
-  it('runs allowed tools, skips the rest without asking, and still reaches a result', async () => {
+  it('runs only allowed calls that just read, stands in for the rest without asking, and still reaches a result', async () => {
     let call = 0
     const modelCall: ModelCall = vi.fn(async () => {
       call++
-      if (call === 1) return toolUseResponse({ id: 't1', name: 'lookup', input: {} }, { id: 't2', name: 'send', input: { to: 'ann' } })
+      if (call === 1) return toolUseResponse({ id: 't1', name: 'lookup', input: {} }, { id: 't2', name: 'send', input: { to: 'ann' } }, { id: 't3', name: 'notify', input: {} })
       return textResponse('drafted, and would have sent it')
     })
     const ran: string[] = []
-    const tool = (name: string): ToolDefinition => ({ name, description: name, input_schema: { type: 'object', properties: {} }, execute: async () => { ran.push(name); return `${name} ok` } })
+    const tool = (name: string, safe = false): ToolDefinition => ({ name, description: name, input_schema: { type: 'object', properties: {} }, ...(safe ? { safe: true } : {}), execute: async () => { ran.push(name); return `${name} ok` } })
     const requestApproval = vi.fn(async () => true)
     const config = baseConfig({
-      tools: [tool('lookup'), tool('send')],
-      rules: [{ scopePattern: 'default/production/test-agent', tool: 'lookup', decision: 'allow' }, { scopePattern: 'default/production/test-agent', tool: 'send', decision: 'ask' }],
+      tools: [tool('lookup', true), tool('send'), tool('notify')],
+      rules: [
+        { scopePattern: 'default/production/test-agent', tool: 'lookup', decision: 'allow' },
+        { scopePattern: 'default/production/test-agent', tool: 'send', decision: 'ask' },
+        // Allowed without asking, but it changes something: still not made.
+        { scopePattern: 'default/production/test-agent', tool: 'notify', decision: 'allow' },
+      ],
     })
+    const standIns: unknown[] = []
 
-    const result = await runAgent(config, modelCall, 'go', [], { evalMode: true, approver: { requestApproval } })
+    const result = await runAgent(config, modelCall, 'go', [], { evalMode: { onStandIn: (c) => standIns.push(c) }, approver: { requestApproval } })
 
     expect(result.text).toBe('drafted, and would have sent it')
     expect(ran).toEqual(['lookup'])
     expect(requestApproval).not.toHaveBeenCalled()
+    expect(toolResults(result.history).find((r) => r.tool_use_id === 't2')?.content).toMatch(/not run: this is a test run/)
+    expect(toolResults(result.history).find((r) => r.tool_use_id === 't3')?.content).toMatch(/not run: this is a test run/)
+    expect(standIns).toEqual([{ tool: 'send', input: { to: 'ann' }, replayed: false }, { tool: 'notify', input: {}, replayed: false }])
+  })
+
+  it("replays the case's own run's reply for a call it doesn't make, when the input is the same", async () => {
+    let call = 0
+    const modelCall: ModelCall = vi.fn(async () => {
+      call++
+      if (call === 1) return toolUseResponse({ id: 't1', name: 'refund', input: { order: 'EM1', amount: 5 } }, { id: 't2', name: 'refund', input: { order: 'EM2', amount: 5 } })
+      return textResponse('done')
+    })
+    const ran: string[] = []
+    const config = baseConfig({
+      tools: [{ name: 'refund', description: 'refund', input_schema: { type: 'object', properties: {} }, execute: async () => { ran.push('refund'); return 'refunded' } }],
+      rules: [{ scopePattern: 'default/production/test-agent', tool: 'refund', decision: 'allow' }],
+    })
+    const replay = recordedCalls([
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'x', name: 'refund', input: { amount: 5, order: 'EM1' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'Refund re_123 issued.' }] },
+    ])
+
+    const result = await runAgent(config, modelCall, 'go', [], { evalMode: { replay } })
+
+    expect(ran).toEqual([])
+    expect(toolResults(result.history).find((r) => r.tool_use_id === 't1')?.content).toBe('Refund re_123 issued.')
     expect(toolResults(result.history).find((r) => r.tool_use_id === 't2')?.content).toMatch(/not run: this is a test run/)
   })
 })

@@ -144,7 +144,7 @@ export { agentAsTool } from './core/agent-as-tool.js'
 // copy of adapters/http.ts (which, like agent-registry.ts, is meant to be
 // owned/edited, not imported — see this file's own header comment).
 
-export { resumeAgent, loadRules, loadDefaultTools, loadSubagentAsTools, systemTools, systemSkillsDir } from './core/run-agent.js'
+export { resumeAgent, recordedCalls, type RecordedCall, type EvalModeOptions, loadRules, loadDefaultTools, loadSubagentAsTools, systemTools, systemSkillsDir } from './core/run-agent.js'
 
 export { Compactor, TruncatingSummarizer } from './core/compaction.js'
 export type { Summarizer, RecoverResult, RecoverAction } from './core/compaction.js'
@@ -296,7 +296,7 @@ export { checkCallbackUrl, callbackSecret, signCallback, deliverCallback, runCal
 export { auditDb, openAuditDb, setAuditDb, recordEvent, runEvents, listEvents, readMeta, writeMeta, type EventFilter, noteVersion, listVersions, getVersion, briefContent, briefFromContent, retentionDays, type Version, type VersionKind, type AuditEvent, type AuditEventKind } from './core/audit-store.js'
 export { WorkflowRunner, FileRunStore, SqliteRunStore, getRunStore, setRunStore, listRuns, runsSince, getRun, isUnderWay, RunError, type WorkflowRun, type WorkflowRunStatus, type RunVersions, type RunDecision, type RunStore, type ExecuteRun, type RunOutcome, type StartRunInput } from './core/workflow-runs.js'
 export { readWorkflows, readWorkflow, setWorkflowFields, setWorkflowDelivery, clearWorkflowFields, validateParams, workflowRunMessage, workflowPreviewMessage, migrateWorkflowsFile, WorkflowParamsError, readWorkspacePolicies, writeWorkspacePolicies, type Workflow, type WorkflowFields, type WorkflowParameter, type WorkflowModel, type WorkflowDelivery, type RunMessageExtras } from './core/workflows.js'
-export { EvidenceError, workflowScores, runFeedbackFrom, readEvals, addEvalCase, updateEvalCase, removeEvalCase, setEvalCriteria, effectiveCriteria, codeCheck, judgeCriteria, checkCase, roundSummary, draftCriteria, startEvalRound, EVAL_CRITERIA_PROMPT, DRAFT_CRITERIA_PROMPT, REFERENCE_CRITERION, type WorkflowScores, type EvalCase, type EvalCaseResult, type EvalCheck, type EvalCriterion, type CriterionKind, type EvalRound, type WorkflowEvals, type EvalRunDeps } from './web/workflow-evidence.js'
+export { EvidenceError, workflowScores, runFeedbackFrom, readEvals, addEvalCase, updateEvalCase, removeEvalCase, setEvalCriteria, effectiveCriteria, codeCheck, judgeCriteria, checkCase, roundSummary, draftCriteria, startEvalRound, EVAL_CRITERIA_PROMPT, DRAFT_CRITERIA_PROMPT, REFERENCE_CRITERION, type WorkflowScores, type EvalCase, type EvalCaseResult, type EvalCheck, type EvalCriterion, type CriterionKind, type EvalRound, type WorkflowEvals, type EvalRunDeps, type StandIn } from './web/workflow-evidence.js'
 export { globalConfigPageHtml } from './web/global-config-page.js'
 export { playgroundHtml } from './web/playground.js'
 

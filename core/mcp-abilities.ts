@@ -284,6 +284,13 @@ export async function listMcpServerTools(server: InstalledMcpRecord['server'], e
 interface CachedTool {
   description: string
   input_schema: Record<string, unknown>
+  /** The server's readOnlyHint: true for a tool that only reads, which
+   * makes it `safe` (it may run in a test run, and alongside other
+   * reads). */
+  readOnly?: boolean
+  /** Set once the server's hints were looked at; a schema cached before
+   * that is fetched again for them. */
+  hinted?: true
 }
 
 type SchemaCache = Record<string, { version: string; tools: Record<string, CachedTool> }>
@@ -353,20 +360,25 @@ export async function loadMcpAbilityTools(dir: string, agentName: string): Promi
   for (const [abilityName, record] of entries) {
     const errorKey = `${dir}\0${abilityName}`
     let cached = cache[abilityName]?.version === record.version ? cache[abilityName].tools : undefined
-    if (!cached || record.mcp.tools.some((t) => !cached![t.remote])) {
+    // Cached before the server's hints were kept: worth one more fetch,
+    // but what's cached still serves if the server can't be reached.
+    const unhinted = cached && record.mcp.tools.every((t) => cached![t.remote]) && record.mcp.tools.some((t) => !cached![t.remote].hinted)
+    if (!cached || unhinted || record.mcp.tools.some((t) => !cached![t.remote])) {
       try {
         cached = await fetchSchemas(dir, abilityName, record.mcp, createAgentEnv(agentName, dir))
         cache[abilityName] = { version: record.version, tools: cached }
         cacheChanged = true
       } catch (err) {
-        loadErrors.set(errorKey, err instanceof Error ? err.message : String(err))
-        continue
+        if (!unhinted) {
+          loadErrors.set(errorKey, err instanceof Error ? err.message : String(err))
+          continue
+        }
       }
     }
     loadErrors.delete(errorKey)
     const env = createAgentEnv(agentName, dir)
     for (const tool of record.mcp.tools) {
-      const schema = cached[tool.remote]
+      const schema = cached?.[tool.remote]
       if (schema) tools.push(toolDefinition(dir, abilityName, record.mcp, tool, schema, env))
     }
   }
@@ -383,7 +395,9 @@ async function fetchSchemas(dir: string, abilityName: string, mcp: InstalledMcpR
   do {
     const page = await client.listTools(cursor ? { cursor } : undefined)
     for (const tool of page.tools) {
-      if (wanted.has(tool.name)) found[tool.name] = { description: tool.description ?? '', input_schema: tool.inputSchema as Record<string, unknown> }
+      if (!wanted.has(tool.name)) continue
+      const hints = (tool.annotations ?? {}) as { readOnlyHint?: unknown }
+      found[tool.name] = { description: tool.description ?? '', input_schema: tool.inputSchema as Record<string, unknown>, ...(hints.readOnlyHint === true ? { readOnly: true } : {}), hinted: true }
     }
     cursor = page.nextCursor
   } while (cursor)
@@ -435,6 +449,7 @@ function toolDefinition(dir: string, abilityName: string, mcp: InstalledMcpRecor
     name: tool.name,
     description: schema.description || tool.remote,
     input_schema: env ? withDefaults(schema.input_schema, defaultValues(mcp.server.defaults, env)) : schema.input_schema,
+    ...(schema.readOnly ? { safe: true } : {}),
     async execute(input, ctx) {
       const server = resolveServer(mcp.server, ctx.env)
       const args = { ...input }

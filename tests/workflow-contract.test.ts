@@ -73,7 +73,7 @@ describe('a workflow evidence', () => {
     const dir = agentWithWorkflow()
     addEvalCase(dir, 'reply', { run: run({ params: { order_number: 'EM-1' } }) })
     expect(() => addEvalCase(dir, 'reply', { run: run() })).toThrow(/already/)
-    const round = await startEvalRound({ agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'deepseek v4', judgeLabel: 'openai gpt-6.1-sol', judge: judgeSays('{"checks": [{"id": "reference", "pass": true}]}'), runCase: async (params) => ({ result: `Draft for ${params.order_number}`, tools: [] }) })
+    const round = await startEvalRound({ agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'deepseek v4', judgeLabel: 'openai gpt-6.1-sol', judge: judgeSays('{"checks": [{"id": "reference", "pass": true}]}'), runCase: async ({ params }) => ({ result: `Draft for ${params.order_number}`, tools: [] }) })
     expect(round).toMatchObject({ allPassed: 1, passRates: [{ criterionId: 'reference', passed: 1, total: 1 }], cases: [{ result: 'Draft for EM-1', checks: [{ criterionId: 'reference', pass: true }] }] })
     const evals = readEvals(dir, 'reply')
     expect(evals.running).toBeUndefined()
@@ -105,7 +105,7 @@ describe('a workflow evidence', () => {
     }
     const round = await startEvalRound({
       agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'm', judgeLabel: 'j', judge,
-      runCase: async (params) => {
+      runCase: async ({ params }) => {
         if (params.order_number === 'EM-3') throw new Error('timeout')
         return params.order_number === 'EM-1' ? { result: 'We will look into it.', tools: ['issue_refund'] } : { result: 'Tracking 1Z9. Everymarket Support', tools: [] }
       },
