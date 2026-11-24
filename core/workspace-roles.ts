@@ -49,6 +49,7 @@ export function roleLabel(role: WorkspaceRole): string {
  * (refused later for a viewer), and the console's sign-in line. */
 export function inboxOnlyAllows(method: string, pathname: string): boolean {
   if (pathname === '/inbox' || pathname.startsWith('/inbox/')) return true
+  if (method === 'GET' && /^\/cases\/[^/]+$/.test(pathname)) return true
   if (method === 'POST' && /^\/pending-(approvals\/[^/]+\/resolve|questions\/[^/]+\/answer)$/.test(pathname)) return true
   if (method === 'GET' && (pathname === '/config/settings' || pathname === '/healthz')) return true
   return false

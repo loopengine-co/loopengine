@@ -49,6 +49,29 @@ export interface InboxItem {
   finishedAt?: string
   /** The latest person who decided something in it. */
   lastBy?: string
+  /** When it began waiting on a person (its oldest open request). */
+  waitingSince?: string
+  /** When anything last happened in it: finished, or decided. */
+  lastActivity: string
+  /** What happened, in a few words: "Done automatically", "Approved by
+   * ana@…", "Failed". */
+  outcome: string
+}
+
+/** The Inbox's views: what's waiting on a person (however long), and
+ * everything from the last RECENT_DAYS days. */
+export type InboxView = 'needs' | 'recent'
+export const RECENT_DAYS = 7
+
+// A case's outcome in words, from its status and the last decision.
+function outcomeOf(run: WorkflowRun, waiting: boolean): string {
+  if (waiting) return 'Waiting'
+  if (run.status === 'error') return 'Failed'
+  if (run.status === 'running') return 'Running'
+  const last = [...(run.decisions ?? []).map((d) => ({ at: d.at, by: d.by, what: d.approved ? (d.edited ? 'Changed' : 'Approved') : 'Denied' })), ...(run.answers ?? []).map((a) => ({ at: a.at, by: a.by, what: 'Answered' }))]
+    .sort((a, b) => a.at.localeCompare(b.at)).pop()
+  if (!last) return 'Done automatically'
+  return last.by ? `${last.what} by ${last.by}` : last.what
 }
 
 const OUTSIDE = 'p-'
@@ -69,7 +92,10 @@ function questionOf(p: InboxPending): string {
   return typeof p.args.question === 'string' ? p.args.question : p.reason
 }
 
-export async function listInbox(deps: InboxDeps, filter: { open?: boolean; q?: string; workflow?: string; limit?: number } = {}): Promise<{ items: InboxItem[]; open: number; workflows: { id: string; title: string }[] }> {
+/** `view`: "needs" (waiting on a person, oldest first, however long),
+ * "recent" (the last RECENT_DAYS days, latest first), or "auto" (needs
+ * when anything waits, else recent). `open` is the older name for needs. */
+export async function listInbox(deps: InboxDeps, filter: { view?: InboxView | 'auto'; open?: boolean; q?: string; workflow?: string; limit?: number; now?: number } = {}): Promise<{ items: InboxItem[]; open: number; view: InboxView; workflows: { id: string; title: string }[] }> {
   const [runs, pending] = await Promise.all([deps.runs(), deps.pending()])
   const bySession = new Map<string, InboxPending[]>()
   for (const p of pending) bySession.set(p.sessionId, [...(bySession.get(p.sessionId) ?? []), p])
@@ -77,33 +103,40 @@ export async function listInbox(deps: InboxDeps, filter: { open?: boolean; q?: s
   const items: InboxItem[] = runs.map((run) => {
     const wfTitle = deps.workflowTitle(run.agent, run.workflow_id) ?? (run.workflow_id || 'One-off job')
     const waits = run.status === 'awaiting_approval' ? (bySession.get(run.session_id) ?? []) : []
-    const lastBy = [...(run.decisions ?? []), ...(run.answers ?? [])].sort((a, b) => a.at.localeCompare(b.at)).pop()?.by
+    const decided = [...(run.decisions ?? []), ...(run.answers ?? [])].sort((a, b) => a.at.localeCompare(b.at))
+    const lastBy = decided.at(-1)?.by
+    const since = waits.map((p) => p.createdAt).filter((t): t is string => Boolean(t)).sort()[0]
+    const lastActivity = [run.started_at, run.finished_at, decided.at(-1)?.at].filter((t): t is string => Boolean(t)).sort().at(-1)!
     return {
       id: run.run_id, title: titleOf(run, wfTitle), agent: run.agent, workflowId: run.workflow_id, workflowTitle: wfTitle, status: run.status,
       waiting: [...new Set(waits.map((p) => p.kind))], startedAt: run.started_at, ...(run.finished_at ? { finishedAt: run.finished_at } : {}), ...(lastBy ? { lastBy } : {}),
+      ...(waits.length ? { waitingSince: since ?? run.started_at } : {}), lastActivity, outcome: outcomeOf(run, waits.length > 0),
     }
   })
   for (const p of pending) {
     if (runSessions.has(p.sessionId)) continue
+    const at = p.createdAt ?? new Date(0).toISOString()
     items.push({
       id: OUTSIDE + p.pendingId, title: short(p.kind === 'question' ? questionOf(p) : `Approve ${p.tool}`, 120), agent: p.agent, workflowId: '', workflowTitle: 'Chat',
-      status: 'awaiting_approval', waiting: [p.kind], startedAt: p.createdAt ?? new Date(0).toISOString(),
+      status: 'awaiting_approval', waiting: [p.kind], startedAt: at, waitingSince: at, lastActivity: at, outcome: 'Waiting',
     })
   }
   const open = items.filter((i) => i.waiting.length).length
+  const view: InboxView = filter.open || filter.view === 'needs' ? 'needs' : filter.view === 'recent' ? 'recent' : open ? 'needs' : 'recent'
+  const recentSince = new Date((filter.now ?? Date.now()) - RECENT_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const q = filter.q?.trim().toLowerCase()
   const runParams = new Map(runs.map((r) => [r.run_id, Object.values(r.params ?? {}).join(' ')]))
   const shown = items
-    .filter((i) => !filter.open || i.waiting.length)
+    .filter((i) => (view === 'needs' ? i.waiting.length > 0 : !i.waiting.length && i.lastActivity >= recentSince))
     .filter((i) => !filter.workflow || i.workflowId === filter.workflow)
-    .filter((i) => !q || `${i.title} ${i.agent} ${i.workflowTitle} ${runParams.get(i.id) ?? ''} ${i.lastBy ?? ''}`.toLowerCase().includes(q))
-    // Waiting first, newest first within each.
-    .sort((a, b) => (b.waiting.length ? 1 : 0) - (a.waiting.length ? 1 : 0) || b.startedAt.localeCompare(a.startedAt))
+    .filter((i) => !q || `${i.title} ${i.agent} ${i.workflowTitle} ${runParams.get(i.id) ?? ''} ${i.lastBy ?? ''} ${i.outcome}`.toLowerCase().includes(q))
+    // Waiting: the longest-waiting first. Recent: the latest first.
+    .sort((a, b) => (view === 'needs' ? (a.waitingSince ?? '').localeCompare(b.waitingSince ?? '') : b.lastActivity.localeCompare(a.lastActivity)))
   // Every workflow with a case, whatever the filter, for the workflow picker.
   const workflows = [...new Map(items.filter((i) => i.workflowId).map((i) => [i.workflowId, i.workflowTitle])).entries()]
     .map(([id, title]) => ({ id, title }))
     .sort((a, b) => a.title.localeCompare(b.title))
-  return { items: shown.slice(0, filter.limit ?? 200), open, workflows }
+  return { items: shown.slice(0, filter.limit ?? 200), open, view, workflows }
 }
 
 /** A step in a case's timeline. */

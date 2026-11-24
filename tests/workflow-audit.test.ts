@@ -31,7 +31,7 @@ describe('a workflow audit', () => {
     since: '2026-11-01T00:00:00Z', until: '2026-11-30T00:00:00Z',
     runs, costs: new Map([[runs[0].run_id, 0.02], [runs[1].run_id, 0.04]]), versions,
     changes: [{ id: 1, at: '2026-11-15T00:00:00Z', agent: 'cs', workflow_id: 'disputes', kind: 'change', by: 'ana@shop.com', data: { label: 'Edited the workflow' } }, { id: 2, at: '2026-11-21T00:00:00Z', agent: 'cs', workflow_id: 'disputes', kind: 'change', by: 'evany@shop.com', data: { label: 'Changed webhook triggers' } }],
-    verification: { ok: true, events: 120, anchors: 3, anchoredAt: 'loopengine.co' },
+    verification: { ok: true, events: 120 },
   })
 
   it('counts runs and decisions, and who made them', () => {
@@ -51,7 +51,7 @@ describe('a workflow audit', () => {
 
   it('says it in sentences, starting with whether the log checks out', () => {
     expect(audit.summary).toEqual([
-      'The audit log checks out: 120 events verified, matching 3 anchors kept at loopengine.co.',
+      'The audit log checks out: 120 events verified.',
       '6 runs: 5 done, 1 failed (17% failed).',
       'People decided 6 requests: 3 approved as asked, 1 changed before approving, 2 denied.',
       'Reasons given for denials include “No delivery photo”, “Wrong order”.',
@@ -82,7 +82,7 @@ describe('a workflow audit with many brief changes', () => {
     const audit = buildWorkflowAudit({
       workflow: { agent: 'cs', agentLabel: 'Support', id: 'disputes', title: 'Dispute evidence' },
       since: '2026-11-01T00:00:00Z', until: '2026-11-30T00:00:00Z', runs, costs: new Map(), versions: many, changes: [],
-      verification: { ok: true, events: 10, anchors: 0 },
+      verification: { ok: true, events: 10 },
     })
     expect(audit.summary).toContain('The brief changed 4 times to version 4, last on Nov 4, by ana@shop.com, ben@shop.com. From version 1 to 4, requests changed or denied went from 100% to 0%.')
     expect(audit.summary).toContain('Reasons given for denials include “Not yet”.')

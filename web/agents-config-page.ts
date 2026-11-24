@@ -210,6 +210,16 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
   .wf-case-standins { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
+  .wf-run-lines, .wf-cand-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .wf-run-line, .wf-cand-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; }
+  .wf-run-line:first-child, .wf-cand-list li:first-child { border-top: 0; }
+  .wf-run-link { display: flex; gap: 10px; flex: 1 1 320px; min-width: 0; color: var(--ink); text-decoration: none; }
+  .wf-run-link:hover .wf-run-text { text-decoration: underline; }
+  .wf-run-when { color: var(--ink-muted); white-space: nowrap; }
+  .wf-run-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .wf-run-line .wf-run-evidence { flex-basis: 100%; padding-left: 2px; }
+  .wf-cand-text { display: grid; gap: 2px; flex: 1 1 320px; min-width: 0; }
+  .wf-cand-text strong { font-weight: 600; overflow-wrap: anywhere; }
   .wf-health { display: grid; gap: 12px; margin-bottom: 8px; }
   .wf-health-alert { padding: 10px 12px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); font-size: 13px; font-weight: 600; }
   .wf-health-chart { margin: 0; display: grid; gap: 4px; }
@@ -955,6 +965,11 @@ ${renderMarkdownScript}
   var pageParams = new URLSearchParams(location.search);
   var workflowPageId = pageParams.get('tab') === 'workflows' && pageParams.get('workflow') || null;
   if (workflowPageId && pageParams.get('wtab')) workflowTabs[workflowPageId] = pageParams.get('wtab');
+  // A case's page, with a back link to here.
+  function caseHref(runId) {
+    return '/cases/' + encodeURIComponent(runId) + '?back=' + encodeURIComponent(location.pathname + location.search);
+  }
+
   function workflowPageHref(agent, id, tab) {
     return '/agents/config?agent=' + encodeURIComponent(agent) + '&tab=workflows&workflow=' + encodeURIComponent(id) + (tab ? '&wtab=' + encodeURIComponent(tab) : '');
   }
@@ -1135,7 +1150,7 @@ ${renderMarkdownScript}
       var kind = e.kind === 'change' ? 'Setting' : e.kind === 'decision' ? 'Decision' : e.kind === 'answer' ? 'Answer' : 'Feedback';
       return '<li><span class="wf-change-kind ' + escapeHtml(e.kind) + '">' + kind + '</span><span class="wf-change-text">' + changeText(e) + '</span>' +
         '<span class="hint">' + (e.by ? escapeHtml(e.by) + DOT : '') + escapeHtml(when) +
-        (e.run_id ? DOT + '<a href="/inbox?case=' + encodeURIComponent(e.run_id) + '">case</a>' : '') + '</span></li>';
+        (e.run_id ? DOT + '<a href="' + caseHref(e.run_id) + '">case</a>' : '') + '</span></li>';
     }).join('') + '</ol>';
   }
 
@@ -1407,9 +1422,34 @@ ${renderMarkdownScript}
       '<h4 class="wf-sub">Eval cases</h4>' +
       '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Running ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Run evals') + '</button>' +
         '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + (round.briefVersion ? DOT + 'brief v' + round.briefVersion : '') + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: only tools that just read data run. Anything that would send, write or change something, or need approval, isn' + RSQ + 't done, and nobody is asked anything.') + '</span></div>' +
-      (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save a run from History below as a case, then run the cases after each change to the instructions or model.</p>') +
-      '<h4 class="wf-sub">History</h4>' +
-      (runsHtml ? '<ul class="schedule-history">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>');
+      (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save runs worth testing (below) as cases, then run them after each change to the brief or model.</p>') +
+      (workflowPageId ? '<h4 class="wf-sub">Worth testing</h4><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
+      '<h4 class="wf-sub">Recent runs</h4>' +
+      (runsHtml ? '<ul class="wf-run-lines">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') +
+      (workflowPageId ? '<p class="hint" style="margin:0"><a href="/audit?tab=cases&agent=' + encodeURIComponent(pageParams.get('agent') || '') + '&workflow=' + encodeURIComponent(w.id) + '">See all its runs in Audit ' + String.fromCharCode(8594) + '</a></p>' : '');
+  }
+
+  // Worth testing: runs from the last 30 days that would make good eval
+  // cases, each with why (a person denied or changed what it did, a bad
+  // result, a question it asked, a failure, or a typical good run).
+  var WHY = { denied: ['bad', 'Denied'], changed: ['ask', 'Changed'], bad: ['bad', 'Bad result'], asked: ['ask', 'Asked'], failed: ['bad', 'Failed'], typical: ['good', 'Typical'] };
+  function loadCandidates(card, base) {
+    var box = card.querySelector('.wf-candidates');
+    if (!box) return;
+    fetch(base + '/evals/candidates', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (data) {
+        var list = data.candidates || [];
+        if (!list.length) { box.innerHTML = '<p class="hint" style="margin:0">Nothing new to suggest from the last 30 days.</p>'; return; }
+        box.innerHTML = '<p class="hint" style="margin:0 0 6px">From the last 30 days, best first. Open one to read it in full before saving.</p><ul class="wf-cand-list">' + list.map(function (c) {
+          var why = WHY[c.why] || ['', c.why];
+          return '<li><span class="le-pill ' + why[0] + '">' + why[1] + '</span>' +
+            '<span class="wf-cand-text"><strong>' + escapeHtml(c.detail) + '</strong><span class="hint">' + escapeHtml(new Date(c.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (c.inputs ? DOT + escapeHtml(c.inputs) : '') + '</span></span>' +
+            '<a class="wf-link" href="' + caseHref(c.runId) + '">Open</a>' +
+            '<button type="button" class="wf-link wf-save-case" data-run="' + escapeHtml(c.runId) + '">Save as eval case</button></li>';
+        }).join('') + '</ul>';
+      })
+      .catch(function (err) { box.innerHTML = '<p class="error">Could not look through its runs: ' + escapeHtml(err.message) + '</p>'; });
   }
 
   // A run's evidence line: its feedback, and saving it as an eval case.
@@ -1446,20 +1486,20 @@ ${renderMarkdownScript}
         return '<label class="workflow-param">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">(optional)</span>') +
           '<textarea rows="1" name="' + escapeHtml(p) + '"' + (spec.required ? ' required' : '') + ' placeholder="' + escapeHtml(spec.description || '') + '"></textarea></label>';
       }).join('');
+      // Recent runs, one line each, opening the case (where everything
+      // about it is).
       var runs = (w.recentRuns || []).map(function (r) {
         var pill = r.status === 'done' ? '<span class="le-pill good">Done</span>'
           : r.status === 'error' ? '<span class="le-pill bad">Failed</span>'
-          : r.status === 'awaiting_approval' ? '<span class="le-pill ask">Waiting for a decision</span>'
+          : r.status === 'awaiting_approval' ? '<span class="le-pill ask">Waiting</span>'
           : '<span class="le-pill accent">Running</span>';
-        var values = r.params ? Object.keys(r.params).map(function (k) { return '<span><strong>' + escapeHtml(k) + '</strong>: ' + escapeHtml(r.params[k]) + '</span>'; }).join('') : '';
-        var source = r.source === 'console' ? 'Manual run' : r.source === 'api' ? 'App / API' : r.source === 'schedule' ? 'Scheduled' + (r.task_name ? ' · ' + r.task_name : '') : r.source === 'chain' ? 'After another workflow, in a goal' + String.fromCharCode(8217) + 's job' : 'Webhook';
+        var values = r.params ? Object.keys(r.params).map(function (k) { return k + ': ' + r.params[k]; }).join(DOT) : '';
         var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
-        var formattedOutcome = outcome ? renderMarkdownPreview(outcome) : '';
-        return '<li class="workflow-run-entry"><div class="workflow-run-entry-head">' + pill +
-          '<span class="workflow-run-time">' + escapeHtml(new Date(r.started_at).toLocaleString()) + '</span>' +
-          '<span class="workflow-run-source hint">' + escapeHtml(source) + (r.versions && r.versions.brief ? DOT + 'brief v' + r.versions.brief : '') + '</span></div>' +
-          (values ? '<div><div class="workflow-run-entry-label">Parameters</div><div class="workflow-run-params">' + values + '</div></div>' : '') +
-          (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result workflow-markdown">' + formattedOutcome + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><div class="schedule-result-full workflow-markdown workflow-markdown-full">' + formattedOutcome + '</div></details></div>' : '') +
+        var line = (values ? values + DOT : '') + outcome;
+        return '<li class="wf-run-line">' + pill +
+          '<a class="wf-run-link" href="' + caseHref(r.run_id) + '"><span class="wf-run-when">' + escapeHtml(new Date(r.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</span>' +
+          '<span class="wf-run-text">' + escapeHtml(line.length > 160 ? line.slice(0, 160) + String.fromCharCode(8230) : line) + '</span></a>' +
+          (r.versions && r.versions.brief ? '<span class="hint">brief v' + r.versions.brief + '</span>' : '') +
           runEvidenceHtml(w, r) + '</li>';
       }).join('');
       var last = workflowLastRun(w);
@@ -2145,6 +2185,7 @@ ${renderMarkdownScript}
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
     loadBriefVersions(card, base);
     loadWorkflowHealth(card, base);
+    loadCandidates(card, base);
     if (workflowTabs[id] === 'changes') loadWorkflowChanges(card);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // Opens the workflow's page on its Triggers tab.

@@ -83,7 +83,7 @@ export interface WorkflowAudit {
   changes: { at: string; by?: string; label: string }[]
   cost?: { totalUsd: number; perRunUsd: number; pricedRuns: number }
   cases: AuditCase[]
-  verification: ChainCheck & { anchoredAt?: string }
+  verification: ChainCheck
   /** The audit in sentences, most important first. */
   summary: string[]
 }
@@ -100,7 +100,7 @@ export interface WorkflowAuditInput {
   versions: Version[]
   /** Its settings changes (events of kind "change") in the period. */
   changes: AuditEvent[]
-  verification: ChainCheck & { anchoredAt?: string }
+  verification: ChainCheck
 }
 
 const short = (text: string, max: number): string => {
@@ -238,7 +238,7 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
   const summary: string[] = []
   const v = input.verification
   summary.push(v.ok
-    ? `The audit log checks out: ${plural(v.events, 'event')} verified${v.anchors ? `, matching ${plural(v.anchors, 'anchor')} kept at ${v.anchoredAt ?? 'loopengine.co'}` : ''}.`
+    ? `The audit log checks out: ${plural(v.events, 'event')} verified.`
     : `The audit log does not check out: it's broken at event #${v.broken?.id}. Treat this report's record as unreliable from there on.`)
   if (!total.runs) summary.push('It didn’t run in this period.')
   else {

@@ -54,3 +54,16 @@ describe('the Audit page', () => {
     expect(csv).toContain(`,decision,ana@shop.com,cs,refunds,Denied refund,"'=Already, ""refunded""",r1,2,`)
   })
 })
+
+describe('searching cases worth a look', () => {
+  it('finds runs a person overruled, marked bad, or that asked a question', async () => {
+    const store = new SqliteRunStore(db)
+    await store.put(run('4', { decisions: [{ tool: 'refund', approved: true, edited: true, at: 'x' }] }))
+    await store.put(run('5', { feedback: { verdict: 'bad', at: 'x' } }))
+    await store.put(run('6', { answers: [{ question: 'q', answer: 'a', at: 'x' }] }))
+    await store.put(run('7', { decisions: [{ tool: 'refund', approved: true, at: 'x' }] }))
+    expect((await searchRuns({ flag: 'overruled' })).map((r) => r.run_id)).toEqual(['4'])
+    expect((await searchRuns({ flag: 'bad' })).map((r) => r.run_id)).toEqual(['5'])
+    expect((await searchRuns({ flag: 'asked' })).map((r) => r.run_id)).toEqual(['6'])
+  })
+})

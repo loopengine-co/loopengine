@@ -91,7 +91,7 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
 
   <section>
     <div class="ar-check${v.ok ? '' : ' bad'}">${v.ok
-      ? `Audit log verified: ${v.events.toLocaleString('en-US')} events check out${v.anchors ? `, and ${v.anchors} anchor${v.anchors === 1 ? '' : 's'} kept at ${esc(v.anchoredAt ?? 'loopengine.co')} match` : ''}.${v.last ? ` <span class="hint">Latest event #${v.last.id}, hash ${esc(v.last.hash)}</span>` : ''}`
+      ? `Audit log verified: ${v.events.toLocaleString('en-US')} events check out.${v.last ? ` <span class="hint">Latest event #${v.last.id}, hash ${esc(v.last.hash)}</span>` : ''}`
       : `Audit log broken at event #${v.broken?.id}: the record after it can't be relied on.`}</div>
   </section>
 

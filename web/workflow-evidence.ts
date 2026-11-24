@@ -203,7 +203,9 @@ function writeEvals(agentDir: string, workflowId: string, evals: WorkflowEvals):
 export function addEvalCase(agentDir: string, workflowId: string, input: { run?: WorkflowRun; params?: Record<string, string>; reference?: unknown }): EvalCase {
   const evals = readEvals(agentDir, workflowId)
   if (evals.cases.length >= MAX_CASES) throw new EvidenceError(`A workflow keeps up to ${MAX_CASES} eval cases; remove one first.`)
-  const reference = (typeof input.reference === 'string' && input.reference.trim() ? input.reference.trim() : input.run?.result?.trim()) ?? ''
+  // The good result: what was given, else the text a person actually used
+  // (feedback's `final`, their edit of the result), else the result.
+  const reference = (typeof input.reference === 'string' && input.reference.trim() ? input.reference.trim() : (input.run?.feedback?.final?.trim() || input.run?.result?.trim())) ?? ''
   const params = input.run?.params ?? input.params ?? {}
   if (!reference && !Object.keys(params).length) throw new EvidenceError('A case needs its inputs, a good result, or both.')
   if (input.run && evals.cases.some((c) => c.fromRun === input.run!.run_id)) throw new EvidenceError('That run is already a case.')
@@ -432,4 +434,85 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
     writeEvals(deps.agentDir, deps.workflowId, { ...rest, rounds: [round, ...rest.rounds].slice(0, MAX_ROUNDS) })
     return round
   })()
+}
+
+// ---------- choosing cases ----------
+
+const clip = (text: string, max: number): string => {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? flat.slice(0, max - 1) + '…' : flat
+}
+const shown = (v: unknown): string => clip(v === undefined ? '(none)' : typeof v === 'string' ? v : JSON.stringify(v), 80)
+
+/** Checklist items a run suggests (web/agents-config-page's Criteria),
+ * from what people corrected in it: a denial's reason, a changed
+ * request, a bad result's note, a question it had to ask. */
+export function suggestedCriteria(run: WorkflowRun): { kind: 'judge'; text: string }[] {
+  const out: string[] = []
+  for (const d of run.decisions ?? []) {
+    if (!d.approved && d.reason) out.push(`Doesn’t do what a person denied before (${d.tool}): “${clip(d.reason, 160)}”`)
+    if (d.approved && d.edited && d.before && d.after && typeof d.before === 'object' && typeof d.after === 'object') {
+      const b = d.before as Record<string, unknown>
+      const a = d.after as Record<string, unknown>
+      for (const field of [...new Set([...Object.keys(b), ...Object.keys(a)])].filter((k) => JSON.stringify(b[k]) !== JSON.stringify(a[k])).slice(0, 2)) {
+        out.push(`Gets ${field} right for ${d.tool}: a person changed it from ${shown(b[field])} to ${shown(a[field])}`)
+      }
+    }
+  }
+  if (run.feedback?.verdict === 'bad' && run.feedback.note) out.push(`Avoids what made a result bad: “${clip(run.feedback.note, 160)}”`)
+  for (const answer of run.answers ?? []) out.push(`Handles this without asking: “${clip(answer.question, 120)}” (the answer was “${clip(answer.answer, 80)}”)`)
+  return [...new Set(out)].slice(0, 4).map((text) => ({ kind: 'judge' as const, text: text.slice(0, 300) }))
+}
+
+/** A run worth saving as an eval case, and why. */
+export interface EvalCandidate {
+  runId: string
+  at: string
+  why: 'denied' | 'changed' | 'bad' | 'asked' | 'failed' | 'typical'
+  /** The why in words: the reason, the change, the note. */
+  detail: string
+  inputs: string
+}
+
+/** Runs worth testing, from the given ones (any order), leaving out those
+ * already cases: where a person denied or changed what it did, a result
+ * marked bad, a question it had to ask, a failure; then a few typical
+ * good runs with different inputs. At most `max`. */
+export function evalCandidates(runs: WorkflowRun[], evals: WorkflowEvals, max = 10): EvalCandidate[] {
+  const saved = new Set(evals.cases.map((c) => c.fromRun).filter(Boolean))
+  const inputsOf = (r: WorkflowRun) => clip(Object.entries(r.params ?? {}).map(([k, v]) => `${k}: ${v}`).join(' · '), 120)
+  const fresh = [...runs].filter((r) => !saved.has(r.run_id)).sort((a, b) => b.started_at.localeCompare(a.started_at))
+  const out: EvalCandidate[] = []
+  const taken = new Set<string>()
+  const add = (r: WorkflowRun, why: EvalCandidate['why'], detail: string) => {
+    if (taken.has(r.run_id) || out.length >= max) return
+    taken.add(r.run_id)
+    out.push({ runId: r.run_id, at: r.started_at, why, detail: clip(detail, 160), inputs: inputsOf(r) })
+  }
+  for (const r of fresh) {
+    const denied = (r.decisions ?? []).find((d) => !d.approved)
+    if (denied) add(r, 'denied', denied.reason ? `Denied ${denied.tool}: “${denied.reason}”` : `Denied ${denied.tool}`)
+  }
+  for (const r of fresh) {
+    const changed = (r.decisions ?? []).find((d) => d.approved && d.edited)
+    if (!changed) continue
+    const b = (changed.before && typeof changed.before === 'object' ? changed.before : {}) as Record<string, unknown>
+    const a = (changed.after && typeof changed.after === 'object' ? changed.after : {}) as Record<string, unknown>
+    const fields = [...new Set([...Object.keys(b), ...Object.keys(a)])].filter((k) => JSON.stringify(b[k]) !== JSON.stringify(a[k]))
+    add(r, 'changed', fields.length ? `Changed ${fields.slice(0, 2).map((k) => `${k} ${shown(b[k])} → ${shown(a[k])}`).join(', ')} for ${changed.tool}` : `Changed ${changed.tool} before approving`)
+  }
+  for (const r of fresh) if (r.feedback?.verdict === 'bad' || r.feedback?.edit === 'heavy') add(r, 'bad', r.feedback!.note ? `Marked bad: “${r.feedback!.note}”` : r.feedback!.verdict === 'bad' ? 'Marked bad' : 'Heavily edited before use')
+  for (const r of fresh) if (r.answers?.length) add(r, 'asked', `Asked: “${r.answers[0].question}”`)
+  for (const r of fresh) if (r.status === 'error') add(r, 'failed', `Failed: ${r.error ?? ''}`)
+  // Typical good runs: done, nobody overruled them, each with other inputs.
+  const seenInputs = new Set<string>()
+  for (const r of fresh) {
+    if (out.filter((c) => c.why === 'typical').length >= 3) break
+    const overruled = (r.decisions ?? []).some((d) => !d.approved || d.edited) || r.feedback?.verdict === 'bad'
+    const key = JSON.stringify(r.params ?? {})
+    if (r.status !== 'done' || !r.result || overruled || seenInputs.has(key)) continue
+    seenInputs.add(key)
+    add(r, 'typical', r.feedback?.verdict === 'good' ? 'A good result, marked good' : r.feedback?.edit === 'none' ? 'A good result, used unedited' : 'A typical run that went through')
+  }
+  return out
 }

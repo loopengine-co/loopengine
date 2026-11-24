@@ -58,9 +58,11 @@ export interface AuditCaseRow {
   people: string[]
   /** The start of its result, or its error. */
   outcome: string
+  /** Saved as one of its workflow's eval cases. */
+  evalCase?: boolean
 }
 
-export function caseRow(run: WorkflowRun, workflowTitle: string | undefined): AuditCaseRow {
+export function caseRow(run: WorkflowRun, workflowTitle: string | undefined, evalCase = false): AuditCaseRow {
   const inputs = Object.entries(run.params ?? {}).map(([k, v]) => `${k}: ${v}`).join(' · ')
   const people = [...new Set([...(run.decisions ?? []), ...(run.answers ?? [])].map((d) => d.by).filter((b): b is string => Boolean(b)))]
   return {
@@ -75,5 +77,6 @@ export function caseRow(run: WorkflowRun, workflowTitle: string | undefined): Au
     ...(run.versions?.brief ? { briefVersion: run.versions.brief } : {}),
     people,
     outcome: short(run.status === 'error' ? run.error ?? '' : run.result ?? '', 200),
+    ...(evalCase ? { evalCase: true } : {}),
   }
 }

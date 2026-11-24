@@ -1,8 +1,11 @@
-// The console's Inbox: /inbox lists every workflow run as a case, the ones
-// waiting on a person first (?open=1 shows only those); /inbox?case=<id> opens one, with what it was
-// given, what the agent did, what it asks now (answer, approve, approve
-// as changed, deny) and who decided what (web/inbox-admin.ts behind
-// /inbox/*). An approver or viewer sees only this page; a viewer can't
+// The console's Inbox, for acting: /inbox shows what needs a person
+// (Needs you, however long it has waited, the longest first) and every
+// case from the last 7 days (Recent: done automatically, decided by
+// someone, or failed); older cases are searched in Audit. A case is its
+// own page, /cases/<id> (?back= is where its back link goes): what it
+// was given, what the agent did, what it asks now (answer, approve,
+// approve as changed, deny), who decided what, and Save as eval case
+// (web/inbox-admin.ts behind /inbox/*). An approver or viewer sees only this page; a viewer can't
 // decide. Like the other console pages, its inline script avoids
 // backslashes and template placeholders, since it lives inside a template
 // literal.
@@ -73,6 +76,12 @@ export const inboxPageHtml: string = `<!doctype html>
   }
   .ib-step details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
   .ib-who { font-size: 13px; display: grid; gap: 4px; }
+  .ib-late { color: var(--warn); font-weight: 700; }
+  .ib-older { margin: 0; font-size: 12.5px; }
+  .ib-suggest { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .ib-suggest[hidden] { display: none; }
+  .ib-suggest h4 { margin: 0; font-size: 13px; }
+  .ib-suggest-row { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; font-size: 13px; }
   .ib-reason { color: var(--ink-muted); margin: 2px 0 0 12px; }
   .ib-change { display: grid; gap: 2px; margin: 2px 0 0 12px; font-size: 12.5px; }
   .ib-change del { color: var(--bad); }
@@ -120,7 +129,15 @@ ${renderMarkdownScript}
   var ELLIPSIS = String.fromCharCode(8230);
   var DOT = ' ' + String.fromCharCode(183) + ' ';
   var params = new URLSearchParams(location.search);
-  var state = { open: params.get('open') === '1', q: params.get('q') || '', workflow: params.get('workflow') || '' };
+  // Needs you (waiting on a person, however long) or Recent (the last 7
+  // days); none asked: needs you when anything waits.
+  var state = { view: params.get('open') === '1' ? 'needs' : params.get('view') || '', q: params.get('q') || '', workflow: params.get('workflow') || '' };
+  // A case's own page is /cases/<id>; ?back= is where its back link goes.
+  var caseMatch = location.pathname.match(/^[/]cases[/]([^/]+)$/);
+  var caseId = caseMatch ? decodeURIComponent(caseMatch[1]) : '';
+  var back = params.get('back');
+  if (!back || back.charAt(0) !== '/' || back.charAt(1) === '/') back = '/inbox';
+  var fullAccess = !document.querySelector('.le-app.le-inbox-only');
   var role = 'owner';
   var workflows = {};
 
@@ -140,6 +157,27 @@ ${renderMarkdownScript}
   function when(iso) { return iso ? new Date(iso).toLocaleString() : ''; }
   function canDecide() { return role !== 'viewer'; }
 
+  // How long a case has waited: "Waiting 3 h", "Waiting 12 days".
+  function waitedFor(ms) {
+    var h = Math.floor(ms / 3600000);
+    if (h < 1) return 'Waiting ' + Math.max(1, Math.floor(ms / 60000)) + ' min';
+    if (h < 48) return 'Waiting ' + h + ' h';
+    return 'Waiting ' + Math.floor(h / 24) + ' days';
+  }
+  // What happened in a recent case.
+  function outcomeHtml(item) {
+    var o = item.outcome || '';
+    var cls = o === 'Failed' ? 'bad' : o === 'Running' ? 'run' : /^Denied/.test(o) ? 'bad' : /^Changed/.test(o) ? 'warn' : 'good';
+    return '<span class="ib-state ' + cls + '">' + esc(o) + '</span>';
+  }
+  // A case's page, coming back here.
+  function caseHref(id) {
+    return '/cases/' + encodeURIComponent(id) + '?back=' + encodeURIComponent(pageUrl());
+  }
+  function backLabel() {
+    return back.indexOf('/audit') === 0 ? 'Audit' : back.indexOf('/agents') === 0 ? 'Workflow' : 'Inbox';
+  }
+
   function stateHtml(item) {
     if (item.waiting && item.waiting.length) return '<span class="ib-state warn">' + (item.waiting.indexOf('approval') !== -1 ? 'Needs approval' : 'Question') + '</span>';
     if (item.status === 'running') return '<span class="ib-state run">Running</span>';
@@ -150,14 +188,14 @@ ${renderMarkdownScript}
 
   function listUrl() {
     var q = new URLSearchParams();
-    if (state.open) q.set('open', '1');
+    q.set('view', state.view || 'auto');
     if (state.q) q.set('q', state.q);
     if (state.workflow) q.set('workflow', state.workflow);
     return '/inbox/items?' + q.toString();
   }
   function pageUrl() {
     var q = new URLSearchParams();
-    if (state.open) q.set('open', '1');
+    if (state.view) q.set('view', state.view);
     if (state.q) q.set('q', state.q);
     if (state.workflow) q.set('workflow', state.workflow);
     var s = q.toString();
@@ -168,23 +206,30 @@ ${renderMarkdownScript}
     var items = data.items || [];
     (data.workflows || []).forEach(function (w) { workflows[w.id] = w.title; });
     var options = Object.keys(workflows).sort(function (a, b) { return workflows[a].localeCompare(workflows[b]); }).map(function (id) { return '<option value="' + esc(id) + '"' + (id === state.workflow ? ' selected' : '') + '>' + esc(workflows[id]) + '</option>'; }).join('');
+    state.view = data.view || state.view || 'recent';
+    var needs = state.view === 'needs';
     var rows = items.map(function (i) {
-      return '<a class="ib-row" href="/inbox?case=' + encodeURIComponent(i.id) + '">' +
+      var waited = i.waitingSince ? Date.now() - new Date(i.waitingSince).getTime() : 0;
+      var side = needs
+        ? stateHtml(i) + '<span class="' + (waited > 3 * 86400000 ? 'ib-late' : '') + '">' + esc(waitedFor(waited)) + '</span>'
+        : outcomeHtml(i) + '<span>' + esc(ago(i.lastActivity)) + '</span>';
+      return '<a class="ib-row" href="' + caseHref(i.id) + '">' +
         '<span class="le-dot' + (i.waiting.length ? ' warn' : i.status === 'running' ? '' : ' idle') + '" aria-hidden="true"></span>' +
         '<span style="min-width:0"><div class="ib-row-title">' + esc(i.title) + '</div>' +
-          '<div class="ib-row-meta">' + esc(i.workflowTitle) + DOT + esc(i.agent) + (i.lastBy ? DOT + 'last decided by ' + esc(i.lastBy) : '') + '</div></span>' +
-        '<span class="ib-row-side">' + stateHtml(i) + '<span>' + esc(ago(i.startedAt)) + '</span></span></a>';
+          '<div class="ib-row-meta">' + esc(i.workflowTitle) + DOT + esc(i.agent) + DOT + 'started ' + esc(ago(i.startedAt)) + '</div></span>' +
+        '<span class="ib-row-side">' + side + '</span></a>';
     }).join('');
     page.innerHTML =
       '<div class="ib-bar">' +
-        '<span class="ib-filter" role="group" aria-label="Show"><button type="button" data-open="0" aria-pressed="' + !state.open + '">All</button><button type="button" data-open="1" aria-pressed="' + state.open + '">Needs you (' + (data.open || 0) + ')</button></span>' +
+        '<span class="ib-filter" role="group" aria-label="Show"><button type="button" data-view="needs" aria-pressed="' + needs + '">Needs you (' + (data.open || 0) + ')</button><button type="button" data-view="recent" aria-pressed="' + !needs + '">Recent</button></span>' +
         '<select id="ibWorkflow" aria-label="Workflow"><option value="">All workflows</option>' + options + '</select>' +
         '<input id="ibSearch" type="search" placeholder="Search cases, inputs or people" value="' + esc(state.q) + '" aria-label="Search">' +
       '</div>' +
       (items.length ? '<div class="ib-list">' + rows + '</div>'
-        : '<div class="ib-list"><p class="ib-empty">' + (state.open ? 'Nothing needs you right now. Questions and approvals from your agents land here.' : 'No cases yet. Each workflow run shows here.') + '</p></div>');
-    var buttons = page.querySelectorAll('[data-open]');
-    for (var b = 0; b < buttons.length; b++) buttons[b].addEventListener('click', function (ev) { state.open = ev.currentTarget.getAttribute('data-open') === '1'; refreshList(); });
+        : '<div class="ib-list"><p class="ib-empty">' + (needs ? 'Nothing needs you right now. Questions and approvals from your agents land here, however long ago they were asked.' : 'Nothing in the last 7 days. Every run shows here for a week: done automatically, decided by someone, or failed.') + '</p></div>') +
+      (needs ? '' : '<p class="hint ib-older">Showing the last 7 days.' + (fullAccess ? ' Older cases: <a class="ib-link" href="/audit?tab=cases">search all cases in Audit</a>.' : '') + '</p>');
+    var buttons = page.querySelectorAll('[data-view]');
+    for (var b = 0; b < buttons.length; b++) buttons[b].addEventListener('click', function (ev) { state.view = ev.currentTarget.getAttribute('data-view'); refreshList(); });
     page.querySelector('#ibWorkflow').addEventListener('change', function (ev) { state.workflow = ev.currentTarget.value; refreshList(); });
     var search = page.querySelector('#ibSearch');
     var timer = null;
@@ -325,7 +370,7 @@ ${renderMarkdownScript}
     var run = c.run;
     var status = run ? stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: run.status }) : stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: 'awaiting_approval' });
     page.innerHTML =
-      '<a class="ib-back" href="' + pageUrl() + '">' + String.fromCharCode(8592) + ' Inbox</a>' +
+      '<a class="ib-back" href="' + esc(back) + '">' + String.fromCharCode(8592) + ' ' + backLabel() + '</a>' +
       '<div class="ib-case-head"><h2>' + esc(c.title) + '</h2><div class="ib-chips">' + status + '<span>' + caseLinks(c) + (run ? DOT + 'started ' + esc(when(run.started_at)) + (run.source ? ' by ' + esc(run.source === 'webhook' ? 'a webhook' : run.source === 'schedule' ? 'a schedule' : run.source === 'console' ? 'Run now' : run.source === 'api' ? 'an app' : run.source) : '') : '') + '</span></div></div>' +
       c.pending.map(pendingHtml).join('') +
       (run && run.params ? '<div class="ib-card"><h3>Inputs</h3>' + kvHtml(run.params) + '</div>' : '') +
@@ -333,10 +378,76 @@ ${renderMarkdownScript}
       (run ? decidedHtml(run) : '') +
       (run && run.result ? '<div class="ib-card"><h3>Result</h3><div class="ib-md">' + renderMarkdownPreview(run.result) + '</div></div>' : '') +
       (run && run.error ? '<div class="ib-card"><h3>Failed</h3><p class="error">' + esc(run.error) + '</p></div>' : '') +
-      exportHtml(c);
+      exportHtml(c) +
+      evalCaseHtml(c);
     var print = page.querySelector('[data-act="print"]');
     if (print) print.addEventListener('click', function () { window.print(); });
+    wireEvalCase(c);
     wireCase(c);
+  }
+
+  // Save this run as one of its workflow's eval cases (owners, admins and
+  // editors): a test it must keep passing. Then the checklist items it
+  // suggests, from what people corrected in it, to add or not.
+  function evalCaseHtml(c) {
+    var run = c.run;
+    if (!fullAccess || !run || !run.workflow_id || run.status !== 'done') return '';
+    return '<div class="ib-card ib-eval"><h3>Eval case</h3>' +
+      '<p class="hint" style="margin:0">Save this run as a test its workflow must keep passing after every change to its brief. Runs where a person denied or changed something, or that went wrong, make the best tests.</p>' +
+      '<div class="ib-actions"><button type="button" class="ib-btn plain" data-act="save-case">Save as eval case</button><span class="hint ib-eval-result" role="status"></span></div>' +
+      '<div class="ib-suggest" hidden></div></div>';
+  }
+  function evalBase(c) {
+    return '/agents/' + encodeURIComponent(c.agent) + '/workflows/' + encodeURIComponent(c.workflowId) + '/evals';
+  }
+  function wireEvalCase(c) {
+    var btn = page.querySelector('[data-act="save-case"]');
+    if (!btn) return;
+    var result = page.querySelector('.ib-eval-result');
+    var suggest = page.querySelector('.ib-suggest');
+    // Already a case: say so.
+    fetch(evalBase(c), { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (ev) {
+        if (ev && (ev.cases || []).some(function (k) { return k.fromRun === c.id; })) { btn.disabled = true; btn.textContent = 'Saved as an eval case'; }
+      }).catch(function () {});
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      result.textContent = 'Saving' + ELLIPSIS;
+      fetch(evalBase(c) + '/cases', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runId: c.id }) })
+        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'Could not save'); return b; }); })
+        .then(function (b) {
+          btn.textContent = 'Saved as an eval case';
+          result.innerHTML = 'Saved. <a class="ib-link" href="/agents/config?agent=' + encodeURIComponent(c.agent) + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId) + '&wtab=evidence">See its eval cases</a>';
+          showSuggestions(c, b.suggestions || [], b.criteria || []);
+        })
+        .catch(function (err) { btn.disabled = false; result.textContent = err.message; });
+    });
+  }
+  function showSuggestions(c, suggestions, criteria) {
+    var box = page.querySelector('.ib-suggest');
+    var have = criteria.map(function (k) { return k.text; });
+    var fresh = suggestions.filter(function (s) { return have.indexOf(s.text) === -1; });
+    if (!fresh.length) return;
+    box.hidden = false;
+    box.innerHTML = '<h4>Add to its checklist?</h4><p class="hint" style="margin:0">From what people corrected in this run. Each becomes a check every eval case is judged on.</p>' +
+      fresh.map(function (s, i) { return '<div class="ib-suggest-row"><span>' + esc(s.text) + '</span><button type="button" class="ib-btn plain" data-suggest="' + i + '">Add</button></div>'; }).join('');
+    box.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-suggest]');
+      if (!b) return;
+      b.disabled = true;
+      var s = fresh[Number(b.getAttribute('data-suggest'))];
+      fetch(evalBase(c), { headers: { accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (ev2) {
+          var list = (ev2.criteria || []).map(function (k) { return { text: k.text, kind: k.kind, value: k.value }; });
+          list.push({ text: s.text, kind: s.kind });
+          return fetch(evalBase(c) + '/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) });
+        })
+        .then(function (r) { return r.json().then(function (body) { if (!r.ok) throw new Error(body.error || 'Could not add it'); }); })
+        .then(function () { b.textContent = 'Added'; })
+        .catch(function (err) { b.disabled = false; b.textContent = err.message; });
+    });
   }
 
   function send(card, path, body) {
@@ -405,19 +516,25 @@ ${renderMarkdownScript}
   }
 
   function openCase() {
-    var id = new URLSearchParams(location.search).get('case');
-    return fetch('/inbox/cases/' + encodeURIComponent(id), { headers: { accept: 'application/json' } })
+    return fetch('/inbox/cases/' + encodeURIComponent(caseId), { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(renderCase)
-      .catch(function (err) { page.innerHTML = '<a class="ib-back" href="/inbox">' + String.fromCharCode(8592) + ' Inbox</a><p class="error">Could not open this case: ' + esc(err.message) + '</p>'; });
+      .then(function (c) { document.title = c.title + ' ' + String.fromCharCode(183) + ' Case'; renderCase(c); })
+      .catch(function (err) { page.innerHTML = '<a class="ib-back" href="' + esc(back) + '">' + String.fromCharCode(8592) + ' ' + backLabel() + '</a><p class="error">Could not open this case: ' + esc(err.message) + '</p>'; });
   }
 
   function start() {
-    if (new URLSearchParams(location.search).get('case')) openCase();
+    // A case's page is about that case, wherever it was opened from.
+    if (caseId) {
+      var head = document.querySelector('.le-head h1');
+      var lede = document.querySelector('.le-head p');
+      if (head) head.textContent = 'Case';
+      if (lede) lede.textContent = 'One run in full: what it was given, what the agent did step by step, who decided what, and what came of it.';
+    }
+    if (caseId) openCase();
     else refreshList();
     // The list keeps itself current while it's open.
     setInterval(function () {
-      if (document.hidden || new URLSearchParams(location.search).get('case')) return;
+      if (document.hidden || caseId) return;
       if (document.activeElement && document.activeElement.id === 'ibSearch') return;
       refreshList();
     }, 15000);

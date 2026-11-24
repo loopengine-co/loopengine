@@ -47,22 +47,29 @@ function deps(runs: WorkflowRun[], open: InboxPending[]): InboxDeps {
 }
 
 describe('the Inbox', () => {
-  it('lists waiting cases first, names them by their start message, and counts them', async () => {
+  it('shows what needs you, however long it has waited, the longest first; else the last 7 days', async () => {
+    const now = Date.parse('2026-11-24T12:00:00.000Z')
     const runs = [
-      run({ run_id: 'old', status: 'done', chat_notice: 'New dispute du_1', decisions: [{ tool: 'submit', approved: true, at: '2026-11-20T01:05:00.000Z', by: 'jane@example.com' }] }),
+      run({ run_id: 'old', status: 'done', started_at: '2026-11-20T01:00:00.000Z', finished_at: '2026-11-20T01:06:00.000Z', chat_notice: 'New dispute du_1', decisions: [{ tool: 'submit', approved: true, at: '2026-11-20T01:05:00.000Z', by: 'jane@example.com' }] }),
+      run({ run_id: 'auto', status: 'done', started_at: '2026-11-23T00:00:00.000Z', finished_at: '2026-11-23T00:01:00.000Z' }),
+      run({ run_id: 'stale', status: 'done', started_at: '2026-11-01T00:00:00.000Z', finished_at: '2026-11-01T00:01:00.000Z' }),
       run({ run_id: 'waiting', status: 'awaiting_approval', session_id: 's2', started_at: '2026-11-20T00:00:00.000Z', params: { dispute_id: 'du_2' } }),
+      run({ run_id: 'long-waiting', status: 'awaiting_approval', session_id: 's3', started_at: '2026-11-02T00:00:00.000Z' }),
     ]
-    const { items, open } = await listInbox(deps(runs, [pending({})]))
-    expect(open).toBe(1)
-    expect(items.map((i) => i.id)).toEqual(['waiting', 'old'])
-    expect(items[0]).toMatchObject({ title: 'Handle dispute: du_2', waiting: ['question'] })
-    expect(items[1]).toMatchObject({ title: 'New dispute du_1', lastBy: 'jane@example.com' })
-    expect((await listInbox(deps(runs, [pending({})]), { open: true })).items.map((i) => i.id)).toEqual(['waiting'])
-    expect((await listInbox(deps(runs, [pending({})]), { q: 'jane' })).items.map((i) => i.id)).toEqual(['old'])
-    // The workflow picker lists every workflow with a case, whatever the filter.
-    const waitingOnly = await listInbox(deps(runs, []), { open: true })
-    expect(waitingOnly.items).toEqual([])
-    expect(waitingOnly.workflows.map((w) => w.id).sort()).toEqual([...new Set(runs.map((r) => r.workflow_id))].sort())
+    const waits = [pending({ createdAt: '2026-11-20T00:01:00.000Z' }), pending({ pendingId: 'p3', sessionId: 's3', createdAt: '2026-11-02T00:01:00.000Z' })]
+    // Something waits: the Inbox opens on it.
+    const needs = await listInbox(deps(runs, waits), { now })
+    expect(needs).toMatchObject({ view: 'needs', open: 2 })
+    expect(needs.items.map((i) => i.id)).toEqual(['long-waiting', 'waiting'])
+    expect(needs.items[1]).toMatchObject({ title: 'Handle dispute: du_2', waiting: ['question'], waitingSince: '2026-11-20T00:01:00.000Z' })
+    // Recent: everything not waiting from the last 7 days, the latest first, with what happened.
+    const recent = await listInbox(deps(runs, waits), { view: 'recent', now })
+    expect(recent.items.map((i) => [i.id, i.outcome])).toEqual([['auto', 'Done automatically'], ['old', 'Approved by jane@example.com']])
+    expect((await listInbox(deps(runs, waits), { view: 'recent', q: 'jane', now })).items.map((i) => i.id)).toEqual(['old'])
+    // Nothing waits: the Inbox opens on Recent.
+    expect((await listInbox(deps(runs, []), { now })).view).toBe('recent')
+    // The workflow picker lists every workflow with a case, whatever the view.
+    expect(needs.workflows.map((w) => w.id).sort()).toEqual([...new Set(runs.map((r) => r.workflow_id))].sort())
   })
 
   it('lists a decision outside any run as a case of its own', async () => {

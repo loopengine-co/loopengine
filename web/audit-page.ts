@@ -61,6 +61,7 @@ export const auditPageHtml: string = `<!doctype html>
   .au-state.bad { background: var(--bad-soft); color: var(--bad); }
   .au-state.warn { background: var(--warn-soft); color: var(--warn); }
   .au-state.run { background: var(--accent-soft); color: var(--accent-ink); }
+  .au-evalcase { color: var(--accent-ink); font-weight: 600; }
   .au-empty { padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
   .au-more { justify-self: center; }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
@@ -93,6 +94,9 @@ ${consoleSidebarHtml}
       <select id="auKind" aria-label="Kind">
         <option value="">Everything</option><option value="change">Settings changed</option><option value="decision">Approvals</option><option value="answer">Answers</option><option value="feedback">Feedback</option>
       </select>
+      <select id="auFlag" aria-label="Worth a look" hidden>
+        <option value="">Any case</option><option value="overruled">Denied or changed</option><option value="bad">Marked bad</option><option value="asked">Asked a question</option>
+      </select>
       <select id="auStatus" aria-label="Status" hidden>
         <option value="">Any outcome</option><option value="done">Done</option><option value="error">Failed</option><option value="awaiting_approval">Waiting for a decision</option><option value="running">Running</option>
       </select>
@@ -119,7 +123,7 @@ ${consoleShellScript}
   var state = {
     tab: params.get('tab') === 'cases' ? 'cases' : 'activity',
     agent: params.get('agent') || '', workflow: params.get('workflow') || '', by: params.get('by') || '',
-    kind: params.get('kind') || '', status: params.get('status') || '',
+    kind: params.get('kind') || '', status: params.get('status') || '', flag: params.get('flag') || '',
     period: params.has('period') ? params.get('period') : '30', q: params.get('q') || '',
   };
   // The filters' choices come with the page (auditPageFor), so they show
@@ -131,7 +135,7 @@ ${consoleShellScript}
   var more = document.getElementById('auMore');
   var el = {
     agent: document.getElementById('auAgent'), workflow: document.getElementById('auWorkflow'), by: document.getElementById('auBy'),
-    kind: document.getElementById('auKind'), status: document.getElementById('auStatus'), period: document.getElementById('auPeriod'),
+    kind: document.getElementById('auKind'), status: document.getElementById('auStatus'), flag: document.getElementById('auFlag'), period: document.getElementById('auPeriod'),
     q: document.getElementById('auQ'), exportLink: document.getElementById('auExport'),
   };
 
@@ -168,6 +172,7 @@ ${consoleShellScript}
     if (state.by) q.set('by', state.by);
     if (state.tab === 'activity' && state.kind) q.set('kind', state.kind);
     if (state.tab === 'cases' && state.status) q.set('status', state.status);
+    if (state.tab === 'cases' && state.flag) q.set('flag', state.flag);
     if (state.period) q.set('since', new Date(Date.now() - Number(state.period) * 86400000).toISOString());
     if (state.q) q.set('q', state.q);
     Object.keys(extra || {}).forEach(function (k) { q.set(k, extra[k]); });
@@ -180,6 +185,7 @@ ${consoleShellScript}
     ['agent', 'workflow', 'by', 'q'].forEach(function (k) { if (state[k]) q.set(k, state[k]); });
     if (state.tab === 'activity' && state.kind) q.set('kind', state.kind);
     if (state.tab === 'cases' && state.status) q.set('status', state.status);
+    if (state.tab === 'cases' && state.flag) q.set('flag', state.flag);
     if (state.period !== '30') q.set('period', state.period);
     history.replaceState(null, '', '/audit' + (q.toString() ? '?' + q.toString() : ''));
   }
@@ -188,7 +194,7 @@ ${consoleShellScript}
   // the agent, or the workspace setting.
   function eventLink(e) {
     var d = e.data || {};
-    if (e.run_id) return { href: '/inbox?case=' + encodeURIComponent(e.run_id), text: 'Case' };
+    if (e.run_id) return { href: '/cases/' + encodeURIComponent(e.run_id) + '?back=' + encodeURIComponent(location.pathname + location.search), text: 'Case' };
     if (e.workflow_id) return { href: workflowHref(e.agent, e.workflow_id, /brief version/i.test(d.label || '') || /Edited the workflow/.test(d.label || '') ? 'brief' : 'changes'), text: 'Workflow' };
     if (e.agent) return { href: '/agents/config?agent=' + encodeURIComponent(e.agent), text: 'Agent' };
     var path = String(d.path || '');
@@ -225,8 +231,8 @@ ${consoleShellScript}
     return '<div class="au-row au-case"><span class="au-state ' + pill[0] + '">' + pill[1] + '</span>' +
       '<span class="au-what"><strong>' + esc(c.workflowTitle) + (c.inputs ? DOT + esc(c.inputs) : '') + '</strong>' +
         (c.outcome ? '<span class="au-detail">' + esc(c.outcome) + '</span>' : '') +
-        '<span class="au-where">' + esc(when(c.startedAt)) + DOT + esc(agentLabel(c.agent)) + (c.briefVersion ? DOT + 'brief v' + c.briefVersion : '') + (c.people.length ? DOT + 'decided by ' + esc(c.people.join(', ')) : '') + '</span></span>' +
-      '<a class="au-open" href="/inbox?case=' + encodeURIComponent(c.id) + '">Open ' + String.fromCharCode(8594) + '</a></div>';
+        '<span class="au-where">' + esc(when(c.startedAt)) + DOT + esc(agentLabel(c.agent)) + (c.briefVersion ? DOT + 'brief v' + c.briefVersion : '') + (c.people.length ? DOT + 'decided by ' + esc(c.people.join(', ')) : '') + (c.evalCase ? DOT + '<span class="au-evalcase">eval case</span>' : '') + '</span></span>' +
+      '<a class="au-open" href="/cases/' + encodeURIComponent(c.id) + '?back=' + encodeURIComponent(location.pathname + location.search) + '">Open ' + String.fromCharCode(8594) + '</a></div>';
   }
 
   function load(append) {
@@ -263,6 +269,7 @@ ${consoleShellScript}
     for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute('aria-selected', String(tabs[i].getAttribute('data-tab') === state.tab));
     el.kind.hidden = state.tab !== 'activity';
     el.status.hidden = state.tab !== 'cases';
+    el.flag.hidden = state.tab !== 'cases';
     el.exportLink.hidden = state.tab !== 'activity';
     verifyBtn.hidden = state.tab !== 'activity';
     el.exportLink.href = '/audit/events.csv?' + query();
@@ -303,7 +310,7 @@ ${consoleShellScript}
     changed();
   });
   el.agent.addEventListener('change', function () { state.agent = el.agent.value; fillWorkflows(); changed(); });
-  ['workflow', 'by', 'kind', 'status', 'period'].forEach(function (k) {
+  ['workflow', 'by', 'kind', 'status', 'flag', 'period'].forEach(function (k) {
     el[k].addEventListener('change', function () { state[k] = el[k].value; changed(); });
   });
   var typing;
@@ -313,14 +320,12 @@ ${consoleShellScript}
   });
   more.addEventListener('click', function () { load(true); });
 
-  // Checks every event's hash, in order, and the anchors sent away.
+  // Checks every event's hash, in order.
   var verifyBtn = document.getElementById('auVerify');
   var check = document.getElementById('auCheck');
   var PROBLEMS = {
     'changed': 'it was changed after it was recorded',
     'missing-before': 'an event before it was removed, or the order changed',
-    'missing-after-anchor': 'events up to an anchored point are missing',
-    'anchor-differs': 'it no longer matches the hash anchored for it',
   };
   verifyBtn.addEventListener('click', function () {
     verifyBtn.disabled = true;
@@ -330,15 +335,13 @@ ${consoleShellScript}
     fetch('/audit/verify', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
       .then(function (v) {
-        var anchors = v.anchors ? v.anchors + ' anchor' + (v.anchors === 1 ? '' : 's') + ' kept at ' + v.anchoredAt + ' match' + (v.anchors === 1 ? 'es' : '') : 'no anchors yet (one is sent each day)';
-        var note = v.anchorsNote ? '<span class="hint">Anchors checked are this workspace' + String.fromCharCode(8217) + 's own: ' + esc(v.anchorsNote) + '.</span>' : '';
         if (v.ok) {
-          check.innerHTML = 'Intact: all ' + v.events.toLocaleString() + ' events check out, and ' + anchors + '.' +
-            (v.last ? '<span class="hint">Latest event #' + v.last.id + ', ' + esc(when(v.last.at)) + DOT + 'hash ' + esc(v.last.hash.slice(0, 16)) + String.fromCharCode(8230) + '</span>' : '') + note;
+          check.innerHTML = 'Intact: all ' + v.events.toLocaleString() + ' events check out.' +
+            (v.last ? '<span class="hint">Latest event #' + v.last.id + ', ' + esc(when(v.last.at)) + DOT + 'hash ' + esc(v.last.hash) + '</span>' : '');
         } else {
           check.className = 'au-check bad';
           check.innerHTML = 'Broken at event #' + v.broken.id + (v.broken.at ? ' (' + esc(when(v.broken.at)) + ')' : '') + ': ' + esc(PROBLEMS[v.broken.problem] || v.broken.problem) + '.' +
-            '<span class="hint">' + v.events.toLocaleString() + ' events before it check out.</span>' + note;
+            '<span class="hint">' + v.events.toLocaleString() + ' events before it check out.</span>';
         }
       })
       .catch(function (err) { check.className = 'au-check bad'; check.textContent = 'Could not check: ' + err.message; })
@@ -348,6 +351,7 @@ ${consoleShellScript}
   el.q.value = state.q;
   el.kind.value = state.kind;
   el.status.value = state.status;
+  el.flag.value = state.flag;
   el.period.value = state.period;
   function fillFilters(f) {
     filters = f;

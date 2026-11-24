@@ -170,6 +170,9 @@ export interface RunSearch {
   until?: string
   /** Started before this ISO time (the next page). */
   before?: string
+  /** Runs worth a look: a person denied or changed what it did, its
+   * result was marked bad (or heavily edited), or it asked a question. */
+  flag?: 'overruled' | 'bad' | 'asked'
   limit?: number
 }
 
@@ -184,6 +187,9 @@ function matchesSearch(run: WorkflowRun, f: RunSearch): boolean {
     && (!f.until || run.started_at <= f.until)
     && (!f.before || run.started_at < f.before)
     && (!f.q || JSON.stringify(run).toLowerCase().includes(f.q.toLowerCase()))
+    && (f.flag !== 'overruled' || (run.decisions ?? []).some((d) => !d.approved || d.edited))
+    && (f.flag !== 'bad' || run.feedback?.verdict === 'bad' || run.feedback?.edit === 'heavy')
+    && (f.flag !== 'asked' || (run.answers ?? []).length > 0)
 }
 
 const fileMutex = new KeyedMutex()
@@ -337,6 +343,9 @@ export class SqliteRunStore implements RunStore {
     if (f.until) add('started_at <= ?', f.until)
     if (f.before) add('started_at < ?', f.before)
     if (f.by) add("(EXISTS (SELECT 1 FROM json_each(runs.data, '$.decisions') WHERE json_extract(value, '$.by') = ?) OR EXISTS (SELECT 1 FROM json_each(runs.data, '$.answers') WHERE json_extract(value, '$.by') = ?))", f.by, f.by)
+    if (f.flag === 'overruled') add("EXISTS (SELECT 1 FROM json_each(runs.data, '$.decisions') WHERE json_extract(value, '$.approved') = 0 OR json_extract(value, '$.edited') = 1)")
+    if (f.flag === 'bad') add("(json_extract(data, '$.feedback.verdict') = 'bad' OR json_extract(data, '$.feedback.edit') = 'heavy')")
+    if (f.flag === 'asked') add("json_array_length(data, '$.answers') > 0")
     if (f.q) add("data LIKE ? ESCAPE '\\'", `%${f.q.replace(/[\\%_]/g, (c) => '\\' + c)}%`)
     const limit = Math.min(Math.max(f.limit ?? 50, 1), 200)
     const sql = `SELECT data FROM runs${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY started_at DESC LIMIT ${limit}`

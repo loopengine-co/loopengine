@@ -87,8 +87,7 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
-import { fetchAnchors, startAuditAnchoring } from '#core/audit-anchor.js'
-import { briefContent, briefFromContent, eventPeople, lastAnchor, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
+import { briefContent, briefFromContent, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
 import { caseRow, eventsCsv } from '#web/audit-admin.js'
 import { auditPageFor } from '#web/audit-page.js'
 import { changeOf, keptBody } from '#web/change-log.js'
@@ -97,7 +96,7 @@ import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { buildWorkflowAudit, type WorkflowAudit } from '#web/workflow-audit.js'
 import { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
-import { EvidenceError, type StandIn, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
+import { EvidenceError, type StandIn, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
@@ -1847,8 +1846,15 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
       const run = typeof body.runId === 'string' ? await getRun(agentName, body.runId) : undefined
       if (typeof body.runId === 'string' && (!run || run.workflow_id !== id)) return json(404, { error: 'No such run of this workflow.' })
       const params = body.params && typeof body.params === 'object' ? validateParams(workflow, body.params) : undefined
-      addEvalCase(dir, id, { ...(run ? { run } : {}), ...(params ? { params } : {}), reference: body.reference })
-      return json(201, readEvals(dir, id))
+      const added = addEvalCase(dir, id, { ...(run ? { run } : {}), ...(params ? { params } : {}), reference: body.reference })
+      // Checklist items the run suggests (what people corrected in it), for
+      // the person to add or not.
+      return json(201, { ...readEvals(dir, id), added, suggestions: run ? suggestedCriteria(run) : [] })
+    }
+    // Runs worth saving as cases, from the last 30 days.
+    if (part === 'candidates' && req.method === 'GET') {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      return json(200, { candidates: evalCandidates(await runsSince(agentName, id, since), readEvals(dir, id)) })
     }
     if (part === 'cases' && caseId && req.method === 'PUT') {
       updateEvalCase(dir, id, caseId, (await readJsonBody(req)).reference)
@@ -2454,12 +2460,11 @@ function runCosts(agent: string, runs: WorkflowRun[]): Map<string, number> {
 
 // A workflow's audit for a period (web/workflow-audit.ts): its runs,
 // decisions, brief versions, settings changes and cost, and the log's
-// check against its anchors.
+// hash-chain check.
 async function workflowAuditOf(agent: string, workflowId: string, since: string, until: string): Promise<WorkflowAudit | undefined> {
   const workflow = readWorkflow(agentDir(agent), workflowId)
   if (!workflow) return undefined
   const runs = (await runsSince(agent, workflowId, since)).filter((r) => r.started_at <= until)
-  const remote = await fetchAnchors()
   return buildWorkflowAudit({
     workflow: { agent, agentLabel: getEntry(agent)?.config.displayName ?? agent, id: workflowId, title: workflow.title },
     since,
@@ -2468,7 +2473,7 @@ async function workflowAuditOf(agent: string, workflowId: string, since: string,
     costs: runCosts(agent, runs),
     versions: listVersions({ agent, workflowId, kind: 'brief' }),
     changes: listEvents({ agent, workflowId, kind: 'change', since, until, limit: 500 }),
-    verification: { ...verifyEventChain('anchors' in remote ? remote.anchors : undefined), anchoredAt: 'anchors' in remote ? 'loopengine.co' : 'this workspace' },
+    verification: verifyEventChain(),
   })
 }
 
@@ -2489,6 +2494,26 @@ async function sendHealthAlerts(): Promise<void> {
         if (announceToChat(entry.config, `Health alert for ${workflow.title}: ${alert.text}${page}`)) writeMeta(key, new Date().toISOString())
       }
     }
+  }
+}
+
+// Hourly too: requests that have waited more than 3 days for a decision
+// get one nudge a day in their agent's messaging app, with a link to the
+// Inbox (where the longest-waiting come first).
+const REMIND_AFTER_MS = 3 * 24 * 60 * 60 * 1000
+async function sendWaitingReminders(): Promise<void> {
+  for (const agent of listAgents()) {
+    const entry = getEntry(agent)
+    if (!entry) continue
+    const late = (await listAgentPending(checkpoints, agent)).filter((p) => p.createdAt && Date.now() - Date.parse(p.createdAt) > REMIND_AFTER_MS)
+    if (!late.length) continue
+    const key = `waiting_reminder:${agent}`
+    const last = readMeta(key)
+    if (last && Date.now() - Date.parse(last) < 24 * 60 * 60 * 1000) continue
+    const days = Math.floor((Date.now() - Math.min(...late.map((p) => Date.parse(p.createdAt!)))) / (24 * 60 * 60 * 1000))
+    const base = process.env.LOOPENGINE_PUBLIC_URL?.trim().replace(/\/+$/, '')
+    const text = `${late.length === 1 ? '1 request has' : `${late.length} requests have`} waited more than 3 days for a decision (the oldest ${days} days).${base ? ` ${base}/inbox?view=needs` : ' Open the Inbox to decide.'}`
+    if (announceToChat(entry.config, text)) writeMeta(key, new Date().toISOString())
   }
 }
 
@@ -5408,10 +5433,21 @@ const server = createServer(async (req, res) => {
     }
     // The Inbox (web/inbox-page.ts): every run as a case, the waiting ones
     // first; and its data.
+    // A case's own address; links from before it opened /inbox?case=<id>.
     if (req.method === 'GET' && pathname === '/inbox') {
+      const asked = new URL(req.url ?? '/', 'http://localhost').searchParams.get('case')
+      if (asked) {
+        res.writeHead(302, { location: `/cases/${encodeURIComponent(asked)}` }).end()
+        return
+      }
+    }
+    const casePage = req.method === 'GET' && /^\/cases\/[^/]+$/.test(pathname)
+    if (req.method === 'GET' && (pathname === '/inbox' || casePage)) {
       // An approver or viewer gets it Inbox-only from the start, so the
-      // rest of the sidebar never shows.
-      const page = inboxOnly(callerOf(req).role) ? inboxPageHtml.replace('<div class="le-app">', '<div class="le-app le-inbox-only">') : inboxPageHtml
+      // rest of the sidebar never shows. A case is the same page, opening
+      // on that case.
+      let page = inboxOnly(callerOf(req).role) ? inboxPageHtml.replace('<div class="le-app">', '<div class="le-app le-inbox-only">') : inboxPageHtml
+      if (casePage) page = page.replace('<body data-le-page="inbox">', '<body data-le-page="case">')
       res.writeHead(200, { 'content-type': 'text/html' }).end(page)
       return
     }
@@ -5443,7 +5479,8 @@ const server = createServer(async (req, res) => {
         return found ? json(200, found) : json(404, { error: 'No such case: it may have been removed.' })
       }
       const q = new URL(req.url ?? '/', 'http://localhost').searchParams
-      const listed = await listInbox(inboxDepsFor(req), { open: q.get('open') === '1', q: q.get('q') ?? undefined, workflow: q.get('workflow') ?? undefined })
+      const view = q.get('view')
+      const listed = await listInbox(inboxDepsFor(req), { open: q.get('open') === '1', view: view === 'needs' || view === 'recent' ? view : 'auto', q: q.get('q') ?? undefined, workflow: q.get('workflow') ?? undefined })
       return pathname === '/inbox/count' ? json(200, { open: listed.open }) : json(200, listed)
     }
     // The Jobs page (the same page as Goals, on its jobs view), and its API.
@@ -5513,7 +5550,7 @@ const server = createServer(async (req, res) => {
         return void reply(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
       }
     }
-    const evalsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/evals(?:\/(run|cases|criteria))?(?:\/([a-z0-9]+))?$/)
+    const evalsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/evals(?:\/(run|cases|criteria|candidates))?(?:\/([a-z0-9]+))?$/)
     if (evalsMatch) {
       await handleWorkflowEvals(req, res, decodeURIComponent(evalsMatch[1]), evalsMatch[2], evalsMatch[3], evalsMatch[4])
       return
@@ -5550,7 +5587,7 @@ const server = createServer(async (req, res) => {
         generatedAt: new Date().toISOString(),
         by: changedBy(req),
         jsonHref: `${pathname}?${period}&format=json`,
-        caseHref: (runId) => `/inbox?case=${encodeURIComponent(runId)}`,
+        caseHref: (runId) => `/cases/${encodeURIComponent(runId)}`,
         pageHref: `/audit?agent=${encodeURIComponent(agentName)}&workflow=${encodeURIComponent(audit.workflow.id)}`,
       })
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(html)
@@ -5694,17 +5731,9 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ events, next: events.length ? events.at(-1)!.id : null }))
       return
     }
-    // Checks the log's hash chain, and every anchor sent away (fetched
-    // back from loopengine.co; off Cloud, the ones kept here).
+    // Checks the log's hash chain, every event in order.
     if (req.method === 'GET' && pathname === '/audit/verify') {
-      const remote = await fetchAnchors()
-      const check = verifyEventChain('anchors' in remote ? remote.anchors : undefined)
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({
-        ...check,
-        anchoredAt: 'anchors' in remote ? 'loopengine.co' : 'this workspace',
-        ...('unavailable' in remote ? { anchorsNote: remote.unavailable } : {}),
-        lastAnchor: lastAnchor() ?? null,
-      }))
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(verifyEventChain()))
       return
     }
     // The same log as a CSV file, up to 10,000 rows.
@@ -5735,9 +5764,23 @@ const server = createServer(async (req, res) => {
         ...(q.get('since') ? { since: q.get('since')! } : {}),
         ...(q.get('until') ? { until: q.get('until')! } : {}),
         ...(q.get('before') ? { before: q.get('before')! } : {}),
+        ...(q.get('flag') === 'overruled' || q.get('flag') === 'bad' || q.get('flag') === 'asked' ? { flag: q.get('flag') as 'overruled' | 'bad' | 'asked' } : {}),
         limit: 50,
       })
-      const cases = runs.map((r) => caseRow(r, inboxDeps.workflowTitle(r.agent, r.workflow_id)))
+      // Which are eval cases already: each workflow's cases, read once.
+      const saved = new Map<string, Set<string>>()
+      const isCase = (r: WorkflowRun): boolean => {
+        const key = `${r.agent}/${r.workflow_id}`
+        if (!saved.has(key)) {
+          let ids = new Set<string>()
+          try {
+            if (r.workflow_id && getEntry(r.agent)) ids = new Set(readEvals(agentDir(r.agent), r.workflow_id).cases.map((c) => c.fromRun).filter((x): x is string => Boolean(x)))
+          } catch {}
+          saved.set(key, ids)
+        }
+        return saved.get(key)!.has(r.run_id)
+      }
+      const cases = runs.map((r) => caseRow(r, inboxDeps.workflowTitle(r.agent, r.workflow_id), isCase(r)))
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ cases, next: runs.length === 50 ? runs.at(-1)!.started_at : null }))
       return
     }
@@ -6310,9 +6353,11 @@ server.listen(port, () => {
   const checkGoals = () => void checkBuiltWorkflows(goalsDeps).catch((err) => console.error('[loopengine] checking goal workflows failed:', err))
   checkGoals()
   setInterval(checkGoals, 24 * 60 * 60 * 1000).unref()
-  const checkHealth = () => void sendHealthAlerts().catch((err) => console.error('[loopengine] checking workflow health failed:', err))
+  const checkHealth = () => {
+    void sendHealthAlerts().catch((err) => console.error('[loopengine] checking workflow health failed:', err))
+    void sendWaitingReminders().catch((err) => console.error('[loopengine] reminding of waiting requests failed:', err))
+  }
   setInterval(checkHealth, 60 * 60 * 1000).unref()
-  startAuditAnchoring((m) => console.log(m))
   startLeverEventsSync(projectDir(), (m) => console.log(m))
   reportAgentNames()
   // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.
