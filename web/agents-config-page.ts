@@ -986,8 +986,9 @@ ${renderMarkdownScript}
   // header and list. Every link to a workflow lands here.
   var pageParams = new URLSearchParams(location.search);
   var workflowPageId = pageParams.get('tab') === 'workflows' && pageParams.get('workflow') || null;
-  // Evidence and Changes became Audit and Improve: old links still open.
-  var OLD_TABS = { evidence: 'audit', changes: 'audit' };
+  // Older tab names still open their tab: Evidence, Changes and Audit are
+  // Activity now, Improve is Evaluation.
+  var OLD_TABS = { evidence: 'activity', changes: 'activity', audit: 'activity', improve: 'evaluation' };
   if (workflowPageId && pageParams.get('wtab')) workflowTabs[workflowPageId] = OLD_TABS[pageParams.get('wtab')] || pageParams.get('wtab');
   // A case's page, with a back link to here.
   function caseHref(runId) {
@@ -1144,7 +1145,7 @@ ${renderMarkdownScript}
       '<details class="wf-health-more"><summary>By version of its instructions</summary><div class="wf-health-table"><table><thead><tr><th>Version</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
   }
 
-  // The Audit tab's summary: the workflow's last 30 days in sentences, the
+  // The Activity tab's summary: the workflow's last 30 days in sentences, the
   // same as the Audit page's.
   function loadAuditSummary(card, base) {
     var box = card.querySelector('.wf-audit-summary');
@@ -1155,7 +1156,7 @@ ${renderMarkdownScript}
       .catch(function (err) { box.innerHTML = '<p class="error">Could not load its summary: ' + escapeHtml(err.message) + '</p>'; });
   }
 
-  // The Audit tab's latest few settings changes, with what changed.
+  // The Activity tab's latest few settings changes, with what changed.
   function loadLatestChanges(card, name) {
     var box = card.querySelector('.wf-changes-latest');
     if (!box) return;
@@ -1399,10 +1400,10 @@ ${renderMarkdownScript}
   }
   var REFERENCE_CRIT = { id: 'reference', text: 'Matches the good result: the same facts and decisions', kind: 'reference' };
 
-  // The Audit tab: what happened and whether it can be trusted. The same
+  // The Activity tab: what happened and whether it can be trusted. The same
   // summary as the Audit page's, its health over 30 days, its latest runs
   // and changes, and the way to the report and the full log.
-  function workflowAuditHtml(w, runsHtml, name) {
+  function workflowActivityHtml(w, runsHtml, name) {
     var auditHref = '/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id);
     var loading = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
     return (workflowPageId ? '<section class="wf-section wf-audit-summary">' + loading + '</section>' : '') +
@@ -1413,9 +1414,9 @@ ${renderMarkdownScript}
       (workflowPageId ? '<section class="wf-section"><div class="wf-audit-tools"><a class="primary" href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">See everything in Audit ' + String.fromCharCode(8594) + '</a></div></section>' : '');
   }
 
-  // The Improve tab: the checklist, the eval cases (suggested from real
-  // runs, and saved), and Evaluate.
-  function workflowImproveHtml(w) {
+  // The Evaluation tab: the checklist, the eval cases (saved, then
+  // suggested from real runs), and Evaluate.
+  function workflowEvaluationHtml(w) {
     var evals = w.evals || { cases: [], criteria: [], rounds: [] };
     var criteria = evals.criteria && evals.criteria.length ? evals.criteria : [REFERENCE_CRIT];
     var round = evals.rounds[0];
@@ -1581,10 +1582,10 @@ ${renderMarkdownScript}
             '</div>' +
           '</header>' +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('audit', 'Audit') + tabBtn('improve', 'Improve') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
-            panel('audit', workflowAuditHtml(w, runs, name)) +
-            panel('improve', workflowImproveHtml(w)) +
+            panel('activity', workflowActivityHtml(w, runs, name)) +
+            panel('evaluation', workflowEvaluationHtml(w)) +
             panel('triggers', workflowTriggersHtml(w, name, params)) +
             panel('messages', workflowMessagesHtml(w, name)) +
             panel('contract', workflowContractHtml(w, name, params)) +
@@ -1606,13 +1607,13 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('audit', 'Audit') + tabBtn('improve', 'Improve') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('messages', workflowMessagesHtml(w, name)) +
           panel('brief', workflowBriefHtml(w)) +
-          panel('audit', workflowAuditHtml(w, runs, name)) +
-          panel('improve', workflowImproveHtml(w)) +
+          panel('activity', workflowActivityHtml(w, runs, name)) +
+          panel('evaluation', workflowEvaluationHtml(w)) +
           '<div class="hint workflow-result"></div>' +
           '<div class="wf-row-foot"><span class="hint">Skill <code>' + escapeHtml(w.id) + '</code></span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
         '</div>' +
@@ -2338,7 +2339,7 @@ ${renderMarkdownScript}
       }
       if (cbtn.classList.contains('wf-crit-add')) { rows.insertAdjacentHTML('beforeend', critRowHtml({ kind: 'judge' })); return; }
       if (cbtn.classList.contains('wf-crit-remove')) { cbtn.closest('.wf-crit-row').remove(); return; }
-      if (cbtn.classList.contains('wf-crit-cancel')) { workflowTabs[id] = 'improve'; loadWorkflowsSection(name); return; }
+      if (cbtn.classList.contains('wf-crit-cancel')) { workflowTabs[id] = 'evaluation'; loadWorkflowsSection(name); return; }
       cbtn.disabled = true;
       if (cbtn.classList.contains('wf-crit-draft')) {
         critStatus.textContent = 'Drafting from the brief' + String.fromCharCode(8230);
@@ -2356,7 +2357,7 @@ ${renderMarkdownScript}
       fetchJsonRetryOnce(base + '/evals/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) }).then(function (r) {
         cbtn.disabled = false;
         if (!r.ok) { critStatus.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't save.'; return; }
-        workflowTabs[id] = 'improve';
+        workflowTabs[id] = 'evaluation';
         loadWorkflowsSection(name);
       });
     });
@@ -2376,7 +2377,7 @@ ${renderMarkdownScript}
       if (request[1].body) opts.body = JSON.stringify(request[1].body);
       fetchJsonRetryOnce(request[0], opts).then(function (r) {
         if (!r.ok) { btn.disabled = false; result.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't work.'; return; }
-        workflowTabs[id] = 'improve';
+        workflowTabs[id] = 'evaluation';
         loadWorkflowsSection(name);
       });
     });

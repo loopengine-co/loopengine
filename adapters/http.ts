@@ -2490,7 +2490,7 @@ async function sendHealthAlerts(): Promise<void> {
         const last = readMeta(key)
         if (last && Date.now() - Date.parse(last) < 7 * 24 * 60 * 60 * 1000) continue
         const base = process.env.LOOPENGINE_PUBLIC_URL?.trim().replace(/\/+$/, '')
-        const page = base ? ` ${base}/agents/config?agent=${encodeURIComponent(agent)}&tab=workflows&workflow=${encodeURIComponent(workflow.id)}&wtab=audit` : ''
+        const page = base ? ` ${base}/agents/config?agent=${encodeURIComponent(agent)}&tab=workflows&workflow=${encodeURIComponent(workflow.id)}&wtab=activity` : ''
         if (announceToChat(entry.config, `Health alert for ${workflow.title}: ${alert.text}${page}`)) writeMeta(key, new Date().toISOString())
       }
     }

@@ -418,7 +418,7 @@ ${renderMarkdownScript}
         .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'Could not save'); return b; }); })
         .then(function (b) {
           btn.textContent = 'Saved as an eval case';
-          result.innerHTML = 'Saved. <a class="ib-link" href="/agents/config?agent=' + encodeURIComponent(c.agent) + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId) + '&wtab=improve">See its eval cases</a>';
+          result.innerHTML = 'Saved. <a class="ib-link" href="/agents/config?agent=' + encodeURIComponent(c.agent) + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId) + '&wtab=evaluation">See its eval cases</a>';
           showSuggestions(c, b.suggestions || [], b.criteria || []);
         })
         .catch(function (err) { btn.disabled = false; result.textContent = err.message; });
