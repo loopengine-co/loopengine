@@ -6,14 +6,21 @@
 //     the feedback an app or person reported afterwards
 //     (POST /agents/:name/runs/:id/feedback): the text actually used,
 //     compared with the result (none, light or heavy edits), and a verdict.
-//   - Eval cases: real inputs with a good result to compare against, kept
-//     beside its skill (agents/<name>/skills/<id>/evals.json). A case is
-//     usually saved from a past run, its result edited into the good one.
+//   - Eval cases: real inputs, and when there is one a good result to
+//     compare against, kept beside its skill
+//     (agents/<name>/skills/<id>/evals.json). A case is usually saved from
+//     a past run, its result edited into the good one.
+//   - Criteria: the workflow's yes or no checks, in the same file. Some a
+//     program answers (a phrase is or isn't in the result, a tool was or
+//     wasn't called); the rest a judge model answers, one call per case
+//     for all of them, a model other than the workflow's own (models
+//     favour their own writing). With none set, the one check is whether
+//     the result matches the case's good result.
 //   - Eval results: each time the cases are run, as a test run (tools its
 //     rules don't allow aren't run, nobody is asked anything), every
-//     result is scored 1-5 against its case's good result by a judge model
-//     other than the workflow's own (models favour their own writing).
-//     The latest 10 rounds are kept.
+//     result is checked against every criterion; a round reports each
+//     criterion's pass rate and how many cases passed them all. A crash
+//     fails every check. The latest 10 rounds are kept.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -83,17 +90,43 @@ export function runFeedbackFrom(run: WorkflowRun, body: Record<string, unknown>)
 export interface EvalCase {
   id: string
   params: Record<string, string>
-  /** The good result to compare against. */
+  /** The good result to compare against; empty for a case checked only
+   * on criteria that need none. */
   reference: string
   /** The run it was saved from. */
   fromRun?: string
   createdAt: string
 }
 
+/** A yes or no check on every result. `judge`: a statement the judge
+ * says is true or false of the result. `reference`: the result matches
+ * the case's good result (cases without one skip it). `contains` /
+ * `not_contains`: `value` is or isn't in the result, ignoring case.
+ * `tool_called` / `tool_not_called`: the run did or didn't call tool
+ * `value` (in a test run, a call it would have made counts). */
+export type CriterionKind = 'judge' | 'reference' | 'contains' | 'not_contains' | 'tool_called' | 'tool_not_called'
+
+export interface EvalCriterion {
+  id: string
+  text: string
+  kind: CriterionKind
+  value?: string
+}
+
+export interface EvalCheck {
+  criterionId: string
+  pass: boolean
+  reason?: string
+}
+
 export interface EvalCaseResult {
   caseId: string
   result?: string
   error?: string
+  /** The tools the test run called. */
+  tools?: string[]
+  checks?: EvalCheck[]
+  /** Rounds from before criteria: a 1-5 score. */
   score?: number
   reason?: string
 }
@@ -104,12 +137,20 @@ export interface EvalRound {
   model: string
   judge: string
   cases: EvalCaseResult[]
-  /** Mean score of the cases that were scored. */
+  /** The criteria the round checked, as they were. */
+  criteria?: EvalCriterion[]
+  /** Each criterion's pass rate: cases that passed it, of those it
+   * applied to. */
+  passRates?: { criterionId: string; passed: number; total: number }[]
+  /** Cases that passed every check that applied to them. */
+  allPassed?: number
+  /** Rounds from before criteria: the mean 1-5 score. */
   average?: number
 }
 
 export interface WorkflowEvals {
   cases: EvalCase[]
+  criteria: EvalCriterion[]
   rounds: EvalRound[]
   /** Set while a round is running. */
   running?: { startedAt: string; done: number; total: number }
@@ -117,6 +158,11 @@ export interface WorkflowEvals {
 
 const MAX_CASES = 30
 const MAX_ROUNDS = 10
+const MAX_CRITERIA = 8
+const CRITERION_KINDS: CriterionKind[] = ['judge', 'reference', 'contains', 'not_contains', 'tool_called', 'tool_not_called']
+
+/** The check a workflow has before anyone sets criteria. */
+export const REFERENCE_CRITERION: EvalCriterion = { id: 'reference', text: 'Matches the good result: the same facts and decisions', kind: 'reference' }
 
 function evalsFile(agentDir: string, workflowId: string): string {
   return join(agentDir, 'skills', workflowId, 'evals.json')
@@ -125,9 +171,9 @@ function evalsFile(agentDir: string, workflowId: string): string {
 export function readEvals(agentDir: string, workflowId: string): WorkflowEvals {
   try {
     const raw = JSON.parse(readFileSync(evalsFile(agentDir, workflowId), 'utf8')) as Partial<WorkflowEvals>
-    return { cases: Array.isArray(raw.cases) ? raw.cases : [], rounds: Array.isArray(raw.rounds) ? raw.rounds : [], ...(raw.running ? { running: raw.running } : {}) }
+    return { cases: Array.isArray(raw.cases) ? raw.cases : [], criteria: Array.isArray(raw.criteria) ? raw.criteria : [], rounds: Array.isArray(raw.rounds) ? raw.rounds : [], ...(raw.running ? { running: raw.running } : {}) }
   } catch {
-    return { cases: [], rounds: [] }
+    return { cases: [], criteria: [], rounds: [] }
   }
 }
 
@@ -145,9 +191,9 @@ function writeEvals(agentDir: string, workflowId: string, evals: WorkflowEvals):
 export function addEvalCase(agentDir: string, workflowId: string, input: { run?: WorkflowRun; params?: Record<string, string>; reference?: unknown }): EvalCase {
   const evals = readEvals(agentDir, workflowId)
   if (evals.cases.length >= MAX_CASES) throw new EvidenceError(`A workflow keeps up to ${MAX_CASES} eval cases; remove one first.`)
-  const reference = typeof input.reference === 'string' && input.reference.trim() ? input.reference.trim() : input.run?.result?.trim()
-  if (!reference) throw new EvidenceError('A case needs a good result to compare against.')
+  const reference = (typeof input.reference === 'string' && input.reference.trim() ? input.reference.trim() : input.run?.result?.trim()) ?? ''
   const params = input.run?.params ?? input.params ?? {}
+  if (!reference && !Object.keys(params).length) throw new EvidenceError('A case needs its inputs, a good result, or both.')
   if (input.run && evals.cases.some((c) => c.fromRun === input.run!.run_id)) throw new EvidenceError('That run is already a case.')
   const c: EvalCase = { id: randomUUID().slice(0, 8), params, reference: reference.slice(0, 50000), ...(input.run ? { fromRun: input.run.run_id } : {}), createdAt: new Date().toISOString() }
   writeEvals(agentDir, workflowId, { ...evals, cases: [...evals.cases, c] })
@@ -156,7 +202,7 @@ export function addEvalCase(agentDir: string, workflowId: string, input: { run?:
 
 export function updateEvalCase(agentDir: string, workflowId: string, caseId: string, reference: unknown): void {
   const evals = readEvals(agentDir, workflowId)
-  if (typeof reference !== 'string' || !reference.trim()) throw new EvidenceError('A case needs a good result to compare against.')
+  if (typeof reference !== 'string') throw new EvidenceError('reference must be text; send "" for none.')
   if (!evals.cases.some((c) => c.id === caseId)) throw new EvidenceError('No such case.')
   writeEvals(agentDir, workflowId, { ...evals, cases: evals.cases.map((c) => (c.id === caseId ? { ...c, reference: reference.trim().slice(0, 50000) } : c)) })
 }
@@ -166,31 +212,153 @@ export function removeEvalCase(agentDir: string, workflowId: string, caseId: str
   writeEvals(agentDir, workflowId, { ...evals, cases: evals.cases.filter((c) => c.id !== caseId) })
 }
 
-export const EVAL_JUDGE_PROMPT = `You grade one result of an AI agent's workflow against a known good result for the same inputs.
+/** Replaces the workflow's criteria. Each needs its words; a code check
+ * needs its value. */
+export function setEvalCriteria(agentDir: string, workflowId: string, input: unknown): EvalCriterion[] {
+  if (!Array.isArray(input)) throw new EvidenceError('criteria must be a list.')
+  if (input.length > MAX_CRITERIA) throw new EvidenceError(`Keep it to ${MAX_CRITERIA} criteria: the ones that matter most.`)
+  const used = new Set<string>()
+  const criteria = input.map((raw, i): EvalCriterion => {
+    const c = (raw ?? {}) as Record<string, unknown>
+    const kind = CRITERION_KINDS.includes(c.kind as CriterionKind) ? (c.kind as CriterionKind) : 'judge'
+    const text = typeof c.text === 'string' ? c.text.trim().slice(0, 300) : ''
+    const value = typeof c.value === 'string' ? c.value.trim().slice(0, 300) : ''
+    if (!text) throw new EvidenceError(`Criterion ${i + 1} needs its words.`)
+    if (kind !== 'judge' && kind !== 'reference' && !value) throw new EvidenceError(`Criterion ${i + 1} needs ${kind.startsWith('tool') ? 'the tool' : 'the text to look for'}.`)
+    let id = typeof c.id === 'string' && /^[a-z0-9-]{1,40}$/.test(c.id) ? c.id : randomUUID().slice(0, 8)
+    if (used.has(id)) id = randomUUID().slice(0, 8)
+    used.add(id)
+    return { id, text, kind, ...(value && kind !== 'judge' && kind !== 'reference' ? { value } : {}) }
+  })
+  const evals = readEvals(agentDir, workflowId)
+  writeEvals(agentDir, workflowId, { ...evals, criteria })
+  return criteria
+}
 
-Score 1-5:
-5 = as good as the good result or better: same facts and decisions, nothing wrong or missing that matters.
-4 = right in substance, small gaps or wording differences that wouldn't matter to the person using it.
-3 = usable after edits: a fact, step or decision missing or off, but nothing harmful.
-2 = needs a rewrite: wrong in a way that matters (a wrong fact, a wrong decision, a promise it shouldn't make).
-1 = wrong or harmful, or no real result.
+/** The criteria a round checks: the workflow's, or with none set,
+ * whether the result matches the good result. */
+export function effectiveCriteria(evals: Pick<WorkflowEvals, 'criteria'>): EvalCriterion[] {
+  return evals.criteria.length ? evals.criteria : [REFERENCE_CRITERION]
+}
 
-Judge substance, not style: a different wording of the same facts and decisions is a 5. A test run doesn't make calls that need approval; a result saying it would have made one counts as making it.
+/** The checks a program answers, on one result. */
+export function codeCheck(criterion: EvalCriterion, run: { result: string; tools: string[] }): EvalCheck | undefined {
+  const value = (criterion.value ?? '').toLowerCase()
+  const text = run.result.toLowerCase()
+  switch (criterion.kind) {
+    case 'contains': return { criterionId: criterion.id, pass: text.includes(value), ...(text.includes(value) ? {} : { reason: `"${criterion.value}" isn't in the result.` }) }
+    case 'not_contains': return { criterionId: criterion.id, pass: !text.includes(value), ...(text.includes(value) ? { reason: `"${criterion.value}" is in the result.` } : {}) }
+    case 'tool_called': {
+      const called = run.tools.some((t) => t.toLowerCase() === value)
+      return { criterionId: criterion.id, pass: called, ...(called ? {} : { reason: `It didn't call ${criterion.value}.` }) }
+    }
+    case 'tool_not_called': {
+      const called = run.tools.some((t) => t.toLowerCase() === value)
+      return { criterionId: criterion.id, pass: !called, ...(called ? { reason: `It called ${criterion.value}.` } : {}) }
+    }
+    default: return undefined
+  }
+}
 
-Reply with JSON only: {"score": <1-5>, "reason": "<one or two sentences: what's right, what's missing or wrong>"}`
+export const EVAL_CRITERIA_PROMPT = `You check one result of an AI agent's workflow against a list of statements. For each statement, say whether it is true of the result.
 
-/** Scores one result against its case. */
-export async function judgeEvalResult(judge: ModelCall, input: { instructions: string; reference: string; result: string }): Promise<{ score: number; reason: string }> {
-  const content = `The workflow's instructions:\n<instructions>\n${input.instructions.slice(0, 12000)}\n</instructions>\n\nThe good result:\n<good_result>\n${input.reference.slice(0, 12000)}\n</good_result>\n\nThe result to grade:\n<result>\n${input.result.slice(0, 12000)}\n</result>`
-  const response = await judge([{ role: 'user', content }], EVAL_JUDGE_PROMPT, [])
+Judge substance, not style: the same facts and decisions in other words count. A test run doesn't make calls that need approval; a result saying it would have made one, or a call listed as attempted, counts as making it. When a statement can't be checked from what you're given, it is false, and say why.
+
+Reply with JSON only: {"checks": [{"id": "<the statement's id>", "pass": true or false, "reason": "<one sentence; required when false>"}]}, one entry per statement.`
+
+/** The judge's answers for one result, one call for all its statements. */
+export async function judgeCriteria(judge: ModelCall, input: { instructions: string; reference?: string; result: string; tools: string[]; criteria: EvalCriterion[] }): Promise<EvalCheck[]> {
+  const statements = input.criteria.map((c) => `- ${c.id}: ${c.kind === 'reference' ? 'The result has the same facts and decisions as the good result (wording may differ).' : c.text}`).join('\n')
+  const content = `The workflow's instructions:\n<instructions>\n${input.instructions.slice(0, 12000)}\n</instructions>\n\n` +
+    (input.reference ? `The good result for these inputs:\n<good_result>\n${input.reference.slice(0, 12000)}\n</good_result>\n\n` : '') +
+    `Tools the run called: ${input.tools.length ? input.tools.join(', ') : 'none'}\n\nThe result to check:\n<result>\n${input.result.slice(0, 12000)}\n</result>\n\nThe statements:\n${statements}`
+  const response = await judge([{ role: 'user', content }], EVAL_CRITERIA_PROMPT, [])
   const text = response.content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('')
   const match = /\{[\s\S]*\}/.exec(text)
+  let parsed: { checks?: unknown } = {}
   try {
-    const parsed = JSON.parse(match?.[0] ?? '') as { score?: unknown; reason?: unknown }
-    const score = Math.round(Number(parsed.score))
-    if (score >= 1 && score <= 5) return { score, reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 600) : '' }
+    parsed = JSON.parse(match?.[0] ?? '') as { checks?: unknown }
   } catch {}
-  throw new Error('The judge did not return a score.')
+  const answers = new Map<string, { pass: boolean; reason: string }>()
+  for (const a of Array.isArray(parsed.checks) ? parsed.checks : []) {
+    const x = (a ?? {}) as Record<string, unknown>
+    if (typeof x.id === 'string' && typeof x.pass === 'boolean') answers.set(x.id, { pass: x.pass, reason: typeof x.reason === 'string' ? x.reason.slice(0, 400) : '' })
+  }
+  if (!answers.size) throw new Error('The judge did not answer the checks.')
+  return input.criteria.map((c) => {
+    const a = answers.get(c.id)
+    return a ? { criterionId: c.id, pass: a.pass, ...(a.reason && !a.pass ? { reason: a.reason } : {}) } : { criterionId: c.id, pass: false, reason: 'The judge gave no answer for this check.' }
+  })
+}
+
+/** Every check on one case's result: the program's, then the judge's in
+ * one call. A case with no good result skips the reference check; a
+ * failed run fails every check that applies. */
+export async function checkCase(judge: ModelCall, input: { instructions: string; criteria: EvalCriterion[]; reference: string; run: { result: string; tools: string[] } | { error: string } }): Promise<EvalCheck[]> {
+  const applies = input.criteria.filter((c) => c.kind !== 'reference' || input.reference.trim())
+  if ('error' in input.run) {
+    const error = input.run.error
+    return applies.map((c) => ({ criterionId: c.id, pass: false, reason: `The run failed: ${error.slice(0, 200)}` }))
+  }
+  const run = input.run
+  const coded = new Map(applies.flatMap((c) => { const r = codeCheck(c, run); return r ? [[c.id, r] as const] : [] }))
+  const forJudge = applies.filter((c) => !coded.has(c.id))
+  let judged = new Map<string, EvalCheck>()
+  if (forJudge.length) {
+    try {
+      judged = new Map((await judgeCriteria(judge, { instructions: input.instructions, reference: input.reference || undefined, result: run.result, tools: run.tools, criteria: forJudge })).map((c) => [c.criterionId, c]))
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      judged = new Map(forJudge.map((c) => [c.id, { criterionId: c.id, pass: false, reason }]))
+    }
+  }
+  return applies.map((c) => coded.get(c.id) ?? judged.get(c.id)!)
+}
+
+/** A round's pass rate per criterion, and the cases that passed all. */
+export function roundSummary(criteria: EvalCriterion[], cases: EvalCaseResult[]): Pick<EvalRound, 'passRates' | 'allPassed'> {
+  const passRates = criteria.map((c) => {
+    const checks = cases.flatMap((r) => (r.checks ?? []).filter((x) => x.criterionId === c.id))
+    return { criterionId: c.id, passed: checks.filter((x) => x.pass).length, total: checks.length }
+  })
+  return { passRates, allPassed: cases.filter((r) => (r.checks ?? []).length && r.checks!.every((x) => x.pass)).length }
+}
+
+export const DRAFT_CRITERIA_PROMPT = `You write the checks a workflow's results are tested against, from its brief: what the agent is told to do, its rules and policies.
+
+Write three to six yes or no checks, the ones that matter most: a result failing one is a result a person would have to fix. Each is a short statement true of a good result ("The reply gives the order's tracking number", "It doesn't promise a refund"). Take them from the brief's rules and its job; never invent requirements it doesn't state.
+
+Each check has a kind:
+- "judge": a statement a reviewer decides by reading the result (most checks).
+- "contains" / "not_contains" with "value": an exact phrase that must or mustn't appear, only when the brief names the exact words (a sign-off, a banned phrase).
+- "tool_called" / "tool_not_called" with "value": a tool the run must or mustn't call, only when the brief says so and the tool's exact name is in the list given.
+
+Reply with JSON only: {"criteria": [{"text": "...", "kind": "judge"}, {"text": "...", "kind": "tool_called", "value": "<tool name>"}]}`
+
+/** Criteria drafted from a workflow's brief, for a person to edit before
+ * saving. */
+export async function draftCriteria(model: ModelCall, input: { instructions: string; tools: string[] }): Promise<EvalCriterion[]> {
+  const content = `The workflow's brief:\n<brief>\n${input.instructions.slice(0, 16000)}\n</brief>\n\nIts tools: ${input.tools.length ? input.tools.join(', ') : 'none'}`
+  const response = await model([{ role: 'user', content }], DRAFT_CRITERIA_PROMPT, [])
+  const text = response.content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('')
+  const match = /\{[\s\S]*\}/.exec(text)
+  let parsed: { criteria?: unknown } = {}
+  try {
+    parsed = JSON.parse(match?.[0] ?? '') as { criteria?: unknown }
+  } catch {}
+  const tools = new Set(input.tools.map((t) => t.toLowerCase()))
+  const drafted = (Array.isArray(parsed.criteria) ? parsed.criteria : []).flatMap((raw): EvalCriterion[] => {
+    const c = (raw ?? {}) as Record<string, unknown>
+    const text = typeof c.text === 'string' ? c.text.trim().slice(0, 300) : ''
+    let kind = CRITERION_KINDS.includes(c.kind as CriterionKind) && c.kind !== 'reference' ? (c.kind as CriterionKind) : 'judge'
+    const value = typeof c.value === 'string' ? c.value.trim().slice(0, 300) : ''
+    // A tool it can't call, or a phrase with no words, is judged instead.
+    if ((kind === 'tool_called' || kind === 'tool_not_called') && !tools.has(value.toLowerCase())) kind = 'judge'
+    if ((kind === 'contains' || kind === 'not_contains') && !value) kind = 'judge'
+    return text ? [{ id: randomUUID().slice(0, 8), text, kind, ...(kind !== 'judge' ? { value } : {}) }] : []
+  })
+  if (!drafted.length) throw new EvidenceError('No checks could be drafted from this brief: add them by hand.')
+  return drafted.slice(0, MAX_CRITERIA)
 }
 
 export interface EvalRunDeps {
@@ -201,8 +369,9 @@ export interface EvalRunDeps {
   model: string
   judgeLabel: string
   judge: ModelCall
-  /** One test run of the workflow with these inputs; its result. */
-  runCase(params: Record<string, string>): Promise<string>
+  /** One test run of the workflow with these inputs: its result, and
+   * the tools it called. */
+  runCase(params: Record<string, string>): Promise<{ result: string; tools: string[] }>
 }
 
 /** Runs every case once and scores it, recording progress as it goes.
@@ -215,30 +384,32 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
   const cases = evals.cases
   const startedAt = new Date().toISOString()
   writeEvals(deps.agentDir, deps.workflowId, { ...evals, running: { startedAt, done: 0, total: cases.length } })
+  const criteria = effectiveCriteria(evals)
   return (async () => {
     const results: EvalCaseResult[] = []
     for (const c of cases) {
+      let run: { result: string; tools: string[] } | { error: string }
       try {
-        const result = await deps.runCase(c.params)
-        try {
-          const verdict = await judgeEvalResult(deps.judge, { instructions: deps.instructions, reference: c.reference, result })
-          results.push({ caseId: c.id, result: result.slice(0, 20000), ...verdict })
-        } catch (err) {
-          results.push({ caseId: c.id, result: result.slice(0, 20000), error: err instanceof Error ? err.message : String(err) })
-        }
+        run = await deps.runCase(c.params)
       } catch (err) {
-        results.push({ caseId: c.id, error: err instanceof Error ? err.message : String(err) })
+        run = { error: err instanceof Error ? err.message : String(err) }
       }
+      const checks = await checkCase(deps.judge, { instructions: deps.instructions, criteria, reference: c.reference ?? '', run })
+      results.push({
+        caseId: c.id,
+        ...('error' in run ? { error: run.error } : { result: run.result.slice(0, 20000), tools: [...new Set(run.tools)] }),
+        checks,
+      })
       const now = readEvals(deps.agentDir, deps.workflowId)
       writeEvals(deps.agentDir, deps.workflowId, { ...now, running: { startedAt, done: results.length, total: cases.length } })
     }
-    const scored = results.filter((r) => typeof r.score === 'number')
     const round: EvalRound = {
       at: startedAt,
       model: deps.model,
       judge: deps.judgeLabel,
       cases: results,
-      ...(scored.length ? { average: Math.round((scored.reduce((sum, r) => sum + r.score!, 0) / scored.length) * 100) / 100 } : {}),
+      criteria,
+      ...roundSummary(criteria, results),
     }
     const now = readEvals(deps.agentDir, deps.workflowId)
     const { running: _done, ...rest } = now

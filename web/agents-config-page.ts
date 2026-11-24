@@ -207,6 +207,20 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-score-v { font-size: 18px; font-variant-numeric: tabular-nums; }
   .wf-evals-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .wf-evals-bar button, .wf-case-actions button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-crits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+  .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
+  .wf-crit-rate { font-variant-numeric: tabular-nums; }
+  .wf-crit-form { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .wf-crit-form[hidden] { display: none; }
+  .wf-crit-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 180px auto; gap: 8px; align-items: center; }
+  .wf-crit-row select, .wf-crit-row input { font: inherit; font-size: 13px; height: 32px; padding: 0 8px; min-width: 0; }
+  .wf-crit-row input[data-crit-value][hidden] { visibility: hidden; display: block; }
+  .wf-crit-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .wf-crit-bar button, .wf-crit-edit { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-crit-bar button.plain { border-color: var(--line); background: var(--bg); color: var(--ink); }
+  .wf-case-fails { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: 12.5px; color: var(--ink-muted); }
+  @media (max-width: 720px) { .wf-crit-row { grid-template-columns: minmax(0, 1fr) auto; } .wf-crit-row input[data-crit-text] { grid-column: 1 / -1; } }
   .wf-cases { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
   .wf-case { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; font-size: 13px; }
   .wf-case-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -1180,40 +1194,95 @@ ${renderMarkdownScript}
     return '<div class="wf-score"><span class="wf-score-k">' + label + '</span><strong class="wf-score-v">' + value + '</strong>' + (detail ? '<span class="hint">' + detail + '</span>' : '') + '</div>';
   }
 
+  // A criterion's kind, in words, for its row and its editor.
+  var CRIT_KINDS = [
+    ['judge', 'Judge decides'],
+    ['contains', 'Result contains'],
+    ['not_contains', 'Result doesn' + String.fromCharCode(8217) + 't contain'],
+    ['tool_called', 'Calls tool'],
+    ['tool_not_called', 'Doesn' + String.fromCharCode(8217) + 't call tool'],
+    ['reference', 'Matches the good result'],
+  ];
+  function critKindText(c) {
+    var label = (CRIT_KINDS.filter(function (k) { return k[0] === c.kind; })[0] || CRIT_KINDS[0])[1];
+    return c.value ? label + ' ' + String.fromCharCode(8220) + c.value + String.fromCharCode(8221) : label;
+  }
+  function critRowHtml(c) {
+    var needsValue = c.kind !== 'judge' && c.kind !== 'reference';
+    return '<div class="wf-crit-row" data-crit-id="' + escapeHtml(c.id || '') + '">' +
+      '<select data-crit-kind aria-label="How it' + RSQ + 's checked">' + CRIT_KINDS.map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === c.kind ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>' +
+      '<input data-crit-text value="' + escapeHtml(c.text || '') + '" placeholder="e.g. The reply gives the order' + RSQ + 's tracking number" aria-label="The check">' +
+      '<input data-crit-value value="' + escapeHtml(c.value || '') + '" placeholder="' + (c.kind && c.kind.indexOf('tool') === 0 ? 'tool name' : 'exact text') + '" aria-label="What to look for"' + (needsValue ? '' : ' hidden') + '>' +
+      '<button type="button" class="wf-link wf-crit-remove">Remove</button></div>';
+  }
+  var REFERENCE_CRIT = { id: 'reference', text: 'Matches the good result: the same facts and decisions', kind: 'reference' };
+
   function workflowEvidenceHtml(w, runsHtml) {
     var s = w.scores || { runs: 0, done: 0, failed: 0, approvals: { approved: 0, refused: 0 }, feedback: { count: 0, good: 0, bad: 0, edits: { none: 0, light: 0, heavy: 0 } } };
-    var evals = w.evals || { cases: [], rounds: [] };
+    var evals = w.evals || { cases: [], criteria: [], rounds: [] };
+    var criteria = evals.criteria && evals.criteria.length ? evals.criteria : [REFERENCE_CRIT];
     var round = evals.rounds[0];
+    var checked = round && round.passRates;
     var decided = s.approvals.approved + s.approvals.refused;
     var f = s.feedback;
+    var evalsValue = !round ? String.fromCharCode(8212) : checked ? round.allPassed + ' / ' + round.cases.length : typeof round.average === 'number' ? round.average.toFixed(1) + ' / 5' : String.fromCharCode(8212);
+    var evalsDetail = !round ? (evals.cases.length ? 'not run yet' : 'no cases yet') : (checked ? 'passed every check' + DOT : '') + new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     var tiles = '<div class="wf-scores">' +
       scoreTileHtml('Runs', String(s.runs), s.runs ? s.done + ' done' + DOT + s.failed + ' failed' : 'none yet') +
       scoreTileHtml('Approvals', decided ? Math.round(100 * s.approvals.approved / decided) + '%' : String.fromCharCode(8212), decided ? s.approvals.approved + ' approved' + DOT + s.approvals.refused + ' refused' : 'none asked yet') +
       scoreTileHtml('Feedback', f.count ? String(f.count) : String.fromCharCode(8212), f.count ? (f.good + f.bad ? f.good + ' good' + DOT + f.bad + ' bad' + DOT : '') + f.edits.none + ' unedited' + DOT + f.edits.light + ' light' + DOT + f.edits.heavy + ' heavy edits' : 'none reported yet') +
-      scoreTileHtml('Evals', round && typeof round.average === 'number' ? round.average.toFixed(1) + ' / 5' : String.fromCharCode(8212), round ? new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + DOT + evals.cases.length + ' case' + (evals.cases.length === 1 ? '' : 's') : (evals.cases.length ? 'not run yet' : 'no cases yet')) +
+      scoreTileHtml('Evals', evalsValue, evalsDetail) +
       '</div>';
     var feedbackHint = f.count ? '' : '<p class="hint" style="margin:0">An app reports what happened to a result with <code>POST /agents/' + escapeHtml(currentName || '') + '/runs/&lt;runId&gt;/feedback</code> and <code>{"final": "the text it sent"}</code> or <code>{"verdict": "good"}</code>.</p>';
+    // Each criterion, with how often the latest round passed it.
+    var rateOf = {};
+    (checked ? round.passRates : []).forEach(function (r) { rateOf[r.criterionId] = r; });
+    var critList = criteria.map(function (c) {
+      var r = rateOf[c.id];
+      var pill = !r || !r.total ? '' : '<span class="le-pill ' + (r.passed === r.total ? 'good' : r.passed * 2 >= r.total ? 'ask' : 'bad') + ' wf-crit-rate">' + r.passed + ' / ' + r.total + '</span>';
+      return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
+    }).join('');
+    var critSection = '<h4 class="wf-sub">Criteria</h4>' +
+      '<p class="hint" style="margin:0">' + (evals.criteria && evals.criteria.length
+        ? 'Every result is checked on each of these, yes or no. Exact text and tool checks are checked directly; the rest by a judge model from another provider.'
+        : 'No criteria yet, so each result is only compared with its case' + RSQ + 's good result. Add the checks that matter, or draft them from the brief.') + '</p>' +
+      '<ul class="wf-crits">' + critList + '</ul>' +
+      '<div class="wf-crit-bar"><button type="button" class="wf-crit-edit">' + (evals.criteria && evals.criteria.length ? 'Edit criteria' : 'Add criteria') + '</button></div>' +
+      '<div class="wf-crit-form" hidden>' +
+        '<div class="wf-crit-rows">' + (evals.criteria && evals.criteria.length ? evals.criteria : []).map(critRowHtml).join('') + '</div>' +
+        '<div class="wf-crit-bar"><button type="button" class="plain wf-crit-add">+ Add a check</button><button type="button" class="plain wf-crit-draft">Draft from the brief</button>' +
+          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save criteria</button></div>' +
+        '<span class="hint wf-crit-status"></span>' +
+      '</div>';
     var latest = {};
     (round ? round.cases : []).forEach(function (c) { latest[c.caseId] = c; });
+    var critName = {};
+    ((round && round.criteria) || criteria).forEach(function (c) { critName[c.id] = c.text; });
     var running = evals.running;
     var cases = evals.cases.map(function (c, i) {
       var last = latest[c.id];
       var values = Object.keys(c.params || {}).map(function (k) { var v = String(c.params[k]); return escapeHtml(k) + ': ' + escapeHtml(v.length > 60 ? v.slice(0, 60) + String.fromCharCode(8230) : v); }).join(DOT);
-      return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '"><div class="wf-case-head"><strong>Case ' + (i + 1) + '</strong>' +
-        (last ? (typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>') : '') +
+      var fails = last && last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
+      var pill = !last ? ''
+        : last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' checks failed</span>' : '<span class="le-pill good">All ' + last.checks.length + ' checks passed</span>')
+        : typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>';
+      var why = !last ? ''
+        : last.checks ? (fails.length ? '<ul class="wf-case-fails">' + fails.map(function (x) { return '<li><strong>' + escapeHtml(critName[x.criterionId] || x.criterionId) + '</strong>' + (x.reason ? ': ' + escapeHtml(x.reason) : '') + '</li>'; }).join('') + '</ul>' : '')
+        : '<p class="hint" style="margin:0">' + escapeHtml(last.reason || last.error || '') + '</p>';
+      return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '"><div class="wf-case-head"><strong>Case ' + (i + 1) + '</strong>' + pill +
         '<span class="hint">' + (values || 'no inputs') + '</span><button type="button" class="wf-link wf-case-remove">Remove</button></div>' +
-        (last ? '<p class="hint" style="margin:0">' + escapeHtml(last.reason || last.error || '') + '</p>' : '') +
-        '<details><summary>Good result' + (last && last.result ? ' and its latest result' : '') + '</summary>' +
-          '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '">' + escapeHtml(c.reference) + '</textarea>' +
+        why +
+        '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (last && last.result ? ' and its latest result' : '') + '</summary>' +
+          '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '" placeholder="Optional: what a good result says, to compare against">' + escapeHtml(c.reference || '') + '</textarea>' +
           '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>' +
-          (last && last.result ? '<div class="workflow-run-entry-label">Latest result</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div>' : '') +
+          (last && last.result ? '<div class="workflow-run-entry-label">Latest result' + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div>' : '') +
         '</details></li>';
     }).join('');
-    return tiles + feedbackHint +
+    return tiles + feedbackHint + critSection +
       '<h4 class="wf-sub">Eval cases</h4>' +
       '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Running ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Run evals') + '</button>' +
         '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: tools that need approval aren' + RSQ + 't run, and nobody is asked anything.') + '</span></div>' +
-      (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save a good run from History below as a case, edit its result into the right answer if needed, then run the cases after each change to the instructions or model.</p>') +
+      (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save a run from History below as a case, then run the cases after each change to the instructions or model.</p>') +
       '<h4 class="wf-sub">History</h4>' +
       (runsHtml ? '<ul class="schedule-history">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>');
   }
@@ -1958,7 +2027,52 @@ ${renderMarkdownScript}
       }
     }
     // Evidence: save a run as an eval case, change or remove a case, run them.
-    card.querySelector('.wf-row-body').addEventListener('click', function (ev) {
+    var body = card.querySelector('.wf-row-body');
+    // Criteria: the editor's rows, drafting from the brief, saving.
+    var critForm = card.querySelector('.wf-crit-form');
+    var critStatus = card.querySelector('.wf-crit-status');
+    body.addEventListener('change', function (ev) {
+      var kind = ev.target.closest('[data-crit-kind]');
+      if (!kind) return;
+      var value = kind.closest('.wf-crit-row').querySelector('[data-crit-value]');
+      value.hidden = kind.value === 'judge' || kind.value === 'reference';
+      value.placeholder = kind.value.indexOf('tool') === 0 ? 'tool name' : 'exact text';
+    });
+    body.addEventListener('click', function (ev) {
+      var cbtn = ev.target.closest('.wf-crit-edit, .wf-crit-add, .wf-crit-remove, .wf-crit-cancel, .wf-crit-draft, .wf-crit-save');
+      if (!cbtn || !critForm) return;
+      var rows = critForm.querySelector('.wf-crit-rows');
+      if (cbtn.classList.contains('wf-crit-edit')) {
+        critForm.hidden = false;
+        cbtn.hidden = true;
+        if (!rows.children.length) rows.insertAdjacentHTML('beforeend', critRowHtml({ kind: 'judge' }));
+        return;
+      }
+      if (cbtn.classList.contains('wf-crit-add')) { rows.insertAdjacentHTML('beforeend', critRowHtml({ kind: 'judge' })); return; }
+      if (cbtn.classList.contains('wf-crit-remove')) { cbtn.closest('.wf-crit-row').remove(); return; }
+      if (cbtn.classList.contains('wf-crit-cancel')) { workflowTabs[id] = 'evidence'; loadWorkflowsSection(name); return; }
+      cbtn.disabled = true;
+      if (cbtn.classList.contains('wf-crit-draft')) {
+        critStatus.textContent = 'Drafting from the brief' + String.fromCharCode(8230);
+        fetchJsonRetryOnce(base + '/evals/criteria/draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(function (r) {
+          cbtn.disabled = false;
+          if (!r.ok) { critStatus.textContent = r.body.error || 'Couldn' + String.fromCharCode(8217) + 't draft them.'; return; }
+          rows.innerHTML = r.body.criteria.map(critRowHtml).join('');
+          critStatus.textContent = 'Drafted ' + r.body.criteria.length + ': edit or remove any, then save.';
+        });
+        return;
+      }
+      var list = Array.prototype.map.call(rows.querySelectorAll('.wf-crit-row'), function (row) {
+        return { id: row.dataset.critId || undefined, kind: row.querySelector('[data-crit-kind]').value, text: row.querySelector('[data-crit-text]').value, value: row.querySelector('[data-crit-value]').value };
+      }).filter(function (c) { return c.text.trim() || c.value.trim(); });
+      fetchJsonRetryOnce(base + '/evals/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) }).then(function (r) {
+        cbtn.disabled = false;
+        if (!r.ok) { critStatus.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't save.'; return; }
+        workflowTabs[id] = 'evidence';
+        loadWorkflowsSection(name);
+      });
+    });
+    body.addEventListener('click', function (ev) {
       var btn = ev.target.closest('.wf-save-case, .wf-case-remove, .wf-case-save, .wf-evals-run');
       if (!btn) return;
       var caseEl = btn.closest('[data-case]');

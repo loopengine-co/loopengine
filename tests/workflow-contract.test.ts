@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { readWorkflow, readWorkspacePolicies, setWorkflowFields, workflowRunMessage, writeWorkspacePolicies } from '#core/workflows.js'
-import { addEvalCase, judgeEvalResult, readEvals, removeEvalCase, runFeedbackFrom, startEvalRound, workflowScores } from '#web/workflow-evidence.js'
+import { addEvalCase, checkCase, codeCheck, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase, workflowScores } from '#web/workflow-evidence.js'
 import type { WorkflowRun } from '#core/workflow-runs.js'
 import type { ModelCall } from '#core/run-agent.js'
 
@@ -67,13 +67,14 @@ describe('a workflow evidence', () => {
     expect(() => runFeedbackFrom(run({ status: 'error' }), { verdict: 'good' })).toThrow(/finished/)
   })
 
-  it('saves a past run as an eval case, runs the cases and scores each with a judge', async () => {
+  const judgeSays = (text: string): ModelCall => async () => ({ content: [{ type: 'text', text }], stopReason: 'end_turn' } as never)
+
+  it('saves a past run as an eval case and, with no criteria set, checks results against its good result', async () => {
     const dir = agentWithWorkflow()
     addEvalCase(dir, 'reply', { run: run({ params: { order_number: 'EM-1' } }) })
     expect(() => addEvalCase(dir, 'reply', { run: run() })).toThrow(/already/)
-    const judge: ModelCall = async () => ({ content: [{ type: 'text', text: '{"score": 4, "reason": "Right facts."}' }], stopReason: 'end_turn' } as never)
-    const round = await startEvalRound({ agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'deepseek v4', judgeLabel: 'openai gpt-6.1-sol', judge, runCase: async (params) => `Draft for ${params.order_number}` })
-    expect(round).toMatchObject({ average: 4, cases: [{ score: 4, result: 'Draft for EM-1' }] })
+    const round = await startEvalRound({ agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'deepseek v4', judgeLabel: 'openai gpt-6.1-sol', judge: judgeSays('{"checks": [{"id": "reference", "pass": true}]}'), runCase: async (params) => ({ result: `Draft for ${params.order_number}`, tools: [] }) })
+    expect(round).toMatchObject({ allPassed: 1, passRates: [{ criterionId: 'reference', passed: 1, total: 1 }], cases: [{ result: 'Draft for EM-1', checks: [{ criterionId: 'reference', pass: true }] }] })
     const evals = readEvals(dir, 'reply')
     expect(evals.running).toBeUndefined()
     expect(evals.rounds).toHaveLength(1)
@@ -81,8 +82,68 @@ describe('a workflow evidence', () => {
     expect(readEvals(dir, 'reply').cases).toEqual([])
   })
 
-  it('rejects a judge reply without a score', async () => {
-    const judge: ModelCall = async () => ({ content: [{ type: 'text', text: 'Looks fine.' }], stopReason: 'end_turn' } as never)
-    await expect(judgeEvalResult(judge, { instructions: '', reference: 'a', result: 'b' })).rejects.toThrow(/score/)
+  it('checks every criterion: code checks by program, the rest by the judge in one call, a crash failing them all', async () => {
+    const dir = agentWithWorkflow()
+    setEvalCriteria(dir, 'reply', [
+      { id: 'tracking', text: 'Gives the tracking number', kind: 'judge' },
+      { id: 'signed', text: 'Signed by Support', kind: 'contains', value: 'Everymarket Support' },
+      { id: 'no-refund', text: "Doesn't refund", kind: 'tool_not_called', value: 'issue_refund' },
+      { id: 'reference', text: 'Matches the good result', kind: 'reference' },
+    ])
+    addEvalCase(dir, 'reply', { params: { order_number: 'EM-1' } })
+    addEvalCase(dir, 'reply', { params: { order_number: 'EM-2' }, reference: 'Tracking 1Z9; Everymarket Support' })
+    addEvalCase(dir, 'reply', { params: { order_number: 'EM-3' } })
+    let judgeCalls = 0
+    const judge: ModelCall = async (messages) => {
+      judgeCalls++
+      const asked = String(messages[0]!.content)
+      // Only judge criteria go to the judge, and the reference check only
+      // for the case that has a good result.
+      expect(asked).toContain('tracking:')
+      expect(asked).not.toContain('signed:')
+      return judgeSays(asked.includes('reference:') ? '{"checks": [{"id": "tracking", "pass": true}, {"id": "reference", "pass": false, "reason": "Wrong carrier."}]}' : '{"checks": [{"id": "tracking", "pass": false, "reason": "No number."}]}')([], '', [])
+    }
+    const round = await startEvalRound({
+      agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'm', judgeLabel: 'j', judge,
+      runCase: async (params) => {
+        if (params.order_number === 'EM-3') throw new Error('timeout')
+        return params.order_number === 'EM-1' ? { result: 'We will look into it.', tools: ['issue_refund'] } : { result: 'Tracking 1Z9. Everymarket Support', tools: [] }
+      },
+    })
+    expect(judgeCalls).toBe(2)
+    const byCase = (n: number) => Object.fromEntries(round.cases[n]!.checks!.map((c) => [c.criterionId, c.pass]))
+    expect(byCase(0)).toEqual({ tracking: false, signed: false, 'no-refund': false })
+    expect(byCase(1)).toEqual({ tracking: true, signed: true, 'no-refund': true, reference: false })
+    expect(byCase(2)).toEqual({ tracking: false, signed: false, 'no-refund': false })
+    expect(round.cases[2]!.checks![0]!.reason).toMatch(/run failed: timeout/)
+    expect(round.passRates).toEqual([
+      { criterionId: 'tracking', passed: 1, total: 3 },
+      { criterionId: 'signed', passed: 1, total: 3 },
+      { criterionId: 'no-refund', passed: 1, total: 3 },
+      { criterionId: 'reference', passed: 0, total: 1 },
+    ])
+    expect(round.allPassed).toBe(0)
+  })
+
+  it('validates criteria and lets a case drop its good result', () => {
+    const dir = agentWithWorkflow()
+    expect(() => setEvalCriteria(dir, 'reply', [{ text: '', kind: 'judge' }])).toThrow(/words/)
+    expect(() => setEvalCriteria(dir, 'reply', [{ text: 'Signed', kind: 'contains' }])).toThrow(/text to look for/)
+    expect(() => setEvalCriteria(dir, 'reply', Array.from({ length: 9 }, (_, i) => ({ text: `c${i}`, kind: 'judge' })))).toThrow(/8 criteria/)
+    expect(() => addEvalCase(dir, 'reply', {})).toThrow(/inputs, a good result/)
+    const c = addEvalCase(dir, 'reply', { params: { order_number: 'EM-9' }, reference: 'x' })
+    updateEvalCase(dir, 'reply', c.id, '')
+    expect(readEvals(dir, 'reply').cases[0]!.reference).toBe('')
+    expect(codeCheck({ id: 'a', text: '', kind: 'not_contains', value: 'REFUND' }, { result: 'no refund here', tools: [] })).toMatchObject({ pass: false })
+  })
+
+  it('treats a judge that answers nothing as failing its checks, and tells why', async () => {
+    const checks = await checkCase(judgeSays('Looks fine.'), { instructions: '', criteria: [{ id: 'a', text: 'x', kind: 'judge' }], reference: '', run: { result: 'b', tools: [] } })
+    expect(checks).toEqual([{ criterionId: 'a', pass: false, reason: 'The judge did not answer the checks.' }])
+  })
+
+  it('drafts criteria from the brief, judging a tool or phrase check it can\'t back', async () => {
+    const drafted = await draftCriteria(judgeSays('{"criteria": [{"text": "Gives tracking", "kind": "judge"}, {"text": "Looks up the order", "kind": "tool_called", "value": "lookup_order"}, {"text": "Refunds", "kind": "tool_called", "value": "made_up_tool"}]}'), { instructions: 'Reply with tracking.', tools: ['lookup_order'] })
+    expect(drafted.map((c) => [c.kind, c.value])).toEqual([['judge', undefined], ['tool_called', 'lookup_order'], ['judge', undefined]])
   })
 })

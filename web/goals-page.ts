@@ -539,7 +539,8 @@ ${consoleShellScript}
           var waiting = (w.recentRuns || []).filter(function (x) { return x.status === 'awaiting_approval'; }).length + (w.schedules || []).filter(function (x) { return x.waiting; }).length;
           var bits = [startsText(w), sc.runs ? sc.runs + ' run' + (sc.runs === 1 ? '' : 's') + (sc.failed ? ', ' + sc.failed + ' failed' : '') : 'no runs yet'];
           var round = w.evals && w.evals.rounds && w.evals.rounds[0];
-          if (round && typeof round.average === 'number') bits.push('evals ' + round.average.toFixed(1) + ' / 5');
+          if (round && round.passRates) bits.push('evals: ' + round.allPassed + ' of ' + round.cases.length + ' passed every check');
+          else if (round && typeof round.average === 'number') bits.push('evals ' + round.average.toFixed(1) + ' / 5');
           meta.innerHTML = esc(bits.join(' ' + String.fromCharCode(183) + ' ')) + (waiting ? ' <span class="gl-waiting">' + waiting + ' waiting for your decision</span>' : '');
           if (waiting) {
             var card = mine[j].closest('[data-wf]');

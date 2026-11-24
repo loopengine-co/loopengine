@@ -88,7 +88,7 @@ import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgent
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
-import { EvidenceError, addEvalCase, readEvals, removeEvalCase, runFeedbackFrom, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
+import { EvidenceError, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
@@ -1814,9 +1814,10 @@ async function evalJudge(tested: AgentConfig): Promise<{ call: ModelCall; label:
   throw new EvidenceError("No judge model is ready: add a key for a provider other than this workflow's under Models.")
 }
 
-// A workflow's eval cases (web/workflow-evidence.ts): list them, add one
-// (from a past run, or inputs and a good result), change or remove one,
-// and run them all as a test run, each result scored by a judge.
+// A workflow's eval cases and criteria (web/workflow-evidence.ts): list
+// them, add a case (from a past run, or inputs and a good result), change
+// or remove one, set the criteria or draft them from the brief, and run
+// every case as a test run, each result checked on every criterion.
 async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, agentName: string, id: string, part: string | undefined, caseId: string | undefined): Promise<void> {
   const json = (status: number, body: unknown): void => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
@@ -1843,6 +1844,17 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
       removeEvalCase(dir, id, caseId)
       return json(200, readEvals(dir, id))
     }
+    if (part === 'criteria' && !caseId && req.method === 'PUT') {
+      setEvalCriteria(dir, id, (await readJsonBody(req)).criteria)
+      return json(200, readEvals(dir, id))
+    }
+    // Drafted, not saved: the person edits them first.
+    if (part === 'criteria' && caseId === 'draft' && req.method === 'POST') {
+      const config = getEntry(agentName)!.config
+      const model = await evalJudge(config)
+      const tools = (config.tools ?? []).map((t) => t.name)
+      return json(200, { criteria: await draftCriteria(model.call, { instructions: workflow.instructions, tools }) })
+    }
     if (part === 'run' && req.method === 'POST') {
       const tested = await runModel(agentName, id)
       const judge = await evalJudge(tested.config)
@@ -1864,7 +1876,10 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
             approver: { requestApproval: async () => false },
             questionHandler: { requestQuestion: async () => NO_HUMAN_ANSWER },
           })
-          return result.text
+          // Every call it made, run or not (a test run doesn't run those
+          // that need approval; asking counts as calling).
+          const tools = result.newMessages.flatMap((m) => (m.role === 'assistant' && Array.isArray(m.content) ? m.content.flatMap((b) => (b.type === 'tool_use' && b.name ? [b.name] : [])) : []))
+          return { result: result.text, tools }
         },
       })
       void round.catch((err) => console.error(`[loopengine] eval round for ${agentName}/${id} failed:`, err))
@@ -5281,7 +5296,7 @@ const server = createServer(async (req, res) => {
         return void reply(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
       }
     }
-    const evalsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/evals(?:\/(run|cases))?(?:\/([a-z0-9]+))?$/)
+    const evalsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/evals(?:\/(run|cases|criteria))?(?:\/([a-z0-9]+))?$/)
     if (evalsMatch) {
       await handleWorkflowEvals(req, res, decodeURIComponent(evalsMatch[1]), evalsMatch[2], evalsMatch[3], evalsMatch[4])
       return
