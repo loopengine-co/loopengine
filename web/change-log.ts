@@ -31,7 +31,7 @@ const LABELS: [RegExp, string | ((method: string, m: RegExpMatchArray) => string
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/versions\/(\d+)\/restore$/, (_method, m) => `Restored brief version ${m[1]}`],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/messages$/, 'Changed where messages go'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/triggers/, 'Changed webhook triggers'],
-  [/^\/agents\/[^/]+\/workflows\/[^/]+\/evals\/criteria/, 'Changed the checklist'],
+  [/^\/agents\/[^/]+\/workflows\/[^/]+\/evals\/criteria/, 'Changed the success criteria'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/evals/, 'Changed eval cases'],
   [/^\/agents\/[^/]+\/schedules/, 'Changed schedules'],
   [/^\/schedules\//, 'Changed a schedule'],
@@ -137,7 +137,7 @@ function lineChanges(before: string, after: string): { added: string[]; removed:
  * field. A text of several lines, or a long one, is told as lines added
  * and removed; anything else as its value before and after. */
 // Always told as lines, however short: what an agent reads.
-const TEXT_FIELDS = new Set(['instructions', 'shared policies', 'checklist'])
+const TEXT_FIELDS = new Set(['instructions', 'shared policies', 'success criteria'])
 
 export function describeChanges(before: Record<string, unknown>, after: Record<string, unknown>): FieldChange[] {
   const out: FieldChange[] = []

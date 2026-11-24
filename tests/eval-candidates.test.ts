@@ -14,7 +14,7 @@ function run(over: Partial<WorkflowRun> = {}): WorkflowRun {
 const none: WorkflowEvals = { cases: [], criteria: [], rounds: [] }
 
 describe('choosing eval cases', () => {
-  it('suggests checklist items from what people corrected in a run', () => {
+  it('suggests success criteria from what people corrected in a run', () => {
     const r = run({
       decisions: [
         { tool: 'submit_evidence', approved: false, at: 'x', reason: 'No delivery photo.' },

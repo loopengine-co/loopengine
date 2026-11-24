@@ -1414,7 +1414,7 @@ ${renderMarkdownScript}
       (workflowPageId ? '<section class="wf-section"><div class="wf-audit-tools"><a class="primary" href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">See everything in Audit ' + String.fromCharCode(8594) + '</a></div></section>' : '');
   }
 
-  // The Evaluation tab: the checklist, the eval cases (saved, then
+  // The Evaluation tab: the success criteria, the eval cases (saved, then
   // suggested from real runs), and Evaluate.
   function workflowEvaluationHtml(w) {
     var evals = w.evals || { cases: [], criteria: [], rounds: [] };
@@ -1429,16 +1429,16 @@ ${renderMarkdownScript}
       var pill = !r || !r.total ? '' : '<span class="le-pill ' + (r.passed === r.total ? 'good' : r.passed * 2 >= r.total ? 'ask' : 'bad') + ' wf-crit-rate">' + r.passed + ' / ' + r.total + '</span>';
       return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
     }).join('');
-    var critSection = '<h4 class="wf-sub">Checklist</h4>' +
+    var critSection = '<h4 class="wf-sub">Success criteria</h4>' +
       '<p class="hint" style="margin:0">' + (evals.criteria && evals.criteria.length
-        ? 'What every good result must get right. Each eval case is checked against every item, yes or no.'
-        : 'What every good result must get right. Nothing on it yet, so each eval case is only compared with its good result. Add the items that matter, or have them suggested from its instructions.') + '</p>' +
+        ? 'What every good result must get right. Each eval case is checked against every criterion, yes or no.'
+        : 'What every good result must get right. None set yet, so each eval case is only compared with its good result. Add the criteria that matter, or have them suggested from its instructions.') + '</p>' +
       '<ul class="wf-crits">' + critList + '</ul>' +
-      '<div class="wf-crit-bar"><button type="button" class="wf-crit-edit">' + (evals.criteria && evals.criteria.length ? 'Edit the checklist' : 'Add to the checklist') + '</button></div>' +
+      '<div class="wf-crit-bar"><button type="button" class="wf-crit-edit">' + (evals.criteria && evals.criteria.length ? 'Edit the success criteria' : 'Add success criteria') + '</button></div>' +
       '<div class="wf-crit-form" hidden>' +
         '<div class="wf-crit-rows">' + (evals.criteria && evals.criteria.length ? evals.criteria : []).map(critRowHtml).join('') + '</div>' +
-        '<div class="wf-crit-bar"><button type="button" class="plain wf-crit-add">+ Add an item</button><button type="button" class="plain wf-crit-draft">Suggest from its instructions</button>' +
-          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save the checklist</button></div>' +
+        '<div class="wf-crit-bar"><button type="button" class="plain wf-crit-add">+ Add a criterion</button><button type="button" class="plain wf-crit-draft">Suggest from its instructions</button>' +
+          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save success criteria</button></div>' +
         '<span class="hint wf-crit-status"></span>' +
       '</div>';
     var latest = {};
@@ -1451,7 +1451,7 @@ ${renderMarkdownScript}
       var values = Object.keys(c.params || {}).map(function (k) { var v = String(c.params[k]); return escapeHtml(k) + ': ' + escapeHtml(v.length > 60 ? v.slice(0, 60) + String.fromCharCode(8230) : v); }).join(DOT);
       var fails = last && last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
       var pill = !last ? ''
-        : last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' items missed</span>' : '<span class="le-pill good">Passed all ' + last.checks.length + '</span>')
+        : last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' criteria missed</span>' : '<span class="le-pill good">Passed all ' + last.checks.length + '</span>')
         : typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>';
       var why = !last ? ''
         : last.checks ? (fails.length ? '<ul class="wf-case-fails">' + fails.map(function (x) { return '<li><strong>' + escapeHtml(critName[x.criterionId] || x.criterionId) + '</strong>' + (x.reason ? ': ' + escapeHtml(x.reason) : '') + '</li>'; }).join('') + '</ul>' : '')
@@ -1474,14 +1474,14 @@ ${renderMarkdownScript}
     }).join('');
     var lastLine = !round ? ''
       : '<p class="wf-eval-last"><strong>Last evaluation: ' + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (round.briefVersion ? ', version ' + round.briefVersion + ' of its instructions' : '') + '</strong>' +
-        (checked ? String.fromCharCode(8212) + ' ' + round.allPassed + ' of ' + round.cases.length + ' cases passed every checklist item.' : '') +
+        (checked ? String.fromCharCode(8212) + ' ' + round.allPassed + ' of ' + round.cases.length + ' cases met every success criterion.' : '') +
         ' <details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details></p>';
     return '<section class="wf-section">' + critSection + '</section>' +
       '<section class="wf-section"><h4 class="wf-sub">Eval cases' + (evals.cases.length ? ' (' + evals.cases.length + ')' : '') + '</h4>' +
         '<p class="hint" style="margin:0">Real runs saved to check every change against.</p>' +
         (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet: add suggested ones below, or save any run from its case page.</p>') +
         '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
-          '<span class="hint">Runs every eval case again with the current instructions and checks each result against the checklist. Nothing is sent, refunded or submitted.</span></div>' +
+          '<span class="hint">Runs every eval case again with the current instructions and checks each result against the success criteria. Nothing is sent, refunded or submitted.</span></div>' +
         lastLine + '</section>' +
       (workflowPageId ? '<section class="wf-section"><h4 class="wf-sub">Suggested eval cases</h4><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div></section>' : '');
   }

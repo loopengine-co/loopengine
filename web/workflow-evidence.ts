@@ -444,7 +444,7 @@ const clip = (text: string, max: number): string => {
 }
 const shown = (v: unknown): string => clip(v === undefined ? '(none)' : typeof v === 'string' ? v : JSON.stringify(v), 80)
 
-/** Checklist items a run suggests (web/agents-config-page's Criteria),
+/** Success criteria a run suggests (the Evaluation tab's),
  * from what people corrected in it: a denial's reason, a changed
  * request, a bad result's note, a question it had to ask. */
 export function suggestedCriteria(run: WorkflowRun): { kind: 'judge'; text: string }[] {

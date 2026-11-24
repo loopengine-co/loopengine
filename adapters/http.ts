@@ -1847,7 +1847,7 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
       if (typeof body.runId === 'string' && (!run || run.workflow_id !== id)) return json(404, { error: 'No such run of this workflow.' })
       const params = body.params && typeof body.params === 'object' ? validateParams(workflow, body.params) : undefined
       const added = addEvalCase(dir, id, { ...(run ? { run } : {}), ...(params ? { params } : {}), reference: body.reference })
-      // Checklist items the run suggests (what people corrected in it), for
+      // Success criteria the run suggests (what people corrected in it), for
       // the person to add or not.
       return json(201, { ...readEvals(dir, id), added, suggestions: run ? suggestedCriteria(run) : [] })
     }
@@ -2574,7 +2574,7 @@ function auditFilters(): { agents: { name: string; label: string }[]; workflows:
 // The settings a change can touch, as they are now, to compare before and
 // after (web/change-log.ts's describeChanges): a workflow's (its title,
 // description, instructions, result format, inputs, model, where its
-// messages go, its checklist and eval cases), or the shared policies.
+// messages go, its success criteria and eval cases), or the shared policies.
 // Undefined for anything else; its log entry keeps the request instead.
 function settingsSnapshot(agent: string | undefined, workflowId: string | undefined, path: string): Record<string, unknown> | undefined {
   if (path.startsWith('/config/policies')) return { 'shared policies': readWorkspacePolicies(process.cwd()) }
@@ -2596,7 +2596,7 @@ function settingsSnapshot(agent: string | undefined, workflowId: string | undefi
     inputs: Object.keys(w.parameters).map((k) => `${k}${w.parameters[k].required ? '' : ' (optional)'}`).join(', '),
     model: w.model ? `${w.model.provider} ${w.model.model}` : 'the agent’s',
     'messages to': [w.delivery?.callback_url ? `your app (${w.delivery.callback_url})` : '', w.delivery?.decisions_to === 'callback' ? 'decisions to your app' : '', w.delivery?.result_to_chat ? 'result to chat' : '', w.delivery?.chat_notice ? `start notice “${w.delivery.chat_notice}”` : ''].filter(Boolean).join(', '),
-    checklist: checklist.join('\n'),
+    'success criteria': checklist.join('\n'),
     'eval cases': cases,
   }
 }

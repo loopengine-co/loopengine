@@ -387,7 +387,7 @@ ${renderMarkdownScript}
   }
 
   // Save this run as one of its workflow's eval cases (owners, admins and
-  // editors): a test it must keep passing. Then the checklist items it
+  // editors): a test it must keep passing. Then the success criteria it
   // suggests, from what people corrected in it, to add or not.
   function evalCaseHtml(c) {
     var run = c.run;
@@ -430,7 +430,7 @@ ${renderMarkdownScript}
     var fresh = suggestions.filter(function (s) { return have.indexOf(s.text) === -1; });
     if (!fresh.length) return;
     box.hidden = false;
-    box.innerHTML = '<h4>Add to its checklist?</h4><p class="hint" style="margin:0">From what people corrected in this run. Each becomes a check every eval case is judged on.</p>' +
+    box.innerHTML = '<h4>Add to its success criteria?</h4><p class="hint" style="margin:0">From what people corrected in this run. Each becomes a criterion every eval case is judged on.</p>' +
       fresh.map(function (s, i) { return '<div class="ib-suggest-row"><span>' + esc(s.text) + '</span><button type="button" class="ib-btn plain" data-suggest="' + i + '">Add</button></div>'; }).join('');
     box.addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-suggest]');
