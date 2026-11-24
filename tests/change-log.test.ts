@@ -25,3 +25,19 @@ describe('the change log', () => {
     expect(keptBody('/agents/cs/env/STRIPE_KEY', { value: 'x' })).toBeUndefined()
   })
 })
+
+describe('what a change changed', () => {
+  it('tells short settings as before and after, and long texts as lines added and removed', async () => {
+    const { changesSummary, describeChanges } = await import('#web/change-log.js')
+    const changes = describeChanges(
+      { title: 'Refunds', instructions: 'Look up the order.\nRefund it.', model: 'the agent’s', 'eval cases': 2 },
+      { title: 'Refund check', instructions: 'Look up the order.\nCheck the delivery photo.\nRefund it.', model: 'the agent’s', 'eval cases': 3 },
+    )
+    expect(changes).toEqual([
+      { field: 'title', from: 'Refunds', to: 'Refund check' },
+      { field: 'instructions', added: ['Check the delivery photo.'], removed: [] },
+      { field: 'eval cases', from: '2', to: '3' },
+    ])
+    expect(changesSummary(changes)).toBe('title: Refunds → Refund check; instructions: 1 line added, 0 removed; eval cases: 2 → 3')
+  })
+})

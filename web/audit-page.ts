@@ -62,6 +62,14 @@ export const auditPageHtml: string = `<!doctype html>
   .au-state.warn { background: var(--warn-soft); color: var(--warn); }
   .au-state.run { background: var(--accent-soft); color: var(--accent-ink); }
   .au-evalcase { color: var(--accent-ink); font-weight: 600; }
+  .chg { display: grid; gap: 6px; margin-top: 4px; font-size: 12.5px; flex-basis: 100%; }
+  .chg-field del { color: var(--bad); }
+  .chg-field ins { color: var(--good); text-decoration: none; }
+  .chg-lines { display: grid; gap: 1px; margin-top: 3px; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chg-del { background: var(--bad-soft); color: var(--bad); padding: 1px 6px; }
+  .chg-ins { background: var(--good-soft); color: var(--good); padding: 1px 6px; }
+  .chg-note { color: var(--ink-muted); font-family: inherit; font-weight: 400; }
+  .chg details summary { cursor: pointer; color: var(--accent-ink); font-family: var(--font-sans, inherit); font-size: 12px; margin-top: 2px; }
   .au-empty { padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
   .au-more { justify-self: center; }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
@@ -213,6 +221,27 @@ ${consoleShellScript}
     return { what: 'Feedback' + (v ? ': ' + v : ''), detail: d.note || '' };
   }
 
+  // A change's details: each setting from and to, and for long texts the
+  // lines added (+) and removed (−), a few shown and the rest folded.
+  function changeDetailsHtml(d) {
+    var list = d.changes || [];
+    if (!list.length && !d.brief) return '';
+    var MINUS = String.fromCharCode(8722);
+    var lineHtml = function (sign, cls, l) { return '<div class="' + cls + '">' + sign + ' ' + esc(l) + '</div>'; };
+    var rows = list.map(function (c) {
+      if (c.added || c.removed) {
+        var lines = (c.removed || []).map(function (l) { return lineHtml(MINUS, 'chg-del', l); }).concat((c.added || []).map(function (l) { return lineHtml('+', 'chg-ins', l); }));
+        var head = '<strong>' + esc(c.field) + '</strong>' + (c.field === 'instructions' && d.brief ? ' <span class="chg-note">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</span>' : '');
+        var shown = lines.slice(0, 6).join('');
+        var more = lines.length > 6 ? '<details><summary>' + (lines.length - 6) + ' more line' + (lines.length - 6 === 1 ? '' : 's') + '</summary>' + lines.slice(6).join('') + '</details>' : '';
+        return '<div class="chg-field">' + head + '<div class="chg-lines">' + (shown || '<div class="chg-note">Only spacing changed.</div>') + more + '</div></div>';
+      }
+      return '<div class="chg-field"><strong>' + esc(c.field) + '</strong>: <del>' + esc(c.from) + '</del> ' + String.fromCharCode(8594) + ' <ins>' + esc(c.to) + '</ins></div>';
+    }).join('');
+    if (!rows && d.brief) rows = '<div class="chg-field">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</div>';
+    return '<div class="chg">' + rows + '</div>';
+  }
+
   function eventRow(e) {
     var words = eventWords(e);
     var link = eventLink(e);
@@ -221,7 +250,7 @@ ${consoleShellScript}
     var where = agentLabel(e.agent) + (e.workflow_id ? DOT + workflowTitle(e.agent, e.workflow_id) : '');
     return '<div class="au-row"><span class="au-when">' + esc(when(e.at)) + '</span>' +
       '<span class="au-kind ' + esc(e.kind) + denied + '">' + kind + '</span>' +
-      '<span class="au-what"><strong>' + esc(words.what) + '</strong>' + (words.detail ? '<span class="au-detail">' + esc(words.detail) + '</span>' : '') +
+      '<span class="au-what"><strong>' + esc(words.what) + '</strong>' + (words.detail ? '<span class="au-detail">' + esc(words.detail) + '</span>' : '') + (e.kind === 'change' ? changeDetailsHtml(e.data || {}) : '') +
         '<span class="au-where">' + (e.by ? esc(e.by) + DOT : '') + esc(where) + '</span></span>' +
       '<a class="au-open" href="' + esc(link.href) + '">' + esc(link.text) + ' ' + String.fromCharCode(8594) + '</a></div>';
   }

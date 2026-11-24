@@ -80,7 +80,7 @@ export interface WorkflowAudit {
   /** Denied, or changed before approving: the decisions worth reading. */
   overruled: AuditDecision[]
   versions: AuditVersion[]
-  changes: { at: string; by?: string; label: string }[]
+  changes: { at: string; by?: string; label: string; detail?: string; fields?: { field: string; from?: string; to?: string; added?: string[]; removed?: string[] }[] }[]
   cost?: { totalUsd: number; perRunUsd: number; pricedRuns: number }
   cases: AuditCase[]
   verification: ChainCheck
@@ -232,7 +232,12 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
     outcome: short(r.status === 'error' ? r.error ?? '' : r.result ?? '', 200),
   }))
 
-  const changes = input.changes.map((e) => ({ at: e.at, ...(e.by ? { by: e.by } : {}), label: typeof e.data.label === 'string' ? e.data.label : 'Changed a setting' }))
+  const changes = input.changes.map((e) => {
+    const fields = Array.isArray(e.data.changes) ? (e.data.changes as NonNullable<WorkflowAudit['changes'][number]['fields']>) : []
+    const brief = e.data.brief as { from?: number; to?: number } | undefined
+    const detail = [brief?.from && brief.to ? `brief v${brief.from} → v${brief.to}` : '', fields.map((f) => (f.added || f.removed ? `${f.field}: ${f.added?.length ?? 0} line${f.added?.length === 1 ? '' : 's'} added, ${f.removed?.length ?? 0} removed` : `${f.field}: ${f.from} → ${f.to}`)).join('; ')].filter(Boolean).join('; ')
+    return { at: e.at, ...(e.by ? { by: e.by } : {}), label: typeof e.data.label === 'string' ? e.data.label : 'Changed a setting', ...(detail ? { detail } : {}), ...(fields.length ? { fields } : {}) }
+  })
 
   // ---- The summary, in sentences. ----
   const summary: string[] = []

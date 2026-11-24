@@ -231,6 +231,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-health-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .wf-audit-link { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; margin-right: 8px; }
   .wf-audit-link:hover { background: var(--surface); }
+  .chg { display: grid; gap: 6px; margin-top: 4px; font-size: 12.5px; flex-basis: 100%; }
+  .chg-field del { color: var(--bad); }
+  .chg-field ins { color: var(--good); text-decoration: none; }
+  .chg-lines { display: grid; gap: 1px; margin-top: 3px; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chg-del { background: var(--bad-soft); color: var(--bad); padding: 1px 6px; }
+  .chg-ins { background: var(--good-soft); color: var(--good); padding: 1px 6px; }
+  .chg-note { color: var(--ink-muted); font-family: inherit; font-weight: 400; }
+  .chg details summary { cursor: pointer; color: var(--accent-ink); font-family: var(--font-sans, inherit); font-size: 12px; margin-top: 2px; }
   .wf-change-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 13px; }
   .wf-change-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
   .wf-change-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); min-width: 64px; }
@@ -1143,12 +1151,33 @@ ${renderMarkdownScript}
     return escapeHtml(e.kind);
   }
 
+  // A change's details: each setting from and to, and for long texts the
+  // lines added (+) and removed (−), a few shown and the rest folded.
+  function changeDetailsHtml(d) {
+    var list = d.changes || [];
+    if (!list.length && !d.brief) return '';
+    var MINUS = String.fromCharCode(8722);
+    var lineHtml = function (sign, cls, l) { return '<div class="' + cls + '">' + sign + ' ' + escapeHtml(l) + '</div>'; };
+    var rows = list.map(function (c) {
+      if (c.added || c.removed) {
+        var lines = (c.removed || []).map(function (l) { return lineHtml(MINUS, 'chg-del', l); }).concat((c.added || []).map(function (l) { return lineHtml('+', 'chg-ins', l); }));
+        var head = '<strong>' + escapeHtml(c.field) + '</strong>' + (c.field === 'instructions' && d.brief ? ' <span class="chg-note">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</span>' : '');
+        var shown = lines.slice(0, 6).join('');
+        var more = lines.length > 6 ? '<details><summary>' + (lines.length - 6) + ' more line' + (lines.length - 6 === 1 ? '' : 's') + '</summary>' + lines.slice(6).join('') + '</details>' : '';
+        return '<div class="chg-field">' + head + '<div class="chg-lines">' + (shown || '<div class="chg-note">Only spacing changed.</div>') + more + '</div></div>';
+      }
+      return '<div class="chg-field"><strong>' + escapeHtml(c.field) + '</strong>: <del>' + escapeHtml(c.from) + '</del> ' + String.fromCharCode(8594) + ' <ins>' + escapeHtml(c.to) + '</ins></div>';
+    }).join('');
+    if (!rows && d.brief) rows = '<div class="chg-field">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</div>';
+    return '<div class="chg">' + rows + '</div>';
+  }
+
   function workflowChangesHtml(events) {
     if (!events.length) return '<p class="hint" style="margin:0">Nothing yet. Edits to this workflow' + RSQ + 's settings, and every approval, answer and feedback in its runs, will be listed here with who and when.</p>';
     return '<ol class="wf-change-list">' + events.map(function (e) {
       var when = new Date(e.at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       var kind = e.kind === 'change' ? 'Setting' : e.kind === 'decision' ? 'Decision' : e.kind === 'answer' ? 'Answer' : 'Feedback';
-      return '<li><span class="wf-change-kind ' + escapeHtml(e.kind) + '">' + kind + '</span><span class="wf-change-text">' + changeText(e) + '</span>' +
+      return '<li><span class="wf-change-kind ' + escapeHtml(e.kind) + '">' + kind + '</span><span class="wf-change-text">' + changeText(e) + (e.kind === 'change' ? changeDetailsHtml(e.data || {}) : '') + '</span>' +
         '<span class="hint">' + (e.by ? escapeHtml(e.by) + DOT : '') + escapeHtml(when) +
         (e.run_id ? DOT + '<a href="' + caseHref(e.run_id) + '">case</a>' : '') + '</span></li>';
     }).join('') + '</ol>';

@@ -36,7 +36,9 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
       <td><a href="${esc(options.caseHref(d.runId))}">case</a></td></tr>`).join('')
   const people = audit.people.map((p) => `<tr><td>${esc(p.by)}</td><td>${p.approved}</td><td>${p.changed}</td><td>${p.denied}</td><td>${p.answered}</td></tr>`).join('')
   const cases = audit.cases.slice(0, 500).map((k) => `<tr><td>${esc(when(k.at))}</td><td>${STATUS[k.status] ?? esc(k.status)}</td><td>${esc(k.inputs)}</td><td>${k.briefVersion ? `v${k.briefVersion}` : ''}</td><td>${esc(k.decidedBy.join(', '))}</td><td class="ar-outcome">${esc(k.outcome)}</td><td><a href="${esc(options.caseHref(k.runId))}">open</a></td></tr>`).join('')
-  const changes = audit.changes.map((ch) => `<li>${esc(when(ch.at))} · ${esc(ch.label)}${ch.by ? ` · ${esc(ch.by)}` : ''}</li>`).join('')
+  const changes = audit.changes.map((ch) => `<li>${esc(when(ch.at))} · ${esc(ch.label)}${ch.by ? ` · ${esc(ch.by)}` : ''}${(ch.fields ?? []).map((f) => (f.added || f.removed
+    ? `<div class="ar-diff"><div class="hint">${esc(f.field)}</div>${(f.removed ?? []).map((l) => `<div class="del">− ${esc(l)}</div>`).join('')}${(f.added ?? []).map((l) => `<div class="ins">+ ${esc(l)}</div>`).join('')}</div>`
+    : `<div class="hint">${esc(f.field)}: <del>${esc(f.from)}</del> → <ins>${esc(f.to)}</ins></div>`)).join('')}</li>`).join('')
   return `<!doctype html>
 <html lang="en">
 <head>

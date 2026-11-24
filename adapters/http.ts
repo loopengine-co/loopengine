@@ -90,7 +90,7 @@ import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies
 import { briefContent, briefFromContent, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
 import { caseRow, eventsCsv } from '#web/audit-admin.js'
 import { auditPageFor } from '#web/audit-page.js'
-import { changeOf, keptBody } from '#web/change-log.js'
+import { changeOf, describeChanges, keptBody } from '#web/change-log.js'
 import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
 import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { buildWorkflowAudit, type WorkflowAudit } from '#web/workflow-audit.js'
@@ -2568,6 +2568,36 @@ function auditFilters(): { agents: { name: string; label: string }[]; workflows:
     agents: agents.map((name) => ({ name, label: getEntry(name)?.config.displayName ?? name })),
     workflows: agents.flatMap((agent) => readWorkflows(agentDir(agent)).map((w) => ({ agent, id: w.id, title: w.title }))),
     people: eventPeople(),
+  }
+}
+
+// The settings a change can touch, as they are now, to compare before and
+// after (web/change-log.ts's describeChanges): a workflow's (its title,
+// description, instructions, result format, inputs, model, where its
+// messages go, its checklist and eval cases), or the shared policies.
+// Undefined for anything else; its log entry keeps the request instead.
+function settingsSnapshot(agent: string | undefined, workflowId: string | undefined, path: string): Record<string, unknown> | undefined {
+  if (path.startsWith('/config/policies')) return { 'shared policies': readWorkspacePolicies(process.cwd()) }
+  if (!agent || !workflowId || !getEntry(agent)) return undefined
+  const w = readWorkflow(agentDir(agent), workflowId)
+  if (!w) return undefined
+  let checklist: string[] = []
+  let cases = 0
+  try {
+    const evals = readEvals(agentDir(agent), workflowId)
+    checklist = evals.criteria.map((c) => `${c.text}${c.value ? ` (${c.kind}: ${c.value})` : ''}`)
+    cases = evals.cases.length
+  } catch {}
+  return {
+    title: w.title,
+    description: w.description,
+    instructions: w.instructions,
+    'result format': w.output ?? '',
+    inputs: Object.keys(w.parameters).map((k) => `${k}${w.parameters[k].required ? '' : ' (optional)'}`).join(', '),
+    model: w.model ? `${w.model.provider} ${w.model.model}` : 'the agent’s',
+    'messages to': [w.delivery?.callback_url ? `your app (${w.delivery.callback_url})` : '', w.delivery?.decisions_to === 'callback' ? 'decisions to your app' : '', w.delivery?.result_to_chat ? 'result to chat' : '', w.delivery?.chat_notice ? `start notice “${w.delivery.chat_notice}”` : ''].filter(Boolean).join(', '),
+    checklist: checklist.join('\n'),
+    'eval cases': cases,
   }
 }
 
@@ -5160,18 +5190,31 @@ const server = createServer(async (req, res) => {
   }
 
   // A setting changed: recorded in the change log once it succeeds.
+  // What it was before is read now, and what it is after once it's done,
+  // so the log says what changed, not just that something did.
   const change = changeOf(req.method ?? 'GET', (req.url ?? '/').split('?')[0])
   if (change) {
     const path = (req.url ?? '/').split('?')[0]
+    const snapshot = () => settingsSnapshot(change.agent, change.workflowId, path)
+    const before = snapshot()
+    const briefBefore = change.agent && change.workflowId ? noteBrief(change.agent, change.workflowId) : undefined
     res.once('finish', () => {
       if (res.statusCode < 200 || res.statusCode >= 300) return
       const body = keptBody(path, readBodies.get(req))
+      const after = before ? snapshot() : undefined
+      const changes = before && after ? describeChanges(before, after) : []
+      const briefAfter = change.agent && change.workflowId ? noteBrief(change.agent, change.workflowId) : undefined
       recordEvent({
         agent: change.agent ?? '',
         ...(change.workflowId ? { workflow_id: change.workflowId } : {}),
         kind: 'change',
         by: changedBy(req),
-        data: { label: change.label, method: req.method, path, ...(body !== undefined ? { body } : {}) },
+        data: {
+          label: change.label, method: req.method, path,
+          ...(changes.length ? { changes } : {}),
+          ...(briefBefore && briefAfter && briefBefore !== briefAfter ? { brief: { from: briefBefore, to: briefAfter } } : {}),
+          ...(body !== undefined ? { body } : {}),
+        },
       })
     })
   }

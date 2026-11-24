@@ -91,3 +91,73 @@ function redact(value: unknown, depth: number): unknown {
   }
   return value
 }
+
+/** One setting a change touched: short values from and to, or for a
+ * long text (instructions, policies) the lines added and removed. */
+export interface FieldChange {
+  field: string
+  from?: string
+  to?: string
+  added?: string[]
+  removed?: string[]
+}
+
+const showValue = (v: unknown): string => {
+  if (v === undefined || v === null || v === '') return '(none)'
+  const text = typeof v === 'string' ? v : JSON.stringify(v)
+  return text.length > 200 ? text.slice(0, 199) + '…' : text
+}
+
+// Lines in `after` and not `before`, and the reverse, in order (the same
+// longest-common-subsequence diff the workflow audit uses).
+function lineChanges(before: string, after: string): { added: string[]; removed: string[] } {
+  const a = before.split('\n')
+  const b = after.split('\n')
+  if (a.length * b.length > 4_000_000) {
+    const inA = new Set(a)
+    const inB = new Set(b)
+    return { added: b.filter((l) => !inA.has(l) && l.trim()), removed: a.filter((l) => !inB.has(l) && l.trim()) }
+  }
+  const t: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0))
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) t[i][j] = a[i] === b[j] ? t[i + 1][j + 1] + 1 : Math.max(t[i + 1][j], t[i][j + 1])
+  const added: string[] = []
+  const removed: string[] = []
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++ } else if (t[i + 1][j] >= t[i][j + 1]) removed.push(a[i++])
+    else added.push(b[j++])
+  }
+  removed.push(...a.slice(i))
+  added.push(...b.slice(j))
+  return { added: added.filter((l) => l.trim()).map((l) => l.slice(0, 300)), removed: removed.filter((l) => l.trim()).map((l) => l.slice(0, 300)) }
+}
+
+/** What differs between two snapshots of the same settings, field by
+ * field. A text of several lines, or a long one, is told as lines added
+ * and removed; anything else as its value before and after. */
+// Always told as lines, however short: what an agent reads.
+const TEXT_FIELDS = new Set(['instructions', 'shared policies', 'checklist'])
+
+export function describeChanges(before: Record<string, unknown>, after: Record<string, unknown>): FieldChange[] {
+  const out: FieldChange[] = []
+  for (const field of [...new Set([...Object.keys(before), ...Object.keys(after)])]) {
+    const b = before[field]
+    const a = after[field]
+    if (JSON.stringify(b) === JSON.stringify(a)) continue
+    const long = (v: unknown) => typeof v === 'string' && (TEXT_FIELDS.has(field) || v.includes('\n') || v.length > 200)
+    if (long(b) || long(a)) {
+      const { added, removed } = lineChanges(typeof b === 'string' ? b : '', typeof a === 'string' ? a : '')
+      out.push({ field, added: added.slice(0, 40), removed: removed.slice(0, 40) })
+    } else out.push({ field, from: showValue(b), to: showValue(a) })
+  }
+  return out
+}
+
+/** The changes in a line: "instructions: 2 lines added, 1 removed; title:
+ * Refunds → Refund check". */
+export function changesSummary(changes: FieldChange[]): string {
+  return changes.map((c) => (c.added || c.removed
+    ? `${c.field}: ${c.added?.length ?? 0} line${c.added?.length === 1 ? '' : 's'} added, ${c.removed?.length ?? 0} removed`
+    : `${c.field}: ${c.from} → ${c.to}`)).join('; ')
+}

@@ -2,6 +2,7 @@
 // and as a CSV file, and its cases (every run kept) as rows. The log is
 // core/audit-store.ts's events; the cases, core/workflow-runs.ts's runs.
 import type { AuditEvent } from '../core/audit-store.js'
+import { changesSummary, type FieldChange } from './change-log.js'
 import type { WorkflowRun } from '../core/workflow-runs.js'
 
 const short = (text: string, max: number): string => {
@@ -14,7 +15,11 @@ const short = (text: string, max: number): string => {
 export function eventText(e: AuditEvent): { what: string; detail: string } {
   const d = e.data
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
-  if (e.kind === 'change') return { what: str(d.label) || 'Changed a setting', detail: '' }
+  if (e.kind === 'change') {
+    const brief = d.brief as { from?: number; to?: number } | undefined
+    const summary = Array.isArray(d.changes) ? changesSummary(d.changes as FieldChange[]) : ''
+    return { what: str(d.label) || 'Changed a setting', detail: [brief?.from && brief.to ? `brief v${brief.from} → v${brief.to}` : '', summary].filter(Boolean).join('; ') }
+  }
   if (e.kind === 'decision') {
     const what = `${d.approved ? (d.edited ? 'Approved as changed' : 'Approved') : 'Denied'} ${str(d.tool)}`
     return { what, detail: str(d.reason) }
