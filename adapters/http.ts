@@ -87,7 +87,9 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
-import { briefContent, briefFromContent, getVersion, listVersions, noteVersion } from '#core/audit-store.js'
+import { briefContent, briefFromContent, getVersion, listEvents, listVersions, noteVersion, recordEvent, runEvents, type AuditEventKind } from '#core/audit-store.js'
+import { changeOf, keptBody } from '#web/change-log.js'
+import { sessionUsage } from '#core/usage.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
 import { EvidenceError, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
@@ -323,13 +325,18 @@ function readLimitedJsonBody(req: IncomingMessage, maxBytes: number): Promise<Re
   })
 }
 
+// Each request's JSON body once read, for the change log.
+const readBodies = new WeakMap<IncomingMessage, Record<string, unknown>>()
+
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let data = ''
     req.on('data', (chunk) => (data += chunk))
     req.on('end', () => {
       try {
-        resolve(data ? JSON.parse(data) : {})
+        const body = data ? (JSON.parse(data) as Record<string, unknown>) : {}
+        readBodies.set(req, body)
+        resolve(body)
       } catch (err) {
         reject(err)
       }
@@ -2406,6 +2413,8 @@ const inboxDeps: InboxDeps = {
   pending: async () => (await Promise.all(listAgents().map(async (agent) => (await listAgentPending(checkpoints, agent)).map((p) => ({ ...p, agent }))))).flat(),
   history: (run) => sessions.getHistory(`default:${process.env.LOOPENGINE_ENV ?? 'production'}:${run.agent}:${run.session_id}`),
   workflowTitle: (agent, workflowId) => (workflowId && getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.title : undefined),
+  run: (runId) => (/^[A-Za-z0-9_-]+$/.test(runId) ? getRunStore().get(runId) : Promise.resolve(undefined)),
+  usage: (run) => sessionUsage(run.agent, run.session_id),
 }
 
 // The agents' names, for the host's dashboard (web/agent-names-sync.ts):
@@ -2422,6 +2431,10 @@ function inboxDepsFor(req: IncomingMessage): InboxDeps {
   return {
     ...inboxDeps,
     runs: async () => (await inboxDeps.runs()).filter((r) => sees(r.agent)),
+    run: async (runId) => {
+      const run = await inboxDeps.run!(runId)
+      return run && sees(run.agent) ? run : undefined
+    },
     pending: async () => (await inboxDeps.pending()).filter((p) => sees(p.agent)),
   }
 }
@@ -5010,6 +5023,23 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // A setting changed: recorded in the change log once it succeeds.
+  const change = changeOf(req.method ?? 'GET', (req.url ?? '/').split('?')[0])
+  if (change) {
+    const path = (req.url ?? '/').split('?')[0]
+    res.once('finish', () => {
+      if (res.statusCode < 200 || res.statusCode >= 300) return
+      const body = keptBody(path, readBodies.get(req))
+      recordEvent({
+        agent: change.agent ?? '',
+        ...(change.workflowId ? { workflow_id: change.workflowId } : {}),
+        kind: 'change',
+        by: changedBy(req),
+        data: { label: change.label, method: req.method, path, ...(body !== undefined ? { body } : {}) },
+      })
+    })
+  }
+
   // One catch-all around both routes. node:http does not catch rejections
   // from an async request listener itself — an uncaught one here doesn't
   // just fail the request, it crashes the whole process (confirmed: an
@@ -5276,6 +5306,27 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'GET' && (pathname === '/inbox/items' || pathname === '/inbox/count' || pathname.startsWith('/inbox/cases/'))) {
       const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      // A case, or (…/export) its whole record as a file: the case, every
+      // event in it, and the brief and policies it ran under, word for word.
+      const exportMatch = pathname.match(/^\/inbox\/cases\/([^/]+)\/export$/)
+      if (exportMatch) {
+        const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(exportMatch[1]))
+        if (!found) return json(404, { error: 'No such case: it may have been removed.' })
+        const run = found.run
+        const brief = run?.versions?.brief ? getVersion({ agent: run.agent, workflowId: run.workflow_id, kind: 'brief' }, run.versions.brief) : undefined
+        const policies = run?.versions?.policies ? getVersion({ agent: '', workflowId: '', kind: 'policies' }, run.versions.policies) : undefined
+        const record = {
+          exportedAt: new Date().toISOString(),
+          exportedBy: changedBy(req),
+          case: found,
+          events: run ? runEvents(run.run_id) : [],
+          ...(brief ? { brief: { version: brief.number, savedAt: brief.at, ...(brief.by ? { savedBy: brief.by } : {}), ...briefFromContent(brief.content) } } : {}),
+          ...(policies ? { policies: { version: policies.number, savedAt: policies.at, text: policies.content } } : {}),
+        }
+        const name = `case-${(run?.workflow_id || 'chat').replace(/[^a-z0-9-]/gi, '')}-${found.id.slice(0, 8)}.json`
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="${name}"` }).end(JSON.stringify(record, null, 2))
+        return
+      }
       if (pathname.startsWith('/inbox/cases/')) {
         const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(pathname.slice('/inbox/cases/'.length)))
         return found ? json(200, found) : json(404, { error: 'No such case: it may have been removed.' })
@@ -5487,6 +5538,25 @@ const server = createServer(async (req, res) => {
     }
     // Settings → Shared policies (web/global-config.ts): the business's
     // rules every workflow run reads (policies.md in the project).
+    // The audit log: changes, decisions, answers and feedback, newest
+    // first, filtered (core/audit-store.ts's listEvents).
+    if (req.method === 'GET' && pathname === '/audit') {
+      const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const kind = q.get('kind')
+      const events = listEvents({
+        ...(q.get('agent') ? { agent: q.get('agent')! } : {}),
+        ...(q.get('workflow') ? { workflowId: q.get('workflow')! } : {}),
+        ...(kind === 'decision' || kind === 'answer' || kind === 'feedback' || kind === 'change' ? { kind: kind as AuditEventKind } : {}),
+        ...(q.get('by') ? { by: q.get('by')! } : {}),
+        ...(q.get('since') ? { since: q.get('since')! } : {}),
+        ...(q.get('until') ? { until: q.get('until')! } : {}),
+        ...(q.get('q') ? { q: q.get('q')! } : {}),
+        ...(Number(q.get('before')) > 0 ? { before: Number(q.get('before')) } : {}),
+        ...(Number(q.get('limit')) > 0 ? { limit: Number(q.get('limit')) } : {}),
+      })
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ events, next: events.length ? events.at(-1)!.id : null }))
+      return
+    }
     if (req.method === 'GET' && pathname === '/config/policies') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))
       return

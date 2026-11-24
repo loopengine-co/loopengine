@@ -939,6 +939,7 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
     // Recorded inside the retried call, not after it, so a retry that
     // spent tokens and then failed is still counted.
     const { value: response } = await recovery.call(async (msgs) => {
+      const started = Date.now()
       const result = await modelCall(msgs, systemPrompt, toolSchemas)
       if (result.usage) {
         recordUsage({
@@ -949,6 +950,7 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
           ...modelLabel,
           inputTokens: result.usage.input_tokens,
           outputTokens: result.usage.output_tokens,
+          durationMs: Date.now() - started,
         })
       }
       return result

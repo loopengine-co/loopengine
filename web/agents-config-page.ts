@@ -209,6 +209,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
   .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
+  .wf-change-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 13px; }
+  .wf-change-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .wf-change-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); min-width: 64px; }
+  .wf-change-kind.change { color: var(--accent-ink); }
+  .wf-change-text { flex: 1 1 280px; }
   .wf-versions { display: grid; gap: 8px; margin-bottom: 12px; font-size: 13px; }
   .wf-versions[hidden], .wf-versions-list[hidden], .wf-version-text[hidden] { display: none; }
   .wf-versions-line, .wf-versions-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
@@ -1026,6 +1031,40 @@ ${renderMarkdownScript}
     for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute('aria-selected', String(tabs[i].dataset.tab === key));
     var panels = card.querySelectorAll('.wf-panel');
     for (var j = 0; j < panels.length; j++) panels[j].hidden = panels[j].dataset.panel !== key;
+    if (key === 'changes') loadWorkflowChanges(card);
+  }
+
+  // The Changes tab: every change to this workflow's settings, and every
+  // decision, answer and feedback in its runs, newest first, with who.
+  function loadWorkflowChanges(card) {
+    var box = card.querySelector('.wf-changes');
+    if (!box || box.getAttribute('data-loaded') === '1') return;
+    box.setAttribute('data-loaded', '1');
+    var agent = pageParams.get('agent');
+    fetch('/audit?agent=' + encodeURIComponent(agent) + '&workflow=' + encodeURIComponent(card.dataset.workflow) + '&limit=200', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (data) { box.innerHTML = workflowChangesHtml(data.events || []); })
+      .catch(function (err) { box.setAttribute('data-loaded', '0'); box.innerHTML = '<p class="error">Could not load the changes: ' + escapeHtml(err.message) + '</p>'; });
+  }
+
+  function changeText(e) {
+    var d = e.data || {};
+    if (e.kind === 'change') return escapeHtml(d.label || 'Changed a setting');
+    if (e.kind === 'decision') return (d.approved ? (d.edited ? 'Approved as changed ' : 'Approved ') : 'Denied ') + '<code>' + escapeHtml(d.tool || '') + '</code>' + (d.reason ? ': ' + String.fromCharCode(8220) + escapeHtml(d.reason) + String.fromCharCode(8221) : '');
+    if (e.kind === 'answer') return 'Answered ' + String.fromCharCode(8220) + escapeHtml(String(d.answer || '').slice(0, 200)) + String.fromCharCode(8221);
+    if (e.kind === 'feedback') return 'Feedback: ' + escapeHtml([d.verdict, d.edit ? (d.edit === 'none' ? 'used unedited' : d.edit + ' edits') : '', d.note].filter(Boolean).join(', ') || 'given');
+    return escapeHtml(e.kind);
+  }
+
+  function workflowChangesHtml(events) {
+    if (!events.length) return '<p class="hint" style="margin:0">Nothing yet. Edits to this workflow' + RSQ + 's settings, and every approval, answer and feedback in its runs, will be listed here with who and when.</p>';
+    return '<ol class="wf-change-list">' + events.map(function (e) {
+      var when = new Date(e.at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      var kind = e.kind === 'change' ? 'Setting' : e.kind === 'decision' ? 'Decision' : e.kind === 'answer' ? 'Answer' : 'Feedback';
+      return '<li><span class="wf-change-kind ' + escapeHtml(e.kind) + '">' + kind + '</span><span class="wf-change-text">' + changeText(e) + '</span>' +
+        '<span class="hint">' + (e.by ? escapeHtml(e.by) + DOT : '') + escapeHtml(when) +
+        (e.run_id ? DOT + '<a href="/inbox?case=' + encodeURIComponent(e.run_id) + '">case</a>' : '') + '</span></li>';
+    }).join('') + '</ol>';
   }
 
   // ---- A workflow in three parts: its contract (what the system holds it
@@ -1365,12 +1404,13 @@ ${renderMarkdownScript}
             '</div>' +
           '</header>' +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + tabBtn('changes', 'Changes') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
             panel('evidence', workflowEvidenceHtml(w, runs)) +
             panel('triggers', workflowTriggersHtml(w, name, params)) +
             panel('messages', workflowMessagesHtml(w, name)) +
             panel('contract', workflowContractHtml(w, name, params)) +
+            panel('changes', '<div class="wf-changes"><span class="hint">Loading' + String.fromCharCode(8230) + '</span></div>') +
             '<div class="hint workflow-result"></div>' +
             '<div class="wf-row-foot"><span class="hint">ID <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks</span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
           '</div>' +
@@ -2023,6 +2063,7 @@ ${renderMarkdownScript}
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
     loadBriefVersions(card, base);
+    if (workflowTabs[id] === 'changes') loadWorkflowChanges(card);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // Opens the workflow's page on its Triggers tab.
     var triggersBtn = card.querySelector('.workflow-triggers-open');

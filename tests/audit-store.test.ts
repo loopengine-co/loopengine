@@ -127,3 +127,35 @@ describe('message threads in the database', () => {
     expect(db.prepare("SELECT count(*) AS n FROM threads WHERE agent = 'cs'").get()).toMatchObject({ n: 2 })
   })
 })
+
+describe('sessions in the database', () => {
+  it('keep each turn, and copy a session from its old file when first opened', async () => {
+    const { SqliteSessionStore } = await import('#core/session-store.js')
+    const old = join(dir, 'sessions')
+    mkdirSync(old)
+    writeFileSync(join(old, 's1.jsonl'), JSON.stringify({ id: 'a', parentId: null, message: { role: 'user', content: 'hi' } }) + '\n')
+    const store = new SqliteSessionStore(db, { importFrom: old })
+    expect(await store.getHistory('s1')).toEqual([{ role: 'user', content: 'hi' }])
+    await store.withSession('s1', async (history) => ({ newMessages: [{ role: 'assistant', content: `seen ${history.length}` }], result: undefined }))
+    expect(await store.getHistory('s1')).toEqual([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'seen 1' }])
+    expect(await store.getHistory('new')).toEqual([])
+  })
+})
+
+describe('a case’s steps', () => {
+  it('carry each model call’s tokens and time, and the wait for a person', async () => {
+    const { timelineOf } = await import('#web/inbox-admin.js')
+    const history = [
+      { role: 'user' as const, content: 'Run it.' },
+      { role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 't1', name: 'system_ask_user', input: { question: 'Which order?' } }] },
+      { role: 'user' as const, content: [{ type: 'tool_result' as const, tool_use_id: 't1', content: 'EM20-1' }] },
+      { role: 'assistant' as const, content: [{ type: 'text' as const, text: 'Done.' }] },
+    ]
+    const call = (id: number, at: string, durationMs: number) => ({ id, at, agent: 'cs', tenant: 'default', inputTokens: 100 * id, outputTokens: 10 * id, durationMs })
+    const steps = timelineOf(history, [call(1, '2026-11-24T10:00:02.000Z', 2000), call(2, '2026-11-24T10:05:03.000Z', 1000)])
+    expect(steps[0]).toMatchObject({ kind: 'question', answer: 'EM20-1', call: { inputTokens: 100, durationMs: 2000 }, waitMs: 300000 })
+    expect(steps[1]).toMatchObject({ kind: 'text', call: { inputTokens: 200, durationMs: 1000 } })
+    // Calls that don't line up with the replies (a retry) give no step times.
+    expect(timelineOf(history, [call(1, '2026-11-24T10:00:02.000Z', 2000)])[0].call).toBeUndefined()
+  })
+})

@@ -61,6 +61,16 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-step { display: grid; gap: 4px; padding-left: 14px; border-left: 2px solid var(--line); font-size: 13.5px; }
   .ib-step.q { border-left-color: var(--warn); }
   .ib-step-k { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
+  .ib-step-meta { font-weight: 400; color: var(--ink-faint); margin-left: 8px; }
+  .ib-totals { margin: -4px 0 10px; font-size: 12.5px; color: var(--ink-muted); }
+  .ib-export { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .ib-export a.ib-btn { text-decoration: none; display: inline-flex; align-items: center; }
+  @media print {
+    .le-sidebar, .ib-back, .ib-export, .ib-actions, .le-head, .le-menu-btn { display: none !important; }
+    .le-app { display: block !important; }
+    .ib-card { break-inside: avoid; }
+    details { display: block; }
+  }
   .ib-step details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
   .ib-who { font-size: 13px; display: grid; gap: 4px; }
   .ib-reason { color: var(--ink-muted); margin: 2px 0 0 12px; }
@@ -231,11 +241,28 @@ ${renderMarkdownScript}
       '</div>';
   }
 
+  // How long something took, in words: 850 ms, 4.2 s, 3 min, 2 h 5 min.
+  function duration(ms) {
+    if (ms < 1000) return Math.round(ms) + ' ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
+    var min = Math.round(ms / 60000);
+    return min < 60 ? min + ' min' : Math.floor(min / 60) + ' h' + (min % 60 ? ' ' + (min % 60) + ' min' : '');
+  }
+  function count(n) { return Number(n).toLocaleString(); }
+
+  // A step's model call (tokens, time) and the wait after it.
+  function stepMeta(s) {
+    var parts = [];
+    if (s.call) parts.push('model ' + (s.call.durationMs != null ? duration(s.call.durationMs) + ', ' : '') + count(s.call.inputTokens) + ' in ' + String.fromCharCode(183) + ' ' + count(s.call.outputTokens) + ' out tokens');
+    if (s.waitMs != null) parts.push((s.kind === 'question' ? 'answered after ' : 'took ') + duration(s.waitMs));
+    return parts.length ? '<span class="ib-step-meta">' + esc(parts.join(DOT)) + '</span>' : '';
+  }
+
   function stepHtml(s) {
-    if (s.kind === 'text') return '<li class="ib-step"><span class="ib-step-k">Agent</span><div class="ib-md">' + renderMarkdownPreview(s.text) + '</div></li>';
-    if (s.kind === 'question') return '<li class="ib-step q"><span class="ib-step-k">Asked</span><div class="ib-md">' + renderMarkdownPreview(s.question) + '</div>' +
+    if (s.kind === 'text') return '<li class="ib-step"><span class="ib-step-k">Agent' + stepMeta(s) + '</span><div class="ib-md">' + renderMarkdownPreview(s.text) + '</div></li>';
+    if (s.kind === 'question') return '<li class="ib-step q"><span class="ib-step-k">Asked' + stepMeta(s) + '</span><div class="ib-md">' + renderMarkdownPreview(s.question) + '</div>' +
       (s.answer != null ? '<span class="ib-step-k">Answer</span><div style="white-space:pre-wrap">' + esc(s.answer) + '</div>' : '<span class="hint">Waiting for an answer</span>') + '</li>';
-    return '<li class="ib-step"><span class="ib-step-k">Used ' + esc(s.tool) + (s.failed ? ' (failed)' : '') + '</span>' +
+    return '<li class="ib-step"><span class="ib-step-k">Used ' + esc(s.tool) + (s.failed ? ' (failed)' : '') + stepMeta(s) + '</span>' +
       '<details><summary>What it sent' + (s.result != null ? ' and got back' : '') + '</summary><pre class="ib-pre">' + esc(JSON.stringify(s.args, null, 2)) + '</pre>' +
       (s.result != null ? '<pre class="ib-pre" style="margin-top:6px">' + esc(s.result) + '</pre>' : '') + '</details></li>';
   }
@@ -273,6 +300,24 @@ ${renderMarkdownScript}
     return wf + DOT + '<a class="ib-link" href="' + agentUrl + '">' + esc(c.agent) + '</a>';
   }
 
+  function totalsHtml(c) {
+    var t = c.totals;
+    if (!t) return '';
+    return '<p class="ib-totals">' + esc([
+      t.calls + (t.calls === 1 ? ' model call' : ' model calls'),
+      count(t.inputTokens) + ' tokens in, ' + count(t.outputTokens) + ' out',
+      'model time ' + duration(t.modelMs),
+      t.elapsedMs != null ? 'start to finish ' + duration(t.elapsedMs) : '',
+    ].filter(Boolean).join(DOT)) + '</p>';
+  }
+
+  // Keep the case: its whole record as a file, or printed (to paper or
+  // a PDF, from the browser's print dialog).
+  function exportHtml(c) {
+    return '<div class="ib-export"><a class="ib-btn plain" href="/inbox/cases/' + encodeURIComponent(c.id) + '/export" download>Download record</a>' +
+      '<button type="button" class="ib-btn plain" data-act="print">Print or save as PDF</button></div>';
+  }
+
   function renderCase(c) {
     var run = c.run;
     var status = run ? stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: run.status }) : stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: 'awaiting_approval' });
@@ -281,10 +326,13 @@ ${renderMarkdownScript}
       '<div class="ib-case-head"><h2>' + esc(c.title) + '</h2><div class="ib-chips">' + status + '<span>' + caseLinks(c) + (run ? DOT + 'started ' + esc(when(run.started_at)) + (run.source ? ' by ' + esc(run.source === 'webhook' ? 'a webhook' : run.source === 'schedule' ? 'a schedule' : run.source === 'console' ? 'Run now' : run.source === 'api' ? 'an app' : run.source) : '') : '') + '</span></div></div>' +
       c.pending.map(pendingHtml).join('') +
       (run && run.params ? '<div class="ib-card"><h3>Inputs</h3>' + kvHtml(run.params) + '</div>' : '') +
-      (c.steps.length ? '<div class="ib-card"><h3>What the agent did</h3><ol class="ib-steps">' + c.steps.map(stepHtml).join('') + '</ol></div>' : '') +
+      (c.steps.length ? '<div class="ib-card"><h3>What the agent did</h3>' + totalsHtml(c) + '<ol class="ib-steps">' + c.steps.map(stepHtml).join('') + '</ol></div>' : '') +
       (run ? decidedHtml(run) : '') +
       (run && run.result ? '<div class="ib-card"><h3>Result</h3><div class="ib-md">' + renderMarkdownPreview(run.result) + '</div></div>' : '') +
-      (run && run.error ? '<div class="ib-card"><h3>Failed</h3><p class="error">' + esc(run.error) + '</p></div>' : '');
+      (run && run.error ? '<div class="ib-card"><h3>Failed</h3><p class="error">' + esc(run.error) + '</p></div>' : '') +
+      exportHtml(c);
+    var print = page.querySelector('[data-act="print"]');
+    if (print) print.addEventListener('click', function () { window.print(); });
     wireCase(c);
   }
 

@@ -11,6 +11,9 @@
 // - checkpoints and pending: turns paused on an approval or a question
 //   (core/durable-approvals.ts's SqliteCheckpointStore), removed once
 //   decided;
+// - session_entries: every conversation's messages, in order, each with
+//   when it was written (core/session-store.ts's SqliteSessionStore);
+// - usage: tokens and time of every model call (core/usage.ts);
 // - threads and job_threads: which chat message each request or job is
 //   (core/messaging/threads.ts);
 // - versions: each workflow's brief (its instructions and result format)
@@ -37,7 +40,7 @@ export interface Version {
   content: string
 }
 
-export type AuditEventKind = 'decision' | 'answer' | 'feedback'
+export type AuditEventKind = 'decision' | 'answer' | 'feedback' | 'change'
 
 export interface AuditEvent {
   id: number
@@ -112,6 +115,29 @@ CREATE TABLE IF NOT EXISTS job_threads (
 );
 CREATE INDEX IF NOT EXISTS job_threads_message ON job_threads (agent, app, conversation, ts);
 CREATE INDEX IF NOT EXISTS job_threads_session ON job_threads (agent, session_id);
+CREATE TABLE IF NOT EXISTS session_entries (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  parent_id TEXT,
+  at TEXT NOT NULL,
+  data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS session_entries_session ON session_entries (session_id, seq);
+CREATE TABLE IF NOT EXISTS usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  tenant TEXT NOT NULL,
+  session_id TEXT,
+  provider TEXT,
+  model TEXT,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS usage_session ON usage (session_id, id);
+CREATE INDEX IF NOT EXISTS usage_agent ON usage (agent, at);
 CREATE TABLE IF NOT EXISTS versions (
   agent TEXT NOT NULL,
   workflow_id TEXT NOT NULL,
@@ -198,8 +224,51 @@ export function recordEvent(event: Omit<AuditEvent, 'id' | 'at'> & { at?: string
 /** A run's events, oldest first. */
 export function runEvents(runId: string, database = auditDb()): AuditEvent[] {
   if (!database) return []
-  const rows = database.prepare('SELECT * FROM events WHERE run_id = ? ORDER BY id').all(runId) as Record<string, unknown>[]
-  return rows.map((r) => ({
+  return (database.prepare('SELECT * FROM events WHERE run_id = ? ORDER BY id').all(runId) as Record<string, unknown>[]).map(eventOf)
+}
+
+export interface EventFilter {
+  agent?: string
+  /** Only these agents' events (a person limited to some agents). */
+  agents?: string[]
+  workflowId?: string
+  kind?: AuditEventKind
+  by?: string
+  /** ISO times, inclusive. */
+  since?: string
+  until?: string
+  /** Text anywhere in the event. */
+  q?: string
+  /** Events older than this id (the next page). */
+  before?: number
+  limit?: number
+}
+
+/** Events matching the filter, newest first, at most 500. */
+export function listEvents(filter: EventFilter = {}, database = auditDb()): AuditEvent[] {
+  if (!database) return []
+  const where: string[] = []
+  const args: (string | number)[] = []
+  const add = (clause: string, ...values: (string | number)[]) => {
+    where.push(clause)
+    args.push(...values)
+  }
+  if (filter.agent) add('agent = ?', filter.agent)
+  if (filter.agents) add(`agent IN (${filter.agents.map(() => '?').join(', ') || "''"})`, ...filter.agents)
+  if (filter.workflowId) add('workflow_id = ?', filter.workflowId)
+  if (filter.kind) add('kind = ?', filter.kind)
+  if (filter.by) add('by = ?', filter.by)
+  if (filter.since) add('at >= ?', filter.since)
+  if (filter.until) add('at <= ?', filter.until)
+  if (filter.before) add('id < ?', filter.before)
+  if (filter.q) add("(data LIKE ? ESCAPE '\\' OR by LIKE ? ESCAPE '\\')", ...Array(2).fill(`%${filter.q.replace(/[\\%_]/g, (c) => '\\' + c)}%`))
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500)
+  const sql = `SELECT * FROM events${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ${limit}`
+  return (database.prepare(sql).all(...args) as Record<string, unknown>[]).map(eventOf)
+}
+
+function eventOf(r: Record<string, unknown>): AuditEvent {
+  return {
     id: Number(r.id),
     at: String(r.at),
     agent: String(r.agent),
@@ -208,7 +277,7 @@ export function runEvents(runId: string, database = auditDb()): AuditEvent[] {
     kind: String(r.kind) as AuditEventKind,
     ...(r.by ? { by: String(r.by) } : {}),
     data: JSON.parse(String(r.data)) as Record<string, unknown>,
-  }))
+  }
 }
 
 // ---------- versions ----------

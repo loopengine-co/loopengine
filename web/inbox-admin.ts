@@ -8,6 +8,7 @@
 // waiting outside a workflow run (in a chat, a plain scheduled message) is
 // listed too, as a case of its own without a run.
 import type { Message } from '../core/run-agent.js'
+import type { UsageRow } from '../core/usage.js'
 import type { WorkflowRun } from '../core/workflow-runs.js'
 
 /** An open approval or question, as listAgentPending gives it. */
@@ -27,6 +28,10 @@ export interface InboxDeps {
   pending(): Promise<InboxPending[]>
   history(run: WorkflowRun): Promise<Message[]>
   workflowTitle(agent: string, workflowId: string): string | undefined
+  /** A run by id, including one too old for runs() (an archived case). */
+  run?(runId: string): Promise<WorkflowRun | undefined>
+  /** The run's model calls, oldest first (core/usage.ts). */
+  usage?(run: WorkflowRun): UsageRow[]
 }
 
 /** One row in the list. */
@@ -102,28 +107,70 @@ export async function listInbox(deps: InboxDeps, filter: { open?: boolean; q?: s
 }
 
 /** A step in a case's timeline. */
-export type InboxStep =
+export type InboxStep = (
   | { kind: 'text'; text: string }
   | { kind: 'tool'; tool: string; args: Record<string, unknown>; result?: string; failed?: boolean }
   | { kind: 'question'; question: string; answer?: string }
+) & {
+  /** On the first step of each model reply: that model call. */
+  call?: { inputTokens: number; outputTokens: number; durationMs?: number; model?: string }
+  /** On the first tool or question step of a reply: the time from the
+   * end of that model call to the start of the next (the tools running,
+   * or a person deciding). */
+  waitMs?: number
+}
+
+/** A case's totals, from its model calls. */
+export interface InboxTotals {
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  /** Time spent in model calls. */
+  modelMs: number
+  /** Start to finish (or to now, for one still open). */
+  elapsedMs?: number
+}
 
 /** What the agent did, in order: its words, the tools it used with what
  * came back, and the questions it asked with their answers. The run's
  * first message (its instructions) is left out; its inputs are shown
  * apart. */
-export function timelineOf(history: Message[]): InboxStep[] {
+export function timelineOf(history: Message[], usage: UsageRow[] = []): InboxStep[] {
   const steps: InboxStep[] = []
   const byToolUse = new Map<string, InboxStep>()
+  // Each model reply is one model call, in order, when the counts agree
+  // (a retried call is recorded too, and then they can't be matched).
+  const replies = history.filter((m) => m.role === 'assistant').length
+  const calls = usage.length === replies ? usage : []
+  const endOf = (u: UsageRow) => Date.parse(u.at)
+  const startOf = (u: UsageRow) => Date.parse(u.at) - (u.durationMs ?? 0)
+  let reply = -1
   history.forEach((m, index) => {
     if (index === 0 && m.role === 'user') return
+    const call = m.role === 'assistant' ? calls.at(++reply) : undefined
+    const next = m.role === 'assistant' ? calls.at(reply + 1) : undefined
     const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content
+    // The wait after the call goes on its question when it asked one (a
+    // person answering is most of it), else on its first tool.
+    const asks = (blocks as { type: string; name?: string }[]).some((b) => b.type === 'tool_use' && b.name === 'system_ask_user')
+    let first = true
+    let waitShown = false
+    const mark = (step: InboxStep, action: boolean): InboxStep => {
+      if (first && call) step.call = { inputTokens: call.inputTokens, outputTokens: call.outputTokens, ...(call.durationMs != null ? { durationMs: call.durationMs } : {}), ...(call.model ? { model: call.model } : {}) }
+      if (action && !waitShown && (!asks || step.kind === 'question') && call && next) {
+        step.waitMs = Math.max(0, startOf(next) - endOf(call))
+        waitShown = true
+      }
+      first = false
+      return step
+    }
     for (const b of blocks as { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; content?: unknown; is_error?: boolean }[]) {
-      if (m.role === 'assistant' && b.type === 'text' && b.text?.trim()) steps.push({ kind: 'text', text: b.text.trim() })
+      if (m.role === 'assistant' && b.type === 'text' && b.text?.trim()) steps.push(mark({ kind: 'text', text: b.text.trim() }, false))
       else if (b.type === 'tool_use' && b.name) {
         const step: InboxStep = b.name === 'system_ask_user'
           ? { kind: 'question', question: String(b.input?.question ?? '') }
           : { kind: 'tool', tool: b.name, args: b.input ?? {} }
-        steps.push(step)
+        steps.push(mark(step, true))
         if (b.id) byToolUse.set(b.id, step)
       } else if (b.type === 'tool_result' && b.tool_use_id) {
         const step = byToolUse.get(b.tool_use_id)
@@ -149,6 +196,19 @@ export interface InboxCase {
   /** What it waits on now, in full. */
   pending: (InboxPending & { question?: string; options?: string[] })[]
   steps: InboxStep[]
+  totals?: InboxTotals
+}
+
+export function totalsOf(run: WorkflowRun, usage: UsageRow[]): InboxTotals | undefined {
+  if (!usage.length) return undefined
+  const end = run.finished_at ? Date.parse(run.finished_at) : Date.now()
+  return {
+    calls: usage.length,
+    inputTokens: usage.reduce((n, u) => n + u.inputTokens, 0),
+    outputTokens: usage.reduce((n, u) => n + u.outputTokens, 0),
+    modelMs: usage.reduce((n, u) => n + (u.durationMs ?? 0), 0),
+    elapsedMs: Math.max(0, end - Date.parse(run.started_at)),
+  }
 }
 
 export async function getInboxCase(deps: InboxDeps, id: string): Promise<InboxCase | undefined> {
@@ -163,16 +223,18 @@ export async function getInboxCase(deps: InboxDeps, id: string): Promise<InboxCa
     if (!p) return undefined
     return { id, title: short(p.kind === 'question' ? questionOf(p) : `Approve ${p.tool}`, 120), agent: p.agent, workflowId: '', workflowTitle: 'Chat', pending: [full(p)], steps: [] }
   }
-  const run = runs.find((r) => r.run_id === id)
+  const run = runs.find((r) => r.run_id === id) ?? (deps.run ? await deps.run(id) : undefined)
   if (!run) return undefined
   const wfTitle = deps.workflowTitle(run.agent, run.workflow_id) ?? (run.workflow_id || 'One-off job')
   const waits = run.status === 'awaiting_approval' ? pending.filter((p) => p.sessionId === run.session_id).map(full) : []
+  const usage = deps.usage?.(run) ?? []
   let steps: InboxStep[] = []
   try {
-    steps = timelineOf(await deps.history(run))
+    steps = timelineOf(await deps.history(run), usage)
   } catch {
     // An unreadable history still shows the run and what it waits on.
   }
   const { session_id: _s, message: _m, callbacks: _c, ...shown } = run
-  return { id, title: titleOf(run, wfTitle), agent: run.agent, workflowId: run.workflow_id, workflowTitle: wfTitle, run: shown as WorkflowRun, pending: waits, steps }
+  const totals = totalsOf(run, usage)
+  return { id, title: titleOf(run, wfTitle), agent: run.agent, workflowId: run.workflow_id, workflowTitle: wfTitle, run: shown as WorkflowRun, pending: waits, steps, ...(totals ? { totals } : {}) }
 }

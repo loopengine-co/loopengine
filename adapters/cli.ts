@@ -20,9 +20,9 @@
 //
 // Owns: parsing argv, loading/saving this session's history, printing the
 // result to stdout. Everything else is runAgent. Uses REDIS_URL if set
-// (see session-store.ts createSessionStore), a local .sessions/ dir
-// otherwise — either way, safe for concurrent invocations against the
-// same --session.
+// (see session-store.ts createSessionStore), else the workspace's
+// database (a local .sessions/ dir without one) — either way, safe for
+// concurrent invocations against the same --session.
 import { randomUUID } from 'node:crypto'
 import { getEntry, listAgents } from '../core/agent-registry.js'
 import { createSessionStore } from '../core/session-store.js'

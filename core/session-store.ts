@@ -27,8 +27,11 @@
 // still serializes concurrent withSession calls for the same sessionId
 // itself (KeyedMutex / a Redis lock), same as before.
 import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
 import { Redis } from 'ioredis'
+import { auditDb } from './audit-store.js'
 import { SessionKnit, FileStorage, type Storage, type SessionEntry } from './sessionknit.js'
 import type { Message } from '#core/run-agent.js'
 
@@ -194,6 +197,78 @@ export class FileSessionStore extends SessionKnitStore {
   }
 }
 
+/** SessionKnit Storage in the workspace's database (core/audit-store.ts):
+ * one row per entry, with when it was written. A write is durable when
+ * it returns, so flush() has nothing to do. A session still in
+ * FileStorage's JSONL under `importFrom` is copied in the first time
+ * it's read. */
+export class SqliteEntryStorage implements Storage<Message> {
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly importFrom?: string,
+  ) {}
+
+  async append(sessionId: string, entry: SessionEntry<Message>): Promise<void> {
+    this.insert(sessionId, entry, new Date().toISOString())
+  }
+
+  private insert(sessionId: string, entry: SessionEntry<Message>, at: string): void {
+    this.db.prepare('INSERT INTO session_entries (session_id, id, parent_id, at, data) VALUES (?, ?, ?, ?, ?)')
+      .run(sessionId, entry.id, entry.parentId, at, JSON.stringify(entry.message))
+  }
+
+  async flush(): Promise<void> {}
+
+  async readAll(sessionId: string): Promise<SessionEntry<Message>[]> {
+    return (await this.readTimed(sessionId)).map(({ at: _at, ...entry }) => entry)
+  }
+
+  /** The entries with when each was written (imported ones: the file's
+   * time, the same for each). */
+  async readTimed(sessionId: string): Promise<(SessionEntry<Message> & { at: string })[]> {
+    const read = () => this.db.prepare('SELECT id, parent_id, at, data FROM session_entries WHERE session_id = ? ORDER BY seq').all(sessionId) as { id: string; parent_id: string | null; at: string; data: string }[]
+    let rows = read()
+    if (!rows.length && this.importFrom && this.importFile(sessionId)) rows = read()
+    return rows.map((r) => ({ id: r.id, parentId: r.parent_id, message: JSON.parse(r.data) as Message, at: r.at }))
+  }
+
+  private importFile(sessionId: string): boolean {
+    const file = path.join(this.importFrom!, `${sessionId.replace(/[/\\]/g, '_')}.jsonl`)
+    if (!existsSync(file)) return false
+    const entries = readFileSync(file, 'utf8').split('\n').filter(Boolean).flatMap((line) => {
+      try {
+        return [JSON.parse(line) as SessionEntry<Message>]
+      } catch {
+        return []
+      }
+    })
+    if (!entries.length) return false
+    const at = new Date().toISOString()
+    this.db.exec('BEGIN')
+    try {
+      for (const entry of entries) this.insert(sessionId, entry, at)
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+    return true
+  }
+}
+
+/** Sessions in the workspace's database; one process, like
+ * FileSessionStore. Sessions in `.sessions` files (`importFrom`) are
+ * copied in as they're first read. */
+export class SqliteSessionStore extends SessionKnitStore {
+  readonly entries: SqliteEntryStorage
+
+  constructor(db: DatabaseSync, options: { importFrom?: string } = {}) {
+    const entries = new SqliteEntryStorage(db, options.importFrom)
+    super(entries, (sessionId, fn) => fileMutex.run(`sqlite:${sessionId}`, fn))
+    this.entries = entries
+  }
+}
+
 /** SessionKnit Storage backed by a Redis list — one RPUSH per appended
  * entry. Redis is already durable per write, so unlike FileStorage there's
  * nothing to debounce: flush() is a no-op. */
@@ -333,9 +408,13 @@ export class RedisSessionStore extends SessionKnitStore {
 }
 
 /** Picks the store from environment so adapters don't hardcode a backend:
- * REDIS_URL set -> RedisSessionStore (required once you run >1 instance),
- * otherwise FileSessionStore under .sessions (fine for local dev). */
+ * REDIS_URL set -> RedisSessionStore (required once you run >1 instance);
+ * otherwise the workspace's database, reading what's in .sessions as
+ * each session is first opened; FileSessionStore under .sessions where
+ * there's no database. */
 export function createSessionStore(): SessionStore {
   const redisUrl = process.env.REDIS_URL
-  return redisUrl ? new RedisSessionStore(redisUrl) : new FileSessionStore('.sessions')
+  if (redisUrl) return new RedisSessionStore(redisUrl)
+  const db = auditDb()
+  return db ? new SqliteSessionStore(db, { importFrom: '.sessions' }) : new FileSessionStore('.sessions')
 }
