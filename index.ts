@@ -20,7 +20,7 @@ export { createAgentEnv, agentDirFor, envScopeOf, type EnvScope } from '#core/ag
 export { FileSecretStore, setSecretStore, getSecretStore, type SecretStore } from '#core/secret-store.js'
 export { signProxyIdentity, verifyProxyIdentity, TRUSTED_PROXY_IDENTITY_HEADER, type ProxyIdentity } from '#core/trusted-proxy.js'
 export { setUsageSink, recordUsage, sessionUsage, usageBySession, type UsageEvent, type UsageSink, type UsageRow } from '#core/usage.js'
-export { changeOf, keptBody, type Change } from '#web/change-log.js'
+export { changeOf, keptBody, describeChanges, changesSummary, type Change, type FieldChange } from '#web/change-log.js'
 export { eventText, eventsCsv, caseRow, type AuditCaseRow } from '#web/audit-admin.js'
 export { auditPageHtml, auditPageFor } from '#web/audit-page.js'
 export { buildWorkflowAudit, lineDiff, type WorkflowAudit, type WorkflowAuditInput, type AuditCounts, type AuditPerson, type AuditDecision, type AuditVersion, type AuditCase } from '#web/workflow-audit.js'
