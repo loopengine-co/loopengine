@@ -69,6 +69,28 @@ export const agentsConfigPageHtml: string = `<!doctype html>
      actions), then rows that open: its message, instructions, run options
      and recent runs. */
   .le-tab .le-pending { margin-left: 4px; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+  /* A workflow's own page: the agent's header and list intro give way to it. */
+  .wf-page-mode > .le-head, .wf-page-mode .wf-tab-head { display: none; }
+  .wf-page { display: grid; gap: 20px; }
+  .wf-page-head { display: grid; gap: 10px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .wf-page-crumb-row { display: flex; align-items: center; gap: 10px; }
+  .wf-page-crumb { font-size: 13px; color: var(--ink-muted); text-decoration: none; }
+  .wf-page-crumb:hover { color: var(--accent-ink); }
+  .wf-page-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .wf-page-title-row h1 { margin: 0; font-size: 24px; letter-spacing: -0.01em; line-height: 1.2; }
+  .wf-page-desc { margin: 0; color: var(--ink-muted); max-width: 80ch; }
+  .wf-page-meta { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 13px; }
+  .wf-page-meta-item { display: grid; gap: 2px; min-width: 0; }
+  .wf-page-meta-k { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .wf-page-meta-item a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+  .wf-page .wf-page-body { padding: 0; gap: 16px; }
+  .wf-page-starts { display: grid; gap: 2px; color: var(--ink); }
+  .wf-page-last { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .wf-list-box.wf-page-box { border: 0; border-radius: 0; background: none; overflow: visible; }
+  .wf-page-brief { display: grid; gap: 10px; }
+  .wf-page-brief h2 { margin: 0; font-size: 15px; }
+  .wf-page .workflow-steps-text { margin: 0; padding: 14px 16px; border-radius: 10px; background: var(--surface); font-size: 13.5px; line-height: 1.6; max-height: 480px; overflow: auto; white-space: pre-wrap; }
+  .wf-page .workflow-result:empty { display: none; }
   .wf-tab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
   .wf-tab-head p { margin: 0; max-width: 72ch; }
   .wf-new-btn { flex: none; display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 8px; background: var(--accent); color: var(--on-accent); font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
@@ -891,8 +913,17 @@ ${renderMarkdownScript}
 
   // Which workflow is open in the list, and each one's chosen tab: kept
   // across redraws (a running run's refresh, a save), and in the URL.
-  var openWorkflowId = new URLSearchParams(location.search).get('workflow') || null;
+  var openWorkflowId = null;
   var workflowTabs = {};
+  // A workflow's own page: ?tab=workflows&workflow=<id> shows that one
+  // workflow (its brief on top, its tabs below) in place of the agent's
+  // header and list. Every link to a workflow lands here.
+  var pageParams = new URLSearchParams(location.search);
+  var workflowPageId = pageParams.get('tab') === 'workflows' && pageParams.get('workflow') || null;
+  if (workflowPageId && pageParams.get('wtab')) workflowTabs[workflowPageId] = pageParams.get('wtab');
+  function workflowPageHref(agent, id, tab) {
+    return '/agents/config?agent=' + encodeURIComponent(agent) + '&tab=workflows&workflow=' + encodeURIComponent(id) + (tab ? '&wtab=' + encodeURIComponent(tab) : '');
+  }
 
   function workflowLastRun(w) {
     return (w.recentRuns || []).slice().sort(function (a, b) { return String(b.started_at).localeCompare(String(a.started_at)); })[0] || null;
@@ -943,6 +974,7 @@ ${renderMarkdownScript}
 
   // Opens one workflow's row (closing the one open before), or closes it.
   function setWorkflowOpen(card, open) {
+    if (card.classList.contains('wf-page')) return;
     var list = card.parentNode;
     if (open && list) {
       var others = list.querySelectorAll('.wf-row.is-open');
@@ -1200,13 +1232,18 @@ ${renderMarkdownScript}
   }
 
   function renderWorkflowsHtml(name, workflows) {
+    if (workflowPageId) {
+      var page = workflows.filter(function (x) { return x.id === workflowPageId; });
+      if (!page.length) return '<div class="wf-empty-state"><strong>No workflow ' + escapeHtml(workflowPageId) + ' on this agent</strong><p>It may have been removed.</p><a class="wf-new-btn" href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows">See its workflows</a></div>';
+      workflows = page;
+    }
     if (!workflows.length) {
       return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Say what this agent should do in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
     }
     // Those that need someone first: waiting for a decision, then failed.
     var rank = function (w) { return workflowNeedsDecision(w) ? 0 : (workflowLastRun(w) || {}).status === 'error' ? 1 : 2; };
     var sorted = workflows.map(function (w, i) { return { w: w, i: i }; }).sort(function (a, b) { return rank(a.w) - rank(b.w) || a.i - b.i; }).map(function (x) { return x.w; });
-    return '<div class="wf-list-box">' + sorted.map(function (w) {
+    return '<div class="wf-list-box' + (workflowPageId ? ' wf-page-box' : '') + '">' + sorted.map(function (w) {
       var paramNames = Object.keys(w.parameters || {});
       var params = paramNames.map(function (p) {
         var spec = w.parameters[p];
@@ -1232,10 +1269,39 @@ ${renderMarkdownScript}
           runEvidenceHtml(w, r) + '</li>';
       }).join('');
       var last = workflowLastRun(w);
-      var tab = workflowTabs[w.id] || 'brief';
+      var tab = workflowTabs[w.id] || (workflowPageId ? 'evidence' : 'brief');
       var open = openWorkflowId === w.id;
       var panel = function (key, html) { return '<div class="wf-panel" data-panel="' + key + '"' + (tab === key ? '' : ' hidden') + '>' + html + '</div>'; };
       var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '" aria-selected="' + (tab === key) + '">' + label + '</button>'; };
+      if (workflowPageId) {
+        var agentLabel = currentCfg && currentCfg.displayName ? currentCfg.displayName : name;
+        document.title = w.title + ' ' + String.fromCharCode(183) + ' ' + agentLabel;
+        return '<article class="workflow-card wf-page is-open" data-workflow="' + escapeHtml(w.id) + '">' +
+          '<header class="wf-page-head">' +
+            '<div class="wf-page-crumb-row"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
+            '<a class="wf-page-crumb" href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows">' + String.fromCharCode(8592) + ' ' + escapeHtml(agentLabel) + ' ' + String.fromCharCode(183) + ' Workflows</a></div>' +
+            '<div class="wf-page-title-row"><h1>' + escapeHtml(w.title) + '</h1>' +
+              '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit</button></span></div>' +
+            (w.description && w.description !== w.title ? '<p class="wf-page-desc">' + escapeHtml(w.description) + '</p>' : '') +
+            '<div class="wf-page-meta">' +
+              '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Agent</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '">' + escapeHtml(agentLabel) + '</a></span>' +
+              '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Starts</span><span class="wf-page-starts">' + workflowStartsSummary(w) + '</span></span>' +
+              '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Last run</span><span class="wf-page-last">' + workflowLastRunHtml(last) + '</span></span>' +
+              (w.jobs && w.jobs.length ? '<span class="wf-page-meta-item"><span class="wf-page-meta-k">For job</span><span>' + w.jobs.map(function (j) { return '<a href="/jobs?job=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span></span>' : '') +
+            '</div>' +
+          '</header>' +
+          '<div class="wf-row-body wf-page-body">' +
+            '<section class="wf-page-brief"><h2>Brief</h2>' + workflowBriefHtml(w) + '</section>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
+            panel('evidence', workflowEvidenceHtml(w, runs)) +
+            panel('triggers', workflowTriggersHtml(w, name, params)) +
+            panel('messages', workflowMessagesHtml(w, name)) +
+            panel('contract', workflowContractHtml(w, name, params)) +
+            '<div class="hint workflow-result"></div>' +
+            '<div class="wf-row-foot"><span class="hint">ID <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks</span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
+          '</div>' +
+        '</article>';
+      }
       return '<article class="workflow-card wf-row' + (open ? ' is-open' : '') + '" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div class="wf-row-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
           '<span class="wf-row-caret" aria-hidden="true"></span>' +
@@ -1287,23 +1353,6 @@ ${renderMarkdownScript}
   var workflowsRefreshTimer = null;
   // Set by a workflow's "Add a schedule", for the Schedules tab's form.
   var pendingScheduleWorkflow = null;
-  // Set by a schedule's workflow link: the card to scroll to and mark.
-  var pendingWorkflowFocus = null;
-
-  function focusWorkflowCard(tries) {
-    if (!pendingWorkflowFocus) return;
-    var card = detail.querySelector('.workflow-card[data-workflow="' + CSS.escape(pendingWorkflowFocus) + '"]');
-    if (!card) {
-      if ((tries || 0) < 40) setTimeout(function () { focusWorkflowCard((tries || 0) + 1); }, 150);
-      return;
-    }
-    pendingWorkflowFocus = null;
-    setWorkflowOpen(card, true);
-    card.scrollIntoView({ block: 'start' });
-    card.classList.add('workflow-focus');
-    setTimeout(function () { card.classList.remove('workflow-focus'); }, 2500);
-  }
-
   // Set by a workflow's Edit on the Skills list: the workflow to open in
   // its editor once the Workflows tab has drawn it.
   var pendingWorkflowEdit = null;
@@ -1824,24 +1873,25 @@ ${renderMarkdownScript}
     var id = card.dataset.workflow;
     var result = card.querySelector('.workflow-result');
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
+    // A row in the list opens the workflow's own page.
     var head = card.querySelector('.wf-row-head');
-    head.addEventListener('click', function (ev) {
-      if (ev.target.closest('button, a')) return;
-      setWorkflowOpen(card, !card.classList.contains('is-open'));
-    });
-    head.addEventListener('keydown', function (ev) {
-      if (ev.target !== head || (ev.key !== 'Enter' && ev.key !== ' ')) return;
-      ev.preventDefault();
-      setWorkflowOpen(card, !card.classList.contains('is-open'));
-    });
+    if (head) {
+      head.addEventListener('click', function (ev) {
+        if (ev.target.closest('button, a')) return;
+        location.href = workflowPageHref(name, id);
+      });
+      head.addEventListener('keydown', function (ev) {
+        if (ev.target !== head || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+        ev.preventDefault();
+        location.href = workflowPageHref(name, id);
+      });
+    }
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
-    // Opens the row (if it's closed) on its Triggers tab.
-    card.querySelector('.workflow-triggers-open').addEventListener('click', function () {
-      if (!card.classList.contains('is-open')) setWorkflowOpen(card, true);
-      showWorkflowTab(card, 'triggers');
-    });
+    // Opens the workflow's page on its Triggers tab.
+    var triggersBtn = card.querySelector('.workflow-triggers-open');
+    if (triggersBtn) triggersBtn.addEventListener('click', function () { location.href = workflowPageHref(name, id, 'triggers'); });
     // Messages: where every run's updates and decisions go.
     var msgForm = card.querySelector('.wf-msg-form');
     if (msgForm) {
@@ -3323,7 +3373,7 @@ ${renderMarkdownScript}
     return '<tr id="schedule-' + escapeHtml(t.task_id) + '">' +
       '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' +
         (t.workflow
-          ? '<div><span class="le-pill accent">Workflow</span> <a href="?agent=' + encodeURIComponent(currentName) + '&amp;tab=workflows" class="schedule-workflow-link" data-workflow="' + escapeHtml(t.workflow.id) + '" title="See it on the Workflows tab">' + escapeHtml(t.workflow.title) + '</a></div>' +
+          ? '<div><span class="le-pill accent">Workflow</span> <a href="' + escapeHtml(workflowPageHref(currentName, t.workflow.id)) + '" class="schedule-workflow-link" title="Open the workflow">' + escapeHtml(t.workflow.title) + '</a></div>' +
             '<div class="schedule-result hint">' + escapeHtml(t.workflow.description || t.workflow.start_message) +
               (t.params ? '<br>' + Object.keys(t.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(t.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '') + '</div>'
           : t.workflow_missing
@@ -3400,17 +3450,6 @@ ${renderMarkdownScript}
   function wireSchedulesHandlers(name) {
     var content = schedulesContentEl();
     if (!content) return;
-    // A schedule's workflow opens its card on the Workflows tab.
-    var workflowLinks = content.querySelectorAll('.schedule-workflow-link');
-    for (var wl = 0; wl < workflowLinks.length; wl++) {
-      workflowLinks[wl].addEventListener('click', function (ev) {
-        if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
-        ev.preventDefault();
-        pendingWorkflowFocus = ev.currentTarget.dataset.workflow;
-        switchTab('workflows');
-        focusWorkflowCard();
-      });
-    }
     var actionBtns = content.querySelectorAll('.schedule-action');
     for (var i = 0; i < actionBtns.length; i++) {
       actionBtns[i].addEventListener('click', function (ev) {
@@ -5419,6 +5458,7 @@ ${renderMarkdownScript}
 
   function renderDetail(cfg) {
     currentCfg = cfg;
+    detail.classList.toggle('wf-page-mode', Boolean(workflowPageId) && cfg.name === pageParams.get('agent'));
     detail.innerHTML =
       leShell.renderHead({
         name: cfg.name,
@@ -5519,6 +5559,7 @@ ${renderMarkdownScript}
   document.addEventListener('click', function (ev) {
     var link = ev.target.closest('a[data-le-agent]');
     if (!link || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    if (workflowPageId) return;
     if (document.querySelector('dialog[open]')) return;
     ev.preventDefault();
     var name = link.dataset.leAgent;
