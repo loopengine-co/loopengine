@@ -45,6 +45,8 @@
     "dist/core/secret-store.d.ts",
     "dist/core/trusted-proxy.js",
     "dist/core/trusted-proxy.d.ts",
+    "dist/core/audit-anchor.js",
+    "dist/core/audit-anchor.d.ts",
     "dist/core/audit-store.js",
     "dist/core/audit-store.d.ts",
     "dist/core/workspace-roles.js",

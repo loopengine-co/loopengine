@@ -8,6 +8,13 @@
 import { devUiCss } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
+/** The page with its filters' choices in it (agents, workflows, people),
+ * so they show at once instead of after another request. */
+export function auditPageFor(filters: { agents: { name: string; label: string }[]; workflows: { agent: string; id: string; title: string }[]; people: string[] }): string {
+  // In a script element: no "</" may end it early.
+  return auditPageHtml.replace('null/*AUDIT_FILTERS*/', JSON.stringify(filters).replace(/</g, '\\u003c'))
+}
+
 export const auditPageHtml: string = `<!doctype html>
 <html lang="en">
 <head>
@@ -20,10 +27,15 @@ export const auditPageHtml: string = `<!doctype html>
   .au-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; font-size: 14px; font-weight: 600; color: var(--ink-muted); margin-bottom: -1px; }
   .au-tabs button[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
   .au-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .au-bar select, .au-bar input { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); max-width: 220px; }
+  .au-bar select, .au-bar input { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); max-width: 180px; }
   .au-bar input[type="search"] { flex: 1; min-width: 160px; max-width: none; }
   .au-bar [hidden] { display: none; }
-  .au-export { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .au-actions { display: inline-flex; gap: 8px; margin-left: auto; }
+  .au-verify { font-size: 13px; }
+  .au-check { padding: 10px 14px; border-radius: 10px; font-size: 13px; background: var(--good-soft); color: var(--good); }
+  .au-check.bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+  .au-check .hint { display: block; margin-top: 2px; font-weight: 400; }
+  .au-export { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
   .au-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
   .au-row { display: grid; grid-template-columns: 136px 80px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
   .au-row:first-child { border-top: 0; }
@@ -82,14 +94,17 @@ ${consoleSidebarHtml}
         <option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="">All time</option>
       </select>
       <input type="search" id="auQ" placeholder="Search" aria-label="Search">
-      <a class="au-export" id="auExport" href="/audit/events.csv" download>Export CSV</a>
+      <span class="au-actions"><button type="button" class="au-verify" id="auVerify">Verify log</button>
+      <a class="au-export" id="auExport" href="/audit/events.csv" download>Export CSV</a></span>
     </div>
+    <div class="au-check" id="auCheck" role="status" hidden></div>
     <div id="auList"><p class="hint">Loading&hellip;</p></div>
     <button type="button" class="au-more" id="auMore" hidden>Load older</button>
   </div></div></div>
 </main>
 </div>
 ${consoleShellScript}
+<script>window.AUDIT_FILTERS = null/*AUDIT_FILTERS*/;</script>
 <script>
 (function () {
   var DOT = ' ' + String.fromCharCode(183) + ' ';
@@ -100,7 +115,10 @@ ${consoleShellScript}
     kind: params.get('kind') || '', status: params.get('status') || '',
     period: params.has('period') ? params.get('period') : '30', q: params.get('q') || '',
   };
-  var filters = { agents: [], workflows: [], people: [] };
+  // The filters' choices come with the page (auditPageFor), so they show
+  // at once; a page served without them fetches them.
+  var embedded = window.AUDIT_FILTERS || null;
+  var filters = embedded || { agents: [], workflows: [], people: [] };
   var next = null;
   var list = document.getElementById('auList');
   var more = document.getElementById('auMore');
@@ -239,6 +257,7 @@ ${consoleShellScript}
     el.kind.hidden = state.tab !== 'activity';
     el.status.hidden = state.tab !== 'cases';
     el.exportLink.hidden = state.tab !== 'activity';
+    verifyBtn.hidden = state.tab !== 'activity';
     el.exportLink.href = '/audit/events.csv?' + query();
     remember();
   }
@@ -262,20 +281,60 @@ ${consoleShellScript}
   });
   more.addEventListener('click', function () { load(true); });
 
+  // Checks every event's hash, in order, and the anchors sent away.
+  var verifyBtn = document.getElementById('auVerify');
+  var check = document.getElementById('auCheck');
+  var PROBLEMS = {
+    'changed': 'it was changed after it was recorded',
+    'missing-before': 'an event before it was removed, or the order changed',
+    'missing-after-anchor': 'events up to an anchored point are missing',
+    'anchor-differs': 'it no longer matches the hash anchored for it',
+  };
+  verifyBtn.addEventListener('click', function () {
+    verifyBtn.disabled = true;
+    check.hidden = false;
+    check.className = 'au-check';
+    check.textContent = 'Checking every event' + String.fromCharCode(8230);
+    fetch('/audit/verify', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (v) {
+        var anchors = v.anchors ? v.anchors + ' anchor' + (v.anchors === 1 ? '' : 's') + ' kept at ' + v.anchoredAt + ' match' + (v.anchors === 1 ? 'es' : '') : 'no anchors yet (one is sent each day)';
+        var note = v.anchorsNote ? '<span class="hint">Anchors checked are this workspace' + String.fromCharCode(8217) + 's own: ' + esc(v.anchorsNote) + '.</span>' : '';
+        if (v.ok) {
+          check.innerHTML = 'Intact: all ' + v.events.toLocaleString() + ' events check out, and ' + anchors + '.' +
+            (v.last ? '<span class="hint">Latest event #' + v.last.id + ', ' + esc(when(v.last.at)) + DOT + 'hash ' + esc(v.last.hash.slice(0, 16)) + String.fromCharCode(8230) + '</span>' : '') + note;
+        } else {
+          check.className = 'au-check bad';
+          check.innerHTML = 'Broken at event #' + v.broken.id + (v.broken.at ? ' (' + esc(when(v.broken.at)) + ')' : '') + ': ' + esc(PROBLEMS[v.broken.problem] || v.broken.problem) + '.' +
+            '<span class="hint">' + v.events.toLocaleString() + ' events before it check out.</span>' + note;
+        }
+      })
+      .catch(function (err) { check.className = 'au-check bad'; check.textContent = 'Could not check: ' + err.message; })
+      .then(function () { verifyBtn.disabled = false; });
+  });
+
   el.q.value = state.q;
   el.kind.value = state.kind;
   el.status.value = state.status;
   el.period.value = state.period;
-  fetch('/audit/filters', { headers: { accept: 'application/json' } })
-    .then(function (r) { return r.ok ? r.json() : filters; })
-    .catch(function () { return filters; })
-    .then(function (f) {
-      filters = f;
-      el.agent.innerHTML = '<option value="">All agents</option>' + f.agents.map(function (a) { return '<option value="' + esc(a.name) + '"' + (a.name === state.agent ? ' selected' : '') + '>' + esc(a.label) + '</option>'; }).join('');
-      el.by.innerHTML = '<option value="">Anyone</option>' + f.people.map(function (p) { return '<option value="' + esc(p) + '"' + (p === state.by ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
-      fillWorkflows();
-      changed();
-    });
+  function fillFilters(f) {
+    filters = f;
+    el.agent.innerHTML = '<option value="">All agents</option>' + f.agents.map(function (a) { return '<option value="' + esc(a.name) + '"' + (a.name === state.agent ? ' selected' : '') + '>' + esc(a.label) + '</option>'; }).join('');
+    el.by.innerHTML = '<option value="">Anyone</option>' + f.people.map(function (p) { return '<option value="' + esc(p) + '"' + (p === state.by ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
+    fillWorkflows();
+  }
+  if (embedded) {
+    fillFilters(embedded);
+    changed();
+  } else {
+    // The list doesn't wait for the choices; its rows are named again once
+    // they come.
+    changed();
+    fetch('/audit/filters', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (f) { if (f) { fillFilters(f); load(false); } });
+  }
 })();
 </script>
 </body>

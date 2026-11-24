@@ -70,6 +70,8 @@ export const devUiCss: string = `
     cursor: pointer;
     font-weight: 500;
   }
+  select { cursor: pointer; }
+  select:disabled { cursor: default; }
   button:hover:not(:disabled) { background: var(--surface); }
   button[type="submit"], button.primary {
     background: var(--accent);

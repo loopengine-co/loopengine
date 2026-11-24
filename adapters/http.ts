@@ -87,9 +87,10 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
-import { briefContent, briefFromContent, eventPeople, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
+import { fetchAnchors, startAuditAnchoring } from '#core/audit-anchor.js'
+import { briefContent, briefFromContent, eventPeople, lastAnchor, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
 import { caseRow, eventsCsv } from '#web/audit-admin.js'
-import { auditPageHtml } from '#web/audit-page.js'
+import { auditPageFor } from '#web/audit-page.js'
 import { changeOf, keptBody } from '#web/change-log.js'
 import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
 import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
@@ -2506,6 +2507,16 @@ function noteBrief(agent: string, workflowId: string, about: { by?: string; reas
 }
 function notePolicies(about: { by?: string; reason?: string } = {}): number | undefined {
   return noteVersion({ agent: '', workflowId: '', kind: 'policies' }, readWorkspacePolicies(process.cwd()), about)
+}
+
+// What the Audit page's filters offer: agents, workflows, people.
+function auditFilters(): { agents: { name: string; label: string }[]; workflows: { agent: string; id: string; title: string }[]; people: string[] } {
+  const agents = listAgents().filter((name) => getEntry(name))
+  return {
+    agents: agents.map((name) => ({ name, label: getEntry(name)?.config.displayName ?? name })),
+    workflows: agents.flatMap((agent) => readWorkflows(agentDir(agent)).map((w) => ({ agent, id: w.id, title: w.title }))),
+    people: eventPeople(),
+  }
 }
 
 // The Audit log's filters, from a request's query (?agent, workflow,
@@ -5615,12 +5626,25 @@ const server = createServer(async (req, res) => {
     // else the log itself: changes, decisions, answers and feedback,
     // newest first, filtered (core/audit-store.ts's listEvents).
     if (req.method === 'GET' && pathname === '/audit' && String(req.headers.accept ?? '').includes('text/html')) {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(auditPageHtml)
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(auditPageFor(auditFilters()))
       return
     }
     if (req.method === 'GET' && (pathname === '/audit' || pathname === '/audit/events')) {
       const events = listEvents(eventFilterOf(req))
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ events, next: events.length ? events.at(-1)!.id : null }))
+      return
+    }
+    // Checks the log's hash chain, and every anchor sent away (fetched
+    // back from loopengine.co; off Cloud, the ones kept here).
+    if (req.method === 'GET' && pathname === '/audit/verify') {
+      const remote = await fetchAnchors()
+      const check = verifyEventChain('anchors' in remote ? remote.anchors : undefined)
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({
+        ...check,
+        anchoredAt: 'anchors' in remote ? 'loopengine.co' : 'this workspace',
+        ...('unavailable' in remote ? { anchorsNote: remote.unavailable } : {}),
+        lastAnchor: lastAnchor() ?? null,
+      }))
       return
     }
     // The same log as a CSV file, up to 10,000 rows.
@@ -5659,13 +5683,7 @@ const server = createServer(async (req, res) => {
     }
     // What the Audit page's filters offer: agents, workflows, people.
     if (req.method === 'GET' && pathname === '/audit/filters') {
-      const agents = listAgents().filter((name) => getEntry(name))
-      const workflows = agents.flatMap((agent) => readWorkflows(agentDir(agent)).map((w) => ({ agent, id: w.id, title: w.title })))
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({
-        agents: agents.map((name) => ({ name, label: getEntry(name)?.config.displayName ?? name })),
-        workflows,
-        people: eventPeople(),
-      }))
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(auditFilters()))
       return
     }
     // Shared policies' versions, newest first, and restoring one.
@@ -6234,6 +6252,7 @@ server.listen(port, () => {
   setInterval(checkGoals, 24 * 60 * 60 * 1000).unref()
   const checkHealth = () => void sendHealthAlerts().catch((err) => console.error('[loopengine] checking workflow health failed:', err))
   setInterval(checkHealth, 60 * 60 * 1000).unref()
+  startAuditAnchoring((m) => console.log(m))
   startLeverEventsSync(projectDir(), (m) => console.log(m))
   reportAgentNames()
   // LOOPENGINE_SCHEDULER=off leaves scheduling to another process.

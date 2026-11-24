@@ -51,6 +51,10 @@ export interface AuditEvent {
   kind: AuditEventKind
   by?: string
   data: Record<string, unknown>
+  /** Its place in the hash chain: the event before's hash, and its own
+   * (eventHash). */
+  prev?: string
+  hash?: string
 }
 
 const SCHEMA = `
@@ -179,7 +183,117 @@ export function openAuditDb(dir: string): DatabaseSync | undefined {
   const db = new sqlite.DatabaseSync(path.join(dir, 'loopengine.db'))
   db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;')
   db.exec(SCHEMA)
+  chainEvents(db)
   return db
+}
+
+// ---------- the hash chain ----------
+//
+// Each event carries a hash of its own content and of the event before's
+// hash, so changing or removing any event breaks every link after it
+// (verifyEventChain finds where). The latest hash is also sent away each
+// day (core/audit-anchor.ts), so rewriting the whole chain doesn't pass
+// either. It shows tampering; it can't prevent it.
+
+const GENESIS = ''
+
+/** An event's hash: SHA-256 of the hash before it and its content. */
+export function eventHash(prev: string, e: { id: number; at: string; agent: string; workflow_id?: string | null; run_id?: string | null; kind: string; by?: string | null; data: string }): string {
+  const content = JSON.stringify([e.id, e.at, e.agent, e.workflow_id ?? null, e.run_id ?? null, e.kind, e.by ?? null, e.data])
+  return createHash('sha256').update(prev).update('\n').update(content).digest('hex')
+}
+
+type EventRow = { id: number; at: string; agent: string; workflow_id: string | null; run_id: string | null; kind: string; by: string | null; data: string; prev: string | null; hash: string | null }
+
+// Adds the chain's columns to a database from before them, and chains any
+// event without a hash (those recorded before), in order.
+function chainEvents(db: DatabaseSync): void {
+  const columns = (db.prepare('PRAGMA table_info(events)').all() as { name: string }[]).map((c) => c.name)
+  if (!columns.includes('hash')) {
+    db.exec('ALTER TABLE events ADD COLUMN prev TEXT; ALTER TABLE events ADD COLUMN hash TEXT;')
+  }
+  db.exec("CREATE TABLE IF NOT EXISTS audit_anchors (event_id INTEGER PRIMARY KEY, hash TEXT NOT NULL, at TEXT NOT NULL, sent_at TEXT)")
+  const first = db.prepare('SELECT MIN(id) AS id FROM events WHERE hash IS NULL').get() as { id: number | null }
+  if (first.id == null) return
+  const before = db.prepare('SELECT hash FROM events WHERE id < ? ORDER BY id DESC LIMIT 1').get(first.id) as { hash: string | null } | undefined
+  let prev = before?.hash ?? GENESIS
+  const rows = db.prepare('SELECT * FROM events WHERE id >= ? ORDER BY id').all(first.id) as EventRow[]
+  const set = db.prepare('UPDATE events SET prev = ?, hash = ? WHERE id = ?')
+  db.exec('BEGIN')
+  try {
+    for (const row of rows) {
+      const hash = eventHash(prev, row)
+      set.run(prev, hash, row.id)
+      prev = hash
+    }
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
+  writeMeta('events_chained', `${new Date().toISOString()} ${rows.length}`, db)
+}
+
+export interface ChainCheck {
+  ok: boolean
+  /** Events checked. */
+  events: number
+  /** The latest event, and its hash. */
+  last?: { id: number; at: string; hash: string }
+  /** The first place the chain is broken, and how. */
+  broken?: { id: number; at?: string; problem: 'changed' | 'missing-before' | 'missing-after-anchor' | 'anchor-differs' }
+  /** Anchors checked against the chain. */
+  anchors: number
+}
+
+/** Checks every event's hash, in order, and that each anchor (a hash
+ * sent away earlier: the workspace's own record, or `anchors` fetched
+ * back from where they were sent) still matches its event. */
+export function verifyEventChain(anchors?: { eventId: number; hash: string }[], database = auditDb()): ChainCheck {
+  if (!database) return { ok: true, events: 0, anchors: 0 }
+  let prev = GENESIS
+  let count = 0
+  let last: ChainCheck['last']
+  let after = 0
+  const byId = new Map<number, string>()
+  const kept = anchors ?? (database.prepare('SELECT event_id AS eventId, hash FROM audit_anchors').all() as { eventId: number; hash: string }[])
+  const wanted = new Set(kept.map((a) => a.eventId))
+  for (;;) {
+    const rows = database.prepare('SELECT * FROM events WHERE id > ? ORDER BY id LIMIT 5000').all(after) as EventRow[]
+    if (!rows.length) break
+    for (const row of rows) {
+      if ((row.prev ?? GENESIS) !== prev) return { ok: false, events: count, broken: { id: row.id, at: row.at, problem: 'missing-before' }, anchors: 0, ...(last ? { last } : {}) }
+      const hash = eventHash(prev, row)
+      if (hash !== row.hash) return { ok: false, events: count, broken: { id: row.id, at: row.at, problem: 'changed' }, anchors: 0, ...(last ? { last } : {}) }
+      if (wanted.has(row.id)) byId.set(row.id, hash)
+      prev = hash
+      count++
+      last = { id: row.id, at: row.at, hash }
+    }
+    after = rows.at(-1)!.id
+  }
+  for (const anchor of [...kept].sort((a, b) => a.eventId - b.eventId)) {
+    const hash = byId.get(anchor.eventId)
+    if (hash === undefined) return { ok: false, events: count, broken: { id: anchor.eventId, problem: 'missing-after-anchor' }, anchors: kept.length, ...(last ? { last } : {}) }
+    if (hash !== anchor.hash) return { ok: false, events: count, broken: { id: anchor.eventId, problem: 'anchor-differs' }, anchors: kept.length, ...(last ? { last } : {}) }
+  }
+  return { ok: true, events: count, anchors: kept.length, ...(last ? { last } : {}) }
+}
+
+/** The latest event's id and hash, to anchor. */
+export function latestEventHash(database = auditDb()): { id: number; at: string; hash: string } | undefined {
+  const row = database?.prepare('SELECT id, at, hash FROM events WHERE hash IS NOT NULL ORDER BY id DESC LIMIT 1').get() as { id: number; at: string; hash: string } | undefined
+  return row ? { id: Number(row.id), at: row.at, hash: row.hash } : undefined
+}
+
+/** Notes an anchor sent away (or kept only here, `sentAt` absent). */
+export function noteAnchor(anchor: { eventId: number; hash: string; at: string; sentAt?: string }, database = auditDb()): void {
+  database?.prepare('INSERT OR REPLACE INTO audit_anchors (event_id, hash, at, sent_at) VALUES (?, ?, ?, ?)').run(anchor.eventId, anchor.hash, anchor.at, anchor.sentAt ?? null)
+}
+
+export function lastAnchor(database = auditDb()): { eventId: number; hash: string; at: string; sentAt?: string } | undefined {
+  const row = database?.prepare('SELECT event_id, hash, at, sent_at FROM audit_anchors ORDER BY event_id DESC LIMIT 1').get() as { event_id: number; hash: string; at: string; sent_at: string | null } | undefined
+  return row ? { eventId: Number(row.event_id), hash: row.hash, at: row.at, ...(row.sent_at ? { sentAt: row.sent_at } : {}) } : undefined
 }
 
 let db: DatabaseSync | null | undefined
@@ -221,12 +335,22 @@ export function retentionDays(): number {
 
 /** Appends what someone did in or about a run. Never throws: the record
  * must not stop the work it records. */
-export function recordEvent(event: Omit<AuditEvent, 'id' | 'at'> & { at?: string }, database = auditDb()): void {
+export function recordEvent(event: Omit<AuditEvent, 'id' | 'at' | 'prev' | 'hash'> & { at?: string }, database = auditDb()): void {
   if (!database) return
   try {
-    database.prepare('INSERT INTO events (at, agent, workflow_id, run_id, kind, by, data) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-      event.at ?? new Date().toISOString(), event.agent, event.workflow_id ?? null, event.run_id ?? null, event.kind, event.by ?? null, JSON.stringify(event.data),
-    )
+    // Written and chained in one step, so no other event comes between.
+    database.exec('BEGIN IMMEDIATE')
+    try {
+      const prev = (database.prepare('SELECT hash FROM events ORDER BY id DESC LIMIT 1').get() as { hash: string | null } | undefined)?.hash ?? GENESIS
+      const row = { at: event.at ?? new Date().toISOString(), agent: event.agent, workflow_id: event.workflow_id ?? null, run_id: event.run_id ?? null, kind: event.kind, by: event.by ?? null, data: JSON.stringify(event.data) }
+      const { lastInsertRowid } = database.prepare('INSERT INTO events (at, agent, workflow_id, run_id, kind, by, data) VALUES (?, ?, ?, ?, ?, ?, ?)').run(row.at, row.agent, row.workflow_id, row.run_id, row.kind, row.by, row.data)
+      const id = Number(lastInsertRowid)
+      database.prepare('UPDATE events SET prev = ?, hash = ? WHERE id = ?').run(prev, eventHash(prev, { id, ...row }), id)
+      database.exec('COMMIT')
+    } catch (err) {
+      database.exec('ROLLBACK')
+      throw err
+    }
   } catch (err) {
     console.error('[loopengine] could not record an audit event:', err)
   }
@@ -295,6 +419,8 @@ function eventOf(r: Record<string, unknown>): AuditEvent {
     kind: String(r.kind) as AuditEventKind,
     ...(r.by ? { by: String(r.by) } : {}),
     data: JSON.parse(String(r.data)) as Record<string, unknown>,
+    ...(r.prev != null ? { prev: String(r.prev) } : {}),
+    ...(r.hash ? { hash: String(r.hash) } : {}),
   }
 }
 

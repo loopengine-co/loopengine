@@ -25,7 +25,7 @@ export function eventText(e: AuditEvent): { what: string; detail: string } {
   return { what: `Feedback${verdict || edit ? `: ${[verdict, edit].filter(Boolean).join(', ')}` : ''}`, detail: str(d.note) }
 }
 
-const CSV_COLUMNS = ['When (UTC)', 'Kind', 'Person', 'Agent', 'Workflow', 'What', 'Detail', 'Case']
+const CSV_COLUMNS = ['When (UTC)', 'Kind', 'Person', 'Agent', 'Workflow', 'What', 'Detail', 'Case', 'Event', 'Hash']
 
 function csvCell(value: string): string {
   // A leading = + - @ would run as a formula in a spreadsheet.
@@ -37,7 +37,7 @@ function csvCell(value: string): string {
 export function eventsCsv(events: AuditEvent[]): string {
   const rows = events.map((e) => {
     const { what, detail } = eventText(e)
-    return [e.at, e.kind, e.by ?? '', e.agent, e.workflow_id ?? '', what, detail, e.run_id ?? ''].map(csvCell).join(',')
+    return [e.at, e.kind, e.by ?? '', e.agent, e.workflow_id ?? '', what, detail, e.run_id ?? '', String(e.id), e.hash ?? ''].map(csvCell).join(',')
   })
   return [CSV_COLUMNS.join(','), ...rows].join('\r\n') + '\r\n'
 }
