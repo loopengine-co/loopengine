@@ -1,0 +1,233 @@
+// The workspace's record of what its workflows did and what they ran
+// under: one SQLite file, `<LOOPENGINE_SCHEDULER_DIR or .scheduler>/loopengine.db`,
+// beside the scheduler's own files. It holds
+//
+// - runs: every workflow run (core/workflow-runs.ts's SqliteRunStore),
+//   kept for LOOPENGINE_RETENTION_DAYS (400 by default) rather than the
+//   latest 500 per agent the console lists;
+// - events: what people did in or about a run (an approval decided, with
+//   the tool's input before and after a change and any reason; a question
+//   answered; feedback on the result), appended and never changed;
+// - versions: each workflow's brief (its instructions and result format)
+//   and the workspace's shared policies, numbered. A new version is noted
+//   whenever the text differs from the latest, however it changed: saved
+//   in the console, restored, or edited in the file.
+//
+// It uses node:sqlite, built into Node 22.5 and later. Where that's
+// missing, auditDb() is undefined: runs stay in JSON files and nothing is
+// versioned.
+import { createHash } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import path from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
+
+export type VersionKind = 'brief' | 'policies'
+
+export interface Version {
+  number: number
+  at: string
+  by?: string
+  reason?: string
+  content: string
+}
+
+export type AuditEventKind = 'decision' | 'answer' | 'feedback'
+
+export interface AuditEvent {
+  id: number
+  at: string
+  agent: string
+  workflow_id?: string
+  run_id?: string
+  kind: AuditEventKind
+  by?: string
+  data: Record<string, unknown>
+}
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  agent TEXT NOT NULL,
+  workflow_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  session_id TEXT NOT NULL,
+  data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS runs_agent ON runs (agent, workflow_id, started_at);
+CREATE INDEX IF NOT EXISTS runs_session ON runs (session_id);
+CREATE INDEX IF NOT EXISTS runs_finished ON runs (finished_at);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  workflow_id TEXT,
+  run_id TEXT,
+  kind TEXT NOT NULL,
+  by TEXT,
+  data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS events_run ON events (run_id);
+CREATE INDEX IF NOT EXISTS events_workflow ON events (agent, workflow_id, at);
+CREATE TABLE IF NOT EXISTS versions (
+  agent TEXT NOT NULL,
+  workflow_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  number INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  content TEXT NOT NULL,
+  at TEXT NOT NULL,
+  by TEXT,
+  reason TEXT,
+  PRIMARY KEY (agent, workflow_id, kind, number)
+);
+`
+
+type Sqlite = typeof import('node:sqlite')
+
+// node:sqlite, or undefined on a Node without it. Node 22 marks it
+// experimental and says so once on load; that warning is dropped here.
+function loadSqlite(): Sqlite | undefined {
+  const emit = process.emitWarning
+  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+    if (/SQLite/i.test(typeof warning === 'string' ? warning : warning.message)) return
+    return (emit as (...args: unknown[]) => void).call(process, warning, ...rest)
+  }) as typeof process.emitWarning
+  try {
+    return createRequire(import.meta.url)('node:sqlite') as Sqlite
+  } catch {
+    return undefined
+  } finally {
+    process.emitWarning = emit
+  }
+}
+
+/** Opens (creating if need be) the database in `dir`. */
+export function openAuditDb(dir: string): DatabaseSync | undefined {
+  const sqlite = loadSqlite()
+  if (!sqlite) return undefined
+  mkdirSync(dir, { recursive: true })
+  const db = new sqlite.DatabaseSync(path.join(dir, 'loopengine.db'))
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;')
+  db.exec(SCHEMA)
+  return db
+}
+
+let db: DatabaseSync | null | undefined
+
+export function schedulerDir(): string {
+  return process.env.LOOPENGINE_SCHEDULER_DIR || path.join(process.cwd(), '.scheduler')
+}
+
+/** The process-wide database; undefined where node:sqlite isn't there,
+ * or LOOPENGINE_RUN_STORE=files asks for the JSON files. */
+export function auditDb(): DatabaseSync | undefined {
+  if (db === undefined) db = process.env.LOOPENGINE_RUN_STORE === 'files' ? null : (openAuditDb(schedulerDir()) ?? null)
+  return db ?? undefined
+}
+
+/** Tests: use this database (or none). */
+export function setAuditDb(next: DatabaseSync | undefined): void {
+  db = next ?? null
+}
+
+/** How long finished runs are kept, in days. */
+export function retentionDays(): number {
+  const n = Number(process.env.LOOPENGINE_RETENTION_DAYS)
+  return Number.isFinite(n) && n > 0 ? n : 400
+}
+
+// ---------- events ----------
+
+/** Appends what someone did in or about a run. Never throws: the record
+ * must not stop the work it records. */
+export function recordEvent(event: Omit<AuditEvent, 'id' | 'at'> & { at?: string }, database = auditDb()): void {
+  if (!database) return
+  try {
+    database.prepare('INSERT INTO events (at, agent, workflow_id, run_id, kind, by, data) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      event.at ?? new Date().toISOString(), event.agent, event.workflow_id ?? null, event.run_id ?? null, event.kind, event.by ?? null, JSON.stringify(event.data),
+    )
+  } catch (err) {
+    console.error('[loopengine] could not record an audit event:', err)
+  }
+}
+
+/** A run's events, oldest first. */
+export function runEvents(runId: string, database = auditDb()): AuditEvent[] {
+  if (!database) return []
+  const rows = database.prepare('SELECT * FROM events WHERE run_id = ? ORDER BY id').all(runId) as Record<string, unknown>[]
+  return rows.map((r) => ({
+    id: Number(r.id),
+    at: String(r.at),
+    agent: String(r.agent),
+    ...(r.workflow_id ? { workflow_id: String(r.workflow_id) } : {}),
+    ...(r.run_id ? { run_id: String(r.run_id) } : {}),
+    kind: String(r.kind) as AuditEventKind,
+    ...(r.by ? { by: String(r.by) } : {}),
+    data: JSON.parse(String(r.data)) as Record<string, unknown>,
+  }))
+}
+
+// ---------- versions ----------
+
+const hashOf = (content: string): string => createHash('sha256').update(content).digest('hex')
+
+/** The version number of `content`: the latest version's when it's the
+ * same text, else a new version noted now. Undefined without a database.
+ * `agent` and `workflowId` are '' for the workspace's policies. */
+export function noteVersion(
+  key: { agent: string; workflowId: string; kind: VersionKind },
+  content: string,
+  about: { by?: string; reason?: string } = {},
+  database = auditDb(),
+): number | undefined {
+  if (!database) return undefined
+  try {
+    const hash = hashOf(content)
+    const latest = database.prepare('SELECT number, hash FROM versions WHERE agent = ? AND workflow_id = ? AND kind = ? ORDER BY number DESC LIMIT 1')
+      .get(key.agent, key.workflowId, key.kind) as { number: number; hash: string } | undefined
+    if (latest && latest.hash === hash) return Number(latest.number)
+    const number = (latest ? Number(latest.number) : 0) + 1
+    database.prepare('INSERT INTO versions (agent, workflow_id, kind, number, hash, content, at, by, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      key.agent, key.workflowId, key.kind, number, hash, content, new Date().toISOString(),
+      about.by ?? null, about.reason ?? (latest ? 'Changed outside the console' : 'First version'),
+    )
+    return number
+  } catch (err) {
+    console.error('[loopengine] could not note a version:', err)
+    return undefined
+  }
+}
+
+/** Every version, newest first. */
+export function listVersions(key: { agent: string; workflowId: string; kind: VersionKind }, database = auditDb()): Version[] {
+  if (!database) return []
+  const rows = database.prepare('SELECT number, at, by, reason, content FROM versions WHERE agent = ? AND workflow_id = ? AND kind = ? ORDER BY number DESC')
+    .all(key.agent, key.workflowId, key.kind) as Record<string, unknown>[]
+  return rows.map((r) => ({
+    number: Number(r.number),
+    at: String(r.at),
+    ...(r.by ? { by: String(r.by) } : {}),
+    ...(r.reason ? { reason: String(r.reason) } : {}),
+    content: String(r.content),
+  }))
+}
+
+export function getVersion(key: { agent: string; workflowId: string; kind: VersionKind }, number: number, database = auditDb()): Version | undefined {
+  return listVersions(key, database).find((v) => v.number === number)
+}
+
+/** What a workflow's brief version holds: its instructions and the
+ * result format, as one text (the format under a heading). */
+export function briefContent(workflow: { instructions: string; output?: string }): string {
+  return workflow.output?.trim() ? `${workflow.instructions}\n\n## Result format\n\n${workflow.output.trim()}` : workflow.instructions
+}
+
+/** The instructions and result format a brief version holds. */
+export function briefFromContent(content: string): { instructions: string; output?: string } {
+  const at = content.lastIndexOf('\n\n## Result format\n\n')
+  return at < 0 ? { instructions: content } : { instructions: content.slice(0, at), output: content.slice(at + '\n\n## Result format\n\n'.length) }
+}

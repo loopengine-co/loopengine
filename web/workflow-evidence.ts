@@ -133,6 +133,8 @@ export interface EvalCaseResult {
 
 export interface EvalRound {
   at: string
+  /** The brief version it tested (core/audit-store.ts), when kept. */
+  briefVersion?: number
   /** The workflow's model and the judge's, as "provider model". */
   model: string
   judge: string
@@ -364,6 +366,8 @@ export async function draftCriteria(model: ModelCall, input: { instructions: str
 export interface EvalRunDeps {
   agentDir: string
   workflowId: string
+  /** The brief version being tested, recorded on the round. */
+  briefVersion?: number
   instructions: string
   /** The workflow's model and the judge's, as "provider model". */
   model: string
@@ -405,6 +409,7 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
     }
     const round: EvalRound = {
       at: startedAt,
+      ...(deps.briefVersion ? { briefVersion: deps.briefVersion } : {}),
       model: deps.model,
       judge: deps.judgeLabel,
       cases: results,

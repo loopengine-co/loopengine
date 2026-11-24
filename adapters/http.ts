@@ -86,7 +86,8 @@ import {
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
-import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
+import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
+import { briefContent, briefFromContent, getVersion, listVersions, noteVersion } from '#core/audit-store.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
 import { EvidenceError, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
@@ -1858,9 +1859,11 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
     if (part === 'run' && req.method === 'POST') {
       const tested = await runModel(agentName, id)
       const judge = await evalJudge(tested.config)
+      const briefVersion = noteBrief(agentName, id)
       const round = startEvalRound({
         agentDir: dir,
         workflowId: id,
+        ...(briefVersion ? { briefVersion } : {}),
         instructions: workflow.instructions,
         model: modelLabelOf(tested.config),
         judgeLabel: judge.label,
@@ -1892,7 +1895,7 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
   }
 }
 
-async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, agentName: string, id: string | undefined, action: string | undefined): Promise<void> {
+async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, agentName: string, id: string | undefined, action: string | undefined, restoreNumber?: number): Promise<void> {
   const json = (status: number, body: unknown): void => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
   }
@@ -1944,8 +1947,29 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
       return json(200, { message: workflowPreviewMessage({ ...saved, title, startMessage: '', steps: instructions, instructions, parameters, ...(output ? { output } : { output: undefined }) }, readWorkspacePolicies(process.cwd())) })
     }
     if (id && !action && req.method === 'PUT') {
+      // The brief as it was, numbered first if it never was.
+      noteBrief(agentName, id)
       updateWorkflow(dir, id, await readJsonBody(req))
+      noteBrief(agentName, id, { by: changedBy(req), reason: 'Edited in the console' })
       return json(200, await workflowsView(agentName))
+    }
+    // The brief's versions, newest first, and restoring one (which saves
+    // it as a new version).
+    if (id && action === 'versions' && req.method === 'GET') {
+      if (!readWorkflow(dir, id)) return json(404, { error: `No workflow ${id}.` })
+      const current = noteBrief(agentName, id)
+      return json(200, { current: current ?? null, versions: listVersions({ agent: agentName, workflowId: id, kind: 'brief' }) })
+    }
+    if (id && action === 'versions' && restoreNumber !== undefined && req.method === 'POST') {
+      const workflow = readWorkflow(dir, id)
+      if (!workflow) return json(404, { error: `No workflow ${id}.` })
+      const version = getVersion({ agent: agentName, workflowId: id, kind: 'brief' }, restoreNumber)
+      if (!version) return json(404, { error: `No version ${restoreNumber} of ${id}.` })
+      noteBrief(agentName, id)
+      const brief = briefFromContent(version.content)
+      setWorkflowFields(dir, id, { title: workflow.title, description: workflow.description, instructions: brief.instructions, parameters: workflow.parameters, output: brief.output ?? null })
+      const current = noteBrief(agentName, id, { by: changedBy(req), reason: `Restored version ${restoreNumber}` })
+      return json(200, { current: current ?? null, versions: listVersions({ agent: agentName, workflowId: id, kind: 'brief' }) })
     }
     if (id && !action && req.method === 'DELETE') {
       const { cancelled } = await forgetWorkflow(agentName, dir, id)
@@ -2403,7 +2427,25 @@ function inboxDepsFor(req: IncomingMessage): InboxDeps {
 }
 
 // Workflow runs, whatever starts them, each recorded apart from schedules.
-const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun, onChange: reportWorkflowRun })
+const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun, onChange: reportWorkflowRun, versionsFor: (agent, workflowId) => ({ brief: noteBrief(agent, workflowId), policies: notePolicies() }) })
+
+// The brief and policies versions as they are now (core/audit-store.ts):
+// the latest when unchanged, else a new one, so an edit made anywhere,
+// the console or the file, is numbered before a run uses it.
+function noteBrief(agent: string, workflowId: string, about: { by?: string; reason?: string } = {}): number | undefined {
+  const workflow = getEntry(agent) ? readWorkflow(agentDir(agent), workflowId) : undefined
+  return workflow ? noteVersion({ agent, workflowId, kind: 'brief' }, briefContent(workflow), about) : undefined
+}
+function notePolicies(about: { by?: string; reason?: string } = {}): number | undefined {
+  return noteVersion({ agent: '', workflowId: '', kind: 'policies' }, readWorkspacePolicies(process.cwd()), about)
+}
+
+// Who made a change, for its version: the signed-in person, else what a
+// program is (a self-hosted workspace's one admin).
+function changedBy(req: IncomingMessage): string {
+  const caller = callerOf(req)
+  return caller.email ?? (caller.role === 'api' ? 'an app' : caller.person ? 'a signed-in person' : 'admin')
+}
 
 // A task that runs a workflow is also recorded as a run of that workflow,
 // so the workflow's Recent runs shows its scheduled runs too.
@@ -3818,8 +3860,11 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
     | { kind: 'validation-error'; error: string }
     | { kind: 'resolved'; checkpoint: TurnCheckpoint }
 
+  // Why a person denied it, when they said: the agent reads it, and the
+  // run's record keeps it.
+  const denyReason = decision === 'deny' && typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim().slice(0, 2000) : undefined
   // The approval decided, for its workflow run's record (live scores).
-  let decided: { sessionId: string; tool: string } | undefined
+  let decided: { sessionId: string; tool: string; args: unknown } | undefined
   const outcome = await checkpoints.withCheckpoint(pendingId, async (checkpoint): Promise<{ checkpoint: TurnCheckpoint | undefined; result: ResolveOutcome }> => {
     if (!checkpoint) return { checkpoint: undefined, result: { kind: 'unknown' } }
     const item = checkpoint.outstanding[pendingId]
@@ -3827,11 +3872,11 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
     // doc comment for why this stays optional/back-compat rather than
     // required.
     if (item.kind === 'question') return { checkpoint, result: { kind: 'wrong-kind' } }
-    decided = { sessionId: checkpoint.sessionId, tool: item.tool }
+    decided = { sessionId: checkpoint.sessionId, tool: item.tool, args: item.args }
 
     let resultBlock: ModelContentBlock
     if (decision === 'deny') {
-      resultBlock = { type: 'tool_result', tool_use_id: item.toolUseId, content: `denied: ${item.reason}`, is_error: true }
+      resultBlock = { type: 'tool_result', tool_use_id: item.toolUseId, content: `denied: ${item.reason}${denyReason ? `. The person who denied it said: ${denyReason}` : ''}`, is_error: true }
     } else {
       const entry = getEntry(checkpoint.agent)
       const tool = entry && (await resolveAgentTool(entry.config, item.tool))
@@ -3893,7 +3938,15 @@ async function resolvePendingApproval(res: ServerResponse, pendingId: string, bo
     return { checkpoint: updated, result: { kind: 'resolved', checkpoint: updated } }
   })
   const by = typeof body.by === 'string' && body.by.trim() ? body.by.trim().slice(0, 120) : undefined
-  if (outcome.kind === 'resolved' && decided) void workflowRunner.recordDecision(decided.sessionId, { tool: decided.tool, approved: decision === 'approve', ...(by ? { by } : {}), ...(editedArgs ? { edited: true } : {}) })
+  if (outcome.kind === 'resolved' && decided) {
+    void workflowRunner.recordDecision(decided.sessionId, {
+      tool: decided.tool,
+      approved: decision === 'approve',
+      ...(by ? { by } : {}),
+      ...(editedArgs ? { edited: true, before: decided.args, after: editedArgs } : {}),
+      ...(denyReason ? { reason: denyReason } : {}),
+    })
+  }
 
   if (outcome.kind === 'unknown') {
     // Unknown pendingId, or its checkpoint was already closed — a
@@ -5291,7 +5344,9 @@ const server = createServer(async (req, res) => {
       if (!run) return void reply(404, { error: `no run ${runFeedbackMatch[2]} for ${agentName}` })
       try {
         const feedback = runFeedbackFrom(run, await readJsonBody(req))
-        return void reply(200, await getRunStore().update(run.run_id, (r) => r && { ...r, feedback }))
+        const updated = await getRunStore().update(run.run_id, (r) => r && { ...r, feedback })
+        workflowRunner.recordFeedback(run, feedback, changedBy(req))
+        return void reply(200, updated)
       } catch (err) {
         return void reply(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
       }
@@ -5306,9 +5361,9 @@ const server = createServer(async (req, res) => {
       await handleWorkflowTriggers(req, res, decodeURIComponent(triggersMatch[1]), triggersMatch[2], triggersMatch[3], triggersMatch[4])
       return
     }
-    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages))?$/)
-    if (agentWorkflowsMatch) {
-      await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3])
+    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions))?(?:\/([1-9][0-9]*)\/restore)?$/)
+    if (agentWorkflowsMatch && (!agentWorkflowsMatch[4] || agentWorkflowsMatch[3] === 'versions')) {
+      await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3], agentWorkflowsMatch[4] ? Number(agentWorkflowsMatch[4]) : undefined)
       return
     }
     // Templates are now workflow examples, on the new-workflow page.
@@ -5446,7 +5501,9 @@ const server = createServer(async (req, res) => {
         res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'policies must be text.' }))
         return
       }
+      notePolicies()
       writeWorkspacePolicies(process.cwd(), body.policies)
+      notePolicies({ by: changedBy(req), reason: 'Edited in Settings' })
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))
       return
     }

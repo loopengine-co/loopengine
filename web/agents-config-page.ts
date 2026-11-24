@@ -87,8 +87,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-page-starts { display: grid; gap: 2px; color: var(--ink); }
   .wf-page-last { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
   .wf-list-box.wf-page-box { border: 0; border-radius: 0; background: none; overflow: visible; }
-  .wf-page-brief { display: grid; gap: 10px; }
-  .wf-page-brief h2 { margin: 0; font-size: 15px; }
   .wf-page .workflow-steps-text { margin: 0; padding: 14px 16px; border-radius: 10px; background: var(--surface); font-size: 13.5px; line-height: 1.6; max-height: 480px; overflow: auto; white-space: pre-wrap; }
   .wf-page .workflow-result:empty { display: none; }
   .wf-tab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
@@ -211,6 +209,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
   .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
+  .wf-versions { display: grid; gap: 8px; margin-bottom: 12px; font-size: 13px; }
+  .wf-versions[hidden], .wf-versions-list[hidden], .wf-version-text[hidden] { display: none; }
+  .wf-versions-line, .wf-versions-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .wf-versions-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; border-left: 2px solid var(--line); padding-left: 12px; }
+  .wf-versions-list li { display: grid; gap: 6px; }
   .wf-crit-form { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
   .wf-crit-form[hidden] { display: none; }
   .wf-crit-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 180px auto; gap: 8px; align-items: center; }
@@ -1183,7 +1186,9 @@ ${renderMarkdownScript}
 
   function workflowBriefHtml(w) {
     var policies = workflowsMeta.policies;
-    return '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
+    // Filled by loadBriefVersions once the card is on the page.
+    return '<div class="wf-versions" hidden></div>' +
+      '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
       (policies
         ? '<details class="wf-original"><summary>Shared policies, read by every workflow</summary><div class="workflow-steps-text">' + escapeHtml(policies) + '</div><p class="hint" style="margin:6px 0 0">Change them in <a href="/config?section=settings">Settings</a>.</p></details>'
         : '<p class="hint" style="margin:0">No shared policies yet. Rules every workflow should follow, like your refund window or who signs messages, go in <a href="/config?section=settings">Settings</a>, so you write them once.</p>') +
@@ -1281,7 +1286,7 @@ ${renderMarkdownScript}
     return tiles + feedbackHint + critSection +
       '<h4 class="wf-sub">Eval cases</h4>' +
       '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Running ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Run evals') + '</button>' +
-        '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: tools that need approval aren' + RSQ + 't run, and nobody is asked anything.') + '</span></div>' +
+        '<span class="hint">' + (round ? 'Last run ' + escapeHtml(new Date(round.at).toLocaleString()) + (round.briefVersion ? DOT + 'brief v' + round.briefVersion : '') + DOT + 'model ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) : 'A test run: tools that need approval aren' + RSQ + 't run, and nobody is asked anything.') + '</span></div>' +
       (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">No cases yet. Save a run from History below as a case, then run the cases after each change to the instructions or model.</p>') +
       '<h4 class="wf-sub">History</h4>' +
       (runsHtml ? '<ul class="schedule-history">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>');
@@ -1332,13 +1337,13 @@ ${renderMarkdownScript}
         var formattedOutcome = outcome ? renderMarkdownPreview(outcome) : '';
         return '<li class="workflow-run-entry"><div class="workflow-run-entry-head">' + pill +
           '<span class="workflow-run-time">' + escapeHtml(new Date(r.started_at).toLocaleString()) + '</span>' +
-          '<span class="workflow-run-source hint">' + escapeHtml(source) + '</span></div>' +
+          '<span class="workflow-run-source hint">' + escapeHtml(source) + (r.versions && r.versions.brief ? DOT + 'brief v' + r.versions.brief : '') + '</span></div>' +
           (values ? '<div><div class="workflow-run-entry-label">Parameters</div><div class="workflow-run-params">' + values + '</div></div>' : '') +
           (outcome ? '<div><div class="workflow-run-entry-label">' + (r.status === 'error' ? 'Error' : 'Final response') + '</div><div class="schedule-result workflow-markdown">' + formattedOutcome + '</div><details class="schedule-result-details"><summary>View full ' + (r.status === 'error' ? 'error' : 'response') + '</summary><div class="schedule-result-full workflow-markdown workflow-markdown-full">' + formattedOutcome + '</div></details></div>' : '') +
           runEvidenceHtml(w, r) + '</li>';
       }).join('');
       var last = workflowLastRun(w);
-      var tab = workflowTabs[w.id] || (workflowPageId ? 'evidence' : 'brief');
+      var tab = workflowTabs[w.id] || 'brief';
       var open = openWorkflowId === w.id;
       var panel = function (key, html) { return '<div class="wf-panel" data-panel="' + key + '"' + (tab === key ? '' : ' hidden') + '>' + html + '</div>'; };
       var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '" aria-selected="' + (tab === key) + '">' + label + '</button>'; };
@@ -1360,8 +1365,8 @@ ${renderMarkdownScript}
             '</div>' +
           '</header>' +
           '<div class="wf-row-body wf-page-body">' +
-            '<section class="wf-page-brief"><h2>Brief</h2>' + workflowBriefHtml(w) + '</section>' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('evidence', 'Evidence' + (runs ? ' <span class="wf-tab-count">' + w.recentRuns.length + '</span>' : '')) + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
+            panel('brief', workflowBriefHtml(w)) +
             panel('evidence', workflowEvidenceHtml(w, runs)) +
             panel('triggers', workflowTriggersHtml(w, name, params)) +
             panel('messages', workflowMessagesHtml(w, name)) +
@@ -1938,6 +1943,66 @@ ${renderMarkdownScript}
     render(shown ? shown.url : null, shown ? shown.id : null);
   }
 
+  // The Brief tab's versions: which one is in use, who saved it and why,
+  // and every earlier one to read or restore (restoring saves it as a new
+  // version). Hidden where the workspace keeps no versions.
+  function loadBriefVersions(card, base) {
+    var box = card.querySelector('.wf-versions');
+    if (!box) return;
+    fetch(base + '/versions', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) { if (data) renderBriefVersions(box, base, data); })
+      .catch(function () {});
+  }
+
+  function versionWhen(v) {
+    return new Date(v.at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderBriefVersions(box, base, data) {
+    var versions = data.versions || [];
+    if (!versions.length) { box.hidden = true; return; }
+    var current = versions.filter(function (v) { return v.number === data.current; })[0] || versions[0];
+    var about = function (v) { return [v.by ? 'by ' + escapeHtml(v.by) : '', escapeHtml(versionWhen(v)), v.reason ? escapeHtml(v.reason) : ''].filter(Boolean).join(DOT); };
+    box.innerHTML = '<div class="wf-versions-line"><strong>Version ' + current.number + '</strong><span class="hint">' + about(current) + '</span>' +
+        (versions.length > 1 ? '<button type="button" class="wf-link wf-versions-toggle">History (' + versions.length + ')</button>' : '') + '</div>' +
+      '<ol class="wf-versions-list" hidden>' + versions.map(function (v) {
+        var isCurrent = v.number === current.number;
+        return '<li data-version="' + v.number + '"><div class="wf-versions-row"><strong>v' + v.number + '</strong><span class="hint">' + about(v) + '</span>' +
+          (isCurrent ? '<span class="le-pill good">In use</span>' : '') +
+          '<button type="button" class="wf-link wf-version-view">View</button>' +
+          (isCurrent ? '' : '<button type="button" class="wf-link wf-version-restore">Restore</button>') + '</div>' +
+          '<div class="workflow-steps-text wf-version-text" hidden>' + escapeHtml(v.content) + '</div></li>';
+      }).join('') + '</ol><span class="hint wf-versions-status" role="status"></span>';
+    box.hidden = false;
+    var list = box.querySelector('.wf-versions-list');
+    var toggle = box.querySelector('.wf-versions-toggle');
+    if (toggle) toggle.addEventListener('click', function () {
+      list.hidden = !list.hidden;
+      toggle.textContent = list.hidden ? 'History (' + versions.length + ')' : 'Hide history';
+    });
+    list.addEventListener('click', function (ev) {
+      var item = ev.target.closest('li[data-version]');
+      if (!item) return;
+      if (ev.target.closest('.wf-version-view')) {
+        var text = item.querySelector('.wf-version-text');
+        text.hidden = !text.hidden;
+        ev.target.textContent = text.hidden ? 'View' : 'Hide';
+        return;
+      }
+      var restore = ev.target.closest('.wf-version-restore');
+      if (!restore) return;
+      if (restore.getAttribute('data-confirming') !== '1') { restore.setAttribute('data-confirming', '1'); restore.textContent = 'Click again to restore'; return; }
+      restore.disabled = true;
+      var status = box.querySelector('.wf-versions-status');
+      status.textContent = 'Restoring' + String.fromCharCode(8230);
+      fetch(base + '/versions/' + item.getAttribute('data-version') + '/restore', { method: 'POST' })
+        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'That did not work'); return b; }); })
+        .then(function () { location.reload(); })
+        .catch(function (err) { status.textContent = err.message; restore.disabled = false; });
+    });
+  }
+
   function wireWorkflowCard(name, card) {
     var id = card.dataset.workflow;
     var result = card.querySelector('.workflow-result');
@@ -1957,6 +2022,7 @@ ${renderMarkdownScript}
     }
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
+    loadBriefVersions(card, base);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // Opens the workflow's page on its Triggers tab.
     var triggersBtn = card.querySelector('.workflow-triggers-open');

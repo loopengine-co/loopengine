@@ -63,6 +63,10 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-step-k { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
   .ib-step details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
   .ib-who { font-size: 13px; display: grid; gap: 4px; }
+  .ib-reason { color: var(--ink-muted); margin: 2px 0 0 12px; }
+  .ib-change { display: grid; gap: 2px; margin: 2px 0 0 12px; font-size: 12.5px; }
+  .ib-change del { color: var(--bad); }
+  .ib-change ins { color: var(--good); text-decoration: none; }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .ib-md { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
   .ib-md > :first-child { margin-top: 0; }
@@ -219,6 +223,7 @@ ${renderMarkdownScript}
       '<p class="ib-question">The agent wants to run <code>' + esc(p.tool) + '</code> with:</p>' + kvHtml(p.args) +
       (canDecide()
         ? '<textarea class="ib-args mono" hidden>' + esc(JSON.stringify(p.args, null, 2)) + '</textarea>' +
+          '<textarea class="ib-deny-reason" hidden placeholder="Why not? (optional) The agent reads this, and it' + String.fromCharCode(8217) + 's kept with the case."></textarea>' +
           '<div class="ib-actions"><button type="button" class="ib-btn" data-act="approve">Approve</button>' +
             '<button type="button" class="ib-btn plain" data-act="change">Change</button>' +
             '<button type="button" class="ib-btn bad" data-act="deny">Deny</button><span class="hint ib-result" role="status"></span></div>'
@@ -235,14 +240,27 @@ ${renderMarkdownScript}
       (s.result != null ? '<pre class="ib-pre" style="margin-top:6px">' + esc(s.result) + '</pre>' : '') + '</details></li>';
   }
 
+  // What a person changed before approving: each field whose value
+  // differs, from what the agent asked for to what ran.
+  function changeOf(before, after) {
+    if (!before || !after || typeof before !== 'object' || typeof after !== 'object') return '';
+    var keys = Object.keys(before).concat(Object.keys(after).filter(function (k) { return !(k in before); }));
+    var show = function (v) { var t = v === undefined ? '(none)' : typeof v === 'string' ? v : JSON.stringify(v); return esc(t.length > 160 ? t.slice(0, 160) + String.fromCharCode(8230) : t); };
+    return keys.filter(function (k) { return JSON.stringify(before[k]) !== JSON.stringify(after[k]); }).map(function (k) {
+      return '<div><code>' + esc(k) + '</code>: <del>' + show(before[k]) + '</del> ' + String.fromCharCode(8594) + ' <ins>' + show(after[k]) + '</ins></div>';
+    }).join('');
+  }
+
   function decidedHtml(run) {
     var rows = [];
-    (run.decisions || []).forEach(function (d) { rows.push({ at: d.at, text: (d.approved ? (d.edited ? 'Approved as changed' : 'Approved') : 'Denied') + ' ' + d.tool, by: d.by }); });
+    (run.decisions || []).forEach(function (d) { rows.push({ at: d.at, text: (d.approved ? (d.edited ? 'Approved as changed' : 'Approved') : 'Denied') + ' ' + d.tool, by: d.by, reason: d.reason, change: d.edited ? changeOf(d.before, d.after) : '' }); });
     (run.answers || []).forEach(function (a) { rows.push({ at: a.at, text: 'Answered: ' + a.answer, by: a.by }); });
     rows.sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
     if (!rows.length) return '';
     return '<div class="ib-card"><h3>Decisions</h3><div class="ib-who">' + rows.map(function (r) {
-      return '<div>' + esc(r.text) + ' <span class="hint">' + (r.by ? 'by ' + esc(r.by) + DOT : '') + esc(when(r.at)) + '</span></div>';
+      return '<div>' + esc(r.text) + ' <span class="hint">' + (r.by ? 'by ' + esc(r.by) + DOT : '') + esc(when(r.at)) + '</span>' +
+        (r.reason ? '<div class="ib-reason">' + String.fromCharCode(8220) + esc(r.reason) + String.fromCharCode(8221) + '</div>' : '') +
+        (r.change ? '<div class="ib-change">' + r.change + '</div>' : '') + '</div>';
     }).join('') + '</div></div>';
   }
 
@@ -325,8 +343,11 @@ ${renderMarkdownScript}
         });
         if (deny) deny.addEventListener('click', function (ev) {
           var b = ev.currentTarget;
-          if (b.getAttribute('data-confirming') !== '1') { b.setAttribute('data-confirming', '1'); b.textContent = 'Click again to deny'; return; }
-          send(card, '/pending-approvals/' + encodeURIComponent(id) + '/resolve', { decision: 'deny' });
+          var reason = card.querySelector('.ib-deny-reason');
+          if (b.getAttribute('data-confirming') !== '1') { b.setAttribute('data-confirming', '1'); b.textContent = 'Deny'; reason.hidden = false; reason.focus(); return; }
+          var body = { decision: 'deny' };
+          if (reason.value.trim()) body.reason = reason.value.trim();
+          send(card, '/pending-approvals/' + encodeURIComponent(id) + '/resolve', body);
         });
       })(cards[i]);
     }
