@@ -35,6 +35,12 @@ export const auditPageHtml: string = `<!doctype html>
   .au-check { padding: 10px 14px; border-radius: 10px; font-size: 13px; background: var(--good-soft); color: var(--good); }
   .au-check.bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
   .au-check .hint { display: block; margin-top: 2px; font-weight: 400; }
+  .au-summary { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; background: var(--bg); }
+  .au-summary h2 { margin: 0; font-size: 15px; }
+  .au-summary ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; }
+  .au-summary-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+  .au-summary-tools a { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
+  .au-summary-tools a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .au-export { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
   .au-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
   .au-row { display: grid; grid-template-columns: 136px 80px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
@@ -98,6 +104,7 @@ ${consoleSidebarHtml}
       <a class="au-export" id="auExport" href="/audit/events.csv" download>Export CSV</a></span>
     </div>
     <div class="au-check" id="auCheck" role="status" hidden></div>
+    <section class="au-summary" id="auSummary" hidden></section>
     <div id="auList"><p class="hint">Loading&hellip;</p></div>
     <button type="button" class="au-more" id="auMore" hidden>Load older</button>
   </div></div></div>
@@ -262,7 +269,32 @@ ${consoleShellScript}
     remember();
   }
 
-  function changed() { sync(); load(false); }
+  // With a workflow chosen: its audit for the period, in sentences, and
+  // its report.
+  var summaryBox = document.getElementById('auSummary');
+  function loadSummary() {
+    var wf = state.workflow && filters.workflows.filter(function (w) { return w.id === state.workflow && (!state.agent || w.agent === state.agent); })[0];
+    if (!wf) { summaryBox.hidden = true; return; }
+    var q = new URLSearchParams();
+    q.set('since', state.period ? new Date(Date.now() - Number(state.period) * 86400000).toISOString() : '2000-01-01T00:00:00.000Z');
+    var base = '/agents/' + encodeURIComponent(wf.agent) + '/workflows/' + encodeURIComponent(wf.id) + '/audit';
+    summaryBox.hidden = false;
+    summaryBox.innerHTML = '<h2>' + esc(wf.title) + '</h2><p class="hint">Loading its audit' + String.fromCharCode(8230) + '</p>';
+    fetch(base + '?' + q.toString(), { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (a) {
+        if (state.workflow !== wf.id) return;
+        var period = el.period.options[el.period.selectedIndex].text.toLowerCase();
+        summaryBox.innerHTML = '<h2>' + esc(wf.title) + ' <span class="hint">' + esc(period) + '</span></h2>' +
+          '<ul>' + a.summary.map(function (line) { return '<li>' + esc(line) + '</li>'; }).join('') + '</ul>' +
+          '<div class="au-summary-tools"><a class="primary" href="' + base + '/report?' + q.toString() + '">Open the report</a>' +
+          '<a href="' + base + '/report?' + q.toString() + '&format=json" download>Download JSON</a>' +
+          '<a href="' + workflowHref(wf.agent, wf.id, '') + '">Open the workflow</a></div>';
+      })
+      .catch(function (err) { summaryBox.innerHTML = '<p class="error">Could not load its audit: ' + esc(err.message) + '</p>'; });
+  }
+
+  function changed() { sync(); load(false); loadSummary(); }
 
   document.querySelector('.au-tabs').addEventListener('click', function (ev) {
     var b = ev.target.closest('button[data-tab]');

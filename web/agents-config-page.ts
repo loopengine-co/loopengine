@@ -219,6 +219,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-health-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .wf-health-table th { text-align: left; font-weight: 600; color: var(--ink-muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .wf-health-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .wf-audit-link { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; margin-right: 8px; }
+  .wf-audit-link:hover { background: var(--surface); }
   .wf-change-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 13px; }
   .wf-change-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
   .wf-change-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); min-width: 64px; }
@@ -1473,7 +1475,7 @@ ${renderMarkdownScript}
             '<div class="wf-page-crumb-row"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
             '<a class="wf-page-crumb" href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows">' + String.fromCharCode(8592) + ' ' + escapeHtml(agentLabel) + ' ' + String.fromCharCode(183) + ' Workflows</a></div>' +
             '<div class="wf-page-title-row"><h1>' + escapeHtml(w.title) + '</h1>' +
-              '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit</button></span></div>' +
+              '<span class="wf-row-actions"><a class="wf-audit-link" href="/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id) + '">Audit</a><button type="button" class="workflow-edit">Edit</button></span></div>' +
             (w.description && w.description !== w.title ? '<p class="wf-page-desc">' + escapeHtml(w.description) + '</p>' : '') +
             '<div class="wf-page-meta">' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Agent</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '">' + escapeHtml(agentLabel) + '</a></span>' +

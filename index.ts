@@ -23,6 +23,8 @@ export { setUsageSink, recordUsage, sessionUsage, usageBySession, type UsageEven
 export { changeOf, keptBody, type Change } from '#web/change-log.js'
 export { eventText, eventsCsv, caseRow, type AuditCaseRow } from '#web/audit-admin.js'
 export { auditPageHtml, auditPageFor } from '#web/audit-page.js'
+export { buildWorkflowAudit, lineDiff, type WorkflowAudit, type WorkflowAuditInput, type AuditCounts, type AuditPerson, type AuditDecision, type AuditVersion, type AuditCase } from '#web/workflow-audit.js'
+export { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 export { anchorConfig, anchorLatest, fetchAnchors, signAnchorRequest, startAuditAnchoring, AUDIT_ANCHORS_PATH, type AnchorConfig, type AnchorResult } from '#core/audit-anchor.js'
 export { workflowHealth, healthAlerts, type WorkflowHealth, type HealthNumbers, type HealthVersion, type HealthDay, type HealthAlert, type HealthMeasure } from '#web/workflow-health.js'
 export { setRunObserver, reportRun, usedTool, type RunEvent, type RunEventSource, type RunObserver } from '#core/run-events.js'

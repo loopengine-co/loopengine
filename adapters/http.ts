@@ -94,6 +94,8 @@ import { auditPageFor } from '#web/audit-page.js'
 import { changeOf, keptBody } from '#web/change-log.js'
 import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
 import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
+import { buildWorkflowAudit, type WorkflowAudit } from '#web/workflow-audit.js'
+import { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
 import { EvidenceError, type StandIn, addEvalCase, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
@@ -2436,13 +2438,38 @@ const inboxDeps: InboxDeps = {
 async function healthOf(agent: string, workflowId: string, days = 30): Promise<WorkflowHealth> {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
   const runs = await runsSince(agent, workflowId, since)
+  return workflowHealth(runs, runCosts(agent, runs), { days })
+}
+
+// Each run's cost in US dollars, where every model call has a price.
+function runCosts(agent: string, runs: WorkflowRun[]): Map<string, number> {
   const calls = usageBySession(agent, runs.map((r) => r.session_id))
   const costs = new Map<string, number>()
   for (const run of runs) {
     const rows = pricedUsage(calls.get(run.session_id) ?? [])
     if (rows.length && rows.every((u) => u.costUsd != null)) costs.set(run.run_id, rows.reduce((n, u) => n + u.costUsd!, 0))
   }
-  return workflowHealth(runs, costs, { days })
+  return costs
+}
+
+// A workflow's audit for a period (web/workflow-audit.ts): its runs,
+// decisions, brief versions, settings changes and cost, and the log's
+// check against its anchors.
+async function workflowAuditOf(agent: string, workflowId: string, since: string, until: string): Promise<WorkflowAudit | undefined> {
+  const workflow = readWorkflow(agentDir(agent), workflowId)
+  if (!workflow) return undefined
+  const runs = (await runsSince(agent, workflowId, since)).filter((r) => r.started_at <= until)
+  const remote = await fetchAnchors()
+  return buildWorkflowAudit({
+    workflow: { agent, agentLabel: getEntry(agent)?.config.displayName ?? agent, id: workflowId, title: workflow.title },
+    since,
+    until,
+    runs,
+    costs: runCosts(agent, runs),
+    versions: listVersions({ agent, workflowId, kind: 'brief' }),
+    changes: listEvents({ agent, workflowId, kind: 'change', since, until, limit: 500 }),
+    verification: { ...verifyEventChain('anchors' in remote ? remote.anchors : undefined), anchoredAt: 'anchors' in remote ? 'loopengine.co' : 'this workspace' },
+  })
 }
 
 // Hourly: a workflow whose health just got worse (a health alert) says
@@ -5494,6 +5521,39 @@ const server = createServer(async (req, res) => {
     const triggersMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/triggers(?:\/([A-Za-z0-9_-]+))?(?:\/(rotate))?$/)
     if (triggersMatch) {
       await handleWorkflowTriggers(req, res, decodeURIComponent(triggersMatch[1]), triggersMatch[2], triggersMatch[3], triggersMatch[4])
+      return
+    }
+    // A workflow's audit for a period (?since, ?until; the last 30 days
+    // by default): as JSON, or …/report to read and print, or
+    // …/report?format=json to download.
+    const workflowAuditMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/audit(\/report)?$/)
+    if (workflowAuditMatch) {
+      const agentName = decodeURIComponent(workflowAuditMatch[1])
+      const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const iso = (v: string | null) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : undefined)
+      const until = iso(q.get('until')) ?? new Date().toISOString()
+      const since = iso(q.get('since')) ?? new Date(Date.parse(until) - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const audit = getEntry(agentName) ? await workflowAuditOf(agentName, workflowAuditMatch[2], since, until) : undefined
+      if (!audit) {
+        res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `No workflow ${workflowAuditMatch[2]} on ${agentName}.` }))
+        return
+      }
+      const report = workflowAuditMatch[3] === '/report'
+      if (!report || q.get('format') === 'json') {
+        const generated = { generatedAt: new Date().toISOString(), generatedBy: changedBy(req), ...audit }
+        const name = `audit-${audit.workflow.id}-${since.slice(0, 10)}-to-${until.slice(0, 10)}.json`
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...(report ? { 'content-disposition': `attachment; filename="${name}"` } : {}) }).end(JSON.stringify(report ? generated : audit, null, report ? 2 : 0))
+        return
+      }
+      const period = `since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`
+      const html = workflowAuditReportHtml(audit, {
+        generatedAt: new Date().toISOString(),
+        by: changedBy(req),
+        jsonHref: `${pathname}?${period}&format=json`,
+        caseHref: (runId) => `/inbox?case=${encodeURIComponent(runId)}`,
+        pageHref: `/audit?agent=${encodeURIComponent(agentName)}&workflow=${encodeURIComponent(audit.workflow.id)}`,
+      })
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(html)
       return
     }
     const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions|health))?(?:\/([1-9][0-9]*)\/restore)?$/)
