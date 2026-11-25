@@ -146,6 +146,9 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-setup-more summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; }
   .gl-setup-more .gl-setup { margin-top: 4px; }
   .gl-select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .gl-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  .gl-example { font: inherit; font-size: 12.5px; color: var(--accent-ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+  .gl-example:hover { border-color: var(--accent-ink); }
   .gl-share { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; line-height: 1.45; }
   .gl-share input { margin-top: 2px; }
   .gl-discarded-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 10px; background: var(--surface); font-size: 13.5px; }
@@ -193,6 +196,8 @@ ${consoleShellScript}
   // The focuses in use (the playbook's, and the workspace's own the
   // planner named), from the server; these until it answers.
   var FOCUS = [['new-signups', 'Getting new signups or customers'], ['activation', 'Getting new users started'], ['retention', 'Keeping users'], ['faster-support', 'Faster support'], ['revenue-recovery', 'Recovering revenue'], ['ops-hygiene', 'Smoother operations'], ['other', 'Something else']];
+  // Goals of every size, to show what can go in the box.
+  var GOAL_EXAMPLES = ['Answer every customer email within a day', 'Get 100 paying customers by March', 'Post on LinkedIn three times a week'];
   var KINDS = [['', 'Choose one'], ['ecommerce', 'Online store'], ['saas', 'Software or app'], ['agency', 'Agency or services'], ['local', 'Local business'], ['creator', 'Creator or media'], ['nonprofit', 'Nonprofit'], ['other', 'Something else']];
   var REASONS = [['not-relevant', 'Not relevant'], ['too-much-work', 'Too much work'], ['already-doing-it', 'Already doing it']];
   // Which view: the list (/goals), a new goal (?new=1, or the front page)
@@ -287,10 +292,12 @@ ${consoleShellScript}
 
   function newGoalHtml() {
     return '<div class="gl-card">' +
-      '<label for="glGoal"><strong>What do you want to achieve?</strong></label>' +
-      '<textarea id="glGoal" placeholder="e.g. Get 100 paying customers by the end of March">' + esc(startText) + '</textarea>' +
-      '<details' + (state.about ? '' : ' open') + '><summary class="hint">About your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)') + '</summary>' +
-        '<textarea id="glAbout" style="margin-top:8px" placeholder="What you sell, to whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
+      '<label for="glGoal"><strong>What should your agents take care of?</strong></label>' +
+      '<p class="hint" style="margin:2px 0 8px">Big or small: work to hand off, or a result to reach.</p>' +
+      '<textarea id="glGoal" placeholder="e.g. Help me research AI industry trends and publish a weekly report">' + esc(startText) + '</textarea>' +
+      '<div class="gl-examples hint">Or try: ' + GOAL_EXAMPLES.map(function (x) { return '<button type="button" class="gl-example" data-example="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
+      '<details' + (state.about ? '' : ' open') + '><summary class="hint">About you or your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)') + '</summary>' +
+        '<textarea id="glAbout" style="margin-top:8px" placeholder="What you do, for whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
         '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
         (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '') +
       '</details>' +
@@ -537,13 +544,20 @@ ${consoleShellScript}
   }
 
   function wire() {
+    page.querySelectorAll('[data-example]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var box = document.getElementById('glGoal');
+        box.value = b.dataset.example;
+        box.focus();
+      });
+    });
     var submit = document.getElementById('glSubmit');
     if (submit) submit.addEventListener('click', function () {
       var goal = document.getElementById('glGoal').value.trim();
       startText = '';
       var aboutBox = document.getElementById('glAbout');
       var status = document.getElementById('glSubmitStatus');
-      if (goal.length < 5) { status.textContent = 'Say what you want to achieve first.'; return; }
+      if (goal.length < 5) { status.textContent = 'Say what your agents should take care of first.'; return; }
       this.disabled = true;
       status.textContent = 'Starting' + ELLIPSIS;
       api('POST', '/goals', { goal: goal, about: aboutBox ? aboutBox.value : state.about }).then(function (r) {
@@ -795,7 +809,7 @@ ${consoleShellScript}
 // address (and whether there are goals yet); the page's script keeps it
 // in step after that.
 export type GoalsPageView = 'goals' | 'goal' | 'new'
-const GOALS_LEAD = 'Say what you want to achieve. LoopEngine suggests workflows that move it, and groups of workflows that run in order, each with the agent that would run it. Build the ones you want, and generate more when you want new ideas.'
+const GOALS_LEAD = 'LoopEngine suggests the workflows a goal needs: one for a small goal; more, or groups that run in order, for a big one. Build the ones you want.'
 function goalsPageFor(view: GoalsPageView): string {
   const title = view === 'goal' ? 'Goal' : view === 'goals' ? 'Goals' : 'New goal'
   // A list or one goal shows no lead; a new goal explains itself.

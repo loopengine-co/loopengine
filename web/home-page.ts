@@ -73,7 +73,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Home</h1><p>What you want to achieve, and the workflows and groups of workflows that move it.</p></div>
+        <div><h1>Home</h1><p>Your goals, big or small, and the workflows and groups of workflows that take care of them.</p></div>
       </div>
       <a class="hm-new" href="/goals?new=1">New goal</a>
     </div>
@@ -137,9 +137,9 @@ ${consoleShellScript}
   function renderEmpty() {
     page.innerHTML =
       '<div class="hm-empty"><h2>Nothing set up yet</h2>' +
-        '<p class="hint" style="margin:0">Say what you want to achieve and LoopEngine suggests workflows that move it, and groups of workflows that run in order. Or go straight to a workflow: how an agent does something again and again.</p>' +
+        '<p class="hint" style="margin:0">Give LoopEngine a goal, big or small, and it suggests the workflows for it, and groups of workflows that run in order. Or go straight to a workflow: how an agent does something again and again.</p>' +
         '<div class="hm-ways">' +
-          '<a class="hm-way" href="/goals?new=1"><b>Start from a goal</b><span>Get workflows suggested for what you want to achieve.</span></a>' +
+          '<a class="hm-way" href="/goals?new=1"><b>Start from a goal</b><span>Work to hand off or a result to reach: get workflows suggested for it.</span></a>' +
           '<a class="hm-way" href="/workflows/new"><b>Build a workflow</b><span>Say what the agent should do, or start from an example.</span></a>' +
         '</div></div>';
   }

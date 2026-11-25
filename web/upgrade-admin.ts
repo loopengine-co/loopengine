@@ -94,8 +94,17 @@ async function latestVersions(projectDir: string): Promise<{ value: string | nul
   return latestCache
 }
 
-async function latestLoopengine(projectDir: string): Promise<string | null> {
-  return (await latestVersions(projectDir)).value
+/** The newest version of a package that the project's package.json
+ * allows (npm lists the matching ones, oldest first). */
+async function newestWithinRange(name: string, projectDir: string): Promise<string | null> {
+  try {
+    const range = (JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies?.[name]
+    if (!range) return null
+    const parsed = JSON.parse((await run('npm', ['view', `${name}@${range}`, 'version', '--json'], projectDir, 15_000)).trim() || 'null') as string | string[] | null
+    return (Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed) ?? null
+  } catch {
+    return null
+  }
 }
 
 function templateVersion(projectDir: string): string | null {
@@ -185,9 +194,12 @@ export async function runUpgrade(options: { busy: () => boolean; projectDir?: st
     }
     if (result.error) throw new UpgradeError(result.error)
     if (result.npmInstall && !result.npmInstall.ok) throw new UpgradeError(`Installing the new packages failed: ${result.npmInstall.error ?? 'unknown error'}`)
-    // package.json may already allow the latest version while an older
-    // one stays installed (the lockfile keeps it); install it outright.
-    const latest = await latestLoopengine(projectDir)
+    // package.json may already allow a newer version while an older one
+    // stays installed (the lockfile keeps it); install it outright. Only
+    // within package.json's range (the template's, after the step above):
+    // a loopengine newer than the template was made for may drop a name
+    // its adapters/http.ts imports, and the server wouldn't start.
+    const latest = await newestWithinRange('loopengine', projectDir)
     const current = loopengineVersion()
     if (latest && semver.valid(current) && semver.gt(latest, current) && !result.dependencies.some((d) => d.name === 'loopengine')) {
       try {

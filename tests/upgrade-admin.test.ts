@@ -94,6 +94,26 @@ describe('runUpgrade', () => {
     expect(readFileSync(join(dir, '.upgrade-backups', pending, 'adapters', 'http.ts'), 'utf8')).toBe('old http\n')
   })
 
+  it('installs the newest loopengine the template allows, never past it, when only the template changed', async () => {
+    project()
+    const [major, minor, patch] = loopengineVersion().split('.').map(Number)
+    const allowed = `^${major}.${minor}.${patch}`
+    const newerPatch = `${major}.${minor}.${patch! + 1}`
+    const nextMinor = `${major}.${minor! + 1}.0`
+    setUpgradeRunner(async (cmd, args, cwd) => {
+      calls.push(`${cmd} ${args.join(' ')}`)
+      // npm has a newer minor, but the template's range stops at the newer patch.
+      if (cmd === 'npm' && args[0] === 'view') return args[1] === `loopengine@${allowed}` ? JSON.stringify([loopengineVersion(), newerPatch]) : `${nextMinor}\n`
+      if (cmd === 'npm') return ''
+      writeFileSync(join(cwd, 'package.json'), `{"dependencies":{"loopengine":"${allowed}"}}\n`)
+      return JSON.stringify({ fromVersion: '0.0.1', toVersion: '9.9.9', files: [], dependencies: [] }) + '\n'
+    })
+    const outcome = await runUpgrade({ busy: () => false, projectDir: dir })
+    expect(calls).toContain(`npm install --include=dev --no-audit --no-fund loopengine@^${newerPatch}`)
+    expect(calls.some((c) => c.includes(`loopengine@^${nextMinor}`))).toBe(false)
+    expect(outcome.dependencies).toEqual([{ name: 'loopengine', from: loopengineVersion(), to: `^${newerPatch}` }])
+  })
+
   it('puts every file back when installing fails, or the upgrade errors or crashes', async () => {
     for (const upgrade of ['install-failed', 'error', 'crash'] as const) {
       rmSync(dir, { recursive: true, force: true })
