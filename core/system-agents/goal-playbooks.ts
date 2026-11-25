@@ -51,9 +51,6 @@ export interface Lever {
   id: string
   focus: GoalFocus
   name: string
-  /** The job it usually makes: recurring (a workflow that runs again and
-   * again) or once (a finite piece of work, done once). */
-  kind: 'recurring' | 'once'
   /** Why it works, in a sentence: shown as the plan's "Why". */
   mechanism: string
   fitsWhen: string[]
@@ -116,9 +113,8 @@ export function parsePlaybook(raw: unknown, knownFocuses: readonly string[] = GO
     const kinds = (v: unknown, k: string) => { if (v === undefined) return undefined; if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw new Error(`${where}: needs.${k} must be a list of kinds`); return v as string[] }
     const anyOf = kinds(needs.anyOf, 'anyOf')
     const plus = kinds(needs.plus, 'plus')
-    if (l.kind !== undefined && l.kind !== 'recurring' && l.kind !== 'once') throw new Error(`${where}: kind must be "recurring" or "once"`)
     return {
-      id, focus, name: text('name'), kind: (l.kind ?? 'recurring') as Lever['kind'], mechanism: text('mechanism'), fitsWhen: list('fitsWhen'), notWhen: list('notWhen'),
+      id, focus, name: text('name'), mechanism: text('mechanism'), fitsWhen: list('fitsWhen'), notWhen: list('notWhen'),
       needs: { ...(anyOf ? { anyOf } : {}), ...(plus ? { plus } : {}) },
       humanMinutesPerWeek: num('humanMinutesPerWeek'), firstResultDays: num('firstResultDays'), measureLink: text('measureLink'),
       guardrails: list('guardrails'), template: text('template'),

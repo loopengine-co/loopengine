@@ -38,15 +38,18 @@ const WORKFLOWS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none"
 // An inbox tray, for the Inbox.
 const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
 
+// A target, for Goals.
+const GOALS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>'
+
 // A clipboard with a tick, for Audit.
 const AUDIT_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/></svg>'
 
 // A gear, for Settings.
 const SETTINGS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 
-// Two columns: the sections (Inbox, Agents, Workflows, Audit, Settings), and
-// beside them what's in the current one. Goals and Jobs stay at /goals
-// and /jobs, out of the menu: LoopEngine is about workflows. Pointing at
+// Two columns: the sections (Inbox, Goals, Agents, Workflows, Audit,
+// Settings), and beside them what's in the current one. A goal holds the
+// workflows, and groups of workflows, suggested for it. Pointing at
 // another section shows its column instead, until the pointer leaves.
 // Inbox and Home have no second column; pointing at a section there
 // opens its column over the page.
@@ -54,6 +57,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
   <nav class="le-rail" aria-label="Sections">
     <a class="le-brand" href="/" title="Home"><span class="le-brand-mark">${BRAND_MARK}</span></a>
     <a class="le-rail-item" href="/inbox" data-le-nav-head="inbox" data-le-section="inbox">${INBOX_ICON}<span>Inbox</span><span class="le-pill warn le-inbox-count" id="leInboxCount" hidden></span></a>
+    <a class="le-rail-item" href="/goals" data-le-nav-head="goals" data-le-section="goals">${GOALS_ICON}<span>Goals</span></a>
     <a class="le-rail-item" href="/agents" data-le-nav-head="agents" data-le-section="agents">${AGENTS_ICON}<span>Agents</span></a>
     <a class="le-rail-item" href="/workflows" data-le-nav-head="workflows" data-le-section="workflows">${WORKFLOWS_ICON}<span>Workflows</span></a>
     <a class="le-rail-item" href="/audit" data-le-nav-head="audit" data-le-section="audit">${AUDIT_ICON}<span>Audit</span></a>
@@ -62,6 +66,10 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     <div class="le-who" id="leWho" hidden></div>
   </nav>
   <div class="le-panel" hidden>
+    <section class="le-pane" data-le-pane="goals">
+      <div class="le-pane-head"><a href="/goals">Goals</a><a class="le-pane-new" href="/goals?new=1" data-le-goal-new>+ New</a></div>
+      <ul class="le-agent-list le-goal-list" id="leGoalList"></ul>
+    </section>
     <section class="le-pane" data-le-pane="agents">
       <div class="le-pane-head"><a href="/agents">Agents</a><a class="le-pane-new" href="/agents?new=1">+ New</a></div>
       <ul class="le-agent-list" id="leAgentList"></ul>
@@ -222,13 +230,11 @@ export const consoleShellScript: string = `<script>
     if (!goalList) return Promise.resolve();
     return cachedFetch('goals', '/goals', function (data) {
         var goals = data.goals || [];
-        // The Jobs page is the Goals page's jobs view; it marks Jobs instead.
-        var onJobs = location.pathname === '/jobs';
-        var current = page === 'goals' && !onJobs ? new URLSearchParams(location.search).get('goal') : null;
+        var current = page === 'goals' ? new URLSearchParams(location.search).get('goal') : null;
         var newLink = document.querySelector('[data-le-goal-new]');
-        var creating = page === 'goals' && !onJobs && !current && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
+        var creating = page === 'goals' && !current && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
         var head = document.querySelector('[data-le-nav-head="goals"]');
-        if (head) { if (page === 'goals' && !onJobs && !current && !creating) head.setAttribute('aria-current', 'page'); else head.removeAttribute('aria-current'); }
+        if (head) { if (page === 'goals' && !current && !creating) head.setAttribute('aria-current', 'page'); else head.removeAttribute('aria-current'); }
         if (newLink) { if (creating) newLink.setAttribute('aria-current', 'page'); else newLink.removeAttribute('aria-current'); }
         goalList.innerHTML = goals.length ? goals.map(function (g) {
           return '<li><a class="le-agent-item le-goal-item" href="/goals?goal=' + enc(g.id) + '" title="' + esc(g.goal) + '"' + (g.id === current ? ' aria-current="page"' : '') + '>' +
@@ -238,31 +244,9 @@ export const consoleShellScript: string = `<script>
   }
   fullAccess.then(function (full) { if (full) reloadGoals(); });
 
-  // ---- Jobs, listed under Goals: the person's own jobs (GET /jobs), newest
-  // added first, each opening on the Jobs page; its dot says whether it's
-  // running, waiting for them, or not started. The Jobs page reloads the
-  // list when it changes (leShell.reloadJobs).
-  var jobList = document.getElementById('leJobList');
-  function reloadJobs() {
-    if (!jobList) return Promise.resolve();
-    var onJobs = location.pathname === '/jobs';
-    var current = onJobs ? new URLSearchParams(location.search).get('job') : null;
-    var jobsHead = document.querySelector('[data-le-nav-head="jobs"]');
-    if (jobsHead) { if (onJobs && !current) jobsHead.setAttribute('aria-current', 'page'); else jobsHead.removeAttribute('aria-current'); }
-    return cachedFetch('jobs', '/jobs', function (data) {
-        var jobs = data.jobs || [];
-        jobList.innerHTML = jobs.length ? jobs.map(function (x) {
-          var j = x.job;
-          var t = j.tries && j.tries.length ? j.tries[j.tries.length - 1] : null;
-          var dot = t && (t.status === 'awaiting_approval' || t.status === 'done') && j.state === 'active' ? ' warn'
-            : j.state === 'active' ? '' : ' idle';
-          var label = j.state === 'done' ? 'Done' : j.state === 'active' ? (dot === ' warn' ? 'Needs you' : 'Running') : 'Not started';
-          return '<li><a class="le-agent-item le-goal-item" href="/jobs?job=' + enc(j.id) + '" title="' + esc(j.title) + ' (' + label + ')"' + (j.id === current ? ' aria-current="page"' : '') + '>' +
-            '<span class="le-dot' + dot + '" aria-hidden="true"></span><span class="le-name">' + esc(j.title) + '</span></a></li>';
-        }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No jobs yet</span><span></span></li>';
-      });
-  }
-  fullAccess.then(function (full) { if (full) reloadJobs(); });
+  // Jobs are gone: a goal holds workflows and groups. Kept so a page that
+  // still asks to reload them does nothing.
+  function reloadJobs() { return Promise.resolve(); }
 
   // ---- Workflows, listed under the agents (GET /workflows/overview),
   // each opening on its agent's Workflows tab. A tinted dot is running (a
@@ -393,7 +377,7 @@ export const consoleShellScript: string = `<script>
   // The section this page is in, whose column shows beside the sections.
   var sidebar = document.querySelector('.le-sidebar');
   var panel = document.querySelector('.le-panel');
-  var section0 = page === 'goals' ? (location.pathname === '/jobs' ? 'jobs' : 'goals')
+  var section0 = page === 'goals' ? 'goals'
     : page === 'agent-config' && params.get('tab') === 'workflows' && params.get('workflow') ? 'workflows'
     : page === 'agents' || page === 'agent-config' || page === 'chat' || page === 'interview' ? 'agents'
     : page === 'workflows' || page === 'workflows-overview' ? 'workflows'

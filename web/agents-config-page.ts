@@ -1578,7 +1578,7 @@ ${renderMarkdownScript}
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Agent</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '">' + escapeHtml(agentLabel) + '</a></span>' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Starts</span><span class="wf-page-starts">' + workflowStartsSummary(w) + '</span></span>' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Last run</span><span class="wf-page-last">' + workflowLastRunHtml(last) + '</span></span>' +
-              (w.jobs && w.jobs.length ? '<span class="wf-page-meta-item"><span class="wf-page-meta-k">For job</span><span>' + w.jobs.map(function (j) { return '<a href="/jobs?job=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span></span>' : '') +
+              (w.jobs && w.jobs.length ? '<span class="wf-page-meta-item"><span class="wf-page-meta-k">For goal</span><span>' + w.jobs.map(function (j) { return '<a href="/goals?goal=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span></span>' : '') +
             '</div>' +
           '</header>' +
           '<div class="wf-row-body wf-page-body">' +
@@ -1599,7 +1599,7 @@ ${renderMarkdownScript}
           '<span class="wf-row-caret" aria-hidden="true"></span>' +
           '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong>' +
             // The job(s) it does, linking back to each job's page.
-            (w.jobs && w.jobs.length ? '<span class="wf-row-job">For job: ' + w.jobs.map(function (j) { return '<a href="/jobs?job=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span>' : '') + '</div>' +
+            (w.jobs && w.jobs.length ? '<span class="wf-row-job">For goal: ' + w.jobs.map(function (j) { return '<a href="/goals?goal=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span>' : '') + '</div>' +
           '<span class="wf-row-starts">' + workflowStartsSummary(w) + '</span>' +
           '<span class="wf-row-last">' + workflowLastRunHtml(last) + '</span>' +
           '<span class="wf-row-actions"><button type="button" class="workflow-triggers-open">Triggers</button><button type="button" class="workflow-edit">Edit</button></span>' +

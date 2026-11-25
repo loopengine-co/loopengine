@@ -1,11 +1,10 @@
 // The console's Goals page: /goals lists the goals made so far, /goals?new=1
 // (and the workspace's front page, /) starts one, and /goals?goal=<id>
-// opens one. A goal breaks into jobs, each with its own measure: recurring
-// ones are built into a workflow on an agent, one-off ones are assigned to
-// an agent (each try's result shown, accepted or sent back with a note).
-// Type a goal, get suggested jobs (each with the agent it would go into),
-// generate more, and build or assign one straight from the suggestions,
-// which makes its agent first when it doesn't exist (web/goals-admin.ts
+// opens one. Type a goal, get suggested workflows, each with its own
+// measure and the agent it would go into: one workflow, or for a bigger
+// piece of the goal a group of workflows that run in order. Generate more,
+// and build one (or a group's step) straight from the suggestions, which
+// makes its agent first when it doesn't exist (web/goals-admin.ts
 // behind /goals/*). Same shell and
 // styles as the other console pages; like them, its inline script avoids
 // backslashes and template placeholders, since it lives inside a template
@@ -94,6 +93,17 @@ const goalsPageTemplate: string = `<!doctype html>
   @media (max-width: 560px) { .gl-job-head { grid-template-columns: 12px minmax(0, 1fr); } .gl-job-status, .gl-job-primary { grid-column: 2; } .gl-job-body, .gl-job-status-line { padding-left: 16px; } }
   .gl-job-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
   .gl-kind { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .gl-kind.group { background: var(--accent-soft); color: var(--accent-ink); }
+  .gl-gsteps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+  .gl-gstep { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .gl-gstep.built { border-color: var(--good-soft); }
+  .gl-gstep-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; }
+  .gl-gstep-n { width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--ink-muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .gl-gstep.built .gl-gstep-n { background: var(--good-soft); color: var(--good); }
+  .gl-gstep-build { margin-left: auto; }
+  .gl-gstep-then { font-size: 12px; color: var(--ink-muted); padding: 6px 0 0 32px; margin-bottom: -4px; }
+  .gl-gstep + .gl-gstep { margin-top: 8px; }
+  .gl-order summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent-ink); }
   .gl-doer { font-size: 13px; color: var(--ink-muted); }
   .gl-doer strong { color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
   .gl-link-btn { display: inline-flex; align-items: center; text-decoration: none; }
@@ -187,18 +197,11 @@ ${consoleShellScript}
   var REASONS = [['not-relevant', 'Not relevant'], ['too-much-work', 'Too much work'], ['already-doing-it', 'Already doing it']];
   // Which view: the list (/goals), a new goal (?new=1, or the front page)
   // or one goal (?goal=).
-  // The Jobs page (/jobs): the person's own list of jobs, from any goal
-  // or submitted there without one.
-  var jobsView = location.pathname === '/jobs';
-  // On the Jobs page, the new-job form (?new=1, or no jobs yet) or the list.
-  var jobCreating = jobsView && new URLSearchParams(location.search).has('new');
-  // One job's page (?job=, from the sidebar or after submitting one).
-  var jobPage = jobsView && !jobCreating ? new URLSearchParams(location.search).get('job') : null;
-  var startNew = !jobsView && (location.pathname === '/' || new URLSearchParams(location.search).has('new'));
+  var startNew = location.pathname === '/' || new URLSearchParams(location.search).has('new');
   // A goal to start from (?new=1&text=...): one typed on the website's
   // goal box before signing up, carried in by "Open workspace".
   var startText = (new URLSearchParams(location.search).get('text') || '').slice(0, 500);
-  var state = { jobs: [], jobsLoaded: false, jobsStale: false, jobDraft: '', jobNotice: null, addOpen: false, addDraft: '', addShare: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
+  var state = { addOpen: false, addDraft: '', addShare: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -222,25 +225,7 @@ ${consoleShellScript}
     history.replaceState(null, '', url);
   }
 
-  function loadJobs() {
-    api('GET', '/jobs').then(function (r) {
-      if (!r.ok) { page.innerHTML = '<p class="error">Could not load jobs: ' + esc(r.body.error || 'unknown error') + '</p>'; return; }
-      var first = !state.jobsLoaded;
-      state.jobs = r.body.jobs || [];
-      if (first && !state.jobs.length) jobCreating = true;
-      state.jobsLoaded = true;
-      state.jobsStale = false;
-      // A job picked in the sidebar (?job=): open, and brought into view.
-      var picked = first ? new URLSearchParams(location.search).get('job') : null;
-      if (picked) state.openJobs[picked] = true;
-      if (!first) reloadSidebar();
-      render();
-      if (picked) { var el = page.querySelector('.gl-job[data-wf="' + picked.replace(/[^a-z0-9-]/gi, '') + '"]'); if (el) el.scrollIntoView({ block: 'center' }); }
-    });
-  }
-
   function load(selectId) {
-    if (jobsView) { loadJobs(); return; }
     api('GET', '/goals').then(function (r) {
       if (!r.ok) { page.innerHTML = '<p class="error">Could not load goals: ' + esc(r.body.error || 'unknown error') + '</p>'; return; }
       state.goals = r.body.goals || [];
@@ -254,16 +239,11 @@ ${consoleShellScript}
   }
 
   // While a goal is planning, check every few seconds.
-  // While a goal is planning, or a one-off job's try is going, check again
-  // every few seconds (not while a note is being written).
-  function lastTry(job) { return job.tries && job.tries.length ? job.tries[job.tries.length - 1] : null; }
-  function tryGoing(t) { return t && (t.status === 'running' || t.status === 'awaiting_approval'); }
   function watch() {
     if (state.poll) { clearTimeout(state.poll); state.poll = null; }
     if (!state.current) return;
     var planning = state.current.status === 'planning';
-    var going = (state.current.jobs || []).some(function (j) { return j.state === 'active' && tryGoing(lastTry(j)); });
-    if (!planning && !going) return;
+    if (!planning) return;
     state.poll = setTimeout(function () {
       var typing = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('gl-note');
       if (typing) { watch(); return; }
@@ -273,34 +253,19 @@ ${consoleShellScript}
         if (planning && r.body.goal.status !== 'planning') reloadSidebar();
         render();
       });
-    }, planning ? 3000 : 4000);
-  }
-  function watchJobs() {
-    if (state.poll) { clearTimeout(state.poll); state.poll = null; }
-    var going = state.jobs.some(function (x) { return x.job.state === 'active' && tryGoing(lastTry(x.job)); });
-    if (!going) return;
-    state.poll = setTimeout(function () {
-      var typing = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('gl-note');
-      if (typing) { watchJobs(); return; }
-      loadJobs();
-    }, 4000);
+    }, 3000);
   }
   function reloadSidebar() {
     if (window.leShell && window.leShell.reloadGoals) window.leShell.reloadGoals();
-    if (window.leShell && window.leShell.reloadJobs) window.leShell.reloadJobs();
   }
   function replaceGoal(goal) {
-    // On the Jobs page, a job's goal coming back means the list changed.
-    if (jobsView) { state.jobsStale = true; return; }
     state.goals = state.goals.map(function (g) { return g.id === goal.id ? goal : g; });
     if (!state.goals.some(function (g) { return g.id === goal.id; })) state.goals.unshift(goal);
     state.current = goal;
   }
-  // A job on this page, wherever it's listed.
+  // A workflow or group under the current goal.
   function findJob(id) {
-    if (state.current) return (state.current.jobs || []).filter(function (j) { return j.id === id; })[0];
-    var hit = state.jobs.filter(function (x) { return x.job.id === id; })[0];
-    return hit ? hit.job : undefined;
+    return state.current ? (state.current.jobs || []).filter(function (j) { return j.id === id; })[0] : undefined;
   }
 
   function listHtml() {
@@ -309,11 +274,10 @@ ${consoleShellScript}
       var parts = [];
       if (g.status === 'planning') parts.push('<span class="gl-state planning">Suggesting' + ELLIPSIS + '</span>');
       if (g.status === 'failed') parts.push('<span class="gl-state failed">Failed</span>');
-      var suggested = count(g, 'suggested'), active = count(g, 'active'), done = count(g, 'done');
+      var suggested = count(g, 'suggested'), active = count(g, 'active');
       if (suggested) parts.push(suggested + ' suggested');
       if (active) parts.push('<span class="gl-state built">' + active + ' running</span>');
-      if (done) parts.push(done + ' done');
-      if (!parts.length) parts.push('No jobs kept yet');
+      if (!parts.length) parts.push('Nothing kept yet');
       var date = g.createdAt ? new Date(g.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
       return '<li><a href="/goals?goal=' + encodeURIComponent(g.id) + '"><span class="gl-list-goal" title="' + esc(g.goal) + '">' + esc(g.goal) + '</span>' +
         '<span class="gl-list-date">' + esc(date) + '</span>' +
@@ -330,7 +294,7 @@ ${consoleShellScript}
         '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
         (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '') +
       '</details>' +
-      '<div class="gl-row"><button type="button" class="gl-btn" id="glSubmit">Suggest jobs</button><span class="hint" id="glSubmitStatus"></span></div>' +
+      '<div class="gl-row"><button type="button" class="gl-btn" id="glSubmit">Suggest workflows</button><span class="hint" id="glSubmitStatus"></span></div>' +
     '</div>';
   }
 
@@ -345,68 +309,67 @@ ${consoleShellScript}
     return '<span class="gl-agent">' + ARROW + ' ' + (w.agent.isNew ? '<span class="gl-new">New agent</span>' : '') + '<strong>' + esc(w.agent.name) + '</strong></span>';
   }
 
-  // A job: one piece of the goal, with its measure, and what does it.
-  // A job as one row: its title, kind and one line (its measure, else why
-  // it helps), what does it (Done by), its status, and the one action
-  // that matters now. Click it for the rest: why, what it needs and the
-  // other actions; its own page also manages its workflows.
-  function jobHtml(w, listed) {
-    // On its own page a job is shown whole, not folded, with its workflows.
-    var detail = jobPage === w.id;
-    var once = w.kind === 'once';
-    var doer = (w.doers || [])[0];
-    var t = lastTry(w);
-    var btn = function (act, label, cls) { return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '">' + label + '</button>'; };
-    var primary = w.state === 'suggested' && once ? btn('assign', 'Give it to an agent')
-      : w.state === 'suggested' ? btn('build', 'Build a workflow')
-      : w.state === 'active' && once && t && t.status === 'done' ? btn('accept', 'Accept')
-      : w.state === 'active' && once && t && (t.status === 'error' || t.status === 'gone') ? btn('again', 'Try again')
-      : w.state === 'discarded' ? btn('restore', 'Restore', 'plain') : '';
-    // On a goal's page, a job not yet on the person's list can be added to it.
-    var onList = !!(w.addedAt || ((w.state === 'active' || w.state === 'done') && (w.doers || []).length));
-    var listBtn = listed || w.state === 'discarded' ? '' : onList ? '<span class="gl-listed">In my jobs</span>' : btn('list', 'Add to my jobs', 'soft');
-    var more = w.state === 'suggested' && once ? btn('build', 'Open in Chat', 'plain') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
-      : w.state === 'suggested' ? btn('discard', 'Discard', 'plain')
-      : w.state === 'active' && once ? (t && t.status === 'done' ? btn('again', 'Ask again', 'soft') : '') + btn('done', 'Mark done', 'plain') + btn('discard', 'Discard', 'plain')
-      : w.state === 'done' ? btn('undone', 'Reopen', 'plain') : '';
-    if (listed && listed.goalId !== 'g-my-jobs') more += btn('unlist', 'Remove from my jobs', 'plain');
-    var pill = w.state === 'active' && once ? (t && t.status === 'done' ? '<span class="gl-state built">Result ready</span>' : t && t.status === 'awaiting_approval' ? '<span class="gl-state planning">Needs you</span>' : t && t.status === 'running' ? '<span class="gl-state saved">Working' + ELLIPSIS + '</span>' : '<span class="gl-state failed">Failed</span>')
-      : w.state === 'active' ? '<span class="gl-state built">Running</span>'
-      : w.state === 'done' ? '<span class="gl-state built">Done</span>'
+  // A suggestion under the goal: one workflow, or a group of workflows
+  // that run in order. One row: its title, which it is, its measure, what
+  // does it, its state and the one action that matters now. Click it for
+  // the rest: why, what it needs, each workflow and their order.
+  function itemHtml(w) {
+    var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
+    var steps = group ? group.steps : [];
+    var builtSteps = steps.filter(function (st) { return st.built; }).length;
+    var nextStep = group ? steps.filter(function (st) { return !st.built; })[0] : null;
+    var active = w.state === 'active';
+    var btn = function (act, label, cls, step) { return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '"' + (step ? ' data-step="' + esc(step) + '"' : '') + '>' + label + '</button>'; };
+    var primary = w.state === 'discarded' ? btn('restore', 'Restore', 'plain')
+      : group && nextStep ? btn('buildstep', builtSteps ? 'Build step ' + (builtSteps + 1) : 'Build step 1', '', nextStep.id)
+      : !group && w.state === 'suggested' ? btn('build', 'Build the workflow') : '';
+    var more = w.state === 'suggested' ? btn('discard', 'Discard', 'plain') : '';
+    var pill = active && group && nextStep ? '<span class="gl-state saved">' + builtSteps + ' of ' + steps.length + ' built</span>'
+      : active ? '<span class="gl-state built">Running</span>'
       : w.state === 'discarded' ? '<span class="gl-state">Discarded</span>' : '';
-    // A job is about its outcome: its measure leads, then why it matters.
-    var sub = w.measure ? (once ? '' : 'Measured by ') + w.measure : w.why || '';
-    var doneBy = once && (w.state === 'active' || w.state === 'done') && w.tries && w.tries.length ? triesHtml(w)
-      : w.state === 'active' && doer && doer.type === 'workflow' ? (detail ? howHtml(w) : '')
-      : w.state === 'done' && w.doneAt ? '<div class="gl-doer">Done ' + esc(new Date(w.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</div>' : '';
-    var open = detail || !!state.openJobs[w.id];
-    return '<div class="gl-wf gl-job' + (open ? ' is-open' : '') + (detail ? ' gl-job-detail' : '') + (w.state === 'active' || w.state === 'done' ? ' built' : '') + '" data-wf="' + esc(w.id) + '"' + (listed ? ' data-goal="' + esc(listed.goalId) + '"' : '') + '>' +
-      (detail ? '<div class="gl-job-head">' : '<div class="gl-job-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
-        '<span class="gl-caret" aria-hidden="true"></span>') +
-        '<div class="gl-job-main">' + (listed && !detail ? '<a class="gl-wf-title gl-job-link" href="/jobs?job=' + encodeURIComponent(w.id) + '">' + esc(w.title) + '</a>' : '<span class="gl-wf-title">' + esc(w.title) + '</span>') +
-          '<span class="gl-job-sub"><span class="gl-kind">' + (once ? 'One-off' : 'Recurring') + '</span>' + (sub ? '<span class="gl-job-line">' + esc(sub) + '</span>' : '') + '</span>' +
-          (!detail && w.state === 'active' && !once && doer && doer.type === 'workflow' ? doneByHtml(w) : '') +
-          (!detail && once && (w.state === 'active' || w.state === 'done') && w.tries && w.tries.length ? assignedHtml(w) : '') +
-          (listed ? '<span class="gl-job-from">Added ' + esc(new Date(listed.addedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) + ' ' + String.fromCharCode(183) + ' ' +
-            (listed.goal ? 'Goal: <a href="/goals?goal=' + encodeURIComponent(listed.goalId) + '">' + esc(listed.goal) + '</a>' : 'No goal') + '</span>' : '') + '</div>' +
+    var kind = group ? 'Group ' + String.fromCharCode(183) + ' ' + steps.length + ' workflows in order' : 'Workflow';
+    var sub = w.measure ? 'Measured by ' + w.measure : w.why || '';
+    var open = !!state.openJobs[w.id];
+    return '<div class="gl-wf gl-job' + (open ? ' is-open' : '') + (active ? ' built' : '') + '" data-wf="' + esc(w.id) + '">' +
+      '<div class="gl-job-head" role="button" tabindex="0" aria-expanded="' + open + '"><span class="gl-caret" aria-hidden="true"></span>' +
+        '<div class="gl-job-main"><span class="gl-wf-title">' + esc(w.title) + '</span>' +
+          '<span class="gl-job-sub"><span class="gl-kind' + (group ? ' group' : '') + '">' + kind + '</span>' + (sub ? '<span class="gl-job-line">' + esc(sub) + '</span>' : '') + '</span>' +
+          (!open && active && !group ? doneByHtml(w) : '') + '</div>' +
         '<span class="gl-job-status">' + pill + '<span class="gl-state planning" data-attn hidden>Needs you</span></span>' +
-        '<span class="gl-job-primary">' + listBtn + primary + '</span>' +
+        '<span class="gl-job-primary">' + primary + '</span>' +
       '</div>' +
       '<div class="gl-job-body"' + (open ? '' : ' hidden') + '>' +
         (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? ' ' + String.fromCharCode(183) + ' ' + esc(w.added.note) : '') + (w.keepPrivate ? ' ' + String.fromCharCode(183) + ' kept to your workspace' : ' ' + String.fromCharCode(183) + ' its approach may be shared') + '</p>' : '') +
         (w.why && sub !== w.why ? '<p class="gl-why">' + esc(w.why) + '</p>' : '') +
-        (w.measure && sub.indexOf(w.measure) < 0 ? '<p class="gl-job-measure">' + (once ? '' : 'Measured by ') + esc(w.measure) + '</p>' : '') +
-        (w.state === 'active' || w.state === 'done' ? '' : '<div class="gl-row">' + agentHtml(w) + '</div>' + needsHtml(w)) +
-        doneBy +
-        (w.state === 'active' && !once ? '' : '<details><summary>' + (once ? 'What the agent is asked to do' : 'What its workflow will do') + '</summary><p>' + esc(w.request) + '</p></details>') +
+        (w.measure && sub.indexOf(w.measure) < 0 ? '<p class="gl-job-measure">Measured by ' + esc(w.measure) + '</p>' : '') +
+        (group ? stepsHtml(w, steps) + (active && (w.doers || []).length > 1 ? '<details class="gl-order"><summary>Change the order</summary>' + howHtml(w) + '</details>' : '')
+          : active ? howHtml(w)
+          : '<div class="gl-row">' + agentHtml(w) + '</div>' + needsHtml(w) + '<details><summary>What the workflow will do</summary><p>' + esc(w.request) + '</p></details>') +
         (more ? '<div class="gl-row">' + more + '</div>' : '') +
-        (once && w.state === 'active' ? '<div class="gl-again" hidden><label class="hint" for="note-' + esc(w.id) + '">What should change this time? (optional)</label><textarea class="gl-note" id="note-' + esc(w.id) + '" rows="2" placeholder="e.g. Add 5 more, and skip the paid ones."></textarea><div class="gl-row"><button type="button" class="gl-btn" data-act="assign">Send it back</button></div></div>' : '') +
       '</div>' +
       '<span class="hint gl-job-status-line" data-wf-status></span>' +
     '</div>';
   }
 
-  // A job of the person's own: typed in their words, shaped and judged by
+  // A group's workflows, in the order they run: each built one with how
+  // it's doing (filled by fillEvidence), each to build with its agent,
+  // what it needs and what it will do; then what it passes on.
+  function stepsHtml(w, steps) {
+    return '<ol class="gl-gsteps">' + steps.map(function (st, i) {
+      var head = '<span class="gl-gstep-n">' + (i + 1) + '</span><strong class="gl-gstep-name">' + esc(st.name) + '</strong>';
+      var row = st.built
+        ? '<div class="gl-gstep-head" data-how="' + esc(st.built.agent) + '|' + esc(st.built.workflowId) + '">' + head +
+            '<a class="gl-slug" href="/agents/config?agent=' + encodeURIComponent(st.built.agent) + '&tab=workflows&workflow=' + encodeURIComponent(st.built.workflowId) + '">' + esc(st.built.workflowId) + '</a>' +
+            '<span class="gl-agent-pill">' + esc(st.built.agent) + '</span><span class="hint" data-how-meta>' + ELLIPSIS + '</span></div>'
+        : '<div class="gl-gstep-head">' + head + agentHtml(st) +
+            (w.state !== 'discarded' ? '<button type="button" class="gl-btn soft gl-gstep-build" data-act="buildstep" data-step="' + esc(st.id) + '">Build</button>' : '') + '</div>' +
+          needsHtml(st) + '<details><summary>What it will do</summary><p>' + esc(st.request) + '</p></details>';
+      return '<li class="gl-gstep' + (st.built ? ' built' : '') + '">' + row +
+        (i < steps.length - 1 ? '<div class="gl-gstep-then">then ' + ARROW + ' starts when this one finishes, with its result</div>' : '') + '</li>';
+    }).join('') + '</ol>';
+  }
+
+  // A workflow of the person's own: typed in their words, shaped and judged by
   // the planner (added, changed, warned or refused), with what it said.
   function addJobHtml(planning) {
     var n = state.addNotice;
@@ -415,46 +378,19 @@ ${consoleShellScript}
       (n.note ? '<span>' + esc(n.note) + '</span>' : '') +
       (n.alternative ? '<span class="hint">Instead, you could: ' + esc(n.alternative) + '</span>' : '') + '</div>';
     return '<div class="gl-add">' +
-      '<button type="button" class="gl-link" id="glAddToggle"' + (state.addOpen ? ' hidden' : '') + '>+ Add your own job</button>' +
+      '<button type="button" class="gl-link" id="glAddToggle"' + (state.addOpen ? ' hidden' : '') + '>+ Add your own workflow</button>' +
       '<div class="gl-add-form"' + (state.addOpen ? '' : ' hidden') + '>' +
-        '<label for="glAddIdea"><strong>A job you have in mind</strong> <span class="hint">in your own words; LoopEngine shapes it into a job and says if anything looks off</span></label>' +
+        '<label for="glAddIdea"><strong>A workflow you have in mind</strong> <span class="hint">in your own words; LoopEngine shapes it into a workflow (or a group, when it has stages) and says if anything looks off</span></label>' +
         '<textarea id="glAddIdea" rows="2" placeholder="e.g. Thank every new customer by email within a day">' + esc(state.addDraft || '') + '</textarea>' +
-        '<label class="hint gl-share"><input type="checkbox" id="glAddShare"' + (state.addShare ? ' checked' : '') + '> Share the approach behind this job to improve suggestions for everyone</label>' +
+        '<label class="hint gl-share"><input type="checkbox" id="glAddShare"' + (state.addShare ? ' checked' : '') + '> Share the approach behind it to improve suggestions for everyone</label>' +
         '<p class="hint" style="margin:0">Your idea stays in your workspace unless you tick that. If you do, only a generic description of the approach is shared, never your words, and only once many workspaces use something similar.</p>' +
         '<div class="gl-row"><button type="button" class="gl-btn soft" id="glAddJob"' + (planning ? ' disabled' : '') + '>Add it</button><button type="button" class="gl-btn plain" id="glAddCancel">Cancel</button><span class="hint" id="glAddStatus"></span></div>' +
       '</div>' + notice + '</div>';
   }
 
-  // A one-off job's tries: the latest with its state and result, earlier
-  // ones folded away.
-  function tryHtml(t, n) {
-    var pill = t.status === 'running' ? '<span class="gl-state saved">Working' + ELLIPSIS + '</span>'
-      : t.status === 'awaiting_approval' ? '<span class="gl-state planning">Waiting for your decision</span>'
-      : t.status === 'done' ? '<span class="gl-state built">Finished</span>'
-      : t.status === 'error' ? '<span class="gl-state failed">Failed</span>' : '<span class="gl-state failed">Its record is gone</span>';
-    return '<div class="gl-try"><div class="gl-row"><strong>Try ' + n + '</strong>' + pill + '<span class="hint">' + esc(new Date(t.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
-      (t.note ? '<p class="hint" style="margin:0">You asked: ' + esc(t.note) + '</p>' : '') +
-      (t.status === 'awaiting_approval' ? '<p class="hint" style="margin:0">It asked you something: answer in the agent' + String.fromCharCode(8217) + 's messaging app, or on its Approvals.</p>' : '') +
-      (t.result ? '<div class="gl-result">' + esc(t.result) + '</div>' : '') +
-      (t.error ? '<p class="error">' + esc(t.error) + '</p>' : '') + '</div>';
-  }
-  function triesHtml(w) {
-    var tries = w.tries;
-    var latest = tries[tries.length - 1];
-    var earlier = tries.slice(0, -1);
-    var done = w.state === 'done';
-    return '<div class="gl-doer">Assigned to <strong>' + esc(w.agent.name) + '</strong>' + (done && w.doneAt ? ' ' + String.fromCharCode(183) + ' done ' + esc(new Date(w.doneAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : '') + '</div>' +
-      (done ? (w.result ? '<details class="gl-result-wrap" open><summary>The accepted result</summary><div class="gl-result">' + esc(w.result) + '</div></details>' : '') : tryHtml(latest, tries.length)) +
-      (earlier.length || done ? '<details class="gl-result-wrap"><summary>' + (done ? 'All tries (' + tries.length + ')' : 'Earlier tries (' + earlier.length + ')') + '</summary>' +
-        (done ? tries : earlier).map(function (t, i) { return tryHtml(t, i + 1); }).join('') + '</details>' : '');
-  }
-
-  // How a recurring job is done: each workflow that does it, on its agent,
-  // with how it starts and how it's doing. The detail (its instructions,
-  // tools, runs) is on the workflow itself: Open.
-  // On a job's card: what does it, in one line per workflow, each with
-  // how it's going (filled by fillEvidence) and a link to manage them on
-  // the job's page.
+  // On a built workflow's card: what does it, one line per workflow, each
+  // with how it's going (filled by fillEvidence); "then" marks one that
+  // starts after another.
   function doneByHtml(w) {
     var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
     // A chained workflow follows the one that starts it, marked "then".
@@ -472,12 +408,7 @@ ${consoleShellScript}
         (then ? '<span class="gl-doneby-then">then ' + String.fromCharCode(8594) + '</span>' : '<span class="gl-tag-wf">Workflow</span>') +
         '<a href="/agents/config?agent=' + encodeURIComponent(d.agent) + '&tab=workflows&workflow=' + encodeURIComponent(d.workflowId) + '" class="gl-slug">' + esc(d.workflowId) + '</a>' +
         '<span class="gl-agent-pill">' + esc(d.agent) + '</span><span class="hint" data-how-meta>' + ELLIPSIS + '</span></span>';
-    }).join('') + '<a class="gl-doneby-manage" href="/jobs?job=' + encodeURIComponent(w.id) + '">Manage</a></span>';
-  }
-
-  // A one-off job's card: the agent it's assigned to.
-  function assignedHtml(w) {
-    return '<span class="gl-doneby"><span class="gl-doneby-row"><span class="gl-tag-wf">Assignment</span><span class="gl-agent-pill">' + esc(w.agent.name) + '</span><span class="hint">one run, its result kept with the job</span></span></span>';
+    }).join('') + '</span>';
   }
 
   function howHtml(w) {
@@ -499,7 +430,7 @@ ${consoleShellScript}
     '<div class="gl-row"><button type="button" class="gl-btn plain" data-act="addwf">Add a workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-btn plain" data-act="addstep">Add a step</button>' : '') + '</div>' +
     '<div class="gl-panel" data-panel="addwf" hidden><label class="hint" for="addwf-' + esc(w.id) + '">A workflow already on one of your agents</label>' +
       '<div class="gl-row"><select class="gl-select" id="addwf-' + esc(w.id) + '" data-pick-workflow><option value="">Loading' + ELLIPSIS + '</option></select><button type="button" class="gl-btn soft" data-act="link">Add it</button></div>' +
-      '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for this job</button></div></div>' +
+      '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for it</button></div></div>' +
     '<div class="gl-panel" data-panel="addstep" hidden>' +
       '<div class="gl-row"><span class="hint">After</span><select class="gl-select" data-step-after>' + flows.map(function (d) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' + esc(d.workflowId) + '</option>'; }).join('') + '</select>' +
         '<span class="hint">finishes</span><select class="gl-select" data-step-when><option value="always">every time</option><option value="contains">when its result contains</option><option value="line_starts">when its result has a line starting</option></select><input class="gl-input" data-step-text placeholder="e.g. Lead:" hidden></div>' +
@@ -517,7 +448,7 @@ ${consoleShellScript}
   }
 
   // Fills each workflow row from its agent's workflow list, and marks the
-  // job when one is waiting for a decision.
+  // suggestion when one is waiting for a decision.
   function fillEvidence() {
     var rows = page.querySelectorAll('[data-how]');
     var agents = {};
@@ -552,76 +483,11 @@ ${consoleShellScript}
     });
   }
 
-  // The Jobs page: submit a job (no goal needed), then every job on the
-  // person's list, newest added first, each with when and which goal.
-  function jobsHtml() {
-    var n = state.jobNotice;
-    var notice = !n ? '' : '<div class="gl-notice ' + (n.verdict === 'refused' ? 'bad' : n.verdict === 'added' ? 'good' : 'warn') + '">' +
-      '<strong>' + (n.verdict === 'refused' ? 'Not added' : n.verdict === 'changed' ? 'Added, with changes' : n.verdict === 'warned' ? 'Added, with a caution' : 'Added to your jobs') + '</strong>' +
-      (n.note ? '<span>' + esc(n.note) + '</span>' : '') +
-      (n.alternative ? '<span class="hint">Instead, you could: ' + esc(n.alternative) + '</span>' : '') + '</div>';
-    var items = state.jobs;
-    if (jobCreating) return '<div class="gl-card">' +
-      '<label for="glJobIdea"><strong>Submit a job</strong> <span class="hint">in your own words; LoopEngine shapes it into a job, with its measure and the agent that would do it</span></label>' +
-      '<textarea id="glJobIdea" rows="2" placeholder="e.g. Answer every customer email within an hour">' + esc(state.jobDraft || '') + '</textarea>' +
-      '<div class="gl-row"><button type="button" class="gl-btn" id="glJobSubmit">Submit job</button><span class="hint" id="glJobStatus"></span>' +
-        '<span class="hint gl-push">Not sure what to do? <a href="/goals?new=1">Start from a goal</a> and add the jobs it suggests.</span></div>' +
-      notice +
-    '</div>' +
-    (items.length ? '<div><a class="gl-link" href="/jobs">' + String.fromCharCode(8592) + ' My jobs (' + items.length + ')</a></div>' : '');
-    if (jobPage) {
-      var here = items.filter(function (x) { return x.job.id === jobPage; })[0];
-      return '<div><a class="gl-link" href="/jobs">' + String.fromCharCode(8592) + ' My jobs (' + items.length + ')</a></div>' + notice +
-        (here ? jobHtml(here.job, here) : '<p class="gl-empty">This job isn' + String.fromCharCode(8217) + 't on your list any more: it may have been removed or discarded.</p>');
-    }
-    return notice +
-    '<p class="hint gl-define">A job is something that needs doing, with a way to tell it' + String.fromCharCode(8217) + 's done. Workflows and agents do jobs: a workflow for a recurring job, an agent for a one-off.</p>' +
-    '<div class="gl-section"><h3>My jobs <span class="gl-count">' + items.length + '</span></h3>' +
-      (items.length ? items.map(function (x) { return jobHtml(x.job, x); }).join('')
-        : '<p class="gl-empty">No jobs yet. <a href="/jobs?new=1">Submit one</a>, or add jobs from a goal' + String.fromCharCode(8217) + 's suggestions with Add to my jobs.</p>') +
-    '</div>';
-  }
-
-  function wireJobs() {
-    var idea = document.getElementById('glJobIdea');
-    if (idea) idea.addEventListener('input', function () { state.jobDraft = idea.value; });
-    // The sidebar's Jobs "+ New" (?new=1): straight to the box, once.
-    if (idea && !state.jobFocused && new URLSearchParams(location.search).has('new')) { state.jobFocused = true; idea.focus(); }
-    var submit = document.getElementById('glJobSubmit');
-    if (submit) submit.addEventListener('click', function () {
-      var text = idea.value.trim();
-      var status = document.getElementById('glJobStatus');
-      if (text.length < 5) { status.textContent = 'Say what the job is first.'; return; }
-      submit.disabled = true;
-      status.textContent = 'Shaping it' + ELLIPSIS;
-      api('POST', '/jobs', { idea: text }).then(function (r) {
-        submit.disabled = false;
-        if (!r.ok) { status.textContent = r.body.error || 'Could not add it.'; return; }
-        state.jobNotice = { verdict: r.body.verdict, note: r.body.note, alternative: r.body.alternative };
-        if (r.body.jobId) {
-          state.jobDraft = '';
-          state.openJobs[r.body.jobId] = true;
-          // Added: back to the list, with it open. A refused one stays on the form.
-          jobCreating = false;
-          jobPage = r.body.jobId;
-          var url = new URL(location.href);
-          url.searchParams.delete('new');
-          url.searchParams.set('job', r.body.jobId);
-          history.replaceState(null, '', url);
-        }
-        loadJobs();
-      });
-    });
-    var cards = page.querySelectorAll('.gl-job[data-goal]');
-    for (var i = 0; i < cards.length; i++) wireCard(cards[i], '/goals/' + encodeURIComponent(cards[i].getAttribute('data-goal')));
-  }
-
   function goalHtml(g) {
     var jobs = g.jobs || [];
     var by = function (s) { return jobs.filter(function (w) { return w.state === s; }); };
     var suggested = by('suggested');
-    // Yours: running first, then done.
-    var kept = by('active').concat(by('done'));
+    var kept = by('active');
     var discarded = by('discarded');
     var planning = g.status === 'planning';
     var focus = g.focus || (g.brief && g.brief.focus) || '';
@@ -632,7 +498,7 @@ ${consoleShellScript}
         (focus.indexOf('x-') === 0 ? '<span class="hint" title="No focus in the playbook fit this goal, so its planner named one and wrote the approaches it needed. They stay in this workspace for next time.">written for your goals</span>' : '') +
         (g.brief && g.brief.measure ? '<span>' + String.fromCharCode(183) + ' measured by ' + esc(g.brief.measure) + '</span>' : '') + '</div>' : '') +
       (g.message ? '<p class="gl-why">' + esc(g.message) + '</p>' : '') +
-      (planning ? '<p class="gl-status">Suggesting jobs' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
+      (planning ? '<p class="gl-status">Suggesting workflows' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
       (g.status === 'failed' ? '<p class="error">' + esc(g.error || 'Planning failed.') + '</p>' : '') +
       (g.setup && g.setup.length ? '<div><strong style="font-size:13.5px">Before you start</strong><ol class="gl-setup">' + g.setup.slice(0, 4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
         (g.setup.length > 4 ? '<details class="gl-setup-more"><summary>' + (g.setup.length - 4) + ' more</summary><ol class="gl-setup" start="5">' + g.setup.slice(4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></details>' : '') + '</div>' : '') +
@@ -640,16 +506,17 @@ ${consoleShellScript}
     (state.justDiscarded ? '<div class="gl-discarded-note" data-discarded="' + esc(state.justDiscarded.id) + '"><span>Discarded <strong>' + esc(state.justDiscarded.title) + '</strong>. Why?</span>' +
       REASONS.map(function (r) { return '<button type="button" class="gl-btn plain" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '<button type="button" class="gl-link" data-undo="1">Undo</button></div>' : '') +
-    '<div class="gl-section"><h3>Suggested jobs <span class="gl-count">' + suggested.length + '</span></h3>' +
-      (suggested.length ? suggested.map(function (w) { return jobHtml(w); }).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
-      '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">New ideas only: nothing already here, built or discarded comes back.</span></div>' +
+    '<div class="gl-section"><h3>Suggested <span class="gl-count">' + suggested.length + '</span></h3>' +
+      '<p class="hint gl-define">Workflows that move this goal, and groups of workflows that run in order, one after another.</p>' +
+      (suggested.length ? suggested.map(function (w) { return itemHtml(w); }).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
+      '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">More workflows or groups: nothing already here, built or discarded comes back.</span></div>' +
       addJobHtml(planning) +
     '</div>' +
-    '<div class="gl-section"><h3>Your jobs <span class="gl-count">' + kept.length + '</span></h3>' +
-      (kept.length ? kept.map(function (w) { return jobHtml(w); }).join('') : '<p class="gl-empty">Nothing running yet. Build a workflow for a recurring job, or give a one-off job to an agent.</p>') +
+    '<div class="gl-section"><h3>Your workflows <span class="gl-count">' + kept.length + '</span></h3>' +
+      (kept.length ? kept.map(function (w) { return itemHtml(w); }).join('') : '<p class="gl-empty">Nothing built yet. Build a suggested workflow, or a group' + String.fromCharCode(8217) + 's workflows one by one.</p>') +
     '</div>' +
     (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
-      (state.showDiscarded ? discarded.map(function (w) { return jobHtml(w); }).join('') : '') + '</div>' : '') +
+      (state.showDiscarded ? discarded.map(function (w) { return itemHtml(w); }).join('') : '') + '</div>' : '') +
     '<div><button type="button" class="gl-link" id="glDelete" style="color:var(--bad)">Delete this goal</button></div>';
   }
 
@@ -657,23 +524,6 @@ ${consoleShellScript}
     var title = document.getElementById('glTitle');
     var lead = document.getElementById('glLead');
     var newBtn = document.getElementById('glNewBtn');
-    if (jobsView) {
-      if (state.jobsStale) { loadJobs(); return; }
-      var shown = jobPage && state.jobs.filter(function (x) { return x.job.id === jobPage; })[0];
-      if (title) title.textContent = jobCreating ? 'New job' : jobPage ? 'Job' : 'Jobs';
-      if (shown) document.title = shown.job.title;
-      if (lead) {
-        lead.textContent = 'Everything you want done. Submit a job in your own words, or add jobs from a goal' + String.fromCharCode(8217) + 's suggestions. Build a recurring job into a workflow, or give a one-off job to an agent.';
-        lead.style.display = jobCreating ? '' : 'none';
-      }
-      if (newBtn) { newBtn.hidden = jobCreating; newBtn.textContent = 'New job'; newBtn.setAttribute('href', '/jobs?new=1'); }
-      page.innerHTML = state.jobsLoaded ? jobsHtml() + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '') : '<p class="hint">Loading' + ELLIPSIS + '</p>';
-      state.error = '';
-      wireJobs();
-      watchJobs();
-      fillEvidence();
-      return;
-    }
     // The list, unless there are no goals yet: then the new-goal form.
     var listing = !state.current && !state.creating && state.goals.length > 0;
     if (title) title.textContent = state.current ? 'Goal' : listing ? 'Goals' : 'New goal';
@@ -745,9 +595,9 @@ ${consoleShellScript}
     if (addJob) addJob.addEventListener('click', function () {
       var idea = document.getElementById('glAddIdea').value.trim();
       var status = document.getElementById('glAddStatus');
-      if (idea.length < 5) { status.textContent = 'Say what the job is first.'; return; }
+      if (idea.length < 5) { status.textContent = 'Say what the workflow should do first.'; return; }
       addJob.disabled = true;
-      status.textContent = 'Shaping it into a job' + ELLIPSIS;
+      status.textContent = 'Shaping it into a workflow' + ELLIPSIS;
       var shareBox = document.getElementById('glAddShare');
       api('POST', base + '/jobs', { idea: idea, share: !!(shareBox && shareBox.checked) }).then(function (r) {
         if (!r.ok) { addJob.disabled = false; status.textContent = r.body.error || 'Could not add it.'; return; }
@@ -761,7 +611,7 @@ ${consoleShellScript}
     if (shown) shown.addEventListener('click', function () { state.showDiscarded = !state.showDiscarded; render(); });
     var del = document.getElementById('glDelete');
     if (del) del.addEventListener('click', function () {
-      if (del.dataset.confirming !== '1') { del.dataset.confirming = '1'; del.textContent = 'Click again to delete this goal (the workflows that do its jobs stay in their agents)'; return; }
+      if (del.dataset.confirming !== '1') { del.dataset.confirming = '1'; del.textContent = 'Click again to delete this goal (the workflows built for it stay in their agents)'; return; }
       api('DELETE', base).then(function () { state.current = null; setUrl(''); reloadSidebar(); load(); });
     });
     var cards = page.querySelectorAll('[data-wf]');
@@ -845,7 +695,7 @@ ${consoleShellScript}
       ev.preventDefault();
       setJobOpen(card, !card.classList.contains('is-open'));
     });
-    // A job's chain: change the step being written, remove a step or a workflow.
+    // A suggestion's chain: change the step being written, remove a step or a workflow.
     ['[data-step-run]', '[data-step-after]', '[data-step-when]'].forEach(function (sel) {
       var el = card.querySelector(sel);
       if (el) el.addEventListener('change', function () { stepInputs(card); });
@@ -867,7 +717,7 @@ ${consoleShellScript}
     var unlinks = card.querySelectorAll('[data-unlink]');
     for (var ul = 0; ul < unlinks.length; ul++) unlinks[ul].addEventListener('click', function (ev) {
       var b = ev.currentTarget;
-      if (b.dataset.confirming !== '1') { b.dataset.confirming = '1'; b.textContent = 'Click again to remove it from this job (it stays on its agent)'; return; }
+      if (b.dataset.confirming !== '1') { b.dataset.confirming = '1'; b.textContent = 'Click again to remove it from this goal (it stays on its agent)'; return; }
       var parts = b.getAttribute('data-unlink').split('|');
       patch({ action: 'unlink', agent: parts[0], workflowId: parts[1] }, b);
     });
@@ -914,26 +764,10 @@ ${consoleShellScript}
         });
         return;
       }
-      if (act === 'again') {
-        setJobOpen(card, true);
-        var box = card.querySelector('.gl-again');
-        if (box) { box.hidden = false; box.querySelector('textarea').focus(); }
-        return;
-      }
       btn.disabled = true;
-      if (act === 'assign' || act === 'accept') {
-        var noteBox = card.querySelector('.gl-note');
-        status.textContent = act === 'assign' ? 'Assigning' + ELLIPSIS : '';
-        api('POST', base + '/jobs/' + encodeURIComponent(id) + '/' + act, act === 'assign' ? { note: noteBox ? noteBox.value : '' } : {}).then(function (r) {
-          if (!r.ok) { status.textContent = r.body.error || 'Could not do that.'; btn.disabled = false; return; }
-          replaceGoal(r.body.goal);
-          render();
-        });
-        return;
-      }
-      if (act === 'build') {
+      if (act === 'build' || act === 'buildstep') {
         status.textContent = 'Getting the agent ready' + ELLIPSIS;
-        api('POST', base + '/jobs/' + encodeURIComponent(id) + '/build').then(function (r) {
+        api('POST', base + '/jobs/' + encodeURIComponent(id) + '/build', act === 'buildstep' ? { step: btn.getAttribute('data-step') } : undefined).then(function (r) {
           if (!r.ok) { status.textContent = r.body.error || 'Could not build it.'; btn.disabled = false; return; }
           location.href = r.body.url;
         });
@@ -960,21 +794,19 @@ ${consoleShellScript}
 // heading first and then changes it: the server picks the view from the
 // address (and whether there are goals yet); the page's script keeps it
 // in step after that.
-export type GoalsPageView = 'goals' | 'goal' | 'new' | 'jobs' | 'job' | 'new-job'
-const GOALS_LEAD = 'Say what you want to achieve. LoopEngine breaks it into jobs that move it, each with the agent that would do it. Build the recurring ones into workflows, assign the one-off ones to their agent, and generate more when you want new ideas.'
-const JOBS_LEAD = 'Everything you want done. Submit a job in your own words, or add jobs from a goal&#8217;s suggestions. Build a recurring job into a workflow, or give a one-off job to an agent.'
+export type GoalsPageView = 'goals' | 'goal' | 'new'
+const GOALS_LEAD = 'Say what you want to achieve. LoopEngine suggests workflows that move it, and groups of workflows that run in order, each with the agent that would run it. Build the ones you want, and generate more when you want new ideas.'
 function goalsPageFor(view: GoalsPageView): string {
-  const jobs = view === 'jobs' || view === 'job' || view === 'new-job'
-  const title = view === 'jobs' ? 'Jobs' : view === 'job' ? 'Job' : view === 'new-job' ? 'New job' : view === 'goal' ? 'Goal' : view === 'goals' ? 'Goals' : 'New goal'
-  // A list or one goal shows no lead; a new goal or job explains itself.
-  const hideLead = view === 'goal' || view === 'goals' || view === 'jobs' || view === 'job'
+  const title = view === 'goal' ? 'Goal' : view === 'goals' ? 'Goals' : 'New goal'
+  // A list or one goal shows no lead; a new goal explains itself.
+  const hideLead = view === 'goal' || view === 'goals'
   return goalsPageTemplate
-    .replace('__GL_HEAD__', `<h1 id="glTitle">${title}</h1><p id="glLead"${hideLead ? ' style="display:none"' : ''}>${jobs ? JOBS_LEAD : GOALS_LEAD}</p>`)
-    .replace('__GL_NEW_HREF__', jobs ? '/jobs?new=1' : '/goals?new=1')
-    .replace('__GL_NEW_HIDDEN__', view === 'goals' || view === 'jobs' || view === 'job' ? '' : ' hidden')
-    .replace('__GL_NEW_LABEL__', jobs ? 'New job' : 'New goal')
+    .replace('__GL_HEAD__', `<h1 id="glTitle">${title}</h1><p id="glLead"${hideLead ? ' style="display:none"' : ''}>${GOALS_LEAD}</p>`)
+    .replace('__GL_NEW_HREF__', '/goals?new=1')
+    .replace('__GL_NEW_HIDDEN__', view === 'goals' ? '' : ' hidden')
+    .replace('__GL_NEW_LABEL__', 'New goal')
 }
-const goalsPages: Record<GoalsPageView, string> = { goals: goalsPageFor('goals'), goal: goalsPageFor('goal'), new: goalsPageFor('new'), jobs: goalsPageFor('jobs'), job: goalsPageFor('job'), 'new-job': goalsPageFor('new-job') }
+const goalsPages: Record<GoalsPageView, string> = { goals: goalsPageFor('goals'), goal: goalsPageFor('goal'), new: goalsPageFor('new') }
 export function goalsPageAs(view: GoalsPageView): string {
   return goalsPages[view]
 }

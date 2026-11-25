@@ -1,43 +1,40 @@
-// Backs the console's Goals page: a goal someone types, the jobs the goal
-// planner (core/system-agents/goal-planner.ts) suggests for it, and what
-// the person does with each one. Each goal is one JSON file in the
+// Backs the console's Goals page: a goal someone types, the workflows the
+// goal planner (core/system-agents/goal-planner.ts) suggests for it, and
+// what the person does with each one. Each goal is one JSON file in the
 // project, goals/<id>.json; what the person says about their business is
 // goals/about.json, shared by every goal.
 //
-// A job is one piece of the goal, with its own measure: recurring (done
-// by a workflow on an agent) or once (a one-off piece of work, assigned to
-// an agent as one unattended run, or done with it in Chat). It's in one
-// of four states:
+// A suggestion is one workflow, or a group of workflows that run in order
+// (a bigger piece of the goal), with its own measure. Stored as the goal's
+// `jobs` (the name files have always used). Each is in one of three states:
 //   suggested  the planner proposed it (on create or Generate more), or the
-//              person added it; it's built or assigned straight from here
-//   active     a workflow does it (Build linked the real workflow back),
-//              or, for a once job, it's been assigned and not accepted yet
-//   done       a once job whose result the person accepted, or marked done
+//              person added it; it's built straight from here
+//   active     a workflow does it (Build linked the real workflow back);
+//              for a group, at least one of its steps is built
 //   discarded  the person said no; never suggested again unless restored
 //
-// A recurring job can be done by several workflows, on any agents, and
-// say what happens when one finishes: its chain. Each step is "after this
+// One can be done by several workflows, on any agents, and say what
+// happens when one finishes: its chain. Each step is "after this
 // workflow's run finishes (and its result says so), run that one", with
 // that one's inputs taken from the result or from the first run's inputs.
-// The server starts the next run itself (adapters/http.ts, when a run
-// ends); each keeps its own agent, permissions, approvals and evidence.
-// A chain can't loop, and stops after MAX_CHAIN_DEPTH runs.
+// A group's chain is made as its steps are built, each after the one
+// before. The server starts the next run itself (adapters/http.ts, when a
+// run ends); each keeps its own agent, permissions, approvals and
+// evidence. A chain can't loop, and stops after MAX_CHAIN_DEPTH runs.
 //
-// An assigned once job keeps every try: each is a run of its agent
-// (core/workflow-runs.ts, source "assignment"), with the person's note
-// when they asked again. Accepting keeps the latest result on the job.
-// Generate more is given every job in every state, so nothing comes back
-// twice. Building one makes its suggested agent first when there is none
-// by that name, then hands the request to Build a workflow (a once job
-// opens Chat with the agent instead).
+// Generate more is given every suggestion in every state, so nothing comes
+// back twice. Building one makes its suggested agent first when there is
+// none by that name, then hands the request to Build a workflow.
 //
+// Older files may hold one-off jobs (kind "once", state "done", tries as
+// "assignment" doers); they're kept in the file and left off the page.
 // Goals saved before jobs kept them as `workflows`, built ones with a
 // `built` link; they're read as jobs and saved that way next time.
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import type { ModelCall } from '../core/run-agent.js'
-import { agentName, runGoalPipeline, shapeJob, type GoalBrief, type GoalContext, type GoalNeed, type LeverChoice, type PlannedGoalWorkflow } from '../core/system-agents/goal-planner.js'
+import { agentName, runGoalPipeline, shapeJob, type GoalBrief, type GoalContext, type GoalNeed, type LeverChoice, type PlannedGoalWorkflow, type PlannedGroup } from '../core/system-agents/goal-planner.js'
 import { activePlaybook, addToLocalPlaybook, type GoalFocus } from '../core/system-agents/goal-playbooks.js'
 
 export type GoalJobState = 'suggested' | 'active' | 'done' | 'discarded'
@@ -65,16 +62,29 @@ export interface ChainStep {
 /** Runs a chain may start one after another, after the first. */
 export const MAX_CHAIN_DEPTH = 5
 
-/** An assignment try as the page shows it: its run's state and result. */
-export interface AssignmentView {
-  runId: string
-  status: 'running' | 'awaiting_approval' | 'done' | 'error' | 'gone'
-  result?: string
-  error?: string
-  note?: string
-  at: string
+/** A group of workflows under a goal: steps that run in order (only
+ * "sequence" for now), each built as its own workflow. Once two steps in
+ * a row are built, the next is chained to start after the one before
+ * (GoalJob.chain), given its result. */
+export interface WorkflowGroup {
+  order: 'sequence'
+  steps: GroupStep[]
 }
 
+export interface GroupStep {
+  id: string
+  /** A short label for its workflow ("Lead scan"). */
+  name: string
+  request: string
+  agent: { name: string; isNew: boolean; instructions?: string }
+  needs: GoalNeed[]
+  /** The workflow built for it, once built. */
+  built?: { agent: string; workflowId: string }
+}
+
+/** A suggestion under a goal: one workflow, or a group of them (`group`).
+ * Stored as before under the name "job" (a goal's `jobs`), so saved
+ * goals keep working; the console calls it a workflow or a group. */
 export interface GoalJob {
   id: string
   title: string
@@ -101,12 +111,13 @@ export interface GoalJob {
   restoreTo?: 'suggested'
   /** What does it, once built: the workflow (skill id) on its agent. */
   doers: JobDoer[]
-  /** When a once job was marked done. */
+  /** Older one-off jobs: when marked done, and the accepted result. */
   doneAt?: string
-  /** The accepted result of a once job's assignment. */
   result?: string
   /** For a recurring job done by several workflows: what runs after what. */
   chain?: ChainStep[]
+  /** A group of workflows that run in order, instead of one. */
+  group?: WorkflowGroup
   /** A job the person added themselves: their own words, and how the
    * planner judged it ("changed" or "warned", with its note). */
   added?: { idea: string; verdict: 'added' | 'changed' | 'warned'; note?: string; alternative?: string }
@@ -127,9 +138,6 @@ export interface GoalJob {
   signals?: { kept14d?: true; lastUsedAt?: string; removed?: true }
   /** Which generation suggested it (1 on create). */
   round: number
-  /** When it was added to the person's own list of jobs (the Jobs page):
-   * with Add to my jobs, on Build or Assign, or when submitted there. */
-  addedAt?: string
 }
 
 /** Before jobs: the same thing, called a workflow under its goal. */
@@ -155,16 +163,12 @@ export interface Goal {
   jobs: GoalJob[]
   createdAt: string
   updatedAt: string
-  /** The built-in holder of jobs submitted on the Jobs page without a
-   * goal (MY_JOBS_ID): never listed as a goal. */
+  /** The holder of jobs once submitted without a goal (before goals held
+   * only workflows): never listed as a goal. */
   standalone?: true
 }
 
 export class GoalError extends Error {}
-
-/** Where jobs submitted without a goal live: a goal file of its own, so
- * building, assigning, chains and runs work for them as for any job. */
-export const MY_JOBS_ID = 'g-my-jobs'
 
 export type EditAmount = 'none' | 'light' | 'heavy'
 
@@ -183,14 +187,9 @@ export interface GoalsDeps {
   createAgent: (name: string, instructions: string) => Promise<void>
   /** Whether a built workflow still exists, and its runs since a time. */
   workflowActivity?: (agent: string, workflowId: string, sinceIso: string) => Promise<{ exists: boolean; runs: number; done: number }>
-  /** Starts a once job's assignment: one unattended run of the agent with
-   * this message; returns its run id. */
-  startAssignment?: (agent: string, message: string, job: { goal: string; job: string }) => Promise<{ runId: string }>
   /** A workflow on an agent, when it exists: its title and inputs (for
    * linking it to a job and checking a chain). */
   workflowInfo?: (agent: string, workflowId: string) => { title: string; parameters: Record<string, { required: boolean }> } | undefined
-  /** An assignment run's state, for the page. */
-  assignmentRun?: (agent: string, runId: string) => Promise<{ status: AssignmentView['status']; result?: string; error?: string } | undefined>
 }
 
 const MAX_GOAL_CHARS = 1000
@@ -216,24 +215,21 @@ function write(deps: GoalsDeps, goal: Goal): Goal {
 
 /** A goal as saved before jobs (its `workflows`, a built one's `built`
  * link) read as one with jobs; one saved since, as it is. Each becomes a
- * job: a built one active, done by its workflow; one not built yet takes
- * the kind its playbook lever usually makes (a finite list is a one-off
- * job). Each gets a measure: the lever's, else how it was said to move
- * the goal. */
+ * recurring job: a built one active, done by its workflow. Each gets a
+ * measure: the lever's, else how it was said to move the goal. */
 export function migrateGoal(raw: Record<string, unknown>): Goal {
   if (Array.isArray(raw.jobs)) return raw as unknown as Goal
   const { workflows, ...rest } = raw
-  let levers: readonly { id: string; kind: 'recurring' | 'once'; measureLink: string }[] = []
+  let levers: readonly { id: string; measureLink: string }[] = []
   try {
     levers = activePlaybook().levers
   } catch {}
   const jobs = (Array.isArray(workflows) ? workflows : []).map((w): GoalJob => {
     const { built, ...x } = w as Record<string, unknown> & { built?: { agent: string; workflowId: string; title: string; at: string } }
     const lever = typeof x.leverId === 'string' ? levers.find((l) => l.id === x.leverId) : undefined
-    const kind: GoalJob['kind'] = built || x.state === 'built' ? 'recurring' : lever?.kind ?? 'recurring'
     return {
       ...(x as unknown as GoalJob),
-      kind,
+      kind: 'recurring',
       measure: typeof x.measure === 'string' && x.measure ? x.measure : lever?.measureLink ?? (typeof x.measureLink === 'string' ? x.measureLink : ''),
       state: x.state === 'built' ? 'active' : (x.state as GoalJobState),
       doers: built ? [{ type: 'workflow', ...built }] : [],
@@ -366,7 +362,7 @@ function toJob(w: PlannedGoalWorkflow, round: number, deps: GoalsDeps): GoalJob 
     ...(fromPrivate ? { keepPrivate: true as const } : {}),
     id: newId('w'),
     title: w.title,
-    kind: w.kind,
+    kind: 'recurring',
     measure: w.measure,
     request: w.request,
     why: w.mechanism,
@@ -382,6 +378,26 @@ function toJob(w: PlannedGoalWorkflow, round: number, deps: GoalsDeps): GoalJob 
     state: 'suggested',
     doers: [],
     round,
+    ...(w.group ? { group: groupOf(w.group, w, deps) } : {}),
+  }
+}
+
+// A planned group's steps, each with its agent (an existing one, or one to
+// make when its step is built).
+function groupOf(g: PlannedGroup, w: PlannedGoalWorkflow, deps: GoalsDeps): WorkflowGroup {
+  return {
+    order: 'sequence',
+    steps: g.steps.map((st) => {
+      const name = agentName(st.newAgent?.name || st.agent) || 'goal-agent'
+      const exists = deps.agentExists(name)
+      return {
+        id: newId('s'),
+        name: st.name,
+        request: st.request,
+        agent: exists ? { name, isNew: false } : { name, isNew: true, instructions: st.newAgent?.instructions || `You help with this goal's work: ${w.title}, the ${st.name} step. Draft for review; nothing is sent, posted or published without approval.` },
+        needs: st.needs,
+      }
+    }),
   }
 }
 
@@ -461,7 +477,7 @@ export function generateMore(deps: GoalsDeps, id: string, input: { goal?: unknow
 
 function findWorkflow(goal: Goal, jobId: string): GoalJob {
   const w = goal.jobs.find((x) => x.id === jobId)
-  if (!w) throw new GoalError('No such job under this goal')
+  if (!w) throw new GoalError('No such workflow under this goal')
   return w
 }
 
@@ -475,7 +491,7 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
   const w = findWorkflow(goal, workflowId)
   if (action === 'discard') {
     if (w.state === 'discarded') return goal
-    if (w.state === 'active' && w.kind !== 'once') throw new GoalError('A workflow does this job: remove it from its agent instead.')
+    if (w.state === 'active') throw new GoalError('A workflow does this: remove it from its agent instead.')
     recordLeverEvent(deps, goal, w, 'discarded')
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'discarded', restoreTo: 'suggested' }))
   }
@@ -484,17 +500,6 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
     recordLeverEvent(deps, goal, w, 'restored')
     return updateWorkflow(deps, goal, workflowId, ({ restoreTo, discardReason: _r, ...x }) => ({ ...x, state: restoreTo ?? 'suggested' }))
   }
-  if (action === 'done') {
-    if (w.kind !== 'once') throw new GoalError('Only a one-off job is marked done.')
-    if (w.state === 'done') return goal
-    if (w.state !== 'suggested' && w.state !== 'active') throw new GoalError('Restore it first.')
-    recordLeverEvent(deps, goal, w, 'done', { newAgent: Boolean(w.agentCreated) })
-    return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'done', doneAt: now() }))
-  }
-  if (action === 'undone') {
-    if (w.state !== 'done') return goal
-    return updateWorkflow(deps, goal, workflowId, ({ doneAt: _d, ...x }) => ({ ...x, state: x.doers.length ? 'active' : 'suggested' }))
-  }
   if (action === 'reason') {
     if (w.state !== 'discarded') throw new GoalError('Only a discarded workflow has a reason.')
     if (!DISCARD_REASONS.includes(reason as DiscardReason)) throw new GoalError(`reason must be one of ${DISCARD_REASONS.join(', ')}`)
@@ -502,19 +507,32 @@ export function setWorkflowState(deps: GoalsDeps, id: string, workflowId: string
     recordLeverEvent(deps, goal, w, 'discard_reason', { reason: reason as string })
     return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, discardReason: reason as DiscardReason }))
   }
-  throw new GoalError('action must be discard, restore, done, undone or reason')
+  throw new GoalError('action must be discard, restore or reason')
 }
 
 /** Build: makes the suggested agent when there is none by that name,
- * then returns where the work starts. A recurring job goes to Build a
- * workflow, with the request and the agent filled in and the goal to link
- * the result back to; a once job opens Chat with the agent, the request
- * ready to send. */
-export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: string, opts: { another?: boolean } = {}): Promise<{ goal: Goal; agent: string; createdAgent: boolean; url: string }> {
+ * then returns Build a workflow's address, with the request and the agent
+ * filled in and the goal to link the result back to. For a group, `step`
+ * says which of its workflows. */
+export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: string, opts: { another?: boolean; step?: string } = {}): Promise<{ goal: Goal; agent: string; createdAgent: boolean; url: string }> {
   let goal = getGoal(deps, id)
   const w = findWorkflow(goal, workflowId)
-  if (w.state === 'active' && w.kind === 'once') throw new GoalError('This job is assigned already.')
-  if (w.state === 'active' && !opts.another) throw new GoalError('A workflow already does this job: add another workflow to it instead.')
+  // A group's step: built on its own, into its own agent.
+  if (opts.step) {
+    const step = w.group?.steps.find((st) => st.id === opts.step)
+    if (!step) throw new GoalError('That step isn’t in this group.')
+    if (step.built) throw new GoalError('That step is built already.')
+    if (w.state === 'discarded') throw new GoalError('Restore it first.')
+    let createdAgent = false
+    if (!deps.agentExists(step.agent.name)) {
+      await deps.createAgent(step.agent.name, step.agent.instructions || `You help with: ${w.title}.`)
+      createdAgent = true
+    }
+    if (step.agent.isNew || createdAgent) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, group: x.group && { ...x.group, steps: x.group.steps.map((s2) => (s2.id === step.id ? { ...s2, agent: { name: s2.agent.name, isNew: false } } : s2)) }, ...(createdAgent ? { agentCreated: true } : {}) }))
+    const params = new URLSearchParams({ agent: step.agent.name, description: step.request, goal: id, goalJob: workflowId, goalStep: step.id })
+    return { goal, agent: step.agent.name, createdAgent, url: `/workflows/new?${params}` }
+  }
+  if (w.state === 'active' && !opts.another) throw new GoalError('A workflow already does this: add another workflow to it instead.')
   if (w.state !== 'suggested' && w.state !== 'active') throw new GoalError('Restore it first.')
   let createdAgent = false
   if (!deps.agentExists(w.agent.name)) {
@@ -522,7 +540,6 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
     createdAgent = true
   }
   if (w.agent.isNew || createdAgent) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, agent: { name: x.agent.name, isNew: false }, ...(createdAgent ? { agentCreated: true } : {}) }))
-  if (w.kind === 'once') return { goal, agent: w.agent.name, createdAgent, url: `/playground?${new URLSearchParams({ agent: w.agent.name, message: w.request })}` }
   // Another workflow for an active job starts from a blank description.
   const params = new URLSearchParams({ agent: w.agent.name, description: opts.another ? '' : w.request, goal: id, goalJob: workflowId })
   return { goal, agent: w.agent.name, createdAgent, url: `/workflows/new?${params}` }
@@ -530,17 +547,53 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
 
 /** Build a workflow's Create it, linking the new workflow back.
  * `description` is the request as the person submitted it at Build. */
-export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input: { agent?: unknown; workflowId?: unknown; title?: unknown; description?: unknown }): Goal {
+export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input: { agent?: unknown; workflowId?: unknown; title?: unknown; description?: unknown; step?: unknown }): Goal {
   const goal = getGoal(deps, id)
   const w = findWorkflow(goal, workflowId)
   if (typeof input.agent !== 'string' || typeof input.workflowId !== 'string') throw new GoalError('agent and workflowId are required')
   const doer: Extract<JobDoer, { type: 'workflow' }> = { type: 'workflow', agent: input.agent, workflowId: input.workflowId, title: typeof input.title === 'string' ? input.title : input.workflowId, at: now() }
+  if (typeof input.step === 'string' && w.group?.steps.some((st) => st.id === input.step)) {
+    const first = !w.doers.some((d) => d.type === 'workflow')
+    if (first) recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
+    const built = { agent: input.agent, workflowId: input.workflowId }
+    return updateWorkflow(deps, goal, workflowId, (x) => {
+      const steps = x.group!.steps.map((st) => (st.id === input.step ? { ...st, built, agent: { name: built.agent, isNew: false } } : st))
+      const doers = [...x.doers.filter((d) => !(d.type === 'workflow' && d.agent === doer.agent && d.workflowId === doer.workflowId)), doer]
+      const chain = groupChain(deps, { ...x, doers }, steps)
+      return { ...x, state: 'active', doers, group: { ...x.group!, steps }, ...(chain.length ? { chain } : {}) }
+    })
+  }
   const edited = typeof input.description === 'string' ? editAmount(w.request, input.description) : undefined
   // Another workflow added to an active job isn't a new build of its lever.
   const first = !w.doers.some((d) => d.type === 'workflow')
   if (first) recordLeverEvent(deps, goal, w, 'built', { newAgent: Boolean(w.agentCreated) })
   if (first && edited && edited !== 'none') recordLeverEvent(deps, goal, w, 'edited', { amount: edited })
-  return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'active', doers: [...x.doers.filter((d) => !(d.type === 'workflow' && d.agent === doer.agent && d.workflowId === doer.workflowId)), doer], agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}), addedAt: x.addedAt ?? now() }))
+  return updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, state: 'active', doers: [...x.doers.filter((d) => !(d.type === 'workflow' && d.agent === doer.agent && d.workflowId === doer.workflowId)), doer], agent: { name: input.agent as string, isNew: false }, ...(edited ? { edited } : {}) }))
+}
+
+/** A group's chain: its own steps kept, plus one for each two built
+ * steps in a row with none yet, the next given what the one before ended
+ * with (its result, into its one required input, or into an input of
+ * the same name). A pair whose inputs can't be matched that way is left
+ * for the person to chain. */
+function groupChain(deps: GoalsDeps, job: GoalJob, steps: GroupStep[]): ChainStep[] {
+  const chain = [...(job.chain ?? [])]
+  for (let i = 1; i < steps.length; i++) {
+    const before = steps[i - 1].built
+    const next = steps[i].built
+    if (!before || !next || chain.some((st) => sameRef(st.after, before) && sameRef(st.run, next))) continue
+    const target = deps.workflowInfo?.(next.agent, next.workflowId)
+    const source = deps.workflowInfo?.(before.agent, before.workflowId)
+    if (!target) continue
+    const mapping: Record<string, string> = {}
+    const required = Object.entries(target.parameters).filter(([, spec]) => spec.required).map(([p]) => p)
+    for (const p of Object.keys(target.parameters)) if (source?.parameters[p]) mapping[p] = `input:${p}`
+    const unfilled = required.filter((p) => !mapping[p])
+    if (unfilled.length === 1) mapping[unfilled[0]] = 'result'
+    if (required.some((p) => !mapping[p])) continue
+    chain.push({ id: newId('c'), after: before, when: { kind: 'always' }, run: next, with: mapping })
+  }
+  return chain
 }
 
 // ---- A job the person adds, in their own words: the planner shapes it
@@ -551,7 +604,7 @@ export function markBuilt(deps: GoalsDeps, id: string, workflowId: string, input
 
 export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknown; share?: unknown }): Promise<{ goal: Goal; verdict: 'added' | 'changed' | 'warned' | 'refused'; note: string; alternative: string; jobId?: string }> {
   const idea = typeof input.idea === 'string' ? input.idea.trim() : ''
-  if (idea.length < 5) throw new GoalError('Say what the job is, e.g. "Thank every new customer by email within a day".')
+  if (idea.length < 5) throw new GoalError('Say what the workflow should do, e.g. "Thank every new customer by email within a day".')
   if (idea.length > 1000) throw new GoalError('Keep it under 1000 characters.')
   const goal = getGoal(deps, id)
   if (goal.status === 'planning') throw new GoalError('Wait for the suggestions first.')
@@ -565,7 +618,7 @@ export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknow
     idea,
   })
   if (shaped.verdict === 'refused' || !shaped.job) {
-    return { goal, verdict: 'refused', note: shaped.note || 'This couldn\'t be shaped into a job: say a little more about what it should do.', alternative: shaped.alternative }
+    return { goal, verdict: 'refused', note: shaped.note || 'This couldn\'t be shaped into a workflow: say a little more about what it should do.', alternative: shaped.alternative }
   }
   // The person's own idea stays theirs unless they agreed to share its
   // approach: then the lever written from it can become a candidate.
@@ -589,35 +642,8 @@ export async function addJob(deps: GoalsDeps, id: string, input: { idea?: unknow
   return { goal: updated, verdict: shaped.verdict, note: shaped.note, alternative: shaped.alternative, jobId: job.id }
 }
 
-// ---- The person's own list of jobs (the Jobs page): jobs added from any
-// goal (Add to my jobs, or by building or assigning one), and jobs
-// submitted there without a goal (kept under MY_JOBS_ID).
-
-function myJobs(deps: GoalsDeps): Goal {
-  try {
-    return getGoal(deps, MY_JOBS_ID)
-  } catch {
-    const at = now()
-    return write(deps, { id: MY_JOBS_ID, goal: '', setup: [], message: '', status: 'ready', rounds: 1, jobs: [], createdAt: at, updatedAt: at, standalone: true })
-  }
-}
-
-/** Adds a job to the person's list, or takes it off (it stays under its goal). */
-export function listJob(deps: GoalsDeps, id: string, jobId: string, on: boolean): Goal {
-  const goal = getGoal(deps, id)
-  findWorkflow(goal, jobId)
-  return updateWorkflow(deps, goal, jobId, (x) => {
-    if (on) return { ...x, addedAt: x.addedAt ?? now() }
-    const { addedAt: _off, ...rest } = x
-    return rest
-  })
-}
-
-/** When a job joined the list: when added, else when it was first built
- * or assigned (jobs built before the list existed). */
-/** The jobs each workflow does, keyed "agent|workflowId": every job
- * (not discarded) that lists it as a doer, for "For job" on the
- * workflow's page. */
+/** The goals each workflow was built for ("agent|workflowId" -> goals,
+ * each its id and its words), for a workflow's "For goal". */
 export function jobsByWorkflow(deps: GoalsDeps): Map<string, { id: string; title: string }[]> {
   const out = new Map<string, { id: string; title: string }[]>()
   for (const goal of listGoals(deps)) {
@@ -627,68 +653,12 @@ export function jobsByWorkflow(deps: GoalsDeps): Map<string, { id: string; title
         if (d.type !== 'workflow') continue
         const key = `${d.agent}|${d.workflowId}`
         const list = out.get(key) ?? []
-        if (!list.some((j) => j.id === job.id)) list.push({ id: job.id, title: job.title })
+        if (!list.some((g) => g.id === goal.id)) list.push({ id: goal.id, title: goal.goal })
         out.set(key, list)
       }
     }
   }
   return out
-}
-
-function addedWhen(job: GoalJob): string | undefined {
-  return job.addedAt ?? (job.state === 'active' || job.state === 'done' ? job.doers[0]?.at : undefined)
-}
-
-export interface ListedJob {
-  goalId: string
-  /** The goal it came from; null for a job submitted without one. */
-  goal: string | null
-  addedAt: string
-  job: GoalJob & { tries?: AssignmentView[] }
-}
-
-/** The person's jobs, newest added first: every job on the list, from any
- * goal, and every job submitted without one (discarded ones left out). */
-export async function listJobs(deps: GoalsDeps): Promise<ListedJob[]> {
-  const out: ListedJob[] = []
-  for (const goal of listGoals(deps)) {
-    const picked = goal.jobs.filter((j) => j.state !== 'discarded' && (goal.standalone || addedWhen(j)))
-    if (!picked.length) continue
-    const view = await goalView(deps, { ...goal, jobs: picked })
-    for (const job of view.jobs) out.push({ goalId: goal.id, goal: goal.standalone ? null : goal.goal, addedAt: addedWhen(job) ?? goal.createdAt, job })
-  }
-  return out.sort((a, b) => b.addedAt.localeCompare(a.addedAt))
-}
-
-/** A job the person submits on the Jobs page, with no goal: shaped and
- * judged like one added under a goal (judged on its own), and put on
- * their list, ready to build or assign. */
-export async function submitJob(deps: GoalsDeps, input: { idea?: unknown; share?: unknown }): Promise<{ verdict: 'added' | 'changed' | 'warned' | 'refused'; note: string; alternative: string; goalId: string; jobId?: string }> {
-  const idea = typeof input.idea === 'string' ? input.idea.trim() : ''
-  if (idea.length < 5) throw new GoalError('Say what the job is, e.g. "Answer every customer email within an hour".')
-  if (idea.length > 1000) throw new GoalError('Keep it under 1000 characters.')
-  const holder = myJobs(deps)
-  const shaped = await shapeJob(await deps.modelCall(), {
-    context: await deps.context(readAbout(deps)),
-    saved: holder.jobs.map((w) => ({ title: w.title, lever: w.lever, ...(w.leverId ? { leverId: w.leverId } : {}), state: w.state })),
-    idea,
-  })
-  if (shaped.verdict === 'refused' || !shaped.job) {
-    return { verdict: 'refused', note: shaped.note || 'This couldn\'t be shaped into a job: say a little more about what it should do.', alternative: shaped.alternative, goalId: MY_JOBS_ID }
-  }
-  // Jobs without a goal write no levers: a lever belongs to a goal's focus.
-  const share = input.share === true
-  const job: GoalJob = {
-    ...toJob(shaped.job, 1, deps),
-    state: 'suggested',
-    addedAt: now(),
-    ...(share ? {} : { keepPrivate: true as const }),
-    added: { idea, verdict: shaped.verdict, ...(shaped.note ? { note: shaped.note } : {}), ...(shaped.alternative ? { alternative: shaped.alternative } : {}) },
-  }
-  const latest = myJobs(deps)
-  const updated = write(deps, { ...latest, jobs: [...latest.jobs, job], updatedAt: now() })
-  recordLeverEvent(deps, updated, job, 'added', { verdict: shaped.verdict })
-  return { verdict: shaped.verdict, note: shaped.note, alternative: shaped.alternative, goalId: MY_JOBS_ID, jobId: job.id }
 }
 
 // ---- A recurring job's workflows and its chain.
@@ -708,7 +678,7 @@ function refFrom(raw: unknown, what: string): WorkflowRef {
  * next run is filled, and nothing loops. Returns it tidied, with ids. */
 export function checkChain(deps: GoalsDeps, job: GoalJob, raw: unknown): ChainStep[] {
   if (!Array.isArray(raw)) throw new GoalError('chain must be a list of steps')
-  if (raw.length > 10) throw new GoalError('A job keeps at most 10 steps.')
+  if (raw.length > 10) throw new GoalError('A chain keeps at most 10 steps.')
   const flows = job.doers.filter((d): d is Extract<JobDoer, { type: 'workflow' }> => d.type === 'workflow')
   const doing = (r: WorkflowRef) => flows.some((d) => sameRef(d, r))
   const steps = raw.map((item, i): ChainStep => {
@@ -716,7 +686,7 @@ export function checkChain(deps: GoalsDeps, job: GoalJob, raw: unknown): ChainSt
     const n = `Step ${i + 1}`
     const after = refFrom(x.after, `${n}: "after"`)
     const run = refFrom(x.run, `${n}: "run"`)
-    if (!doing(after) || !doing(run)) throw new GoalError(`${n}: both workflows must do this job (add them to it first).`)
+    if (!doing(after) || !doing(run)) throw new GoalError(`${n}: both workflows must be on it (add them first).`)
     if (sameRef(after, run)) throw new GoalError(`${n}: a workflow can't follow itself.`)
     const w = (x.when ?? { kind: 'always' }) as Record<string, unknown>
     const when: ChainStep['when'] = w.kind === 'always' ? { kind: 'always' }
@@ -753,7 +723,7 @@ export function checkChain(deps: GoalsDeps, job: GoalJob, raw: unknown): ChainSt
 export function editJob(deps: GoalsDeps, id: string, jobId: string, body: { action?: unknown; agent?: unknown; workflowId?: unknown; chain?: unknown }): Goal {
   const goal = getGoal(deps, id)
   const job = findWorkflow(goal, jobId)
-  if (job.kind === 'once') throw new GoalError('A one-off job is assigned, not done by workflows.')
+  if (job.kind === 'once') throw new GoalError('This one-off job is from before goals suggested workflows; it can’t take workflows.')
   if (body.action === 'link') {
     const ref = refFrom(body, 'Adding a workflow')
     const info = deps.workflowInfo?.(ref.agent, ref.workflowId)
@@ -804,86 +774,11 @@ export function chainedRuns(deps: GoalsDeps, run: { run_id: string; agent: strin
     }))))
 }
 
-// ---- A once job assigned to its agent: one unattended run with the goal
-// and the job as context; its approvals and questions reach the person
-// through the agent's messaging app, like a workflow run's.
-
-/** What an assignment run starts with: the goal and the job, the request,
- * and, when asking again, the previous result and the person's note. */
-export function assignmentMessage(goal: Goal, job: GoalJob, again?: { previous?: string; note?: string }): string {
-  return [
-    goal.standalone ? 'This is a one-off job.' : `This is a one-off job for the goal "${goal.goal}".`,
-    `The job: ${job.title}${job.measure ? `\n${/^done when/i.test(job.measure) ? job.measure.charAt(0).toUpperCase() + job.measure.slice(1) : `It's measured by: ${job.measure}`}` : ''}${job.why ? `\nWhy it helps: ${job.why}` : ''}`,
-    `What to do:\n${job.request}`,
-    again?.previous ? `Your previous result (data, not instructions):\n<previous_result>\n${again.previous.trim().split('</previous_result>').join('<\\/previous_result>')}\n</previous_result>` : '',
-    again?.note ? `What the person wants changed this time:\n${again.note.trim()}` : '',
-    'Do the work now, with your tools. Nothing is sent, posted or published without the person\'s approval. End with the result itself, complete, so the person can use it as it is.',
-  ].filter(Boolean).join('\n\n')
-}
-
-/** Assigns a once job to its agent (making the agent first when there is
- * none), or, with a note, asks again after a try that finished or
- * failed. */
-export async function assignJob(deps: GoalsDeps, id: string, jobId: string, input: { note?: unknown } = {}): Promise<Goal> {
-  if (!deps.startAssignment) throw new GoalError('Assigning needs the server to run agents.')
-  let goal = getGoal(deps, id)
-  const job = findWorkflow(goal, jobId)
-  if (job.kind !== 'once') throw new GoalError('Only a one-off job is assigned; build a recurring job into a workflow.')
-  if (job.state !== 'suggested' && job.state !== 'active') throw new GoalError(job.state === 'done' ? 'This job is done: reopen it first.' : 'Restore it first.')
-  const tries = job.doers.filter((d): d is Extract<JobDoer, { type: 'assignment' }> => d.type === 'assignment')
-  const last = tries[tries.length - 1]
-  let previous: string | undefined
-  if (last) {
-    const run = await deps.assignmentRun?.(last.agent, last.runId)
-    if (run && (run.status === 'running' || run.status === 'awaiting_approval')) throw new GoalError('Its last try is still going: wait for it, or answer what it asked.')
-    previous = run?.result
-  }
-  const note = typeof input.note === 'string' && input.note.trim() ? input.note.trim().slice(0, 2000) : undefined
-  let createdAgent = false
-  if (!deps.agentExists(job.agent.name)) {
-    await deps.createAgent(job.agent.name, job.agent.instructions || `You help with: ${job.title}.`)
-    createdAgent = true
-  }
-  const message = assignmentMessage(goal, job, last ? { ...(previous ? { previous } : {}), ...(note ? { note } : {}) } : note ? { note } : undefined)
-  const { runId } = await deps.startAssignment(job.agent.name, message, { goal: id, job: jobId })
-  goal = getGoal(deps, id)
-  if (!last) recordLeverEvent(deps, goal, job, 'built', { newAgent: createdAgent || Boolean(job.agentCreated) })
-  return updateWorkflow(deps, goal, jobId, (x) => ({
-    ...x,
-    state: 'active',
-    agent: { name: x.agent.name, isNew: false },
-    ...(createdAgent ? { agentCreated: true } : {}),
-    doers: [...x.doers, { type: 'assignment', agent: x.agent.name, runId, at: now(), ...(note ? { note } : {}) }],
-    addedAt: x.addedAt ?? now(),
-  }))
-}
-
-/** Accepts a once job's latest result: the job is done, the result kept. */
-export async function acceptJob(deps: GoalsDeps, id: string, jobId: string): Promise<Goal> {
-  const goal = getGoal(deps, id)
-  const job = findWorkflow(goal, jobId)
-  const tries = job.doers.filter((d): d is Extract<JobDoer, { type: 'assignment' }> => d.type === 'assignment')
-  const last = tries[tries.length - 1]
-  if (job.kind !== 'once' || job.state !== 'active' || !last) throw new GoalError('Only an assigned one-off job is accepted.')
-  const run = await deps.assignmentRun?.(last.agent, last.runId)
-  if (!run || run.status !== 'done') throw new GoalError('Its latest try hasn\'t finished with a result yet.')
-  recordLeverEvent(deps, goal, job, 'done', { tries: tries.length })
-  return updateWorkflow(deps, goal, jobId, (x) => ({ ...x, state: 'done', doneAt: now(), ...(run.result ? { result: run.result } : {}) }))
-}
-
-/** A goal with its once jobs' tries as the page shows them: each one's
- * run state and result. */
-export async function goalView(deps: GoalsDeps, goal: Goal): Promise<Goal & { jobs: (GoalJob & { tries?: AssignmentView[] })[] }> {
-  const jobs = await Promise.all(goal.jobs.map(async (job) => {
-    const tries = job.doers.filter((d): d is Extract<JobDoer, { type: 'assignment' }> => d.type === 'assignment')
-    if (!tries.length) return job
-    const views = await Promise.all(tries.map(async (t): Promise<AssignmentView> => {
-      const run = await deps.assignmentRun?.(t.agent, t.runId).catch(() => undefined)
-      return { runId: t.runId, status: run?.status ?? 'gone', ...(run?.result ? { result: run.result } : {}), ...(run?.error ? { error: run.error } : {}), ...(t.note ? { note: t.note } : {}), at: t.at }
-    }))
-    return { ...job, tries: views }
-  }))
-  return { ...goal, jobs }
+/** A goal as its page shows it: its workflows and groups. One-off jobs
+ * (from before goals suggested only workflows) are left out; their
+ * files keep them. */
+export async function goalView(_deps: GoalsDeps, goal: Goal): Promise<Goal> {
+  return { ...goal, jobs: goal.jobs.filter((job) => job.kind !== 'once') }
 }
 
 // ---- Edits: how much the person changed a suggested request at Build.

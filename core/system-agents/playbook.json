@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "focuses": [
     {
       "id": "new-signups",
@@ -38,7 +38,6 @@
       "id": "new-signups.answer-intent-posts",
       "focus": "new-signups",
       "name": "Answer people asking for what you do",
-      "kind": "recurring",
       "mechanism": "People with the problem ask about it in public; a genuinely helpful answer at that moment earns attention and clicks.",
       "fitsWhen": [
         "the problem is discussed in public communities",
@@ -72,7 +71,6 @@
       "id": "new-signups.directory-listings",
       "focus": "new-signups",
       "name": "Get listed where people look for tools",
-      "kind": "once",
       "mechanism": "Directories, curated lists and comparison articles send visitors for months to every product they include.",
       "fitsWhen": [
         "the product is software people choose from lists",
@@ -99,7 +97,6 @@
       "id": "new-signups.use-case-pages",
       "focus": "new-signups",
       "name": "A page for each job people search for",
-      "kind": "recurring",
       "mechanism": "People search for the job, not the product; a page answering that job brings visitors from search for a long time.",
       "fitsWhen": [
         "the product does several distinct jobs people search for",
@@ -126,7 +123,6 @@
       "id": "new-signups.creator-outreach",
       "focus": "new-signups",
       "name": "Pitch creators who cover this space",
-      "kind": "recurring",
       "mechanism": "One newsletter, video or blog mention reaches thousands of the right people at once.",
       "fitsWhen": [
         "creators cover the category or its competitors",
@@ -156,7 +152,6 @@
       "id": "new-signups.competitor-switchers",
       "focus": "new-signups",
       "name": "Help people unhappy with a competitor",
-      "kind": "recurring",
       "mechanism": "People complaining about the tool they use are the easiest to win, if the answer is helpful rather than a pitch.",
       "fitsWhen": [
         "there are well-known competitors people complain about publicly"
@@ -187,7 +182,6 @@
       "id": "new-signups.marketplace-listings",
       "focus": "new-signups",
       "name": "List in the marketplaces your users already use",
-      "kind": "once",
       "mechanism": "App stores and integration marketplaces put the product in front of people already looking inside the tools they use.",
       "fitsWhen": [
         "the product integrates with platforms that have marketplaces (Shopify, Slack, Zapier…)"
@@ -206,13 +200,12 @@
       "guardrails": [
         "Nothing is posted, sent or published without the person’s approval."
       ],
-      "template": "Find the marketplaces for {platforms} where {product} could be listed, check what each needs, and draft each listing for me to submit. Check monthly for new ones."
+      "template": "On the first Monday of each month, find marketplaces for {platforms} where {product} isn’t listed yet (new ones included), check what each needs, and draft each listing for me to submit in {channel}."
     },
     {
       "id": "new-signups.local-reviews",
       "focus": "new-signups",
       "name": "Ask happy customers for reviews",
-      "kind": "recurring",
       "mechanism": "New customers choose by reviews; asking satisfied customers at the right moment multiplies them.",
       "fitsWhen": [
         "a business whose customers pick by reviews (local services, shops, apps)"
@@ -242,7 +235,6 @@
       "id": "activation.personal-welcome",
       "focus": "activation",
       "name": "A personal welcome",
-      "kind": "recurring",
       "mechanism": "A personal note in the first hour gets replies and tells new users someone will help them succeed.",
       "fitsWhen": [
         "signups can be detected (webhook or list)",
@@ -271,7 +263,6 @@
       "id": "activation.first-step-nudge",
       "focus": "activation",
       "name": "Nudge people who haven’t taken the first step",
-      "kind": "recurring",
       "mechanism": "Most signups stall before the first success; a timely, specific nudge brings many back.",
       "fitsWhen": [
         "the first key step can be checked for each user"
@@ -300,7 +291,6 @@
       "id": "activation.stuck-user-help",
       "focus": "activation",
       "name": "Spot users who are stuck",
-      "kind": "recurring",
       "mechanism": "Errors and repeated failed attempts mark people about to give up; reaching out first saves them.",
       "fitsWhen": [
         "errors or failed attempts are visible per user"
@@ -328,7 +318,6 @@
       "id": "retention.value-recap",
       "focus": "retention",
       "name": "Show users what they got",
-      "kind": "recurring",
       "mechanism": "People keep what they can see working; a short recap of results makes value visible.",
       "fitsWhen": [
         "the product produces results that can be counted per user"
@@ -357,7 +346,6 @@
       "id": "retention.quiet-account-check",
       "focus": "retention",
       "name": "Check in with accounts going quiet",
-      "kind": "recurring",
       "mechanism": "Usage drops before people leave; a check-in at the drop finds the reason while there is still time.",
       "fitsWhen": [
         "usage per account can be tracked"
@@ -385,7 +373,6 @@
       "id": "retention.feedback-after-success",
       "focus": "retention",
       "name": "Ask for feedback right after a success",
-      "kind": "recurring",
       "mechanism": "Asking at a moment of success gets honest feedback and strengthens the habit.",
       "fitsWhen": [
         "successes are visible per user"
@@ -414,7 +401,6 @@
       "id": "faster-support.reply-drafts",
       "focus": "faster-support",
       "name": "Draft replies from the customer’s data",
-      "kind": "recurring",
       "mechanism": "Most replies need the same lookups; a draft that already has the order or account facts cuts each reply to a quick check.",
       "fitsWhen": [
         "support questions are about orders, accounts or bookings the agent can look up"
@@ -444,7 +430,6 @@
       "id": "faster-support.triage-routing",
       "focus": "faster-support",
       "name": "Sort and route what comes in",
-      "kind": "recurring",
       "mechanism": "Tickets wait longest while nobody knows whose they are; sorting on arrival gets each to the right person or answer.",
       "fitsWhen": [
         "several kinds of request or several people handle them"
@@ -471,7 +456,6 @@
       "id": "faster-support.backlog-sweep",
       "focus": "faster-support",
       "name": "Sweep the backlog daily",
-      "kind": "recurring",
       "mechanism": "Old unanswered requests hurt most; a daily list of what’s waiting longest stops anything from being forgotten.",
       "fitsWhen": [
         "requests sometimes wait more than a day"
@@ -498,7 +482,6 @@
       "id": "faster-support.faq-gaps",
       "focus": "faster-support",
       "name": "Find the questions your help pages don’t answer",
-      "kind": "recurring",
       "mechanism": "The same questions keep coming because the answer isn’t written down; finding them prevents tickets.",
       "fitsWhen": [
         "there are help pages or an FAQ",
@@ -525,7 +508,6 @@
       "id": "revenue-recovery.failed-payments",
       "focus": "revenue-recovery",
       "name": "Follow up failed payments",
-      "kind": "recurring",
       "mechanism": "Many failed payments are expired cards; a friendly, quick note recovers a large share.",
       "fitsWhen": [
         "subscriptions or invoices are paid by card"
@@ -555,7 +537,6 @@
       "id": "revenue-recovery.abandoned-checkouts",
       "focus": "revenue-recovery",
       "name": "Follow up abandoned checkouts",
-      "kind": "recurring",
       "mechanism": "Shoppers who leave at checkout often meant to buy; a timely reminder brings some back.",
       "fitsWhen": [
         "an online store with checkout data"
@@ -585,7 +566,6 @@
       "id": "revenue-recovery.win-back",
       "focus": "revenue-recovery",
       "name": "Win back people who left",
-      "kind": "recurring",
       "mechanism": "Some people who cancelled left for a reason that has since changed; asking why and what’s new brings some back.",
       "fitsWhen": [
         "cancellations are recorded with a date"
@@ -615,7 +595,6 @@
       "id": "ops-hygiene.exception-report",
       "focus": "ops-hygiene",
       "name": "A daily report of what went wrong",
-      "kind": "recurring",
       "mechanism": "Problems hidden in systems grow; a short daily list of exceptions catches them while they are small.",
       "fitsWhen": [
         "orders, jobs or payments can fail or stall"
@@ -645,7 +624,6 @@
       "id": "ops-hygiene.stuck-items",
       "focus": "ops-hygiene",
       "name": "Find what’s stuck",
-      "kind": "recurring",
       "mechanism": "Orders or tasks stuck in one state for days usually mean something broke; finding them early saves customers.",
       "fitsWhen": [
         "items move through states (orders, shipments, tickets)"
@@ -674,7 +652,6 @@
       "id": "ops-hygiene.deadline-reminders",
       "focus": "ops-hygiene",
       "name": "Remind before deadlines",
-      "kind": "recurring",
       "mechanism": "Missed renewals, filings and follow-ups cost money; a reminder with what’s needed arrives in time.",
       "fitsWhen": [
         "recurring deadlines (renewals, invoices, filings)"

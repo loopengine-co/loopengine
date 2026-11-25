@@ -1,6 +1,6 @@
-// The console's front page (/): each goal, the jobs that move it, and the
-// workflows that do each job, one tinted level under the other; then jobs
-// with no goal, and workflows no job points to. Its data is
+// The console's home page (/home): each goal, and the workflows and
+// groups of workflows built for it, one tinted level under the other;
+// then workflows no goal points to. Its data is
 // homeOverview (web/workflows-overview.ts) behind /home/overview. Every
 // workflow on its own, as a table, stays at /workflows.
 // Like the other console pages, its inline script avoids backslashes and
@@ -73,7 +73,7 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Home</h1><p>What you want to achieve, the jobs that move it, and the workflows that do them.</p></div>
+        <div><h1>Home</h1><p>What you want to achieve, and the workflows and groups of workflows that move it.</p></div>
       </div>
       <a class="hm-new" href="/goals?new=1">New goal</a>
     </div>
@@ -93,9 +93,10 @@ ${consoleShellScript}
   }
   function agentTag(name) { return '<span class="hm-tag hm-t-agent">' + esc(name) + '</span>'; }
 
-  // How a job is done: its workflows, a chained one marked "then";
-  // a one-off job's assignment; or not built yet.
+  // A workflow or group's workflows, a chained one marked "then", and a
+  // group's steps not built yet.
   function howHtml(j) {
+    var unbuilt = j.group ? j.group.steps.filter(function (st) { return !st.built; }) : [];
     if (j.flows.length) {
       return '<div class="hm-node hm-how">' + j.flows.map(function (f) {
         return '<div class="hm-row">' +
@@ -104,29 +105,25 @@ ${consoleShellScript}
           (f.gone ? '<span class="hm-m">no longer on this agent</span>' : f.starts.length ? '<span class="hm-m">' + esc(f.starts.join(DOT)) + '</span>' : '') +
           (f.waiting ? '<a class="hm-tag hm-t-warn" href="/inbox">' + f.waiting + ' waiting</a>' : '') +
         '</div>';
-      }).join('') + '</div>';
+      }).join('') + unbuilt.map(function (st) { return '<div class="hm-row"><span class="hm-m">then ' + String.fromCharCode(8594) + ' ' + esc(st.name) + ', not built yet</span></div>'; }).join('') + '</div>';
     }
-    if (j.kind === 'once' && (j.state === 'active' || j.state === 'done')) {
-      return '<div class="hm-node hm-how"><div class="hm-row"><span class="hm-tag hm-t-how">Assignment</span>' + agentTag(j.agent) + '<span class="hm-m">one run, its result kept with the job</span></div></div>';
-    }
-    return '<div class="hm-node hm-how"><div class="hm-row"><span class="hm-m">' + (j.kind === 'once' ? 'Not assigned yet' : 'No workflow yet') + DOT + '<a href="/jobs?job=' + encodeURIComponent(j.id) + '">' + (j.kind === 'once' ? 'Give it to an agent' : 'Build a workflow') + '</a></span></div></div>';
+    return '';
   }
 
-  function jobHtml(j) {
-    var once = j.kind === 'once';
-    var measure = !j.measure ? '' : once && j.measure.toLowerCase().indexOf('done when') !== 0 ? 'done when: ' + j.measure : once ? j.measure : 'measured by: ' + j.measure;
-    return '<div class="hm-node hm-job"><div class="hm-row"><span class="hm-tag hm-t-job">Job</span>' +
-        '<strong><a href="/jobs?job=' + encodeURIComponent(j.id) + '">' + esc(j.title) + '</a></strong>' +
-        '<span class="hm-m">' + (once ? 'once' : 'recurring') + (j.state === 'done' ? DOT + 'done' : '') + '</span></div>' +
-        (measure ? '<span class="hm-m">' + esc(measure) + '</span>' : '') +
-      '</div>' + (j.state === 'done' ? '' : howHtml(j));
+  // A goal's workflow, or group of workflows that run in order.
+  function itemHtml(j, goalId) {
+    return '<div class="hm-node hm-job"><div class="hm-row"><span class="hm-tag hm-t-job">' + (j.group ? 'Group' : 'Workflow') + '</span>' +
+        '<strong><a href="/goals?goal=' + encodeURIComponent(goalId) + '">' + esc(j.title) + '</a></strong>' +
+        (j.group ? '<span class="hm-m">' + j.group.steps.length + ' workflows in order</span>' : '') + '</div>' +
+        (j.measure ? '<span class="hm-m">measured by: ' + esc(j.measure) + '</span>' : '') +
+      '</div>' + howHtml(j);
   }
 
   function goalHtml(g) {
     return '<div class="hm-tree">' +
       '<div class="hm-node hm-goal"><div class="hm-row"><span class="hm-tag hm-t-goal">Goal</span><strong><a href="/goals?goal=' + encodeURIComponent(g.id) + '">' + esc(g.goal) + '</a></strong></div>' +
         (g.measure ? '<span class="hm-m">measured by: ' + esc(g.measure) + '</span>' : '') + '</div>' +
-      (g.jobs.length ? g.jobs.map(jobHtml).join('') : '<div class="hm-node hm-job"><span class="hm-m">No jobs picked yet' + DOT + '<a href="/goals?goal=' + encodeURIComponent(g.id) + '">See its suggestions</a></span></div>') +
+      (g.jobs.length ? g.jobs.map(function (j) { return itemHtml(j, g.id); }).join('') : '<div class="hm-node hm-job"><span class="hm-m">Nothing built yet' + DOT + '<a href="/goals?goal=' + encodeURIComponent(g.id) + '">See its suggestions</a></span></div>') +
     '</div>';
   }
 
@@ -140,16 +137,15 @@ ${consoleShellScript}
   function renderEmpty() {
     page.innerHTML =
       '<div class="hm-empty"><h2>Nothing set up yet</h2>' +
-        '<p class="hint" style="margin:0">Say what you want to achieve and LoopEngine breaks it into jobs, each done by an agent. Or go straight to a workflow: how an agent does something again and again.</p>' +
+        '<p class="hint" style="margin:0">Say what you want to achieve and LoopEngine suggests workflows that move it, and groups of workflows that run in order. Or go straight to a workflow: how an agent does something again and again.</p>' +
         '<div class="hm-ways">' +
-          '<a class="hm-way" href="/goals?new=1"><b>Start from a goal</b><span>Get jobs suggested for what you want to achieve.</span></a>' +
-          '<a class="hm-way" href="/jobs?new=1"><b>Add a job</b><span>Something that needs doing, in your own words.</span></a>' +
+          '<a class="hm-way" href="/goals?new=1"><b>Start from a goal</b><span>Get workflows suggested for what you want to achieve.</span></a>' +
           '<a class="hm-way" href="/workflows/new"><b>Build a workflow</b><span>Say what the agent should do, or start from an example.</span></a>' +
         '</div></div>';
   }
 
   function render(d) {
-    if (!d.goals.length && !d.jobs.length && !d.workflows.length) return renderEmpty();
+    if (!d.goals.length && !d.workflows.length) return renderEmpty();
     var s = d.summary;
     var html =
       '<div class="hm-stats">' +
@@ -158,8 +154,7 @@ ${consoleShellScript}
         '<a class="hm-stat" href="/workflows"><b>' + s.failedThisWeek + '</b><span>Failed in the last 7 days</span></a>' +
       '</div>';
     if (d.goals.length) html += '<div class="hm-section"><h2>Goals</h2>' + d.goals.map(goalHtml).join('') + '</div>';
-    if (d.jobs.length) html += '<div class="hm-section"><h2>' + (d.goals.length ? 'Jobs without a goal' : 'Jobs') + '</h2><div class="hm-tree flat">' + d.jobs.map(jobHtml).join('') + '</div></div>';
-    if (d.loose.length) html += '<div class="hm-section"><h2>' + (d.goals.length || d.jobs.length ? 'Workflows not in a job' : 'Workflows') + '</h2><div class="hm-tree loose">' + d.loose.map(looseHtml).join('') + '</div></div>';
+    if (d.loose.length) html += '<div class="hm-section"><h2>' + (d.goals.length ? 'Workflows not for a goal' : 'Workflows') + '</h2><div class="hm-tree loose">' + d.loose.map(looseHtml).join('') + '</div></div>';
     page.innerHTML = html;
   }
 

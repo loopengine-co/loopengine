@@ -101,11 +101,7 @@ export interface GoalNeed { name: string; kind: string; connected: boolean }
 
 export interface PlannedGoalWorkflow {
   title: string
-  /** recurring: a workflow runs it again and again. once: one piece of
-   * work (a finite list, a one-time audit) an agent does once. */
-  kind: 'recurring' | 'once'
-  /** The job's own number ("replies per week"), or for a once job what
-   * done looks like ("done when: 20 communities are listed"). */
+  /** Its own number, in the person's terms ("replies per week"). */
   measure: string
   /** The playbook lever's id, when it comes from the playbook. */
   leverId?: string
@@ -126,6 +122,24 @@ export interface PlannedGoalWorkflow {
   /** The brief's qualifiers this workflow addresses. */
   covers: string[]
   newIdea: boolean
+  /** A group of workflows instead of one: several that run in order, each
+   * starting when the one before finishes and given its result. `order`
+   * is "sequence" for now; other orders can come later. */
+  group?: PlannedGroup
+}
+
+export interface PlannedGroupStep {
+  /** A short label for the workflow, like a workflow's name ("Lead scan"). */
+  name: string
+  request: string
+  agent: string
+  newAgent?: { name: string; instructions: string }
+  needs: GoalNeed[]
+}
+
+export interface PlannedGroup {
+  order: 'sequence'
+  steps: PlannedGroupStep[]
 }
 
 export interface GoalPlan {
@@ -174,7 +188,7 @@ Call save_brief once:
 - A listed focus is the same focus when the goal is the same kind of work, even worded differently or aimed the other way (losing and gaining weight; hiring support staff and hiring engineers): use it rather than naming a new one.
 - audience, weeklyHours (from the context, else 3), approvals (from the context's rules, else "nothing is posted, sent or published without approval").`
 
-export const GOAL_PLAN_PROMPT = `You plan workflows for a confirmed goal brief in LoopEngine. Each workflow is one recurring job for one AI agent; a person reviews what it drafts.
+export const GOAL_PLAN_PROMPT = `You plan workflows for a confirmed goal brief in LoopEngine. Each suggestion is one workflow (recurring work for one AI agent; a person reviews what it drafts), or a group of workflows that run in order. A small goal may need one or two workflows; a big one several, and groups.
 
 Rules:
 1. Levers first, capabilities second. Choose what moves this focus's measure (the playbook's levers, or your own when the context calls for one), then map each to what the workspace has. Never start from what the connected tools could do.
@@ -183,14 +197,15 @@ Rules:
 3. One lever per workflow, named in a few generic words (no business, product, person, place or site names: "list in app marketplaces", not "list Wick & Ember on Shopify"); no two workflows on the same lever. Never propose a lever already saved under the goal (built, proposed or dismissed): those are listed in the request.
 3b. Choose levers for this goal, not for the focus in general. Look at every lever listed: rule out one whose "not when", needs or the profile's constraints don't fit; prefer the ones that address the profile's bottleneck; pick ones that work in different ways (not three kinds of tracking). In considered, list every lever you looked at with chosen or ruled_out and a short reason tied to this goal ("addresses sticking with it", "no gym: ruled out"). Reuse a listed lever whenever its approach fits, even if it was written for a goal aimed the other way: put what's specific to this goal (the direction, the target, the details) in the workflow's request. Write a new lever only for what no listed lever covers.
 4. Three to five workflows for an "in" goal, ordered by impact against effort, quickest useful one first; startsAfter when one depends on another. Their humanMinutesPerWeek together stay within three quarters of the brief's weeklyHours, so the plan survives a busy week.
-4b. Each one is a job: kind "recurring" when it runs again and again (a weekly scan, a reply to each signup), kind "once" for work on a finite list or done one time (submitting to a set of directories, a one-time audit, researching a list of communities). A once job is done by an agent once, in Chat; never make it a weekly job that runs out of things to do.
-4c. measure: the job's own number, in the person's terms, that shows it's working ("replies per week", "signups tagged ref=directories"); for a once job, what done looks like ("done when: listed in 15 directories"). A playbook lever says the kind and measure it usually has: start from those, and change them only when the context calls for it.
-4d. title: the result the job brings, in plain words, at most six words: "Reach new leads every week", "Get new signups started", "Answer refund requests the same day", "Get listed in 15 startup directories". Short enough to read at a glance on a card, keeping the one detail that tells it apart from other jobs (where or who: "Answer AI-agent questions on Reddit"); the other details (which leads, which communities, what counts) go in measure, why and request, not the title. Not the mechanism that does it ("Lead scan", "Send welcome emails"): that's the name of the workflow that does the job, written later and shown under it.
+4b. Every suggestion runs again and again (a weekly scan, a reply to each signup). Work done one time or on a finite list (a one-time audit, submitting to a set list of directories) isn't a workflow: leave it out, or say in setup what the person does once. Never make a weekly workflow that runs out of things to do.
+4c. measure: its own number, in the person's terms, that shows it's working ("replies per week", "signups tagged ref=directories"). A playbook lever says the measure it usually has: start from it, and change it only when the context calls for it.
+4d. title: the result it brings, in plain words, at most six words: "Reach new leads every week", "Get new signups started", "Answer refund requests the same day". Short enough to read at a glance on a card, keeping the one detail that tells it apart (where or who: "Answer AI-agent questions on Reddit"); the other details go in measure, why and request. Not the mechanism ("Lead scan", "Send welcome emails"): that's a workflow's name.
+4e. group: make a group instead of one workflow when the work happens in stages that hand their result on, each better as its own workflow (its own agent, tools or review): find leads, then draft outreach to each; collect reviews, then reply to the bad ones. Two to four steps, in the order they run; the next starts when the one before finishes and is given its result. Each step has a name (a short label, two or three words, like a workflow's: "Lead scan", "Outreach draft"), its own request, specific to this context, its agent and needs. The group's title, measure, lever and mechanism are for the whole; leave its request and agent the first step's. Don't group workflows that don't hand anything on: suggest them separately.
 5. Specific to this context: name the person's own communities, systems, products and channels in each request. A request anyone could use unchanged is wrong.
 6. needs: what each workflow uses, each with a kind from the playbook's vocabulary and connected true only when the context lists that kind as connected.
 7. Every request that posts, sends or publishes says nothing goes out without the person's approval.
 8. The measure must be readable. When measureSourceConnected is false, setup says how the number will be read: connecting that source (name it, e.g. "connect Clerk's user.created webhook so signups and their ref are recorded"), or, when it can't be connected, a light manual record the person updates weekly (kept with the Records ability). Always record a baseline: the number today. Tag what workflows produce (ref=<channel>) so each one's effect can be told apart.
-8b. setup: what the person does once before the jobs start, at most four steps, each one short sentence (about 20 words at most) saying the action, not the reasoning. When the request lists setup already on the goal, add only what those steps don't cover, usually nothing: never repeat or reword one (the baseline, the signup link, the manual record are said once).
+8b. setup: what the person does once before the workflows start, at most four steps, each one short sentence (about 20 words at most) saying the action, not the reasoning. When the request lists setup already on the goal, add only what those steps don't cover, usually nothing: never repeat or reword one (the baseline, the signup link, the manual record are said once).
 8b. Every qualifier in the brief is covered by at least one workflow that addresses it directly; list it in that workflow's covers.
 9. "partial" scope: at most three workflows, only ones that help the person pursue the goal, and say so in the message ("helps you pursue", never "achieves"). "out" scope: no workflows; the message says plainly why, and offers a smaller or related goal.
 10. agent: an existing agent's exact name when its work fits. When none fits, or there are no agents yet, suggest a new one: agent and newAgent.name the same short lowercase name with hyphens (e.g. "community-agent"), and newAgent.instructions two or three sentences on what it does and how it behaves. Group workflows that belong together in one agent rather than one agent each.
@@ -207,8 +222,9 @@ export const GOAL_CRITIQUE_PROMPT = `You check a goal plan against its rules bef
 - a measure whose source isn't connected, with no setup step (new or already on the goal) that connects it or a manual record, or no baseline;
 - more than four setup steps, a step longer than a sentence, or one that repeats or rewords a step already on the goal;
 - a qualifier from the brief no workflow addresses;
-- a recurring job on a finite list that will run out (it should be kind "once");
-- a job title longer than six words, or one that names the mechanism ("Send welcome emails", "Lead scan") instead of the result it brings ("Get new signups started");
+- a suggestion for one-time work, or one on a finite list that will run out (it should be left out);
+- a title longer than six words, or one that names the mechanism ("Send welcome emails", "Lead scan") instead of the result it brings ("Get new signups started");
+- a group whose steps don't hand their result on, or with fewer than two or more than four steps;
 - a lever in newLevers that names this business, its products, people, places or sites, mixes several approaches, or has no way to see its effect;
 - a workflow made from no lever when the request listed none for this focus (it should come from one of newLevers);
 - a plan claiming to achieve a goal that is only partly in scope, or workflows for an out-of-scope goal.
@@ -256,7 +272,6 @@ const NEW_LEVER_SCHEMA = {
   properties: {
     key: { type: 'string', description: 'a short lowercase-hyphenated key; workflows made from it put this key in leverId' },
     name: { type: 'string', description: 'the approach in a few words' },
-    kind: { type: 'string', enum: ['recurring', 'once'] },
     mechanism: { type: 'string', description: 'why it tends to move the measure, one sentence' },
     fitsWhen: { type: 'array', items: { type: 'string' } },
     notWhen: { type: 'array', items: { type: 'string' } },
@@ -282,9 +297,8 @@ const planTool = (): ToolSchema => ({
         items: {
           type: 'object',
           properties: {
-            title: { type: 'string', description: 'the result the job brings, at most six words ("Reach new leads every week", "Get new signups started"); details go in measure and request, and the mechanism ("Lead scan") is its workflow\'s name' },
-            kind: { type: 'string', enum: ['recurring', 'once'] },
-            measure: { type: 'string', description: "the job's own number, or for a once job what done looks like" },
+            title: { type: 'string', description: 'the result it brings, at most six words ("Reach new leads every week", "Get new signups started"); details go in measure and request, and the mechanism ("Lead scan") is a workflow\'s name' },
+            measure: { type: 'string', description: 'its own number, in the person\'s terms' },
             leverId: { type: 'string', description: "the playbook lever's id, or the key of one of your newLevers" },
             lever: { type: 'string', description: 'the lever in a few generic words, with no names of the business, its products, people, places or sites' },
             focus: { type: 'string' },
@@ -297,6 +311,28 @@ const planTool = (): ToolSchema => ({
             startsAfter: { type: 'string' },
             measureLink: { type: 'string' },
             covers: { type: 'array', items: { type: 'string' }, description: "the brief's qualifiers it addresses" },
+            group: {
+              type: 'object',
+              description: 'only for work in stages that hand their result on: two to four workflows that run in order',
+              properties: {
+                order: { type: 'string', enum: ['sequence'] },
+                steps: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string', description: 'a short label, two or three words ("Lead scan")' },
+                      request: { type: 'string', description: 'the workflow request for this step, specific to this context' },
+                      agent: { type: 'string' },
+                      newAgent: { type: 'object', properties: { name: { type: 'string' }, instructions: { type: 'string' } }, required: ['name', 'instructions'] },
+                      needs: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, kind: { type: 'string' }, connected: { type: 'boolean' } }, required: ['name', 'kind', 'connected'] } },
+                    },
+                    required: ['name', 'request', 'agent', 'needs'],
+                  },
+                },
+              },
+              required: ['order', 'steps'],
+            },
           },
           required: ['title', 'lever', 'focus', 'mechanism', 'request', 'agent', 'needs', 'humanMinutesPerWeek', 'measureLink'],
         },
@@ -316,20 +352,20 @@ const planTool = (): ToolSchema => ({
 })
 
 /** A job a person added in their own words, shaped like a planned one. */
-export const GOAL_ADD_JOB_PROMPT = `A person adds a job of their own to a goal in LoopEngine, in their own words. Shape it into one job like a planner's, and judge it honestly; it's their business, so advise, don't lecture.
+export const GOAL_ADD_JOB_PROMPT = `A person adds a workflow of their own to a goal in LoopEngine, in their own words. Shape it into one suggestion like a planner's (a workflow, or a group of workflows that run in order when the idea has stages that hand their result on), and judge it honestly; it's their business, so advise, don't lecture.
 
 Shape it:
-- title: the result the job brings, in plain words, at most six words ("Get weekly sales to the team", "Answer customer emails within an hour"). When the person wrote a long or mechanism-style idea ("send a weekly sales summary to the team every Monday"), keep their meaning and the detail that sets it apart (where or who) in a short title, and put the details in measure and request; the mechanism becomes the workflow's name later.
-- kind ("recurring" when it repeats, "once" for finite work), measure (its own number, or for a once job what done looks like), why it moves the goal (mechanism), the agent (an existing agent's exact name when its work fits, else newAgent with a short name and two or three sentences of instructions), needs (connected only when the context lists it), humanMinutesPerWeek, and a request specific to this business that the agent can act on. Anything that posts, sends or publishes says nothing goes out without the person's approval.
+- title: the result it brings, in plain words, at most six words ("Get weekly sales to the team", "Answer customer emails within an hour"). When the person wrote a long or mechanism-style idea ("send a weekly sales summary to the team every Monday"), keep their meaning and the detail that sets it apart (where or who) in a short title, and put the details in measure and request; the mechanism becomes the workflow's name later.
+- measure (its own number), why it moves the goal (mechanism), the agent (an existing agent's exact name when its work fits, else newAgent with a short name and two or three sentences of instructions), needs (connected only when the context lists it), humanMinutesPerWeek, and a request specific to this business that the agent can act on. Anything that posts, sends or publishes says nothing goes out without the person's approval.
 - lever: when it's one of the playbook levers listed, its id in leverId. When none fits, write one generic lever in newLever (one approach, no names of this business, its products, people, places or sites; when it fits and doesn't; what it needs; how its effect shows up; guardrails; a generic template) and put its key in leverId.
 
 Judge it, in verdict:
 - "added": it fits the goal and is safe.
 - "changed": a sound idea with risky details you changed (an approval added, volume limited, a platform's rules respected); say what you changed in note.
-- "warned": it's safe but unlikely to move the goal's measure, repeats a job already under the goal, or is unlikely to work; say why in note and give a better-aimed alternative.
+- "warned": it's safe but unlikely to move the goal's measure, repeats a workflow already under the goal, is one-time work rather than something that repeats, or is unlikely to work; say why in note and give a better-aimed alternative.
 - "refused": it's deceptive, illegal or against a platform's rules (fake reviews or accounts, spam, buying followers, harvesting private data, impersonation, misleading claims) or could harm people. Don't shape it; say why in note, plainly and briefly, and give a legitimate alternative.
 
-When there is no goal (a job added on its own), judge it on its own: "added" when it suits this business and is safe; "warned" when it's unlikely to work or repeats a job already listed. Its mechanism is what the job gets done for the business, and it has no lever: leave leverId and newLever out.
+When there is no goal, judge it on its own: "added" when it suits this business and is safe; "warned" when it's unlikely to work or repeats a workflow already listed. Its mechanism is what it gets done for the business, and it has no lever: leave leverId and newLever out.
 
 Call save_job once.`
 
@@ -372,7 +408,7 @@ export async function shapeJob(modelCall: ModelCall, input: { goal?: string; bri
   const user = [
     contextText(input.context),
     input.brief ? briefText(input.brief) : '',
-    input.brief ? (levers.length ? `Playbook levers for this focus:\n${levers.slice(0, MAX_LEVERS_IN_PROMPT * 2).map((l) => `- ${l.id}: ${l.name}. ${l.mechanism} Usually ${l.kind === 'once' ? 'a once job' : 'a recurring job'}; its measure: ${l.measureLink}.`).join('\n')}` : 'Playbook levers: none for this focus yet.') : '',
+    input.brief ? (levers.length ? `Playbook levers for this focus:\n${levers.slice(0, MAX_LEVERS_IN_PROMPT * 2).map((l) => `- ${l.id}: ${l.name}. ${l.mechanism} Its measure: ${l.measureLink}.`).join('\n')}` : 'Playbook levers: none for this focus yet.') : '',
     savedText(input.saved),
     input.goal ? `The goal:\n${input.goal}` : 'There is no goal: the person is adding this job on its own.',
     `The job the person wants to add, in their words:\n${input.idea}`,
@@ -454,7 +490,7 @@ function leversText(focus: GoalBrief['focus'], saved: SavedGoalWorkflow[] = []):
     ? 'Playbook levers: every one for this focus is already under this goal. Write new levers in newLevers (rule 1b: two to five, each a different approach from those already saved), and make each workflow from one of them.'
     : 'Playbook levers: none for this focus yet. Write the levers this goal needs in newLevers (rule 1b), and make each workflow from one of them.'
   return 'Playbook levers for this focus (id: name; why; fits when; not when; needs; minutes a week):\n' + levers.slice(0, MAX_LEVERS_IN_PROMPT).map((l) =>
-    `- ${l.id}: ${l.name}. ${l.mechanism} Fits when: ${l.fitsWhen.join('; ')}. Not when: ${l.notWhen.join('; ')}. Needs: ${[...(l.needs.anyOf?.length ? [`one of ${l.needs.anyOf.join('/')}`] : []), ...(l.needs.plus ?? [])].join(' + ')}. About ${l.humanMinutesPerWeek} min/week. Usually ${l.kind === 'once' ? 'a once job' : 'a recurring job'}; its measure: ${l.measureLink}. Template: ${l.template}`,
+    `- ${l.id}: ${l.name}. ${l.mechanism} Fits when: ${l.fitsWhen.join('; ')}. Not when: ${l.notWhen.join('; ')}. Needs: ${[...(l.needs.anyOf?.length ? [`one of ${l.needs.anyOf.join('/')}`] : []), ...(l.needs.plus ?? [])].join(' + ')}. About ${l.humanMinutesPerWeek} min/week. Its measure: ${l.measureLink}. Template: ${l.template}`,
   ).join('\n')
 }
 
@@ -501,6 +537,30 @@ function newFocusFrom(raw: unknown): Focus | undefined {
   return { id, label, hint }
 }
 
+/** A planned group of workflows, tidied: two to four steps, each with a
+ * name, a request and an agent (a new one's name made safe); undefined
+ * otherwise, and the suggestion is one workflow. */
+function groupFrom(raw: unknown): PlannedGroup | undefined {
+  const g = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined
+  if (!g || !Array.isArray(g.steps)) return undefined
+  const steps = g.steps.flatMap((item): PlannedGroupStep[] => {
+    const x = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
+    const name = str(x.name).slice(0, 60)
+    const request = str(x.request).slice(0, 2000)
+    const na = x.newAgent && typeof x.newAgent === 'object' ? (x.newAgent as Record<string, unknown>) : undefined
+    const newAgentName = na ? agentName(str(na.name) || str(x.agent)) : ''
+    const agent = newAgentName || agentName(str(x.agent))
+    if (!name || !request || !agent) return []
+    const needs = (Array.isArray(x.needs) ? x.needs : []).flatMap((n): GoalNeed[] => {
+      if (!n || typeof n !== 'object') return []
+      const y = n as Record<string, unknown>
+      return str(y.name) || str(y.kind) ? [{ name: str(y.name, str(y.kind)), kind: str(y.kind, str(y.name)).toLowerCase(), connected: y.connected === true }] : []
+    })
+    return [{ name, request, agent, ...(newAgentName ? { newAgent: { name: newAgentName, instructions: str(na!.instructions) } } : {}), needs }]
+  }).slice(0, 4)
+  return steps.length >= 2 ? { order: 'sequence', steps } : undefined
+}
+
 /** The levers a plan wrote, as a workspace's own levers under the focus
  * (ids "<focus>.x-<key>"), keyed by the key its workflows use. One with
  * unsafe text or a missing part is dropped. */
@@ -514,7 +574,6 @@ function newLeversFrom(raw: unknown, focus: string): Map<string, Lever> {
       id: `${focus}.x-${key}`,
       focus,
       name: str(x.name).slice(0, 80),
-      kind: x.kind === 'once' ? 'once' : 'recurring',
       mechanism: str(x.mechanism).slice(0, 400),
       fitsWhen: strings(x.fitsWhen).slice(0, 5),
       notWhen: strings(x.notWhen).slice(0, 5),
@@ -595,9 +654,9 @@ function parsePlan(raw: Record<string, unknown>, focus: string): Omit<GoalPlan, 
       const y = n as Record<string, unknown>
       return str(y.name) || str(y.kind) ? [{ name: str(y.name, str(y.kind)), kind: str(y.kind, str(y.name)).toLowerCase(), connected: y.connected === true }] : []
     })
+    const group = groupFrom(x.group)
     return [{
       title,
-      kind: x.kind === 'once' ? 'once' : 'recurring',
       measure: str(x.measure),
       ...(leverId ? { leverId } : {}),
       // An empty label falls back to the playbook lever's name, else the title.
@@ -613,6 +672,7 @@ function parsePlan(raw: Record<string, unknown>, focus: string): Omit<GoalPlan, 
       measureLink: str(x.measureLink),
       covers: strings(x.covers),
       newIdea: !leverId,
+      ...(group ? { group } : {}),
     }]
   })
   // The plan's own levers that a workflow is made from: the ones to keep.

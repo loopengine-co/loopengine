@@ -50,11 +50,10 @@ describe('playbook v1', () => {
   })
 
   it('loads from playbook.json, versioned', () => {
-    expect(PLAYBOOK_VERSION).toBe(3)
+    expect(PLAYBOOK_VERSION).toBe(4)
     expect(LEVERS.length).toBeGreaterThanOrEqual(20)
-    // Each lever says the job it usually makes.
-    expect(LEVERS.find((l) => l.id === 'new-signups.directory-listings')?.kind).toBe('once')
-    expect(LEVERS.find((l) => l.id === 'new-signups.answer-intent-posts')?.kind).toBe('recurring')
+    // Every lever makes a workflow that repeats: no lever says otherwise.
+    expect(LEVERS.some((l) => 'kind' in l)).toBe(false)
   })
 
   it('names the lever at fault when playbook.json is malformed', () => {
@@ -184,7 +183,7 @@ describe('scoring a plan', () => {
 
 describe('when the playbook has nothing that fits', () => {
   const NEW_LEVER = {
-    key: 'daily-check-in', name: 'Daily check-in and log', kind: 'recurring', mechanism: 'A short daily check-in keeps the habit visible, and the log shows the trend.',
+    key: 'daily-check-in', name: 'Daily check-in and log', mechanism: 'A short daily check-in keeps the habit visible, and the log shows the trend.',
     fitsWhen: ['the goal depends on a daily habit'], notWhen: ['the person does not want daily messages'], needs: ['messaging', 'records'],
     humanMinutesPerWeek: 10, firstResultDays: 7, measureLink: 'days logged per week', guardrails: ['Never give medical advice.'], template: 'Every evening, ask me in {channel} for today’s {measure} and log it.',
   }

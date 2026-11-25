@@ -132,7 +132,8 @@ ${consoleShellScript}
   // Opened from a goal's saved workflow (/goals): build it straight away,
   // and link the created workflow back to the goal.
   // Built for a goal's job (goalJob; goalWorkflow from before jobs).
-  var fromGoal = { goal: new URLSearchParams(location.search).get('goal') || '', workflow: new URLSearchParams(location.search).get('goalJob') || new URLSearchParams(location.search).get('goalWorkflow') || '' };
+  // Built for a goal: its workflow (or a group's step, ?goalStep=), linked back on Create.
+  var fromGoal = { goal: new URLSearchParams(location.search).get('goal') || '', workflow: new URLSearchParams(location.search).get('goalJob') || new URLSearchParams(location.search).get('goalWorkflow') || '', step: new URLSearchParams(location.search).get('goalStep') || '' };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -700,7 +701,7 @@ ${consoleShellScript}
       post('/workflows/create', body).then(function (r) {
         if (!r.ok) { renderPlan(r.body.error || 'Could not create it.'); return; }
         if (!fromGoal.goal || !fromGoal.workflow) { renderDone(r.body); return; }
-        post('/goals/' + encodeURIComponent(fromGoal.goal) + '/jobs/' + encodeURIComponent(fromGoal.workflow) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow, description: state.description })
+        post('/goals/' + encodeURIComponent(fromGoal.goal) + '/jobs/' + encodeURIComponent(fromGoal.workflow) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow, description: state.description, step: fromGoal.step || undefined })
           .then(function () { renderDone(r.body); }, function () { renderDone(r.body); });
       }).catch(function (err) { renderPlan(err.message); });
     });
@@ -740,8 +741,7 @@ ${consoleShellScript}
       (c.keptDecisions.length ? '<p class="hint" style="margin:0"><strong>Kept as they were:</strong> ' + c.keptDecisions.map(function (k) { return '<code>' + esc(k.tool) + '</code> stays ' + esc(LABELS[k.has]) + ' (the workflow wanted ' + esc(LABELS[k.wants]) + ')'; }).join('; ') + '. Change them in Permissions if you want.</p>' : '') +
       (items.length ? '<h3>Left to do</h3><ul class="wf-list">' + items.map(function (it) { return '<li>' + (it.href ? '<a href="' + esc(it.href) + '">' + esc(it.label) + '</a>' : esc(it.label)) + '</li>'; }).join('') + '</ul>' : '<p class="hint" style="margin:0">Nothing left to set up.</p>') +
       '<div class="wf-actions"><a class="wf-btn" href="' + agentHref + '">Open ' + esc(agentLabel(c.agent)) + '</a><a class="wf-btn plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a>' +
-        (fromGoal.goal === 'g-my-jobs' ? '<a class="wf-btn plain" href="/jobs">Back to your jobs</a>'
-          : fromGoal.goal ? '<a class="wf-btn plain" href="/goals?goal=' + encodeURIComponent(fromGoal.goal) + '">Back to your goal</a>' : '<button type="button" class="wf-btn plain" id="wfAnother">Build another</button>') + '</div>' +
+        (fromGoal.goal ? '<a class="wf-btn plain" href="/goals?goal=' + encodeURIComponent(fromGoal.goal) + '">Back to your goal</a>' : '<button type="button" class="wf-btn plain" id="wfAnother">Build another</button>') + '</div>' +
       '</div>';
     var another = document.getElementById('wfAnother');
     if (another) another.addEventListener('click', function () { state.description = ''; state.planned = null; renderDescribe(); });

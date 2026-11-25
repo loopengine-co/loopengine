@@ -87,9 +87,9 @@ export function workflowsOverview(input: {
   }
 }
 
-// The front page's tree: each goal, its jobs, and the workflows that do
-// each job (a chained one right after the one that starts it); then jobs
-// with no goal, and workflows no job points to.
+// The home page's tree: each goal, its workflows and groups of workflows
+// (a chained one right after the one that starts it); then workflows no
+// goal points to.
 export interface HomeFlow {
   agent: string
   id: string
@@ -109,15 +109,16 @@ export interface HomeJob {
   state: string
   agent: string
   flows: HomeFlow[]
+  /** A group's steps in order, each with whether it's built yet. */
+  group?: { steps: { name: string; built: boolean }[] }
 }
 
 export interface HomeOverview extends WorkflowsOverview {
   goals: { id: string; goal: string; measure: string; jobs: HomeJob[] }[]
-  jobs: HomeJob[]
   loose: WorkflowOverviewRow[]
 }
 
-type TreeJob = Pick<GoalJob, 'id' | 'title' | 'kind' | 'measure' | 'state' | 'agent' | 'doers' | 'chain' | 'addedAt'>
+type TreeJob = Pick<GoalJob, 'id' | 'title' | 'kind' | 'measure' | 'state' | 'agent' | 'doers' | 'chain' | 'group'>
 
 export function homeOverview(overview: WorkflowsOverview, goals: (Pick<Goal, 'id' | 'goal' | 'standalone'> & { brief?: { measure?: string }; jobs: TreeJob[] })[]): HomeOverview {
   const rows = new Map(overview.workflows.map((r) => [`${r.agent}|${r.id}`, r]))
@@ -141,11 +142,13 @@ export function homeOverview(overview: WorkflowsOverview, goals: (Pick<Goal, 'id
         const row = rows.get(k)
         return { agent, id, starts: row?.starts ?? [], waiting: row?.waiting ?? 0, then: i > 0 && after.get(k) === ordered[i - 1], ...(row ? {} : { gone: true as const }) }
       }),
+      ...(j.group ? { group: { steps: j.group.steps.map((st) => ({ name: st.name, built: Boolean(st.built) })) } } : {}),
     }
   }
-  // A goal's suggestions not taken up yet stay on its own page.
-  const shown = (j: TreeJob, standalone: boolean) => j.state !== 'discarded' && (standalone || j.state === 'active' || j.state === 'done' || Boolean(j.addedAt))
-  const tree = goals.filter((g) => !g.standalone).map((g) => ({ id: g.id, goal: g.goal, measure: g.brief?.measure ?? '', jobs: g.jobs.filter((j) => shown(j, false)).map(toJob) }))
-  const jobs = goals.filter((g) => g.standalone).flatMap((g) => g.jobs.filter((j) => shown(j, true)).map(toJob))
-  return { ...overview, goals: tree, jobs, loose: overview.workflows.filter((r) => !used.has(`${r.agent}|${r.id}`)) }
+  // A goal's suggestions not built yet stay on its own page; one-off jobs
+  // from before goals suggested only workflows aren't shown, and workflows
+  // built from jobs once submitted without a goal are listed apart.
+  const shown = (j: TreeJob) => j.state === 'active' && j.kind !== 'once'
+  const tree = goals.filter((g) => !g.standalone).map((g) => ({ id: g.id, goal: g.goal, measure: g.brief?.measure ?? '', jobs: g.jobs.filter(shown).map(toJob) }))
+  return { ...overview, goals: tree, loose: overview.workflows.filter((r) => !used.has(`${r.agent}|${r.id}`)) }
 }
