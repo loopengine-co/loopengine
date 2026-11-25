@@ -403,3 +403,11 @@ export { startTurnTrace, type TurnTrace } from './core/trace.js'
 export { buildRunTrace, type RunTrace, type TraceToolCall, type TraceStepEvent } from './web/run-trace.js'
 export { checkOutputSchema, checkOutput, jsonInReply, outputSchemaInstructions, outputRetryMessage, MAX_OUTPUT_RETRIES, OutputSchemaError, type JsonSchema } from './core/output-schema.js'
 export { checkInputSpec, checkInputValue, inputSchemaOf, INPUT_TYPES, INPUT_FORMATS, InputSpecError, type InputSpec, type InputType, type InputFormat } from './core/input-schema.js'
+// A workflow's draft and publishing it (web/workflow-drafts.ts), and the
+// checks its parts go through before they're drafted.
+export { changeDraft, discardDraft, draftChanges, readDraft, saveDraft, withDraft, isEmptyDraft, messagesText, type DraftSchedule, type DraftState, type WorkflowDraft } from './web/workflow-drafts.js'
+export { setWorkflowName } from './core/workflows.js'
+export { checkEvalCriteria } from './web/workflow-evidence.js'
+export { applyTriggerSettings } from './core/workflow-triggers.js'
+export { parseScheduleInput } from './core/scheduler.js'
+export { workflowEdit, checkWorkflowMessages } from './web/workflow-admin.js'
