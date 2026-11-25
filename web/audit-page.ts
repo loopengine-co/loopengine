@@ -203,7 +203,7 @@ ${consoleShellScript}
   function eventLink(e) {
     var d = e.data || {};
     if (e.run_id) return { href: '/cases/' + encodeURIComponent(e.run_id) + '?back=' + encodeURIComponent(location.pathname + location.search), text: 'Case' };
-    if (e.workflow_id) return { href: workflowHref(e.agent, e.workflow_id, /(brief|workflow) version/i.test(d.label || '') || /Edited the workflow/.test(d.label || '') ? 'brief' : 'activity'), text: 'Workflow' };
+    if (e.workflow_id) return { href: workflowHref(e.agent, e.workflow_id, /(brief|workflow) version/i.test(d.label || '') || /Edited the workflow|Published the workflow/.test(d.label || '') ? 'brief' : 'activity'), text: 'Workflow' };
     if (e.agent) return { href: '/agents/config?agent=' + encodeURIComponent(e.agent), text: 'Agent' };
     var path = String(d.path || '');
     if (path.indexOf('/config/models') === 0) return { href: '/config?section=models', text: 'Models' };

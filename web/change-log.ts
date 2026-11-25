@@ -17,9 +17,10 @@ export interface Change {
   workflowId?: string
 }
 
-// Doing, not changing.
+// Doing, not changing. A workflow's draft isn't live until it's published.
 const NOT_CHANGES = [
   /^\/agents\/[^/]+\/messages(\/stream)?$/,
+  /^\/agents\/[^/]+\/workflows\/[^/]+\/draft(\/.*)?$/,
   /\/(feedback|run|preview|test|evals\/run|criteria\/draft|telegram-webhook|slack-channels|search|install-deps|refresh)$/,
 ]
 
@@ -28,6 +29,7 @@ const LABELS: [RegExp, string | ((method: string, m: RegExpMatchArray) => string
   [/^\/agents\/[^/]+$/, (method) => (method === 'DELETE' ? 'Removed the agent' : 'Changed the agent')],
   [/^\/agents\/[^/]+\/workflows$/, 'Created a workflow'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+$/, (method) => (method === 'DELETE' ? 'Removed the workflow' : 'Edited the workflow')],
+  [/^\/agents\/[^/]+\/workflows\/[^/]+\/publish$/, 'Published the workflow'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/versions\/(\d+)\/restore$/, (_method, m) => `Restored workflow version ${m[1]}`],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/messages$/, 'Changed where messages go'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/triggers/, 'Changed webhook triggers'],

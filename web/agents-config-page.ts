@@ -144,6 +144,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-tab:hover:not(:disabled) { background: none; color: var(--ink); }
   .wf-tab[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
   .wf-msg-form { display: flex; flex-direction: column; gap: 14px; }
+  .wf-draft-note { margin: 0; display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--ink-muted); }
   .wf-msg-dests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .wf-msg-dest { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
   .wf-msg-dest-k { font-weight: 600; font-size: 13px; }
@@ -286,6 +287,15 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-editor-part { margin: 8px 0 0; font-size: 13px; font-weight: 700; padding-top: 10px; border-top: 1px solid var(--line); }
   .wf-editor-part:first-of-type { border-top: 0; padding-top: 0; }
   .wp-model-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wf-draft { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--warn, #d9a400); border-radius: 10px; background: var(--warn-soft, #fff8e1); font-size: 13.5px; }
+  .wf-draft-actions { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .wf-publish { display: grid; gap: 12px; }
+  .wf-publish h4 { margin: 4px 0 0; font-size: 13px; }
+  .wf-pub-version { margin: 0; }
+  .wf-pub-stale { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-soft, #fff8e1); font-size: 13px; }
+  .wf-publish .ed-actions { align-items: center; }
+  .wf-publish .ed-actions .hint { margin-right: auto; }
+  .workflow-editor-dialog .ed-actions .hint { margin-right: auto; font-size: 12.5px; }
   .wp-schema { font-family: var(--font-mono); font-size: 12.5px; }
   .wf-schema { display: block; flex-basis: 100%; width: 100%; }
   .wf-schema summary { cursor: pointer; color: var(--ink-muted); font-size: 12.5px; }
@@ -925,7 +935,7 @@ ${renderMarkdownScript}
         (cfg.skills.length + (cfg.skills.length === 1 ? ' skill' : ' skills')) + (toolNames.length ? ' \u00b7 ' + escapeHtml(toolNames.slice(0, 2).join(', ') + (toolNames.length > 2 ? ', \u2026' : '')) : '')) +
       card('actauth', 'Permissions', rules.length + (rules.length === 1 ? ' rule' : ' rules'),
         (asks ? asks + ' need approval \u00b7 ' : '') + 'unmatched calls: ' + escapeHtml(cfg.permissions.defaultDecision)) +
-      card('messaging', 'Messaging', '<span id="ovMessagingValue">&hellip;</span>', '<span id="ovMessagingDetail">Loading&hellip;</span>') +
+      card('messaging', 'Messaging Apps', '<span id="ovMessagingValue">&hellip;</span>', '<span id="ovMessagingDetail">Loading&hellip;</span>') +
       card('schedules', 'Schedules', '<span id="ovSchedulesValue">&hellip;</span>', '<span id="ovSchedulesDetail">Loading&hellip;</span>') +
       card('env', 'Environment', 'Settings', '<span data-le-env-count="' + escapeHtml(cfg.name) + '">' + leShell.envCountHtml(cfg.name) + '</span> Values your installed abilities read') +
     '</div>';
@@ -942,8 +952,28 @@ ${renderMarkdownScript}
 
   // A workflow's schedules, each with its state and Pause/Resume and
   // Remove, as lines of its contract's trigger row.
+  // A schedule added in a draft, as it was asked for, in words.
+  function draftScheduleText(d) {
+    var s = d.schedule || {};
+    if (s.run_at) return 'Once at ' + new Date(s.run_at).toLocaleString();
+    var every = String(s.every || '');
+    var when = s.at ? ' at ' + s.at + (s.weekday ? ' on ' + s.weekday : '') : s.start_at ? ', from ' + new Date(s.start_at).toLocaleString() : '';
+    return 'Every ' + every + when;
+  }
   function workflowScheduleItemsHtml(w, agentName) {
-    return (w.schedules || []).map(function (x) {
+    var drafted = (w.draft && w.draft.schedules) || { add: [], remove: [] };
+    var adds = (drafted.add || []).map(function (d) {
+      var values = d.params ? Object.keys(d.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(d.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
+      return '<div class="wf-trigger-item"><span>' + escapeHtml((d.task_name ? d.task_name + ': ' : '') + draftScheduleText(d)) + '</span>' +
+        '<span class="le-pill warn">Draft: starts when published</span>' + (values ? '<span class="hint">' + values + '</span>' : '') +
+        '<span style="display:flex;gap:6px;margin-left:auto"><button type="button" class="delete-btn workflow-schedule-draft" data-id="' + escapeHtml(d.id) + '" data-action="remove">Remove</button></span></div>';
+    }).join('');
+    return adds + (w.schedules || []).map(function (x) {
+      if ((drafted.remove || []).indexOf(x.taskId) !== -1) {
+        return '<div class="wf-trigger-item"><span><s>' + escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + '</s></span>' +
+          '<span class="le-pill warn">Removed in the draft</span>' +
+          '<span style="display:flex;gap:6px;margin-left:auto"><button type="button" class="workflow-schedule-draft" data-id="' + escapeHtml(x.taskId) + '" data-action="restore">Undo</button></span></div>';
+      }
       var state = x.waiting ? '<span class="le-pill ask">Waiting for a decision</span>'
         : x.status === 'paused' ? '<span class="le-pill warn">Paused</span>'
         : x.status === 'running' ? '<span class="le-pill accent">Running</span>'
@@ -956,7 +986,7 @@ ${renderMarkdownScript}
         '<span style="display:flex;gap:6px;margin-left:auto">' +
           (x.status === 'paused' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="resume">Resume</button>'
             : x.status === 'scheduled' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="pause">Pause</button>' : '') +
-          '<button type="button" class="delete-btn workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="cancel">Remove</button>' +
+          '<button type="button" class="delete-btn workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="cancel">Remove in draft</button>' +
         '</span></div>';
     }).join('');
   }
@@ -981,7 +1011,7 @@ ${renderMarkdownScript}
     return '<div class="wf-api">' +
       '<pre>POST ' + escapeHtml(apiUrl) + String.fromCharCode(10) + escapeHtml(example) + '</pre>' +
       '<p class="hint" style="margin:0">' + (paramNames.length ? '<code>params</code>: ' + paramNames.map(function (p) { return '<code>' + escapeHtml(p) + '</code>' + (w.parameters[p].required ? ' (required)' : '') + (w.parameters[p].description ? ', ' + escapeHtml(w.parameters[p].description) : ''); }).join('; ') + '. ' : 'It takes no params. ') +
-        'Optional: <code>"wait": true</code> answers with the result once the run finishes; without it you get the run' + String.fromCharCode(8217) + 's id back at once. Each run follows this workflow' + String.fromCharCode(8217) + 's <strong>Messages</strong> tab for where its updates, approvals and result go. An app can send its own <code>"callback_url"</code> (and <code>"decisions": "callback"</code>) to get this run' + String.fromCharCode(8217) + 's updates itself.</p>' +
+        'Optional: <code>"wait": true</code> answers with the result once the run finishes; without it you get the run' + String.fromCharCode(8217) + 's id back at once. Each run follows this workflow' + String.fromCharCode(8217) + 's <strong>Messaging</strong> tab for where its updates, approvals and result go. An app can send its own <code>"callback_url"</code> (and <code>"decisions": "callback"</code>) to get this run' + String.fromCharCode(8217) + 's updates itself.</p>' +
       '</div>';
   }
 
@@ -1253,7 +1283,7 @@ ${renderMarkdownScript}
     return ['slack', 'telegram', 'lark'].indexOf(workflowsMeta.messaging) !== -1 ? workflowChatName() : null;
   }
 
-  // Its Messages tab: where every run's messages go, however it starts,
+  // Its Messaging tab: where every run's messages go, however it starts,
   // as a grid of what happens in a run (rows) by where it can go
   // (columns): the agent's messaging app, the Inbox and your app's
   // address. What can't be turned off is shown ticked and locked: the
@@ -1261,7 +1291,7 @@ ${renderMarkdownScript}
   // without an address, and with one gets every decision, finish and
   // failure (adapters/http.ts, reportWorkflowRun).
   function workflowMessagesHtml(w, agentName) {
-    var d = w.delivery || {};
+    var d = draftedDelivery(w) || w.delivery || {};
     var RSQ = String.fromCharCode(8217);
     var chatName = workflowChatName();
     var chat = workflowChatAppName();
@@ -1280,10 +1310,11 @@ ${renderMarkdownScript}
     // Webhooks saved with settings of their own: their runs use those.
     var own = (w.triggers || []).filter(function (t) { return t.callback || t.decisions_to || t.chat_notice || t.result_to_chat; });
     return '<form class="wf-msg-form">' +
+      (draftedDelivery(w) ? draftNoteHtml('Where messages go is changed in the draft: runs follow the published setting until then.') : '') +
       '<p class="hint" style="margin:0">Where this workflow' + RSQ + 's messages go, for every run: started by Run now, a schedule, a webhook or the API. A ticked, greyed box can' + RSQ + 't be turned off. Your app gets nothing until you give it an address.</p>' +
       '<div class="wf-msg-dests">' +
         '<div class="wf-msg-dest"><div class="wf-msg-dest-k">' + chatCol + '</div><div class="hint">' +
-          (chatName ? 'The agent' + RSQ + 's messaging app, set in its <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">Messaging</a> tab.'
+          (chatName ? 'The agent' + RSQ + 's messaging app, set in its <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">Messaging Apps</a> tab.'
             : 'Not set up. <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">Set one up in Messaging</a> (Slack, Telegram or Lark) to post to chat.') + '</div></div>' +
         '<div class="wf-msg-dest"><div class="wf-msg-dest-k">Inbox</div><div class="hint">Always. Every run is kept as a case, and approvals and questions can be answered there.</div></div>' +
         '<div class="wf-msg-dest"><div class="wf-msg-dest-k">Your app</div><div class="hint">Optional. Only when you set an address: it then gets each update as signed JSON (a webhook).</div>' +
@@ -1311,7 +1342,7 @@ ${renderMarkdownScript}
               '<button type="button" class="wf-msg-clear-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">Use these instead</button></p>';
           }).join('') + '</div>'
         : '') +
-      '<div class="wf-msg-foot"><span class="hint wf-msg-result" role="status"></span><button type="submit" class="primary">Save</button></div>' +
+      '<div class="wf-msg-foot"><span class="hint wf-msg-result" role="status"></span><button type="submit" class="primary">Save to draft</button></div>' +
       '</form>';
   }
 
@@ -1325,7 +1356,7 @@ ${renderMarkdownScript}
     };
     return '<div class="wf-ways">' +
       way('run', 'Run now', 'Starts a run right away, from here. It shows under Evidence as it goes.', workflowRunBarHtml(w, params)) +
-      way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go where its Messages tab says.',
+      way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go where its Messaging tab says.',
         (schedules || '<p class="hint" style="margin:0">None yet.</p>') +
         '<div><button type="button" class="workflow-add-schedule">+ Schedule</button></div>') +
       way('webhook', 'Webhook', 'Another app (Stripe, GitHub, Shopify or your own) calls a private address when something happens, and each call starts a run.',
@@ -1376,11 +1407,11 @@ ${renderMarkdownScript}
     if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report' + (w.delivery && w.delivery.result_to_chat ? '' : ' <span class="hint">(for the schedules and webhooks set to send it)</span>'));
     if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's update address');
     if (w.delivery && w.delivery.callback_url) result.push('run updates posted to ' + escapeHtml(w.delivery.callback_url));
-    var decisions = [(w.delivery && w.delivery.decisions_to === 'callback' ? 'your app' : escapeHtml(workflowChatName() || 'the agent' + RSQ + 's messaging app')) + ' <span class="hint">(see Messages)</span>'];
+    var decisions = [(w.delivery && w.delivery.decisions_to === 'callback' ? 'your app' : escapeHtml(workflowChatName() || 'the agent' + RSQ + 's messaging app')) + ' <span class="hint">(see Messaging)</span>'];
     var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
     var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
     return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('approvals', decisions) + row('model', [model]) + '</div>' +
-      '<p class="hint" style="margin:0">Change the inputs, result and model with Edit, where updates and approvals go in Messages, and what tools may do in Permissions.</p>';
+      '<p class="hint" style="margin:0">Change the inputs, result and model with Edit, where updates and approvals go in Messaging, and what tools may do in Permissions.</p>';
   }
 
   function workflowBriefHtml(w) {
@@ -1434,8 +1465,21 @@ ${renderMarkdownScript}
 
   // The Evaluation tab: the success criteria, the eval cases (saved, then
   // suggested from real runs), and Evaluate.
+  // A workflow's draft over its live settings, for the tabs that draft:
+  // its success criteria and where messages go (see workflowDraftBannerHtml).
+  function draftedCriteria(w) {
+    return w.draft && w.draft.criteria ? w.draft.criteria : null;
+  }
+  function draftedDelivery(w) {
+    return w.draft && w.draft.messages ? (w.draft.messages.delivery || {}) : null;
+  }
+  function draftNoteHtml(what) {
+    return '<p class="wf-draft-note"><span class="le-pill warn">Draft</span> ' + what + ' Publish the draft to make ' + (what.indexOf('These') === 0 ? 'them' : 'it') + ' live.</p>';
+  }
+
   function workflowEvaluationHtml(w) {
-    var evals = w.evals || { cases: [], criteria: [], rounds: [] };
+    var live = w.evals || { cases: [], criteria: [], rounds: [] };
+    var evals = draftedCriteria(w) ? Object.assign({}, live, { criteria: draftedCriteria(w) }) : live;
     var criteria = evals.criteria && evals.criteria.length ? evals.criteria : [REFERENCE_CRIT];
     var round = evals.rounds[0];
     var checked = round && round.passRates;
@@ -1448,6 +1492,7 @@ ${renderMarkdownScript}
       return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
     }).join('');
     var critSection = '<h4 class="wf-sub">Success criteria</h4>' +
+      (draftedCriteria(w) ? draftNoteHtml('These success criteria are in the draft: evaluations use the published ones until then.') : '') +
       '<p class="hint" style="margin:0">' + (evals.criteria && evals.criteria.length
         ? 'What every good result must get right. Each eval case is checked against every criterion, yes or no.'
         : 'What every good result must get right. None set yet, so each eval case is only compared with its good result. Add the criteria that matter, or have them suggested from its instructions.') + '</p>' +
@@ -1456,7 +1501,7 @@ ${renderMarkdownScript}
       '<div class="wf-crit-form" hidden>' +
         '<div class="wf-crit-rows">' + (evals.criteria && evals.criteria.length ? evals.criteria : []).map(critRowHtml).join('') + '</div>' +
         '<div class="wf-crit-bar"><button type="button" class="plain wf-crit-add">+ Add a criterion</button><button type="button" class="plain wf-crit-draft">Suggest from its instructions</button>' +
-          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save success criteria</button></div>' +
+          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save to draft</button></div>' +
         '<span class="hint wf-crit-status"></span>' +
       '</div>';
     var latest = {};
@@ -1599,8 +1644,9 @@ ${renderMarkdownScript}
               (w.jobs && w.jobs.length ? '<span class="wf-page-meta-item"><span class="wf-page-meta-k">For goal</span><span>' + w.jobs.map(function (j) { return '<a href="/goals?goal=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span></span>' : '') +
             '</div>' +
           '</header>' +
+          workflowDraftBannerHtml(w) +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + tabBtn('contract', 'Contract') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('contract', 'Contract') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
             panel('activity', workflowActivityHtml(w, runs, name)) +
             panel('evaluation', workflowEvaluationHtml(w)) +
@@ -1625,7 +1671,7 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messages') + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('messages', workflowMessagesHtml(w, name)) +
@@ -1843,7 +1889,7 @@ ${renderMarkdownScript}
         '</select><input name="modelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + escapeHtml((w.model && w.model.model) || '') + '"></div></div>' +
       '<p class="hint workflow-editor-check" style="margin:0"></p>' +
       '<div class="hint workflow-editor-result"></div>' +
-      '<div class="ed-actions"><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary">Save</button></div></form>';
+      '<div class="ed-actions"><span class="hint">Runs keep using the published workflow until you publish.</span><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary">Save draft</button></div></form>';
   }
 
   // Placeholders the instructions use that no parameter declares, and
@@ -1865,15 +1911,122 @@ ${renderMarkdownScript}
     form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
   }
 
+  // A workflow with its draft's edits over it, for the editor.
+  function withDraftFields(w) {
+    if (!w.draft) return w;
+    var f = w.draft.fields || {};
+    var out = {};
+    Object.keys(w).forEach(function (k) { out[k] = w[k]; });
+    ['title', 'description', 'instructions', 'parameters', 'output', 'outputSchema', 'model'].forEach(function (k) {
+      if (f[k] !== undefined) out[k] = f[k] === null ? undefined : f[k];
+    });
+    return out;
+  }
+
+  // A draft not yet published: who saved it and when, and what to do.
+  function workflowDraftBannerHtml(w) {
+    if (!w.draft) return '';
+    var d = w.draft;
+    var at = new Date(d.savedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return '<div class="wf-draft" role="status"><span class="le-pill warn">Draft</span>' +
+      '<span>Not published' + (d.savedBy ? ': saved by ' + escapeHtml(d.savedBy) : ': saved') + ', ' + escapeHtml(at) + '. Runs use the published workflow until you publish it.</span>' +
+      '<span class="wf-draft-actions"><button type="button" class="primary wf-draft-publish">Review and publish</button><button type="button" class="wf-draft-edit">Edit draft</button><button type="button" class="delete-btn wf-draft-discard">Discard</button></span></div>';
+  }
+
+  // Its draft's banner: review and publish, edit it, or discard it.
+  function wireDraftBanner(name, card) {
+    var id = card.dataset.workflow;
+    var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
+    var pub = card.querySelector('.wf-draft-publish');
+    if (pub) pub.addEventListener('click', function () { openPublishDialog(name, workflowsById[id]); });
+    var editDraft = card.querySelector('.wf-draft-edit');
+    if (editDraft) editDraft.addEventListener('click', function () { openWorkflowEditor(name, card); });
+    var discard = card.querySelector('.wf-draft-discard');
+    if (discard) discard.addEventListener('click', function () {
+      if (discard.getAttribute('data-confirming') !== '1') { discard.setAttribute('data-confirming', '1'); discard.textContent = 'Click again to discard'; return; }
+      discard.disabled = true;
+      fetchJsonRetryOnce(base + '/draft', { method: 'DELETE' }).then(function () { loadWorkflowsSection(name); });
+    });
+  }
+  // After a change made in place (a webhook's URL is on screen, so the
+  // card isn't redrawn): the draft as it is now, and its banner.
+  function refreshDraft(name, card) {
+    var id = card.dataset.workflow;
+    fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id) + '/draft').then(function (r) {
+      if (!r.ok || !workflowsById[id]) return;
+      if (r.body.draft) workflowsById[id].draft = r.body.draft;
+      else delete workflowsById[id].draft;
+      var old = card.querySelector('.wf-draft');
+      var html = workflowDraftBannerHtml(workflowsById[id]);
+      if (old) old.outerHTML = html || '';
+      else if (html) {
+        var body = card.querySelector('.wf-row-body');
+        if (body) body.insertAdjacentHTML('beforebegin', html);
+      }
+      wireDraftBanner(name, card);
+    });
+  }
+
+  // Review and publish: what the draft changes in the published workflow,
+  // the version it will be, a note kept with it, then Publish.
+  function openPublishDialog(name, w) {
+    var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id);
+    var holder = document.createElement('div');
+    holder.innerHTML = editDialogHtml('<h3>Publish changes</h3>', '<p>' + escapeHtml(w.title) + String.fromCharCode(8217) + 's draft, against the published workflow.</p>', '<div class="wf-publish"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div>');
+    var dialog = holder.firstChild;
+    dialog.classList.add('workflow-publish-dialog');
+    document.body.appendChild(dialog);
+    var body = dialog.querySelector('.wf-publish');
+    var close = function () { if (dialog.open) dialog.close(); };
+    dialog.addEventListener('close', function () { dialog.remove(); });
+    dialog.addEventListener('click', function (ev) { if (ev.target === dialog) close(); });
+    dialog.querySelector('.hd-close').addEventListener('click', close);
+    dialog.showModal();
+    fetchJsonRetryOnce(base + '/draft', { headers: { accept: 'application/json' } }).then(function (r) {
+      if (!r.ok) { body.innerHTML = '<p class="error">' + escapeHtml(r.body.error || 'Could not load the draft') + '</p>'; return; }
+      var v = r.body;
+      if (!v.draft) { body.innerHTML = '<p class="hint">There' + String.fromCharCode(8217) + 's no draft: it was published or discarded.</p>'; return; }
+      if (!v.changes.length) {
+        body.innerHTML = '<p>The draft is the same as the published workflow: there' + String.fromCharCode(8217) + 's nothing to publish.</p><div class="ed-actions"><button type="button" class="delete-btn wf-pub-discard">Discard the draft</button></div>';
+        body.querySelector('.wf-pub-discard').addEventListener('click', function () {
+          fetchJsonRetryOnce(base + '/draft', { method: 'DELETE' }).then(function () { close(); loadWorkflowsSection(name); });
+        });
+        return;
+      }
+      body.innerHTML =
+        '<p class="wf-pub-version">' + (v.current ? 'Publishing makes this <strong>version ' + v.next + '</strong>, replacing version ' + v.current + ' for every run from now on.' : 'Publishing makes this the version every run uses from now on.') + '</p>' +
+        (v.stale ? '<p class="wf-pub-stale">The published workflow changed since this draft began (it was version ' + v.draft.basedOn + '). Publishing replaces those changes with the draft' + String.fromCharCode(8217) + 's: check below.</p>' : '') +
+        '<h4>What' + String.fromCharCode(8217) + 's changed</h4>' + changeDetailsHtml({ changes: v.changes }) +
+        '<label>Note <span class="hint">(optional: what changed and why, kept with the version)</span><textarea class="wf-pub-note" rows="2" maxlength="500" placeholder="e.g. Ask for the order number before looking it up"></textarea></label>' +
+        '<div class="ed-actions"><span class="hint wf-pub-result" role="status"></span><button type="button" class="wf-pub-cancel">Cancel</button><button type="button" class="primary wf-pub-go">Publish version ' + (v.next || '') + '</button></div>';
+      body.querySelector('.wf-pub-cancel').addEventListener('click', close);
+      var go = body.querySelector('.wf-pub-go');
+      go.addEventListener('click', function () {
+        go.disabled = true;
+        var result = body.querySelector('.wf-pub-result');
+        result.textContent = 'Publishing' + String.fromCharCode(8230);
+        fetchJsonRetryOnce(base + '/publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ note: body.querySelector('.wf-pub-note').value }) }).then(function (p) {
+          if (!p.ok) { go.disabled = false; result.textContent = p.body.error || 'Could not publish'; return; }
+          body.innerHTML = '<p class="wf-pub-done"><span class="le-pill good">Published</span> Version ' + p.body.version + ' is live: every run from now on uses it.</p>' +
+            '<div class="ed-actions"><button type="button" class="primary wf-pub-close">Done</button></div>';
+          body.querySelector('.wf-pub-close').addEventListener('click', close);
+          loadWorkflowsSection(name);
+        });
+      });
+    });
+  }
+
   function openWorkflowEditor(name, card) {
-    var w = workflowsById[card.dataset.workflow];
-    if (!w) return;
+    var published = workflowsById[card.dataset.workflow];
+    if (!published) return;
+    // With a draft, the editor picks up where it was left.
+    var w = withDraftFields(published);
     workflowEditing = true;
     // In a dialog: the editor's code holds its own form, so it needn't sit
     // in the card. Closing it any way (Esc, the backdrop, x, Cancel)
     // discards the edits.
     var dialog = document.createElement('dialog');
-    dialog.innerHTML = editDialogHtml('<h3>Edit workflow</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (what to do, its rules, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
+    dialog.innerHTML = editDialogHtml('<h3>' + (published.draft ? 'Edit draft' : 'Edit workflow') + '</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (what to do, its rules, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
     dialog = dialog.firstChild;
     dialog.classList.add('workflow-editor-dialog');
     document.body.appendChild(dialog);
@@ -1935,8 +2088,8 @@ ${renderMarkdownScript}
         try { JSON.parse(form.outputSchema.value); } catch (e) { problem = 'The output schema isn' + String.fromCharCode(8217) + 't valid JSON: ' + e.message; }
       }
       if (problem) { result.textContent = problem; return; }
-      result.textContent = 'Saving' + String.fromCharCode(8230);
-      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
+      result.textContent = 'Saving the draft' + String.fromCharCode(8230);
+      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/draft', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, outputSchema: form.outputSchema.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
       }).then(function (r) {
@@ -1966,7 +2119,24 @@ ${renderMarkdownScript}
     }
   }
 
+  // Where a webhook stands in its workflow's draft, if anywhere.
+  function hookDraftState(t) {
+    var w = workflowsById[t.workflow_id];
+    var hooks = w && w.draft && w.draft.webhooks;
+    if (t.draft) return 'added';
+    if (!hooks) return '';
+    if ((hooks.remove || []).indexOf(t.trigger_id) !== -1) return 'removed';
+    if (hooks.update && hooks.update[t.trigger_id]) return 'changed';
+    return '';
+  }
   function hookRowHtml(t, shownUrl) {
+    var state = hookDraftState(t);
+    if (state === 'removed') {
+      return '<div class="workflow-hook" data-trigger="' + escapeHtml(t.trigger_id) + '"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline"><s><strong>' + escapeHtml(t.name) + '</strong></s>' +
+        '<span class="le-pill warn">Removed in the draft</span><button type="button" class="hook-undo">Undo</button>' +
+        '<span hidden><button class="hook-edit"></button><button class="hook-rotate"></button><button class="hook-delete"></button></span></div></div>';
+    }
+    var draftPill = state === 'added' ? ' <span class="le-pill warn">Not live until published</span>' : state === 'changed' ? ' <span class="le-pill warn">Changed in the draft</span>' : '';
     var rules = [];
     if (t.verify) rules.push(t.verify.sender === 'custom'
       ? 'checks the signature in ' + escapeHtml(t.verify.header || '(header not set yet)') + ' (' + escapeHtml(t.verify.algorithm || 'sha256') + ', ' + escapeHtml(t.verify.encoding || 'hex') + ')'
@@ -1983,7 +2153,7 @@ ${renderMarkdownScript}
     var setup = needsSecret ? hookSetupSteps(t) : null;
     return '<div class="workflow-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">' +
       '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><strong>' + escapeHtml(t.name) + '</strong>' +
-        '<code class="hint">/hooks/workflows/' + escapeHtml(t.token_hint) + '</code>' + (needsSecret ? ' <span class="le-pill warn">Needs its signing secret</span>' : t.enabled ? '' : ' <span class="le-pill">Off</span>') + '</div>' +
+        '<code class="hint">/hooks/workflows/' + escapeHtml(t.token_hint) + '</code>' + (needsSecret ? ' <span class="le-pill warn">Needs its signing secret</span>' : t.enabled ? '' : ' <span class="le-pill">Off</span>') + draftPill + '</div>' +
       (rules.length ? '<p class="hint" style="margin:2px 0">' + rules.join(' ' + String.fromCharCode(183) + ' ') + '</p>' : '') +
       (needsSecret
         // Set up and waiting: the steps that turn it on, in order.
@@ -2052,7 +2222,7 @@ ${renderMarkdownScript}
               field('Or give the whole payload to', '<select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select>', '')
             : '<p class="hd-hint">This workflow takes no inputs, so what the app sends isn' + RSQ + 't passed on. Add one with Edit to use it.</p>') +
         '</section>' +
-        '<p class="hd-hint">Where its runs' + RSQ + ' updates, approvals and questions go is set once for the workflow, in its Messages tab.</p>' +
+        '<p class="hd-hint">Where its runs' + RSQ + ' updates, approvals and questions go is set once for the workflow, in its Messaging tab.</p>' +
       '</div>' +
       '<footer class="hd-foot"><span class="hook-form-result" role="status"></span>' +
         '<div class="hd-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">' + (t ? 'Save' : 'Create webhook') + '</button></div></footer>' +
@@ -2134,7 +2304,7 @@ ${renderMarkdownScript}
       if (Object.keys(mapping).length) body.mapping = mapping;
       if (form.payload_param && form.payload_param.value) body.payload_param = form.payload_param.value;
       // A change says what's cleared too; a setting left out is kept (its
-      // own message settings, from before: the Messages tab clears them).
+      // own message settings, from before: the Messaging tab clears them).
       if (existing) {
         ['verify', 'filter', 'mapping'].forEach(function (k) { if (!(k in body)) body[k] = null; });
         if (!('payload_param' in body)) body.payload_param = '';
@@ -2174,6 +2344,7 @@ ${renderMarkdownScript}
     var addBox = card.querySelector('.workflow-hooks-add');
     if (!w || !box) return;
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/triggers';
+    var draftBase = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/draft/webhooks';
     var hooksById = {};
     function render(shownUrl, shownId) {
       if (!box.innerHTML) box.innerHTML = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
@@ -2183,9 +2354,11 @@ ${renderMarkdownScript}
         hooksById = {};
         list.forEach(function (t) { hooksById[t.trigger_id] = t; });
         // Keep the card's summary in step with what was just changed.
-        w.webhooks = list.filter(function (t) { return t.enabled; }).length;
-        w.webhooksWaiting = list.filter(function (t) { return !t.enabled && t.verify && !t.verify.secret_set; }).length;
-        w.webhooksOff = list.length - w.webhooks - w.webhooksWaiting;
+        // A webhook made in the draft doesn't start runs yet.
+        var live = list.filter(function (t) { return !t.draft; });
+        w.webhooks = live.filter(function (t) { return t.enabled; }).length;
+        w.webhooksWaiting = live.filter(function (t) { return !t.enabled && t.verify && !t.verify.secret_set; }).length;
+        w.webhooksOff = live.length - w.webhooks - w.webhooksWaiting;
         var startsCell = card.querySelector('.wf-row-starts');
         if (startsCell) startsCell.innerHTML = workflowStartsSummary(w);
         // One waiting for its secret, or just made: open the Run options
@@ -2214,8 +2387,14 @@ ${renderMarkdownScript}
       for (var i = 0; i < rows.length; i++) {
         (function (row) {
           var id = row.dataset.trigger;
+          // Editing and deleting go in the draft; on/off, the signing secret
+          // and a new URL act now.
           row.querySelector('.hook-edit').addEventListener('click', function () {
-            if (hooksById[id]) openHookFormDialog(w, base, function () { render(null, null); }, hooksById[id]);
+            if (hooksById[id]) openHookFormDialog(w, draftBase, function () { render(null, null); refreshDraft(name, card); }, hooksById[id]);
+          });
+          var undo = row.querySelector('.hook-undo');
+          if (undo) undo.addEventListener('click', function () {
+            fetchJsonRetryOnce(draftBase + '/' + encodeURIComponent(id) + '/restore', { method: 'POST' }).then(function () { render(null, null); refreshDraft(name, card); });
           });
           var toggle = row.querySelector('.hook-toggle');
           if (toggle) toggle.addEventListener('click', function (ev) {
@@ -2244,7 +2423,11 @@ ${renderMarkdownScript}
           row.querySelector('.hook-delete').addEventListener('click', function (ev) {
             var btn = ev.currentTarget;
             if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to delete'; return; }
-            act(id, '', { method: 'DELETE' });
+            fetchJsonRetryOnce(draftBase + '/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
+              if (!r.ok) { alert(r.body.error || 'That didn' + String.fromCharCode(8217) + 't work'); return; }
+              render(null, null);
+              refreshDraft(name, card);
+            });
           });
         })(rows[i]);
       }
@@ -2333,6 +2516,7 @@ ${renderMarkdownScript}
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
     loadWorkflowVersions(card, base);
+    wireDraftBanner(name, card);
     loadWorkflowHealth(card, base);
     loadCandidates(card, base);
     loadAuditSummary(card, base);
@@ -2387,7 +2571,7 @@ ${renderMarkdownScript}
         if (msgForm.msgNoticeOn && msgForm.msgNoticeOn.checked && msgForm.msgNotice.value.trim()) body.chat_notice = msgForm.msgNotice.value.trim();
         if (msgForm.msgResult && msgForm.msgResult.checked) body.result_to_chat = true;
         msgResult.textContent = 'Saving' + String.fromCharCode(8230);
-        fetchJsonRetryOnce(base + '/messages', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+        fetchJsonRetryOnce(base + '/draft/messages', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
           if (!r.ok) { msgResult.textContent = r.body.error || 'Could not save'; return; }
           reloadOnMessages();
         });
@@ -2396,7 +2580,7 @@ ${renderMarkdownScript}
       for (var cb = 0; cb < clearButtons.length; cb++) {
         clearButtons[cb].addEventListener('click', function (ev) {
           var tid = ev.currentTarget.dataset.trigger;
-          fetchJsonRetryOnce(base + '/triggers/' + encodeURIComponent(tid), {
+          fetchJsonRetryOnce(base + '/draft/webhooks/' + encodeURIComponent(tid), {
             method: 'PUT', headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ callback_url: null, decisions: null, chat_notice: null, result_to_chat: false }),
           }).then(function (r) {
@@ -2445,7 +2629,8 @@ ${renderMarkdownScript}
       var list = Array.prototype.map.call(rows.querySelectorAll('.wf-crit-row'), function (row) {
         return { id: row.dataset.critId || undefined, kind: row.querySelector('[data-crit-kind]').value, text: row.querySelector('[data-crit-text]').value, value: row.querySelector('[data-crit-value]').value };
       }).filter(function (c) { return c.text.trim() || c.value.trim(); });
-      fetchJsonRetryOnce(base + '/evals/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) }).then(function (r) {
+      // Saved to the draft: published with the rest of it.
+      fetchJsonRetryOnce(base + '/draft/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) }).then(function (r) {
         cbtn.disabled = false;
         if (!r.ok) { critStatus.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't save.'; return; }
         workflowTabs[id] = 'evaluation';
@@ -2488,8 +2673,10 @@ ${renderMarkdownScript}
     card.querySelector('.workflow-hooks-btn').addEventListener('click', function () {
       var w = workflowsById[id];
       if (!w) return;
-      openHookFormDialog(w, base + '/triggers', function (url, triggerId) {
+      // Made in the draft: its URL now, live once the draft is published.
+      openHookFormDialog(w, base + '/draft/webhooks', function (url, triggerId) {
         loadWorkflowHooks(name, card, { url: url, id: triggerId });
+        refreshDraft(name, card);
       });
     });
     var wf = workflowsById[id];
@@ -2499,6 +2686,17 @@ ${renderMarkdownScript}
       pendingScheduleWorkflow = id;
       switchTab('schedules');
     });
+    // Removing a schedule, or undoing that, is part of the draft; pausing
+    // and resuming act now.
+    var draftScheduleBtns = card.querySelectorAll('.workflow-schedule-draft');
+    for (var dsb = 0; dsb < draftScheduleBtns.length; dsb++) {
+      draftScheduleBtns[dsb].addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        btn.disabled = true;
+        var path = base + '/draft/schedules/' + encodeURIComponent(btn.dataset.id);
+        (btn.dataset.action === 'restore' ? fetchJsonRetryOnce(path + '/restore', { method: 'POST' }) : fetchJsonRetryOnce(path, { method: 'DELETE' })).then(function () { loadWorkflowsSection(name); });
+      });
+    }
     var scheduleBtns = card.querySelectorAll('.workflow-schedule-action');
     for (var sb = 0; sb < scheduleBtns.length; sb++) {
       scheduleBtns[sb].addEventListener('click', function (ev) {
@@ -2506,7 +2704,10 @@ ${renderMarkdownScript}
         var action = btn.dataset.action;
         if (action === 'cancel' && btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
         btn.disabled = true;
-        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' }).then(function () {
+        var request = action === 'cancel'
+          ? fetchJsonRetryOnce(base + '/draft/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
+          : fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' });
+        request.then(function () {
           loadWorkflowsSection(name);
           // The Schedules tab's count, and the Overview's tile.
           fillOverviewCards(name);
@@ -3873,17 +4074,17 @@ ${renderMarkdownScript}
           : t.workflow_missing
             ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
             : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') +
-        // A workflow's schedule follows its Messages tab (an old tick here
+        // A workflow's schedule follows its Messaging tab (an old tick here
         // was moved there when the server started).
         (t.status !== 'cancelled' && t.status !== 'done' && !t.workflow_id
-          ? '<label class="schedule-notify hint" title="Sent through its Messaging tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send result to messaging app</label>'
+          ? '<label class="schedule-notify hint" title="Sent through its Messaging Apps tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send result to messaging app</label>'
           : (t.notify && !t.workflow_id ? '<div><span class="workflow-option-value">Send result to messaging app</span></div>' : '')) + '</td>' +
       '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
       '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
         (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
       '<td style="min-width:200px">' + last + (history ? '<details><summary class="hint">History (' + (t.history || []).length + ')</summary><ul class="schedule-history">' + history + '</ul></details>' : '') + '</td>' +
       '<td><div style="display:flex;gap:6px;flex-wrap:wrap">' + actions.map(function (a) {
-        return '<button type="button" class="schedule-action' + (a[0] === 'run' ? ' primary' : '') + (a[0] === 'cancel' || a[0] === 'delete' ? ' delete-btn' : '') + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + a[0] + '">' + a[1] + '</button>';
+        return '<button type="button" class="schedule-action' + (a[0] === 'run' ? ' primary' : '') + (a[0] === 'cancel' || a[0] === 'delete' ? ' delete-btn' : '') + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + a[0] + '"' + (t.workflow_id ? ' data-workflow="' + escapeHtml(t.workflow_id) + '"' : '') + '>' + a[1] + '</button>';
       }).join('') + '</div></td></tr>';
   }
 
@@ -3892,7 +4093,7 @@ ${renderMarkdownScript}
     var list = tasks.length
       ? '<div class="le-table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Status</th><th>Last run</th><th></th></tr></thead><tbody>' + tasks.map(renderScheduleRow).join('') + '</tbody></table></div>'
       : '<p class="hint">Nothing scheduled yet.</p>';
-    return '<p class="muted" style="margin:0 0 20px">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule runs the workflow&#39;s instructions as they are at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
+    return '<p class="muted" style="margin:0 0 20px">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule runs the workflow&#39;s instructions as they are at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging Apps tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
       '<section><h3>Scheduled (' + active.length + ' active)</h3>' + list + '</section>' +
       '<section><h3>New schedule</h3>' +
         '<form class="add-source" id="scheduleForm" style="max-width:560px">' +
@@ -3919,7 +4120,7 @@ ${renderMarkdownScript}
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
           '<label>Name <span class="hint">(optional)</span><input name="task_name" placeholder="Daily ticket summary"></label>' +
-          '<label class="http-tool-inline-label" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging tab: Slack, email, Lark or a webhook)</span></label>' +
+          '<label class="http-tool-inline-label" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging Apps tab: Slack, email, Lark or a webhook)</span></label>' +
           '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
           '<div id="scheduleResult" class="hint"></div>' +
         '</form></section>';
@@ -3955,7 +4156,11 @@ ${renderMarkdownScript}
           return;
         }
         btn.disabled = true;
-        var request = action === 'delete'
+        // A workflow's schedule is removed in the workflow's draft.
+        var wfId = btn.dataset.workflow;
+        var request = wfId && (action === 'cancel' || action === 'delete')
+          ? fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(wfId) + '/draft/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
+          : action === 'delete'
           ? fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
           : fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' });
         request.then(function () { setTimeout(function () { loadSchedulesTab(name); }, action === 'run' ? 800 : 0); });
@@ -4010,7 +4215,7 @@ ${renderMarkdownScript}
         var byMessage = form.querySelector('input[name="runs"]:checked').value === 'message';
         messageField.hidden = !byMessage;
         if (paramsBox) paramsBox.hidden = byMessage;
-        // A workflow's result goes where its Messages tab says.
+        // A workflow's result goes where its Messaging tab says.
         var notifyField = form.querySelector('#scheduleNotifyField');
         if (notifyField) notifyField.hidden = !byMessage;
       });
@@ -4032,7 +4237,12 @@ ${renderMarkdownScript}
         if (data.get('everyStart')) schedule.start_at = scheduleFormTime(data.get('everyStart'));
       }
       result.textContent = 'Scheduling' + String.fromCharCode(8230);
-      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules', {
+      // A workflow's schedule goes in the workflow's draft: it starts when
+      // the draft is published. A message schedule starts now.
+      var target = runsWorkflow
+        ? '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(data.get('workflow_id')) + '/draft/schedules'
+        : '/agents/' + encodeURIComponent(name) + '/schedules';
+      fetchJsonRetryOnce(target, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(Object.assign(
           runsWorkflow ? { workflow_id: data.get('workflow_id'), params: scheduleParams(data) } : { message: data.get('message') },
@@ -4040,6 +4250,10 @@ ${renderMarkdownScript}
         )),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not schedule'; return; }
+        if (runsWorkflow) {
+          result.innerHTML = 'Added to the workflow' + String.fromCharCode(8217) + 's draft: it starts when the draft is published. <a href="' + workflowPageHref(name, data.get('workflow_id')) + '">Review and publish</a>';
+          return;
+        }
         loadSchedulesTab(name);
       });
     });

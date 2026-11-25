@@ -17,7 +17,7 @@ import { checkRunDelivery, createTrigger, getTriggerStore, listTriggers, publicT
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { contextToolsFor, type AppToolInputs } from '../core/mcp-apps.js'
-import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowDelivery, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowDelivery, type WorkflowModel } from '../core/workflows.js'
+import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowDelivery, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowDelivery, type WorkflowFields, type WorkflowModel } from '../core/workflows.js'
 import { checkOutputSchema, type JsonSchema } from '../core/output-schema.js'
 import { checkInputSpec, type InputSpec } from '../core/input-schema.js'
 import { readEvals, setEvalCriteria, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
@@ -106,7 +106,7 @@ export async function workflowRequirements(plan: WorkflowPlan, agent: WorkflowAg
   if (need) {
     out.push(agent.messaging
       ? { kind: 'messaging', title: `Messaging (${agent.messaging})`, ready: true }
-      : { kind: 'messaging', title: 'Messaging', ready: false, todo: `Set up ${agent.name}'s Messaging (Slack, email, Lark or a webhook), so ${need} when you're not in Chat`, href: tab('messaging') })
+      : { kind: 'messaging', title: 'Messaging Apps', ready: false, todo: `Set up ${agent.name}'s Messaging Apps (Slack, email, Lark or a webhook), so ${need} when you're not in Chat`, href: tab('messaging') })
   }
   return out
 }
@@ -899,7 +899,8 @@ export async function listAgentWorkflows(agentName: string, agentDir: string): P
   return workflows.map((w) => {
     const schedules = workflowTasks(w.id, tasks).map(scheduleView)
     const recentRuns = runs.filter((r) => r.workflow_id === w.id).slice(0, RECENT_RUNS)
-    const own = triggers.filter((t) => t.workflow_id === w.id)
+    // Its live webhooks: one made in a draft doesn't start runs yet.
+    const own = triggers.filter((t) => t.workflow_id === w.id && !t.draft)
     const webhooks = own.filter((t) => t.enabled).length
     // Made by the planner, waiting for the sender's signing secret.
     const webhooksWaiting = own.filter((t) => !t.enabled && t.verify && !t.verify.secret).length
@@ -985,12 +986,18 @@ export function contractFields(input: Record<string, unknown>): { model?: Workfl
   return fields
 }
 
+/** The Messaging tab's settings, checked, without saving them (for a
+ * draft): its delivery, or null for the messaging app's defaults. */
+export function checkWorkflowMessages(input: Record<string, unknown>): WorkflowDelivery | null {
+  return deliveryOf(input)
+}
+
 function deliveryOf(input: Record<string, unknown>): WorkflowDelivery | null {
   const d = checkRunDelivery(input, (m) => new WorkflowError(m))
   return Object.keys(d).length ? d : null
 }
 
-/** The Messages tab's save: where every run's updates, approvals and
+/** The Messaging tab's save: where every run's updates, approvals and
  * questions, start notice and result go. { callback_url, decisions,
  * chat_notice, result_to_chat }; empty for the messaging app's defaults. */
 export function updateWorkflowMessages(agentDir: string, id: string, input: Record<string, unknown>): Workflow {
@@ -1000,6 +1007,14 @@ export function updateWorkflowMessages(agentDir: string, id: string, input: Reco
 }
 
 export function updateWorkflow(agentDir: string, id: string, input: Record<string, unknown>): Workflow {
+  setWorkflowFields(agentDir, id, workflowEdit(agentDir, id, input))
+  return readWorkflow(agentDir, id)!
+}
+
+/** An edit from the console's editor, checked: what saving it (or
+ * publishing it, as a draft) writes. Throws WorkflowError saying what's
+ * wrong. */
+export function workflowEdit(agentDir: string, id: string, input: Record<string, unknown>): WorkflowFields {
   if (!readWorkflow(agentDir, id)) throw new WorkflowError(`No workflow ${id}.`)
   const text = (value: unknown, field: string, max: number): string => {
     if (value !== undefined && value !== null && typeof value !== 'string') throw new WorkflowError(`${field} must be text.`)
@@ -1030,8 +1045,7 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
     parameters[name] = { description: text(s.description, `The description of "${name}"`, 300), required: s.required === true, ...typed }
   }
   const named = { ...(title ? { title } : {}), ...(description ? { description: description.replace(/\s+/g, ' ') } : {}), ...contractFields(input) }
-  setWorkflowFields(agentDir, id, instructions !== undefined ? { ...named, instructions, parameters } : { ...named, startMessage, ...(trigger ? { trigger } : {}), parameters })
-  return readWorkflow(agentDir, id)!
+  return instructions !== undefined ? { ...named, instructions, parameters } : { ...named, startMessage, ...(trigger ? { trigger } : {}), parameters }
 }
 
 /** Removes a workflow: its skill stays, as a plain skill the agent can
@@ -1089,7 +1103,7 @@ export function agentDirIn(projectDir: string, name: string): string {
 
 /** Before 0.3.85 a workflow's schedule could post each run's result to
  * chat itself (its notify box); that's the workflow's own setting now (its
- * Messages tab, delivery.result_to_chat). Moves each live schedule's box
+ * Messaging tab, delivery.result_to_chat). Moves each live schedule's box
  * onto its workflow and clears it from the schedule, so one setting
  * decides. Returns the workflows turned on, as "agent/workflow". */
 export async function moveScheduleResultsToWorkflows(agentDirOf: (agent: string) => string | undefined): Promise<string[]> {

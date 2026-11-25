@@ -109,7 +109,7 @@ export const consoleShellScript: string = `<script>
   // ability on the Apps tab (id 'abilities', so older links still work).
   // ?tab=tools and ?tab=skills still open Advanced.
   var TABS = [
-    ['overview', 'Overview'], ['workflows', 'Workflows'], ['abilities', 'Apps'], ['messaging', 'Messaging'],
+    ['overview', 'Overview'], ['workflows', 'Workflows'], ['abilities', 'Apps'], ['messaging', 'Messaging Apps'],
     ['schedules', 'Schedules'], ['chat', 'Chat'], ['actauth', 'Permissions'], ['env', 'Environment'], ['advanced', 'Advanced']
   ];
 

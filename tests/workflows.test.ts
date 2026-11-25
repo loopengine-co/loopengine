@@ -243,7 +243,7 @@ describe("what a workflow needs from its agent", () => {
       { kind: 'app', id: 'stripe', title: 'Stripe', ready: true },
       { kind: 'app', id: 'linear', title: 'Linear', ready: true, note: 'Added to web-agent when you create it, with create_issue' },
       { kind: 'app', id: 'notion', title: 'Notion', ready: false, todo: "Connect Notion on the Apps page; it's added to web-agent when you create it, with search", href: '/config?section=apps' },
-      { kind: 'messaging', title: 'Messaging', ready: false, todo: "Set up web-agent's Messaging (Slack, email, Lark or a webhook), so its questions and approvals reach you when you're not in Chat", href: '/agents/config?agent=web-agent&tab=messaging' },
+      { kind: 'messaging', title: 'Messaging Apps', ready: false, todo: "Set up web-agent's Messaging Apps (Slack, email, Lark or a webhook), so its questions and approvals reach you when you're not in Chat", href: '/agents/config?agent=web-agent&tab=messaging' },
     ])
   })
 

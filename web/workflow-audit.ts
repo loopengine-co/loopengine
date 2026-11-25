@@ -288,7 +288,7 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
     const change = firstRan && lastRan && firstRan !== lastRan ? effect(firstRan, lastRan).replace(/^; /, ` From version ${firstRan.number} to ${lastRan.number}, `) : ''
     summary.push(`The workflow changed ${saved.length} times${start ? `, from version ${start.number}` : ''} to version ${latest.number}, last on ${day(latest.at)}${people.length ? `, by ${people.join(', ')}` : ''}.${change ? `${change}.` : ''}`)
   } else if (versions.length) summary.push(`The workflow stayed at version ${versions[0].number} all period.`)
-  const otherChanges = changes.filter((c) => !/^Edited the workflow$|^Restored (brief|workflow) version/.test(c.label))
+  const otherChanges = changes.filter((c) => !/^Edited the workflow$|^Published the workflow$|^Restored (brief|workflow) version/.test(c.label))
   if (otherChanges.length) summary.push(`${plural(otherChanges.length, 'other setting change')}: ${[...new Set(otherChanges.map((c) => c.label.toLowerCase()))].slice(0, 4).join(', ')}.`)
   if (cost) summary.push(`It cost ${dollars(cost.totalUsd)} in model calls${cost.pricedRuns < total.runs ? ` (for the ${plural(cost.pricedRuns, 'run')} with a known price)` : ''}, ${dollars(cost.perRunUsd)} a run.`)
 

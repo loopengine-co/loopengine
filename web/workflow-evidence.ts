@@ -236,6 +236,15 @@ export function removeEvalCase(agentDir: string, workflowId: string, caseId: str
 /** Replaces the workflow's criteria. Each needs its words; a code check
  * needs its value. */
 export function setEvalCriteria(agentDir: string, workflowId: string, input: unknown): EvalCriterion[] {
+  const criteria = checkEvalCriteria(input)
+  const evals = readEvals(agentDir, workflowId)
+  writeEvals(agentDir, workflowId, { ...evals, criteria })
+  return criteria
+}
+
+/** Criteria as given, checked (each its words, a value where its kind
+ * needs one, at most MAX_CRITERIA), without saving them. */
+export function checkEvalCriteria(input: unknown): EvalCriterion[] {
   if (!Array.isArray(input)) throw new EvidenceError('criteria must be a list.')
   if (input.length > MAX_CRITERIA) throw new EvidenceError(`Keep it to ${MAX_CRITERIA} criteria: the ones that matter most.`)
   const used = new Set<string>()
@@ -251,8 +260,6 @@ export function setEvalCriteria(agentDir: string, workflowId: string, input: unk
     used.add(id)
     return { id, text, kind, ...(value && kind !== 'judge' && kind !== 'reference' ? { value } : {}) }
   })
-  const evals = readEvals(agentDir, workflowId)
-  writeEvals(agentDir, workflowId, { ...evals, criteria })
   return criteria
 }
 

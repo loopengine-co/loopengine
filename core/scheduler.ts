@@ -236,26 +236,23 @@ export interface CreateScheduledTaskInput {
   notify?: boolean
 }
 
-export async function createScheduledTask(input: CreateScheduledTaskInput, nowMs = Date.now()): Promise<ScheduledTask> {
-  if (!input.agent) throw new ScheduleError('agent is required')
-  const message = typeof input.message === 'string' ? input.message : ''
-  const workflowId = typeof input.workflow_id === 'string' ? input.workflow_id.trim() : ''
-  if (message.trim() && workflowId) throw new ScheduleError('give either a message or a workflow_id, not both')
-  if (!message.trim() && !workflowId) throw new ScheduleError('message or workflow_id is required')
+/** A schedule as a task gives it, checked: what it's saved as and when it
+ * first runs. Throws ScheduleError saying what's wrong. */
+export function parseScheduleInput(requested: CreateScheduledTaskInput['schedule'], nowMs = Date.now()): { schedule: Schedule; nextRunMs: number } {
   let schedule: Schedule
   let nextRunMs: number
   const timeZone = workspaceTimeZone()
-  if (typeof input.schedule?.run_at === 'string' && input.schedule.run_at) {
-    const runAtMs = parseTimestamp(input.schedule.run_at, timeZone)
-    if (Number.isNaN(runAtMs)) throw new ScheduleError(`"${input.schedule.run_at}" is not a valid ISO 8601 timestamp`)
+  if (typeof requested?.run_at === 'string' && requested.run_at) {
+    const runAtMs = parseTimestamp(requested.run_at, timeZone)
+    if (Number.isNaN(runAtMs)) throw new ScheduleError(`"${requested.run_at}" is not a valid ISO 8601 timestamp`)
     schedule = { run_at: new Date(runAtMs).toISOString() }
     nextRunMs = runAtMs
-  } else if (typeof input.schedule?.every === 'string' && input.schedule.every) {
-    const every = input.schedule.every.trim()
+  } else if (typeof requested?.every === 'string' && requested.every) {
+    const every = requested.every.trim()
     const intervalMs = parseEvery(every)
     const days = everyDays(every)
     const calendar = days ? { days, timeZone } : undefined
-    const { start_at: startAt, at, weekday } = input.schedule
+    const { start_at: startAt, at, weekday } = requested
     const given = (v: unknown) => v !== undefined && v !== null && v !== ''
     let startMs: number | undefined
     if (given(at)) {
@@ -279,9 +276,19 @@ export async function createScheduledTask(input: CreateScheduledTaskInput, nowMs
       schedule = { every, anchor: new Date(nextRunMs).toISOString(), ...(calendar ? { time_zone: timeZone } : {}) }
     }
   } else {
-    if (input.schedule?.start_at || input.schedule?.at) throw new ScheduleError('start_at and at go with "every" (a repeating task); a one-off task uses run_at')
+    if (requested?.start_at || requested?.at) throw new ScheduleError('start_at and at go with "every" (a repeating task); a one-off task uses run_at')
     throw new ScheduleError('schedule must be { "run_at": "<ISO timestamp>" } or { "every": "<interval, e.g. 1h>", "start_at"?: "<ISO timestamp>" } or { "every": "1d", "at": "09:00" }')
   }
+  return { schedule, nextRunMs }
+}
+
+export async function createScheduledTask(input: CreateScheduledTaskInput, nowMs = Date.now()): Promise<ScheduledTask> {
+  if (!input.agent) throw new ScheduleError('agent is required')
+  const message = typeof input.message === 'string' ? input.message : ''
+  const workflowId = typeof input.workflow_id === 'string' ? input.workflow_id.trim() : ''
+  if (message.trim() && workflowId) throw new ScheduleError('give either a message or a workflow_id, not both')
+  if (!message.trim() && !workflowId) throw new ScheduleError('message or workflow_id is required')
+  const { schedule, nextRunMs } = parseScheduleInput(input.schedule, nowMs)
   const task: ScheduledTask = {
     task_id: randomUUID(),
     task_name: input.task_name?.trim() || undefined,

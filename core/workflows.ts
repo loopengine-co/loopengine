@@ -343,6 +343,19 @@ export function setWorkflowFields(agentDir: string, id: string, fields: Workflow
   }, skill.body)
 }
 
+/** Renames a workflow or changes its description, nothing else: these
+ * don't change what its runs do, so they're saved straight away, never
+ * drafted. */
+export function setWorkflowName(agentDir: string, id: string, input: { title?: string; description?: string }): void {
+  const path = skillPath(agentDir, id)
+  const skill = readSkillFile(path, id)
+  if (!skill) throw new Error(`No workflow "${id}".`)
+  const frontmatter = { ...skill.frontmatter }
+  if (input.title?.trim()) frontmatter.title = input.title.trim()
+  if (input.description?.trim()) frontmatter.description = input.description.trim().replace(/\s+/g, ' ')
+  writeSkillFile(path, frontmatter, skill.body)
+}
+
 /** Stops a skill being a workflow. The skill itself stays. */
 export function clearWorkflowFields(agentDir: string, id: string): void {
   const path = skillPath(agentDir, id)

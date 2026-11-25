@@ -86,23 +86,23 @@ import {
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
-import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
+import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowDelivery, setWorkflowFields, setWorkflowName, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
 import { listTraceSpans, workflowContent, workflowFromContent, type Version, type WorkflowSnapshot, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
 import { caseRow, eventsCsv } from '#web/audit-admin.js'
 import { auditPageFor } from '#web/audit-page.js'
-import { changeOf, describeChanges, keptBody } from '#web/change-log.js'
+import { changeOf, describeChanges, keptBody, type FieldChange } from '#web/change-log.js'
 import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
 import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { buildWorkflowAudit, type WorkflowAudit } from '#web/workflow-audit.js'
 import { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
-import { EvidenceError, type StandIn, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
+import { EvidenceError, type StandIn, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, checkEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, workflowVersionOf, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
 import {
   TriggerError, checkRunDelivery, createTrigger, deliveryId, fillChatNotice, findTriggerByToken, getTriggerStore, listTriggers, paramsFromPayload, parsePayload, passesFilter,
-  publicTrigger, recordDelivery, resultToChat, rotateTrigger, updateTrigger, verifySenderSignature,
+  publicTrigger, recordDelivery, resultToChat, rotateTrigger, updateTrigger, verifySenderSignature, applyTriggerSettings, checkTriggerSettings, type WorkflowTrigger,
 } from '#core/workflow-triggers.js'
 import { TRUSTED_PROXY_IDENTITY_HEADER, verifyProxyIdentity } from '#core/trusted-proxy.js'
 import { agentsFor, canDecide, inboxOnly, inboxOnlyAllows, roleLabel, workspaceRole, type WorkspaceRole } from '#core/workspace-roles.js'
@@ -113,7 +113,7 @@ import { NotifierFileError } from '#core/notifier-file.js'
 import { decidePath, verifyDecisionToken } from '#core/approval-links.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
 import { agentApprovers, agentMessagingIdentities, agentTelegramWebhookInfo, announceToChat, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, hasChatApp, hasNotifier, type TwoWayApp } from '#web/notifier-admin.js'
-import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
+import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, parseScheduleInput, type CreateScheduledTaskInput, type Schedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, outcomeText, settleRequest, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
 import { handleJobMessage, isJobMessage, settleJobThread, type JobDeps, type JobTurn } from '#core/messaging/jobs.js'
 import { findJobThreadBySession, findThread, findThreadByPending } from '#core/messaging/threads.js'
@@ -126,7 +126,7 @@ import { searchPublicAbilities, fetchLatestAbilityVersion } from '#web/abilities
 import { installMissingPackages } from '#core/ability-dependencies.js'
 import { describeAbilitySources, listPrivateAbilities, removeAbilitySourceFromConsole, saveAbilitySourceFromConsole } from '#web/ability-sources-admin.js'
 import { abilityDetails } from '#web/ability-details-admin.js'
-import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, moveScheduleResultsToWorkflows, noteForExistingAgent, planWorkflow, postWorkflowResults, prepareWorkflowRun, startPlanJob, updateWorkflow, updateWorkflowMessages, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
+import { WorkflowError, checkWorkflowRequirements, createWorkflow, forgetAgent, forgetWorkflow, getPlanJob, listAgentWorkflows, migrateAgentWorkflows, moveScheduleResultsToWorkflows, noteForExistingAgent, planWorkflow, postWorkflowResults, prepareWorkflowRun, startPlanJob, updateWorkflow, updateWorkflowMessages, workflowEdit, checkWorkflowMessages, type WorkflowAgentInfo, type WorkflowAppStatus, type WorkflowMcpDeps } from '#web/workflow-admin.js'
 import { workflowPageHtml } from '#web/workflow-page.js'
 import { goalsPageAs } from '#web/goals-page.js'
 import { inboxPageHtml, renderInboxOnlyPage } from '#web/inbox-page.js'
@@ -135,6 +135,7 @@ import { homePageHtml } from '#web/home-page.js'
 import { homeOverview, workflowsOverview } from '#web/workflows-overview.js'
 import { getInboxCase, listInbox, type InboxDeps } from '#web/inbox-admin.js'
 import { buildRunTrace, type RunTrace } from '#web/run-trace.js'
+import { changeDraft, discardDraft, draftChanges, readDraft, withDraft, type DraftSchedule, type DraftState, type WorkflowDraft } from '#web/workflow-drafts.js'
 import { checkOutputSchema } from '#core/output-schema.js'
 import { inputSchemaOf } from '#core/input-schema.js'
 import { activePlaybook, setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
@@ -1769,6 +1770,9 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
       tools: toolsOf(w.instructions),
       // Its inputs as one JSON Schema, for apps that start it.
       inputSchema: inputSchemaOf(w.parameters),
+      // Its draft, not live yet (web/workflow-drafts.ts): the editor opens
+      // it, and the page offers to publish it.
+      ...(readDraft(projectDir(), agentName, w.id) ? { draft: readDraft(projectDir(), agentName, w.id) } : {}),
       triggers: triggers.filter((t) => t.workflow_id === w.id).map((t) => ({
         trigger_id: t.trigger_id, name: t.name, sender: t.verify?.sender ?? 'custom', enabled: t.enabled, waiting: !t.enabled && !!t.verify && !t.verify.secret,
         ...(t.filter ? { filter: t.filter } : {}), ...(t.mapping ? { mapping: t.mapping } : {}), ...(resultToChat(t) ? { result_to_chat: true } : {}), ...(t.callback_url ? { callback: true } : {}), ...(t.decisions_to ? { decisions_to: t.decisions_to } : {}), ...(t.chat_notice ? { chat_notice: true } : {}),
@@ -1977,6 +1981,23 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
       updateWorkflow(dir, id, await readJsonBody(req))
       await noteWorkflowVersion(agentName, id, { by: changedBy(req), reason: 'Edited in the console' })
       return json(200, await workflowsView(agentName))
+    }
+    // Publishing: everything in the draft goes live at once, as the
+    // workflow's next version with the person's note as its reason, and the
+    // draft is gone.
+    if (id && action === 'publish' && req.method === 'POST') {
+      const workflow = readWorkflow(dir, id)
+      if (!workflow) return json(404, { error: `No workflow ${id}.` })
+      const draft = readDraft(projectDir(), agentName, id)
+      if (!draft) return json(400, { error: 'There is no draft to publish: change the workflow and save a draft first.' })
+      const { changes } = await draftStates(agentName, workflow, draft)
+      if (!changes.length) return json(400, { error: 'The draft is the same as the published workflow: there is nothing to publish.' })
+      const body = await readJsonBody(req)
+      const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
+      const previous = await noteWorkflowVersion(agentName, id)
+      await publishDraft(agentName, workflow, draft)
+      const version = await noteWorkflowVersion(agentName, id, { by: changedBy(req), reason: note || 'Published' })
+      return json(200, { version: version ?? null, previous: previous ?? null, changes })
     }
     // The workflow's versions, newest first, and restoring one (which
     // saves it as a new version): its name, inputs, model, instructions and
@@ -2561,6 +2582,204 @@ function inboxDepsFor(req: IncomingMessage): InboxDeps {
 // Workflow runs, whatever starts them, each recorded apart from schedules.
 const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun, onChange: reportWorkflowRun, versionsFor: async (agent, workflowId) => ({ workflow: await noteWorkflowVersion(agent, workflowId), policies: notePolicies() }), outputSchemaFor: (agent, workflowId) => (getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.outputSchema : undefined) })
 
+// A schedule or a webhook in a line, as a workflow version and its draft
+// show them.
+function scheduleLine(t: { task_name?: string; schedule: Schedule; status: string; params?: Record<string, string> }): string {
+  const inputs = t.params && Object.keys(t.params).length ? `, inputs ${Object.entries(t.params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ')}` : ''
+  return `Schedule${t.task_name ? ` "${t.task_name}"` : ''}: ${describeSchedule(t.schedule)}${'anchor' in t.schedule && t.schedule.anchor ? ` from ${t.schedule.anchor}` : ''}${'time_zone' in t.schedule && t.schedule.time_zone ? ` (${t.schedule.time_zone})` : ''}, ${t.status}${inputs}`
+}
+function hookLine(h: Pick<WorkflowTrigger, 'name' | 'verify' | 'enabled' | 'filter' | 'mapping' | 'payload_param'>): string {
+  return `Webhook "${h.name}": from ${h.verify?.sender ?? 'any sender'}, ${h.enabled ? 'on' : 'off'}` +
+    `${h.filter ? `, only when ${h.filter.path} is ${h.filter.values.join(' or ')}` : ''}` +
+    `${h.mapping && Object.keys(h.mapping).length ? `, inputs ${Object.entries(h.mapping).map(([k, v]) => `${k}←${v}`).join(' ')}` : ''}` +
+    `${h.payload_param ? `, payload into ${h.payload_param}` : ''}`
+}
+// A workflow's live schedules (not cancelled or done).
+async function workflowTasks(agent: string, workflowId: string): Promise<ScheduledTask[]> {
+  return (await listScheduledTasks({ agent }).catch(() => [] as ScheduledTask[])).filter((t) => t.workflow_id === workflowId && t.status !== 'cancelled' && t.status !== 'done')
+}
+
+// The workflow as published and as its draft would make it
+// (web/workflow-drafts.ts), and what differs.
+async function draftStates(agent: string, workflow: Workflow, draft: WorkflowDraft): Promise<{ published: DraftState; drafted: DraftState; changes: FieldChange[] }> {
+  const [tasks, hooks] = await Promise.all([workflowTasks(agent, workflow.id), listTriggers(agent, workflow.id).catch(() => [] as WorkflowTrigger[])])
+  const live = hooks.filter((h) => !h.draft)
+  const criteria = readEvals(agentDir(agent), workflow.id).criteria
+  const removedTasks = new Set(draft.schedules?.remove ?? [])
+  const removedHooks = new Set(draft.webhooks?.remove ?? [])
+  const added = new Set(draft.webhooks?.added ?? [])
+  const published: DraftState = { workflow, criteria, delivery: workflow.delivery, triggers: [...tasks.map(scheduleLine), ...live.map(hookLine)] }
+  const drafted: DraftState = {
+    workflow: withDraft(workflow, draft.fields),
+    criteria: draft.criteria ?? criteria,
+    delivery: draft.messages ? draft.messages.delivery : workflow.delivery,
+    triggers: [
+      ...tasks.filter((t) => !removedTasks.has(t.task_id)).map(scheduleLine),
+      ...(draft.schedules?.add ?? []).flatMap((d) => {
+        try {
+          return [scheduleLine({ ...(d.task_name ? { task_name: d.task_name } : {}), schedule: parseScheduleInput(d.schedule as CreateScheduledTaskInput['schedule']).schedule, status: 'scheduled', ...(d.params ? { params: d.params } : {}) })]
+        } catch {
+          return []
+        }
+      }),
+      ...live.filter((h) => !removedHooks.has(h.trigger_id)).map((h) => hookLine({ ...h, ...((draft.webhooks?.update ?? {})[h.trigger_id] ?? {}) } as WorkflowTrigger)),
+      ...hooks.filter((h) => h.draft && added.has(h.trigger_id)).map(hookLine),
+    ],
+  }
+  return { published, drafted, changes: draftChanges(published, drafted) }
+}
+
+// A workflow's draft for the console: the draft, what publishing it
+// changes against the published workflow, the version in use and the one
+// publishing makes, and whether the published workflow changed since the
+// draft began (someone else published, or the file was edited).
+async function draftView(agent: string, workflow: Workflow): Promise<{ draft: WorkflowDraft | null; changes: FieldChange[]; current: number | null; next: number | null; stale: boolean }> {
+  const draft = readDraft(projectDir(), agent, workflow.id)
+  const current = (await noteWorkflowVersion(agent, workflow.id)) ?? null
+  if (!draft) return { draft: null, changes: [], current, next: null, stale: false }
+  const { changes } = await draftStates(agent, workflow, draft)
+  return { draft, changes, current, next: current !== null && changes.length ? current + 1 : null, stale: Boolean(draft.basedOn && current && draft.basedOn !== current) }
+}
+
+// Puts a draft live: the editor's fields, the success criteria, where
+// messages go, the webhooks (those made in the draft go live, changed
+// ones take their new settings, removed ones are deleted) and the
+// schedules (added ones made, removed ones cancelled). Then the draft is
+// gone.
+async function publishDraft(agent: string, workflow: Workflow, draft: WorkflowDraft): Promise<void> {
+  const dir = agentDir(agent)
+  if (draft.fields) setWorkflowFields(dir, workflow.id, { ...draft.fields, title: workflow.title })
+  if (draft.criteria) setEvalCriteria(dir, workflow.id, draft.criteria)
+  if (draft.messages) setWorkflowDelivery(dir, workflow.id, draft.messages.delivery)
+  for (const tid of draft.webhooks?.added ?? []) await getTriggerStore().update(tid, (t) => t && (({ draft: _d, ...rest }) => rest as WorkflowTrigger)(t))
+  for (const [tid, settings] of Object.entries(draft.webhooks?.update ?? {})) await applyTriggerSettings(tid, settings as Partial<WorkflowTrigger>).catch(() => undefined)
+  for (const tid of draft.webhooks?.remove ?? []) await getTriggerStore().remove(tid)
+  for (const d of draft.schedules?.add ?? []) {
+    await createScheduledTask({ agent, workflow_id: workflow.id, schedule: d.schedule as CreateScheduledTaskInput['schedule'], ...(d.params ? { params: d.params } : {}), ...(d.task_name ? { task_name: d.task_name } : {}), ...(d.notify ? { notify: true } : {}) })
+  }
+  for (const taskId of draft.schedules?.remove ?? []) await cancelScheduledTask(taskId).catch(() => undefined)
+  discardDraft(projectDir(), agent, workflow.id)
+}
+
+// A workflow's draft, part by part (web/workflow-drafts.ts): the editor
+// (whose name and description are saved live), the success criteria,
+// where messages go, schedules and webhooks. Each answers with the draft
+// as draftView tells it.
+async function handleWorkflowDraft(req: IncomingMessage, res: ServerResponse, agentName: string, workflowId: string, part: string | undefined, itemId: string | undefined, action: string | undefined): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+  }
+  if (!getEntry(agentName)) return json(404, { error: `unknown agent '${agentName}'` })
+  const dir = agentDir(agentName)
+  const workflow = readWorkflow(dir, workflowId)
+  if (!workflow) return json(404, { error: `No workflow ${workflowId}.` })
+  const about = { by: changedBy(req), basedOn: await noteWorkflowVersion(agentName, workflowId) }
+  const change = (fn: (d: WorkflowDraft) => WorkflowDraft) => changeDraft(projectDir(), agentName, workflowId, about, fn)
+  const view = async () => json(200, await draftView(agentName, readWorkflow(dir, workflowId)!))
+  try {
+    if (!part && req.method === 'GET') return view()
+    if (!part && req.method === 'DELETE') {
+      // Webhooks made in the draft go with it.
+      for (const tid of readDraft(projectDir(), agentName, workflowId)?.webhooks?.added ?? []) await getTriggerStore().remove(tid)
+      discardDraft(projectDir(), agentName, workflowId)
+      return json(200, { draft: null })
+    }
+    if (!part && req.method === 'PUT') {
+      // The editor: the name and description are saved straight away; the
+      // rest is drafted, unless it's what's published.
+      const { title, description, ...rest } = workflowEdit(dir, workflowId, await readJsonBody(req))
+      if ((title && title !== workflow.title) || (description && description !== workflow.description)) setWorkflowName(dir, workflowId, { ...(title ? { title } : {}), ...(description ? { description } : {}) })
+      const same = !draftChanges({ workflow, criteria: [], delivery: undefined, triggers: [] }, { workflow: withDraft(workflow, rest), criteria: [], delivery: undefined, triggers: [] }).length
+      change(({ fields: _f, ...d }) => (same ? d : { ...d, fields: rest }))
+      return view()
+    }
+    if (part === 'criteria' && req.method === 'PUT') {
+      const criteria = checkEvalCriteria((await readJsonBody(req)).criteria)
+      const key = (list: { text: string; kind: string; value?: string }[]) => JSON.stringify(list.map((c) => [c.text, c.kind, c.value ?? '']))
+      const same = key(criteria) === key(readEvals(dir, workflowId).criteria)
+      change(({ criteria: _c, ...d }) => (same ? d : { ...d, criteria }))
+      return view()
+    }
+    if (part === 'messages' && req.method === 'PUT') {
+      const delivery = checkWorkflowMessages(await readJsonBody(req))
+      const same = JSON.stringify(delivery ?? null) === JSON.stringify(workflow.delivery ?? null)
+      change(({ messages: _m, ...d }) => (same ? d : { ...d, messages: { delivery } }))
+      return view()
+    }
+    if (part === 'schedules') {
+      const schedules = (d: WorkflowDraft) => d.schedules ?? { add: [], remove: [] }
+      if (!itemId && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        parseScheduleInput(body.schedule as CreateScheduledTaskInput['schedule'])
+        const params = validateParams(workflow, body.params)
+        const added: DraftSchedule = {
+          id: `d-${randomUUID().slice(0, 8)}`,
+          schedule: body.schedule as Record<string, unknown>,
+          ...(Object.keys(params).length ? { params } : {}),
+          ...(typeof body.task_name === 'string' && body.task_name.trim() ? { task_name: body.task_name.trim().slice(0, 80) } : {}),
+          ...(body.notify === true || body.result_to_chat === true ? { notify: true } : {}),
+        }
+        change((d) => ({ ...d, schedules: { ...schedules(d), add: [...schedules(d).add, added] } }))
+        return view()
+      }
+      if (itemId && !action && req.method === 'DELETE') {
+        const live = itemId.startsWith('d-') ? undefined : (await workflowTasks(agentName, workflowId)).find((t) => t.task_id === itemId)
+        if (!itemId.startsWith('d-') && !live) return json(404, { error: 'No such schedule for this workflow.' })
+        change((d) => ({ ...d, schedules: itemId.startsWith('d-') ? { ...schedules(d), add: schedules(d).add.filter((x) => x.id !== itemId) } : { ...schedules(d), remove: [...new Set([...schedules(d).remove, itemId])] } }))
+        return view()
+      }
+      if (itemId && action === 'restore' && req.method === 'POST') {
+        change((d) => ({ ...d, schedules: { ...schedules(d), remove: schedules(d).remove.filter((x) => x !== itemId) } }))
+        return view()
+      }
+    }
+    if (part === 'webhooks') {
+      const hooks = (d: WorkflowDraft) => d.webhooks ?? { added: [], update: {}, remove: [] }
+      if (!itemId && req.method === 'POST') {
+        // Made now, for its URL; not live until the draft is published.
+        const { trigger, token } = await createTrigger(agentName, workflow, await readJsonBody(req))
+        const marked = (await getTriggerStore().update(trigger.trigger_id, (t) => t && { ...t, draft: true }))!
+        change((d) => ({ ...d, webhooks: { ...hooks(d), added: [...hooks(d).added, trigger.trigger_id] } }))
+        return json(201, { trigger: publicTrigger(marked), url: `${requestBaseUrl(req)}/hooks/workflows/${token}`, ...(await draftView(agentName, workflow)) })
+      }
+      const existing = itemId ? await getTriggerStore().get(itemId) : undefined
+      if (!existing || existing.agent !== agentName || existing.workflow_id !== workflowId) return json(404, { error: 'no such webhook' })
+      if (!action && req.method === 'PUT') {
+        const body = await readJsonBody(req)
+        // One made in the draft isn't live: changed in place.
+        if (existing.draft) return json(200, { trigger: publicTrigger(await updateTrigger(existing.trigger_id, workflow, body)), ...(await draftView(agentName, workflow)) })
+        const settings = checkTriggerSettings(body, workflow, existing)
+        change((d) => ({ ...d, webhooks: { ...hooks(d), update: { ...hooks(d).update, [existing.trigger_id]: settings as Record<string, unknown> } } }))
+        return json(200, { trigger: publicTrigger({ ...existing, ...settings } as WorkflowTrigger), ...(await draftView(agentName, workflow)) })
+      }
+      if (!action && req.method === 'DELETE') {
+        if (existing.draft) {
+          await getTriggerStore().remove(existing.trigger_id)
+          change((d) => ({ ...d, webhooks: { ...hooks(d), added: hooks(d).added.filter((x) => x !== existing.trigger_id) } }))
+        } else {
+          change((d) => {
+            const { [existing.trigger_id]: _u, ...update } = hooks(d).update
+            return { ...d, webhooks: { ...hooks(d), update, remove: [...new Set([...hooks(d).remove, existing.trigger_id])] } }
+          })
+        }
+        return view()
+      }
+      if (action === 'restore' && req.method === 'POST') {
+        change((d) => {
+          const { [existing.trigger_id]: _u, ...update } = hooks(d).update
+          return { ...d, webhooks: { ...hooks(d), update, remove: hooks(d).remove.filter((x) => x !== existing.trigger_id) } }
+        })
+        return view()
+      }
+    }
+    return json(404, { error: 'not found' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const known = err instanceof WorkflowError || err instanceof WorkflowParamsError || err instanceof EvidenceError || err instanceof TriggerError || err instanceof ScheduleError || err instanceof CallbackUrlError
+    return json(known ? 400 : 500, { error: message })
+  }
+}
+
 // A workflow version as the API gives it: its text, and its input and
 // output schemas as JSON (null when the version has none, as older ones
 // don't).
@@ -2605,18 +2824,11 @@ async function workflowSnapshot(agent: string, workflowId: string): Promise<Work
   if (!dir || !workflow) return undefined
   const [toolsOf, tasks, hooks] = await Promise.all([
     contractTools(agent),
-    listScheduledTasks({ agent }).catch(() => [] as ScheduledTask[]),
-    listTriggers(agent, workflowId).catch(() => []),
+    workflowTasks(agent, workflowId),
+    listTriggers(agent, workflowId).catch(() => [] as WorkflowTrigger[]),
   ])
-  const inputs = (params?: Record<string, string>) => (params && Object.keys(params).length ? `, inputs ${Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ')}` : '')
-  const triggers = [
-    ...tasks.filter((t) => t.workflow_id === workflowId && t.status !== 'cancelled' && t.status !== 'done')
-      .map((t) => `Schedule${t.task_name ? ` "${t.task_name}"` : ''}: ${describeSchedule(t.schedule)}${'anchor' in t.schedule && t.schedule.anchor ? ` from ${t.schedule.anchor}` : ''}${'time_zone' in t.schedule && t.schedule.time_zone ? ` (${t.schedule.time_zone})` : ''}, ${t.status}${inputs(t.params)}`),
-    ...hooks.map((h) => `Webhook "${h.name}": from ${h.verify?.sender ?? 'any sender'}, ${h.enabled ? 'on' : 'off'}` +
-      `${h.filter ? `, only when ${h.filter.path} is ${h.filter.values.join(' or ')}` : ''}` +
-      `${h.mapping && Object.keys(h.mapping).length ? `, inputs ${Object.entries(h.mapping).map(([k, v]) => `${k}←${v}`).join(' ')}` : ''}` +
-      `${h.payload_param ? `, payload into ${h.payload_param}` : ''}`),
-  ].sort()
+  // What's live: a webhook made in a draft isn't, until it's published.
+  const triggers = [...tasks.map(scheduleLine), ...hooks.filter((h) => !h.draft).map(hookLine)].sort()
   return {
     agent,
     workflowId,
@@ -5091,6 +5303,12 @@ async function handleWorkflowHook(req: IncomingMessage, res: ServerResponse, tok
     await record('filtered', { ...(id ? { delivery_id: id } : {}) }, id)
     return json(202, { ignored: 'filtered' })
   }
+  // Made in its workflow's draft: answered, so the sender's setup checks
+  // pass, but not run until the draft is published.
+  if (trigger.draft) {
+    await record('not_live', { ...(id ? { delivery_id: id } : {}), detail: 'Not live yet: its workflow\'s draft hasn\'t been published.' }, id)
+    return json(202, { ignored: 'not live yet: its workflow\'s draft has not been published' })
+  }
   if (!getEntry(trigger.agent)) {
     await record('error', { detail: `The agent ${trigger.agent} is gone.` })
     return json(404, { error: 'not found' })
@@ -5755,7 +5973,13 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(html)
       return
     }
-    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions|health))?(?:\/([1-9][0-9]*)\/restore)?$/)
+    // A workflow's draft, part by part (web/workflow-drafts.ts).
+    const draftMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/draft(?:\/(criteria|messages|schedules|webhooks))?(?:\/([A-Za-z0-9_-]+))?(?:\/(restore))?$/)
+    if (draftMatch) {
+      await handleWorkflowDraft(req, res, decodeURIComponent(draftMatch[1]), draftMatch[2], draftMatch[3], draftMatch[4], draftMatch[5])
+      return
+    }
+    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions|health|publish))?(?:\/([1-9][0-9]*)\/restore)?$/)
     if (agentWorkflowsMatch && (!agentWorkflowsMatch[4] || agentWorkflowsMatch[3] === 'versions')) {
       await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3], agentWorkflowsMatch[4] ? Number(agentWorkflowsMatch[4]) : undefined)
       return

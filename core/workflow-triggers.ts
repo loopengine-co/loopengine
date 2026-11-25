@@ -50,7 +50,7 @@ export interface TriggerFilter {
   values: string[]
 }
 
-export type TriggerOutcome = 'started' | 'filtered' | 'duplicate' | 'busy' | 'rejected' | 'invalid' | 'error'
+export type TriggerOutcome = 'started' | 'filtered' | 'duplicate' | 'busy' | 'rejected' | 'invalid' | 'error' | 'not_live'
 
 export interface TriggerDelivery {
   at: string
@@ -70,6 +70,10 @@ export interface WorkflowTrigger {
   /** The token's start, to tell triggers apart: "whk_8f3k…". */
   token_hint: string
   enabled: boolean
+  /** Added in its workflow's draft (web/workflow-drafts.ts): its URL
+   * works, so the sender can be set up, but its calls don't start runs
+   * until the draft is published. */
+  draft?: true
   created_at: string
   verify?: TriggerVerify
   filter?: TriggerFilter
@@ -379,6 +383,18 @@ export async function updateTrigger(id: string, workflow: Workflow, input: Trigg
   const { verify: _v, filter: _f, mapping: _m, payload_param: _p, notify: _n, result_to_chat: _r, callback_url: _c, decisions_to: _d, chat_notice: _t, ...kept } = existing
   const next: WorkflowTrigger = { ...kept, ...settings }
   await getTriggerStore().put(next)
+  return next
+}
+
+/** A trigger's settings as checkTriggerSettings gave them, applied (a
+ * workflow draft's change to it, on publish). */
+export async function applyTriggerSettings(id: string, settings: Partial<WorkflowTrigger>): Promise<WorkflowTrigger> {
+  const next = await getTriggerStore().update(id, (existing) => {
+    if (!existing) return undefined
+    const { verify: _v, filter: _f, mapping: _m, payload_param: _p, notify: _n, result_to_chat: _r, callback_url: _c, decisions_to: _d, chat_notice: _t, ...kept } = existing
+    return { ...kept, ...settings } as WorkflowTrigger
+  })
+  if (!next) throw new TriggerError(`no trigger ${id}`)
   return next
 }
 
