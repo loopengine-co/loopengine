@@ -1,16 +1,16 @@
-// A workflow's audit for a period: what it did, who decided what, how its
-// brief changed and whether each change helped, and whether the log
+// A workflow's audit for a period: what it did, who decided what, how the
+// workflow changed and whether each change helped, and whether the log
 // checks out. In numbers, and in plain sentences for someone who isn't an
 // engineer. The Audit page shows it for a workflow
 // (/agents/:agent/workflows/:id/audit), and its report
 // (…/audit/report) prints it, or saves it as a PDF or JSON, for an auditor
 // or a customer.
 //
-// Built from what's kept: the runs (core/workflow-runs.ts), the brief's
+// Built from what's kept: the runs (core/workflow-runs.ts), the workflow's
 // versions and the settings changes (core/audit-store.ts), each run's cost
 // (core/usage.ts with models.yaml's prices) and the log's hash-chain check.
 import type { AuditEvent, ChainCheck, Version } from '../core/audit-store.js'
-import type { WorkflowRun } from '../core/workflow-runs.js'
+import { workflowVersionOf, type WorkflowRun } from '../core/workflow-runs.js'
 
 export interface AuditCounts {
   runs: number
@@ -67,7 +67,7 @@ export interface AuditCase {
   at: string
   inputs: string
   status: WorkflowRun['status']
-  briefVersion?: number
+  workflowVersion?: number
   decidedBy: string[]
   outcome: string
 }
@@ -96,7 +96,7 @@ export interface WorkflowAuditInput {
   runs: WorkflowRun[]
   /** Each run's cost in US dollars, where known. */
   costs: Map<string, number>
-  /** Every brief version, any order. */
+  /** Every workflow version, any order. */
   versions: Version[]
   /** Its settings changes (events of kind "change") in the period. */
   changes: AuditEvent[]
@@ -200,7 +200,7 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
       return { at: d.at, runId: r.run_id, tool: d.tool, ...(d.by ? { by: d.by } : {}), approved: d.approved, edited: Boolean(d.edited), ...(d.reason ? { reason: d.reason } : {}), ...(changes?.length ? { changes } : {}) }
     }))
 
-  // The brief: the version in use when the period began, and each saved in it.
+  // The workflow: the version in use when the period began, and each saved in it.
   const all = [...input.versions].sort((a, b) => a.number - b.number)
   const atStart = all.filter((v) => v.at < input.since).at(-1)
   const shown = all.filter((v) => v === atStart || (v.at >= input.since && v.at <= input.until))
@@ -213,7 +213,7 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
       ...(v.by ? { by: v.by } : {}),
       ...(v.reason ? { reason: v.reason } : {}),
       changedInPeriod,
-      counts: counts(runs.filter((r) => r.versions?.brief === v.number)),
+      counts: counts(runs.filter((r) => workflowVersionOf(r) === v.number)),
       ...(changedInPeriod && previous ? { diff: lineDiff(previous.content, v.content) } : {}),
     }
   })
@@ -227,15 +227,15 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
     at: r.started_at,
     inputs: short(Object.entries(r.params ?? {}).map(([k, v]) => `${k}: ${v}`).join(' · '), 160),
     status: r.status,
-    ...(r.versions?.brief ? { briefVersion: r.versions.brief } : {}),
+    ...(workflowVersionOf(r) ? { workflowVersion: workflowVersionOf(r) } : {}),
     decidedBy: [...new Set([...(r.decisions ?? []), ...(r.answers ?? [])].map((d) => d.by).filter((b): b is string => Boolean(b)))],
     outcome: short(r.status === 'error' ? r.error ?? '' : r.result ?? '', 200),
   }))
 
   const changes = input.changes.map((e) => {
     const fields = Array.isArray(e.data.changes) ? (e.data.changes as NonNullable<WorkflowAudit['changes'][number]['fields']>) : []
-    const brief = e.data.brief as { from?: number; to?: number } | undefined
-    const detail = [brief?.from && brief.to ? `brief v${brief.from} → v${brief.to}` : '', fields.map((f) => (f.added || f.removed ? `${f.field}: ${f.added?.length ?? 0} line${f.added?.length === 1 ? '' : 's'} added, ${f.removed?.length ?? 0} removed` : `${f.field}: ${f.from} → ${f.to}`)).join('; ')].filter(Boolean).join('; ')
+    const version = (e.data.version ?? e.data.brief) as { from?: number; to?: number } | undefined
+    const detail = [version?.from && version.to ? `workflow v${version.from} → v${version.to}` : '', fields.map((f) => (f.added || f.removed ? `${f.field}: ${f.added?.length ?? 0} line${f.added?.length === 1 ? '' : 's'} added, ${f.removed?.length ?? 0} removed` : `${f.field}: ${f.from} → ${f.to}`)).join('; ')].filter(Boolean).join('; ')
     return { at: e.at, ...(e.by ? { by: e.by } : {}), label: typeof e.data.label === 'string' ? e.data.label : 'Changed a setting', ...(detail ? { detail } : {}), ...(fields.length ? { fields } : {}) }
   })
 
@@ -257,7 +257,7 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
     if (total.answered) summary.push(`It asked, and people answered, ${plural(total.answered, 'question')}.`)
     if (total.feedback) summary.push(`Feedback on ${plural(total.feedback, 'result')}: ${total.unedited} used unedited, ${total.bad} marked bad.`)
   }
-  // The brief: each change in a sentence when there are one or two, else
+  // The workflow: each change in a sentence when there are one or two, else
   // one sentence for them all; and what changed in how people judged its
   // work, from the version before to the one after.
   const saved = versions.filter((x) => x.changedInPeriod)
@@ -276,8 +276,8 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
       const what = ver.diff ? ` (${plural(ver.diff.added.length, 'line')} added, ${ver.diff.removed.length} removed)` : ''
       const first = !previous && ver.number === 1
       summary.push(first
-        ? `The brief was first recorded, as version 1, on ${day(ver.at)}.`
-        : `The brief changed to version ${ver.number} on ${day(ver.at)}${ver.by ? ` by ${ver.by}` : ''}${ver.reason ? `, ${quote(ver.reason, 60)}` : ''}${what}${effect(previous, ver)}.`)
+        ? `The workflow was first recorded, as version 1, on ${day(ver.at)}.`
+        : `The workflow changed to version ${ver.number} on ${day(ver.at)}${ver.by ? ` by ${ver.by}` : ''}${ver.reason ? `, ${quote(ver.reason, 60)}` : ''}${what}${effect(previous, ver)}.`)
     }
   } else if (saved.length > 2) {
     const latest = saved.at(-1)!
@@ -286,9 +286,9 @@ export function buildWorkflowAudit(input: WorkflowAuditInput): WorkflowAudit {
     const firstRan = versions.find(ran)
     const lastRan = [...versions].reverse().find(ran)
     const change = firstRan && lastRan && firstRan !== lastRan ? effect(firstRan, lastRan).replace(/^; /, ` From version ${firstRan.number} to ${lastRan.number}, `) : ''
-    summary.push(`The brief changed ${saved.length} times${start ? `, from version ${start.number}` : ''} to version ${latest.number}, last on ${day(latest.at)}${people.length ? `, by ${people.join(', ')}` : ''}.${change ? `${change}.` : ''}`)
-  } else if (versions.length) summary.push(`The brief stayed at version ${versions[0].number} all period.`)
-  const otherChanges = changes.filter((c) => !/^Edited the workflow$|^Restored brief version/.test(c.label))
+    summary.push(`The workflow changed ${saved.length} times${start ? `, from version ${start.number}` : ''} to version ${latest.number}, last on ${day(latest.at)}${people.length ? `, by ${people.join(', ')}` : ''}.${change ? `${change}.` : ''}`)
+  } else if (versions.length) summary.push(`The workflow stayed at version ${versions[0].number} all period.`)
+  const otherChanges = changes.filter((c) => !/^Edited the workflow$|^Restored (brief|workflow) version/.test(c.label))
   if (otherChanges.length) summary.push(`${plural(otherChanges.length, 'other setting change')}: ${[...new Set(otherChanges.map((c) => c.label.toLowerCase()))].slice(0, 4).join(', ')}.`)
   if (cost) summary.push(`It cost ${dollars(cost.totalUsd)} in model calls${cost.pricedRuns < total.runs ? ` (for the ${plural(cost.pricedRuns, 'run')} with a known price)` : ''}, ${dollars(cost.perRunUsd)} a run.`)
 

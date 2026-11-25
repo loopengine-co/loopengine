@@ -286,6 +286,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-editor-part { margin: 8px 0 0; font-size: 13px; font-weight: 700; padding-top: 10px; border-top: 1px solid var(--line); }
   .wf-editor-part:first-of-type { border-top: 0; padding-top: 0; }
   .wp-model-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wp-schema { font-family: var(--font-mono); font-size: 12.5px; }
+  .wf-schema { display: block; flex-basis: 100%; width: 100%; }
+  .wf-schema summary { cursor: pointer; color: var(--ink-muted); font-size: 12.5px; }
+  .wf-schema pre { margin: 6px 0 0; padding: 8px 10px; background: var(--surface); border-radius: 8px; font-size: 12px; max-height: 260px; overflow: auto; }
   .wp-model-row input { flex: 1 1 200px; }
   .wp-mono { font-family: var(--font-mono); font-size: 12.5px; }
   @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -396,6 +400,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .ov-name code { font-size: 12.5px; }
   dialog.workflow-editor-dialog { width: min(760px, calc(100vw - 24px)); }
   .ed-body .workflow-param-row input:not([type="checkbox"]) { width: auto; }
+  .ed-body .workflow-param-row select.wp-type { width: auto; flex: 0 0 140px; }
+  .ed-body .workflow-param-row .wp-limits { padding-left: 176px; }
   .ed-body .workflow-param-row .wp-name { flex: 0 0 170px; font-family: var(--font-mono); font-size: 13px; }
   .ed-body .workflow-param-row .wp-desc { flex: 1 1 200px; }
   .ed-body .workflow-param-row label { display: flex; align-items: center; gap: 6px; font-weight: 400; }
@@ -423,6 +429,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .workflow-param-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .workflow-param-row .wp-name { width: 160px; font-family: var(--le-mono, monospace); }
   .workflow-param-row .wp-desc { flex: 1; min-width: 200px; }
+  .workflow-param-row select.wp-type { width: auto; flex: 0 0 140px; }
+  .workflow-param-row .wp-limits { display: flex; gap: 6px; flex-basis: 100%; padding-left: 166px; }
+  .workflow-param-row .wp-limits input { flex: 1; min-width: 140px; font-size: 12.5px; }
+  .workflow-params select, .workflow-params input[type="number"], .workflow-params input[type="date"] { font: inherit; }
   .workflow-param { display: flex; flex-direction: column; gap: 3px; flex: 1 1 220px; font-size: 12px; min-width: 180px; }
   .workflow-param textarea { width: 100%; box-sizing: border-box; resize: none; overflow-y: hidden; max-height: 18em; font: inherit; font-size: 13px; line-height: 1.45; }
   .advanced-part { font-size: 17px; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
@@ -1086,7 +1096,7 @@ ${renderMarkdownScript}
   }
 
   // The Health panel: the last 30 days of runs, as totals, day by day and
-  // per brief version, and any alert (a rate that just got worse).
+  // per workflow version, and any alert (a rate that just got worse).
   function loadWorkflowHealth(card, base) {
     var box = card.querySelector('.wf-health');
     if (!box) return;
@@ -1181,20 +1191,22 @@ ${renderMarkdownScript}
   // lines added (+) and removed (−), a few shown and the rest folded.
   function changeDetailsHtml(d) {
     var list = d.changes || [];
-    if (!list.length && !d.brief) return '';
+    var version = d.version || d.brief;
+    if (!list.length && !version) return '';
     var MINUS = String.fromCharCode(8722);
     var lineHtml = function (sign, cls, l) { return '<div class="' + cls + '">' + sign + ' ' + escapeHtml(l) + '</div>'; };
     var rows = list.map(function (c) {
       if (c.added || c.removed) {
         var lines = (c.removed || []).map(function (l) { return lineHtml(MINUS, 'chg-del', l); }).concat((c.added || []).map(function (l) { return lineHtml('+', 'chg-ins', l); }));
-        var head = '<strong>' + escapeHtml(c.field) + '</strong>' + (c.field === 'instructions' && d.brief ? ' <span class="chg-note">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</span>' : '');
+        var head = '<strong>' + escapeHtml(c.field) + '</strong>';
         var shown = lines.slice(0, 6).join('');
         var more = lines.length > 6 ? '<details><summary>' + (lines.length - 6) + ' more line' + (lines.length - 6 === 1 ? '' : 's') + '</summary>' + lines.slice(6).join('') + '</details>' : '';
         return '<div class="chg-field">' + head + '<div class="chg-lines">' + (shown || '<div class="chg-note">Only spacing changed.</div>') + more + '</div></div>';
       }
       return '<div class="chg-field"><strong>' + escapeHtml(c.field) + '</strong>: <del>' + escapeHtml(c.from) + '</del> ' + String.fromCharCode(8594) + ' <ins>' + escapeHtml(c.to) + '</ins></div>';
     }).join('');
-    if (!rows && d.brief) rows = '<div class="chg-field">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</div>';
+    // The workflow's version before and after ("brief" on older changes).
+    if (version) rows = '<div class="chg-note">Workflow v' + version.from + ' ' + String.fromCharCode(8594) + ' v' + version.to + '</div>' + rows;
     return '<div class="chg">' + rows + '</div>';
   }
 
@@ -1341,7 +1353,8 @@ ${renderMarkdownScript}
     var names = Object.keys(w.parameters || {});
     var inputs = names.length ? names.map(function (n) {
       var spec = w.parameters[n];
-      return '<code>' + escapeHtml(n) + '</code>' + (spec.required ? ' (required)' : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '');
+      var typed = inputTypeText(spec);
+      return '<code>' + escapeHtml(n) + '</code>' + (spec.required ? ' (required)' : '') + (typed ? ' ' + escapeHtml(typed) : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '');
     }) : ['<span class="hint">none: every run is the same</span>'];
     var groups = { allow: [], ask: [], deny: [] };
     (w.tools || []).forEach(function (t) { (groups[t.decision] || groups.ask).push(t.name); });
@@ -1353,6 +1366,11 @@ ${renderMarkdownScript}
     if (!tools.length) tools.push('<span class="hint">none named in its instructions</span>');
     var result = [];
     if (w.output) result.push(escapeHtml(w.output));
+    if (w.outputSchema) {
+      var props = w.outputSchema.type === 'object' && w.outputSchema.properties ? Object.keys(w.outputSchema.properties) : [];
+      result.push('<span>JSON matching its output schema' + (props.length ? ': ' + props.map(function (n) { return '<code>' + escapeHtml(n) + '</code>'; }).join(', ') : '') + '</span>' +
+        '<details class="wf-schema"><summary>Show the schema</summary><pre>' + escapeHtml(JSON.stringify(w.outputSchema, null, 2)) + '</pre></details>');
+    }
     result.push('returned to whoever starts it <span class="hint">(Run now, or the app' + RSQ + 's API call)</span>');
     var notified = (w.delivery && w.delivery.result_to_chat) || (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.result_to_chat; });
     if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report' + (w.delivery && w.delivery.result_to_chat ? '' : ' <span class="hint">(for the schedules and webhooks set to send it)</span>'));
@@ -1367,7 +1385,7 @@ ${renderMarkdownScript}
 
   function workflowBriefHtml(w) {
     var policies = workflowsMeta.policies;
-    // Filled by loadBriefVersions once the card is on the page.
+    // Filled by loadWorkflowVersions once the card is on the page.
     return '<div class="wf-versions" hidden></div>' +
       '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
       (policies
@@ -1473,7 +1491,7 @@ ${renderMarkdownScript}
         '</details></li>';
     }).join('');
     var lastLine = !round ? ''
-      : '<p class="wf-eval-last"><strong>Last evaluation: ' + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (round.briefVersion ? ', version ' + round.briefVersion + ' of its instructions' : '') + '</strong>' +
+      : '<p class="wf-eval-last"><strong>Last evaluation: ' + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + ((round.workflowVersion || round.briefVersion) ? ', workflow v' + (round.workflowVersion || round.briefVersion) : '') + '</strong>' +
         (checked ? String.fromCharCode(8212) + ' ' + round.allPassed + ' of ' + round.cases.length + ' cases met every success criterion.' : '') +
         ' <details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details></p>';
     return '<section class="wf-section">' + critSection + '</section>' +
@@ -1541,7 +1559,7 @@ ${renderMarkdownScript}
         // One line to start, growing as an email or a thread is pasted in
         // (wireWorkflowCard sizes it).
         return '<label class="workflow-param">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">(optional)</span>') +
-          '<textarea rows="1" name="' + escapeHtml(p) + '"' + (spec.required ? ' required' : '') + ' placeholder="' + escapeHtml(spec.description || '') + '"></textarea></label>';
+          inputControlHtml(p, spec, spec.required) + '</label>';
       }).join('');
       // Recent runs, one line each, opening the case (where everything
       // about it is).
@@ -1556,7 +1574,7 @@ ${renderMarkdownScript}
         return '<li class="wf-run-line">' + pill +
           '<a class="wf-run-link" href="' + caseHref(r.run_id) + '"><span class="wf-run-when">' + escapeHtml(new Date(r.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</span>' +
           '<span class="wf-run-text">' + escapeHtml(line.length > 160 ? line.slice(0, 160) + String.fromCharCode(8230) : line) + '</span></a>' +
-          (r.versions && r.versions.brief ? '<span class="hint">brief v' + r.versions.brief + '</span>' : '') +
+          (r.versions && (r.versions.workflow || r.versions.brief) ? '<span class="hint">v' + (r.versions.workflow || r.versions.brief) + '</span>' : '') +
           runEvidenceHtml(w, r) + '</li>';
       }).join('');
       var last = workflowLastRun(w);
@@ -1685,7 +1703,7 @@ ${renderMarkdownScript}
   // or a webhook secret or a run's values being typed.
   function workflowInputInUse() {
     if (document.querySelector('dialog[open]')) return true;
-    var inputs = detail.querySelectorAll('.workflow-hooks input, .workflow-params textarea');
+    var inputs = detail.querySelectorAll('.workflow-hooks input, .workflow-params textarea, .workflow-params input');
     for (var i = 0; i < inputs.length; i++) if (inputs[i].value || inputs[i] === document.activeElement) return true;
     return false;
   }
@@ -1717,14 +1735,81 @@ ${renderMarkdownScript}
     });
   }
 
+  // ---- An input's type (core/input-schema.ts), as the editor offers it:
+  // a type, or text with a format. "" is plain text.
+  var INPUT_KINDS = [['', 'Text'], ['string:email', 'Email'], ['string:date', 'Date'], ['string:uri', 'Link'], ['number', 'Number'], ['integer', 'Whole number'], ['boolean', 'Yes or no'], ['array', 'List (JSON)'], ['object', 'Object (JSON)']];
+  function inputKindOf(spec) {
+    if (!spec || !spec.type || spec.type === 'string') return spec && spec.format ? 'string:' + spec.format : '';
+    return spec.type;
+  }
+  // An input's type and limits in words, for the contract.
+  function inputTypeText(spec) {
+    var kind = inputKindOf(spec);
+    var label = INPUT_KINDS.filter(function (k) { return k[0] === kind; })[0];
+    var parts = [];
+    if (kind) parts.push(label ? label[1].toLowerCase() : kind);
+    if (spec.enum) parts.push('one of ' + spec.enum.join(', '));
+    if (spec.minimum != null) parts.push('at least ' + spec.minimum);
+    if (spec.maximum != null) parts.push('at most ' + spec.maximum);
+    if (spec.pattern) parts.push('matching ' + spec.pattern);
+    if (spec.default !== undefined) parts.push('default ' + (typeof spec.default === 'string' ? spec.default : JSON.stringify(spec.default)));
+    return parts.join(', ');
+  }
+  // The field a run's value is typed into: a choice for allowed values or
+  // yes/no, a number or a date picker, else a box that grows.
+  function inputControlHtml(fieldName, spec, required) {
+    var req = required ? ' required' : '';
+    var ph = escapeHtml(spec.description || '');
+    var dflt = spec.default !== undefined ? (typeof spec.default === 'string' ? spec.default : JSON.stringify(spec.default)) : '';
+    var opt = function (v, label, sel) { return '<option value="' + escapeHtml(v) + '"' + (sel ? ' selected' : '') + '>' + escapeHtml(label) + '</option>'; };
+    if (spec.enum && spec.enum.length) {
+      return '<select name="' + escapeHtml(fieldName) + '"' + req + '>' + opt('', required ? 'Choose' + String.fromCharCode(8230) : '(none)', !dflt) +
+        spec.enum.map(function (v) { return opt(String(v), String(v), String(v) === dflt); }).join('') + '</select>';
+    }
+    if (spec.type === 'boolean') return '<select name="' + escapeHtml(fieldName) + '"' + req + '>' + opt('', required ? 'Choose' + String.fromCharCode(8230) : '(none)', !dflt) + opt('true', 'Yes', dflt === 'true') + opt('false', 'No', dflt === 'false') + '</select>';
+    if (spec.type === 'number' || spec.type === 'integer') return '<input type="number" name="' + escapeHtml(fieldName) + '"' + req + (spec.type === 'integer' ? ' step="1"' : ' step="any"') + (spec.minimum != null ? ' min="' + spec.minimum + '"' : '') + (spec.maximum != null ? ' max="' + spec.maximum + '"' : '') + ' placeholder="' + ph + '" value="' + escapeHtml(dflt) + '">';
+    if (spec.format === 'date') return '<input type="date" name="' + escapeHtml(fieldName) + '"' + req + ' value="' + escapeHtml(dflt) + '">';
+    return '<textarea rows="1" name="' + escapeHtml(fieldName) + '"' + req + ' placeholder="' + ph + '">' + escapeHtml(dflt) + '</textarea>';
+  }
+
   // ---- The workflow editor: its title, its instructions (the skill body)
   // and the values a run is given. What starts it is on the card.
   function workflowParamRowHtml(pname, spec) {
-    return '<div class="workflow-param-row">' +
+    var kind = inputKindOf(spec);
+    var dflt = spec && spec.default !== undefined ? (typeof spec.default === 'string' ? spec.default : JSON.stringify(spec.default)) : '';
+    // Limits the editor has no field for (a pattern, a minimum…), kept as
+    // they are when the row is saved.
+    var kept = {};
+    ['pattern', 'minimum', 'maximum', 'minLength', 'maxLength'].forEach(function (k) { if (spec && spec[k] !== undefined) kept[k] = spec[k]; });
+    return '<div class="workflow-param-row" data-kept="' + escapeHtml(JSON.stringify(kept)) + '">' +
       '<input class="wp-name" aria-label="Parameter name" placeholder="order_number" value="' + escapeHtml(pname || '') + '">' +
       '<input class="wp-desc" aria-label="What it is" placeholder="What it is, e.g. The order to check" value="' + escapeHtml((spec && spec.description) || '') + '">' +
+      '<select class="wp-type" aria-label="Type">' + INPUT_KINDS.map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === kind ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>' +
       '<label class="http-tool-inline-label"><input type="checkbox" class="wp-required"' + (spec && spec.required ? ' checked' : '') + '> Required</label>' +
-      '<button type="button" class="delete-btn wp-remove">Remove</button></div>';
+      '<button type="button" class="delete-btn wp-remove">Remove</button>' +
+      '<div class="wp-limits"><input class="wp-enum" aria-label="Allowed values" placeholder="Allowed values, comma-separated (optional)" value="' + escapeHtml(spec && spec.enum ? spec.enum.join(', ') : '') + '">' +
+        '<input class="wp-default" aria-label="Default" placeholder="Default (optional)" value="' + escapeHtml(dflt) + '"></div></div>';
+  }
+  // A row's input, as saved: its description, whether it's required, and
+  // its type, allowed values and default. The server checks them.
+  function paramFromRow(row) {
+    var kind = row.querySelector('.wp-type').value;
+    var p = { description: row.querySelector('.wp-desc').value.trim(), required: row.querySelector('.wp-required').checked };
+    if (kind.indexOf('string:') === 0) p.format = kind.slice(7);
+    else if (kind) p.type = kind;
+    var numeric = p.type === 'number' || p.type === 'integer';
+    var allowed = row.querySelector('.wp-enum').value.split(',').map(function (v) { return v.trim(); }).filter(Boolean);
+    if (allowed.length) p.enum = numeric ? allowed.map(Number) : allowed;
+    var d = row.querySelector('.wp-default').value.trim();
+    if (d) p['default'] = d;
+    // The limits it had, where they still fit its type.
+    var kept = {};
+    try { kept = JSON.parse(row.getAttribute('data-kept') || '{}'); } catch (e) {}
+    Object.keys(kept).forEach(function (k) {
+      var forNumbers = k === 'minimum' || k === 'maximum';
+      if (forNumbers ? numeric : !p.type) p[k] = kept[k];
+    });
+    return p;
   }
 
   ${WORKFLOW_SECTIONS_SCRIPT}
@@ -1750,6 +1835,8 @@ ${renderMarkdownScript}
         '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
       '<label>Result <span class="hint">(optional: what its final reply must be, e.g. The draft only, then a line Flag: reason if a person must act. Empty: a reply in its own words.)</span>' +
         '<textarea name="output" rows="2" maxlength="2000">' + escapeHtml(w.output || '') + '</textarea></label>' +
+      '<label>Output schema <span class="hint">(optional: a JSON Schema its result must match, for apps and the next workflow in a chain. Each run' + String.fromCharCode(8217) + 's result is checked; one that doesn' + String.fromCharCode(8217) + 't match is sent back to the agent to fix, twice at most, then the run fails.)</span>' +
+        '<textarea name="outputSchema" class="wp-schema" rows="6" spellcheck="false" placeholder="' + escapeHtml('{ "type": "object", "properties": { "summary": { "type": "string" }, "priority": { "enum": ["low", "high"] } }, "required": ["summary", "priority"] }') + '">' + escapeHtml(w.outputSchema ? JSON.stringify(w.outputSchema, null, 2) : '') + '</textarea></label>' +
       '<div class="body-field">Model <span class="hint">(optional: a model for this workflow only; empty uses the agent' + String.fromCharCode(8217) + 's' + (workflowsMeta.agentModel ? ', ' + escapeHtml(workflowsMeta.agentModel) : '') + ')</span>' +
         '<div class="wp-model-row"><select name="modelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' +
           ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'].map(function (p) { return '<option value="' + p + '"' + (w.model && w.model.provider === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') +
@@ -1823,7 +1910,7 @@ ${renderMarkdownScript}
       out.textContent = 'Loading' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value }),
+        body: JSON.stringify({ title: form.title.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, outputSchema: form.outputSchema.value }),
       }).then(function (r) {
         out.textContent = r.ok ? r.body.message : (r.body.error || 'Could not preview');
       });
@@ -1842,13 +1929,16 @@ ${renderMarkdownScript}
         if (!pname) continue;
         if (!/^[a-z_][a-z0-9_]*$/.test(pname)) { problem = 'Parameter "' + pname + '": use lowercase letters, digits and _, starting with a letter, e.g. order_number.'; break; }
         if (parameters[pname]) { problem = 'Parameter "' + pname + '" is listed twice.'; break; }
-        parameters[pname] = { description: list[i].querySelector('.wp-desc').value.trim(), required: list[i].querySelector('.wp-required').checked };
+        parameters[pname] = paramFromRow(list[i]);
+      }
+      if (!problem && form.outputSchema.value.trim()) {
+        try { JSON.parse(form.outputSchema.value); } catch (e) { problem = 'The output schema isn' + String.fromCharCode(8217) + 't valid JSON: ' + e.message; }
       }
       if (problem) { result.textContent = problem; return; }
       result.textContent = 'Saving' + String.fromCharCode(8230);
       fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id), {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
+        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, outputSchema: form.outputSchema.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
         close();
@@ -2162,15 +2252,16 @@ ${renderMarkdownScript}
     render(shown ? shown.url : null, shown ? shown.id : null);
   }
 
-  // The Brief tab's versions: which one is in use, who saved it and why,
-  // and every earlier one to read or restore (restoring saves it as a new
-  // version). Hidden where the workspace keeps no versions.
-  function loadBriefVersions(card, base) {
+  // The workflow's versions (its name, inputs, model, instructions and
+  // result format), on the Brief tab: which one is in use, who saved it
+  // and why, and every earlier one to read or restore (restoring saves it
+  // as a new version). Hidden where the workspace keeps no versions.
+  function loadWorkflowVersions(card, base) {
     var box = card.querySelector('.wf-versions');
     if (!box) return;
     fetch(base + '/versions', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) { if (data) renderBriefVersions(box, base, data); })
+      .then(function (data) { if (data) renderWorkflowVersions(box, base, data); })
       .catch(function () {});
   }
 
@@ -2178,12 +2269,12 @@ ${renderMarkdownScript}
     return new Date(v.at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
-  function renderBriefVersions(box, base, data) {
+  function renderWorkflowVersions(box, base, data) {
     var versions = data.versions || [];
     if (!versions.length) { box.hidden = true; return; }
     var current = versions.filter(function (v) { return v.number === data.current; })[0] || versions[0];
     var about = function (v) { return [v.by ? 'by ' + escapeHtml(v.by) : '', escapeHtml(versionWhen(v)), v.reason ? escapeHtml(v.reason) : ''].filter(Boolean).join(DOT); };
-    box.innerHTML = '<div class="wf-versions-line"><strong>Version ' + current.number + '</strong><span class="hint">' + about(current) + '</span>' +
+    box.innerHTML = '<div class="wf-versions-line"><strong>Workflow version ' + current.number + '</strong><span class="hint">' + about(current) + '</span>' +
         (versions.length > 1 ? '<button type="button" class="wf-link wf-versions-toggle">History (' + versions.length + ')</button>' : '') + '</div>' +
       '<ol class="wf-versions-list" hidden>' + versions.map(function (v) {
         var isCurrent = v.number === current.number;
@@ -2241,7 +2332,7 @@ ${renderMarkdownScript}
     }
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
-    loadBriefVersions(card, base);
+    loadWorkflowVersions(card, base);
     loadWorkflowHealth(card, base);
     loadCandidates(card, base);
     loadAuditSummary(card, base);
@@ -2425,7 +2516,7 @@ ${renderMarkdownScript}
     card.querySelector('.workflow-run').addEventListener('click', function (ev) {
       var btn = ev.currentTarget;
       var params = {};
-      var inputs = card.querySelectorAll('.workflow-params textarea');
+      var inputs = card.querySelectorAll('.workflow-params textarea, .workflow-params input, .workflow-params select');
       for (var i = 0; i < inputs.length; i++) {
         var value = inputs[i].value.trim();
         if (!value && inputs[i].required) { result.textContent = 'Fill in ' + inputs[i].name + ' first.'; inputs[i].focus(); return; }
@@ -3900,7 +3991,7 @@ ${renderMarkdownScript}
       var parameters = (w && w.parameters) || {};
       paramsBox.innerHTML = Object.keys(parameters).map(function (p) {
         return '<label class="workflow-param">' + escapeHtml(p) + (parameters[p].required ? '' : ' <span class="hint">(optional)</span>') +
-          '<input name="param:' + escapeHtml(p) + '" placeholder="' + escapeHtml(parameters[p].description || '') + '"></label>';
+          inputControlHtml('param:' + p, parameters[p], false) + '</label>';
       }).join('');
     }
     // Opened from a workflow's "Add a schedule": that workflow, chosen.

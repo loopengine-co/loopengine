@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { briefContent, briefFromContent, getVersion, listVersions, noteVersion, openAuditDb, runEvents, setAuditDb } from '#core/audit-store.js'
+import { workflowContent, workflowFromContent, getVersion, listVersions, noteVersion, openAuditDb, runEvents, setAuditDb } from '#core/audit-store.js'
+import { inputSchemaOf } from '#core/input-schema.js'
 import { SqliteRunStore, WorkflowRunner, getRun, listRuns, setRunStore, type WorkflowRun } from '#core/workflow-runs.js'
 
 let dir: string
@@ -79,7 +80,7 @@ describe('the run store in the database', () => {
 })
 
 describe('versions', () => {
-  const key = { agent: 'cs', workflowId: 'refund-check', kind: 'brief' as const }
+  const key = { agent: 'cs', workflowId: 'refund-check', kind: 'workflow' as const }
 
   it('number a text once, and again only when it changes', () => {
     expect(noteVersion(key, 'Check the order.')).toBe(1)
@@ -99,10 +100,37 @@ describe('versions', () => {
     expect(noteVersion({ ...key, workflowId: 'other' }, 'B')).toBe(1)
   })
 
-  it('hold the instructions and result format, and give them back', () => {
-    const content = briefContent({ instructions: 'Check the order.', output: 'A table.' })
-    expect(briefFromContent(content)).toEqual({ instructions: 'Check the order.', output: 'A table.' })
-    expect(briefFromContent(briefContent({ instructions: 'Only this.' }))).toEqual({ instructions: 'Only this.' })
+  it('hold the whole workflow as text to read, and give it back', () => {
+    const w = {
+      agent: 'cs', workflowId: 'refund-check', title: 'Refund check', description: 'Checks refunds.',
+      parameters: { order_number: { description: 'The order', required: true }, note: { description: '', required: false } },
+      model: { provider: 'openai', model: 'gpt-6' },
+      tools: [{ name: 'lookup_order', permission: 'allow' }, { name: 'issue_refund', permission: 'ask' }],
+      triggers: ['Schedule "Daily": every 1d, scheduled', 'Webhook "Stripe": from stripe, on, only when type is charge.refunded'],
+      criteria: [{ kind: 'judge', text: 'Says the refund amount' }, { kind: 'contains', value: 'Thanks, "team"', text: 'Signs off' }],
+      instructions: 'Check the order.\n\n## Rules\n\n- one\n\n\n# Odd', output: 'A table.',
+    }
+    const content = workflowContent(w)
+    expect(content).toContain('## Workflow\n\ncs/refund-check')
+    expect(content).toContain('## Input schema\n\n```json\n{\n  "type": "object",\n  "properties": {\n    "order_number": {\n      "type": "string",\n      "description": "The order"')
+    expect(content).toContain('## Tools\n\n- lookup_order: allow\n- issue_refund: ask')
+    expect(content).toContain('## Success criteria\n\n- [judge] Says the refund amount\n- [contains: "Thanks, \\"team\\""] Signs off')
+    expect(workflowFromContent(content)).toEqual({ ...w, inputSchema: inputSchemaOf(w.parameters) })
+    const bare = { agent: 'cs', workflowId: 'bare', title: 'Bare', description: '', parameters: {}, tools: [], triggers: [], criteria: [], instructions: 'Only this.' }
+    expect(workflowFromContent(workflowContent(bare))).toEqual({ ...bare, inputSchema: { type: 'object', properties: {}, additionalProperties: false } })
+    // A version from when only the brief was numbered.
+    expect(workflowFromContent('Check it.\n\n## Result format\n\nA list')).toEqual({ instructions: 'Check it.', output: 'A list' })
+  })
+
+  it('take over the brief versions kept before, numbers unchanged', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'le-versions-'))
+    const first = openAuditDb(dir)!
+    first.prepare("INSERT INTO versions (agent, workflow_id, kind, number, hash, content, at) VALUES ('cs', 'refund-check', 'brief', 3, 'h', 'Old brief', '2026-11-01T00:00:00Z')").run()
+    first.close()
+    const db = openAuditDb(dir)!
+    expect(getVersion(key, 3, db)).toMatchObject({ number: 3, content: 'Old brief' })
+    expect(noteVersion(key, 'New', {}, db)).toBe(4)
+    db.close()
   })
 
   it('are skipped without a database', () => {

@@ -44,7 +44,7 @@ describe('a workflow audit', () => {
     expect(audit.cost).toEqual({ totalUsd: 0.06, perRunUsd: 0.03, pricedRuns: 2 })
   })
 
-  it('shows each brief version with its runs and what changed', () => {
+  it('shows each workflow version with its runs and what changed', () => {
     expect(audit.versions.map((v) => [v.number, v.changedInPeriod, v.counts.runs])).toEqual([[1, false, 3], [2, true, 3]])
     expect(audit.versions[1].diff).toEqual({ added: ['Attach the delivery photo.'], removed: [] })
   })
@@ -57,7 +57,7 @@ describe('a workflow audit', () => {
       'Reasons given for denials include “No delivery photo”, “Wrong order”.',
       'It asked, and people answered, 1 question.',
       'Feedback on 1 result: 1 used unedited, 0 marked bad.',
-      'The brief changed to version 2 on Nov 15 by ana@shop.com, “Edited in the console” (1 line added, 0 removed); requests changed or denied went from 100% to 0%.',
+      'The workflow changed to version 2 on Nov 15 by ana@shop.com, “Edited in the console” (1 line added, 0 removed); requests changed or denied went from 100% to 0%.',
       '1 other setting change: changed webhook triggers.',
       'It cost $0.060 in model calls (for the 2 runs with a known price), $0.030 a run.',
     ])
@@ -72,7 +72,7 @@ describe('a workflow audit', () => {
   })
 })
 
-describe('a workflow audit with many brief changes', () => {
+describe('a workflow audit with many workflow changes', () => {
   it('sums them up in one sentence, with the change from the first version that ran to the last', () => {
     const many: Version[] = [1, 2, 3, 4].map((k) => ({ number: k, at: `2026-11-0${k}T00:00:00Z`, by: k % 2 ? 'ana@shop.com' : 'ben@shop.com', reason: 'Edited in the console', content: `Step ${k}.` }))
     const runs = [
@@ -84,7 +84,7 @@ describe('a workflow audit with many brief changes', () => {
       since: '2026-11-01T00:00:00Z', until: '2026-11-30T00:00:00Z', runs, costs: new Map(), versions: many, changes: [],
       verification: { ok: true, events: 10 },
     })
-    expect(audit.summary).toContain('The brief changed 4 times to version 4, last on Nov 4, by ana@shop.com, ben@shop.com. From version 1 to 4, requests changed or denied went from 100% to 0%.')
+    expect(audit.summary).toContain('The workflow changed 4 times to version 4, last on Nov 4, by ana@shop.com, ben@shop.com. From version 1 to 4, requests changed or denied went from 100% to 0%.')
     expect(audit.summary).toContain('Reasons given for denials include “Not yet”.')
   })
 })

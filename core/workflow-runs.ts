@@ -25,6 +25,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { auditDb, recordEvent, retentionDays, schedulerDir } from './audit-store.js'
 import { KeyedMutex } from './session-store.js'
 import type { CallbackDelivery } from './run-callbacks.js'
+import { MAX_OUTPUT_RETRIES, checkOutput, outputRetryMessage, type JsonSchema } from './output-schema.js'
 
 export type WorkflowRunStatus = 'running' | 'awaiting_approval' | 'done' | 'error'
 
@@ -58,6 +59,13 @@ export interface WorkflowRun {
   session_id: string
   /** The agent's final reply, when done. */
   result?: string
+  /** For a workflow with an output schema (core/output-schema.ts): the
+   * result's JSON, once it matched. */
+  output?: unknown
+  /** How many times it was asked again for a result that didn't match
+   * the output schema, and what was wrong the last time. */
+  output_retries?: number
+  output_errors?: string[]
   error?: string
   /** The approvals or questions it is waiting on. */
   pending_ids?: string[]
@@ -79,8 +87,8 @@ export interface WorkflowRun {
   warnings?: string[]
   /** Each callback delivery, oldest first (the latest 10). */
   callbacks?: CallbackDelivery[]
-  /** The brief and shared policies it ran under (core/audit-store.ts's
-   * versions), when the workspace keeps versions. */
+  /** The workflow and shared policies versions it ran under
+   * (core/audit-store.ts), when the workspace keeps versions. */
   versions?: RunVersions
   /** Each approval decided while it ran, oldest first, with who decided
    * (an email, or a chat name) when known. */
@@ -94,8 +102,17 @@ export interface WorkflowRun {
 }
 
 export interface RunVersions {
-  brief?: number
+  /** The workflow's version (core/audit-store.ts, kind "workflow"). */
+  workflow?: number
   policies?: number
+  /** On runs from when only the brief was versioned: the same number,
+   * now the workflow's version. Read with workflowVersionOf. */
+  brief?: number
+}
+
+/** The workflow version a run ran under, whenever it was recorded. */
+export function workflowVersionOf(run: { versions?: RunVersions }): number | undefined {
+  return run.versions?.workflow ?? run.versions?.brief
 }
 
 export interface RunDecision {
@@ -463,25 +480,28 @@ export class WorkflowRunner {
   private readonly execute: ExecuteRun
   private readonly maxFinishedPerAgent: number
   private readonly onChange?: (run: WorkflowRun) => void | Promise<void>
-  private readonly versionsFor?: (agent: string, workflowId: string) => RunVersions | undefined
+  private readonly versionsFor?: (agent: string, workflowId: string) => RunVersions | undefined | Promise<RunVersions | undefined>
+  /** The output schema a workflow's result must match, if it has one. */
+  private readonly outputSchemaFor?: (agent: string, workflowId: string) => JsonSchema | undefined
   private readonly inFlight = new Set<Promise<void>>()
 
   /** `onChange`: called with the run when it starts, and each time it
    * finishes, fails or stops for a decision (the server sends its chat
-   * messages and callbacks). `versionsFor`: the brief and policies
+   * messages and callbacks). `versionsFor`: the workflow and policies
    * versions a run of this workflow starts under. */
-  constructor(options: { execute: ExecuteRun; maxFinishedPerAgent?: number; onChange?: (run: WorkflowRun) => void | Promise<void>; versionsFor?: (agent: string, workflowId: string) => RunVersions | undefined }) {
+  constructor(options: { execute: ExecuteRun; maxFinishedPerAgent?: number; onChange?: (run: WorkflowRun) => void | Promise<void>; versionsFor?: (agent: string, workflowId: string) => RunVersions | undefined | Promise<RunVersions | undefined>; outputSchemaFor?: (agent: string, workflowId: string) => JsonSchema | undefined }) {
     this.execute = options.execute
+    this.outputSchemaFor = options.outputSchemaFor
     this.maxFinishedPerAgent = options.maxFinishedPerAgent ?? MAX_FINISHED_PER_AGENT
     this.onChange = options.onChange
     this.versionsFor = options.versionsFor
   }
 
-  private versionsOf(agent: string, workflowId: string): { versions?: RunVersions } {
+  private async versionsOf(agent: string, workflowId: string): Promise<{ versions?: RunVersions }> {
     if (!this.versionsFor || !workflowId) return {}
     try {
-      const versions = this.versionsFor(agent, workflowId)
-      return versions && (versions.brief || versions.policies) ? { versions } : {}
+      const versions = await this.versionsFor(agent, workflowId)
+      return versions && (versions.workflow || versions.policies) ? { versions } : {}
     } catch (err) {
       console.error('[loopengine] could not note the versions a run starts under:', err)
       return {}
@@ -512,7 +532,7 @@ export class WorkflowRunner {
       ...(input.trigger_id ? { trigger_id: input.trigger_id } : {}),
       ...(input.job ? { job: input.job } : {}),
       ...(input.chained_from ? { chained_from: input.chained_from, chain_depth: input.chain_depth ?? 1 } : {}),
-      ...this.versionsOf(input.agent, input.workflow_id),
+      ...(await this.versionsOf(input.agent, input.workflow_id)),
       status: 'running',
       started_at: new Date().toISOString(),
       message: input.message,
@@ -544,7 +564,7 @@ export class WorkflowRunner {
       ...(input.decisions_to ? { decisions_to: input.decisions_to } : {}),
       ...(input.chat_notice ? { chat_notice: input.chat_notice } : {}),
       ...(input.warnings?.length ? { warnings: input.warnings } : {}),
-      ...this.versionsOf(input.agent, input.workflow_id),
+      ...(await this.versionsOf(input.agent, input.workflow_id)),
       status: 'running',
       started_at: new Date().toISOString(),
       message: input.message,
@@ -555,9 +575,13 @@ export class WorkflowRunner {
     this.changed(run)
     try {
       const outcome = await this.execute(run.agent, run.message, run.session_id, { workflowId: run.workflow_id, ...(run.decisions_to ? { decisionsTo: run.decisions_to } : {}) })
-      if (outcome.kind === 'pending') this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
-      else await this.finish(run.run_id, { status: 'done', result: outcome.text })
-      return outcome
+      if (outcome.kind === 'pending') {
+        this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
+        return outcome
+      }
+      const ended = await this.complete(run, outcome.text)
+      if (ended.kind === 'failed') throw new Error(ended.error)
+      return ended
     } catch (err) {
       await this.finish(run.run_id, { status: 'error', error: err instanceof Error ? err.message : String(err) })
       throw err
@@ -581,13 +605,48 @@ export class WorkflowRunner {
         this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
         return
       }
-      await this.finish(run.run_id, { status: 'done', result: outcome.text })
+      await this.complete(run, outcome.text)
     } catch (err) {
       await this.finish(run.run_id, { status: 'error', error: err instanceof Error ? err.message : String(err) })
     }
   }
 
-  private async finish(runId: string, end: { status: 'done' | 'error'; result?: string; error?: string }): Promise<void> {
+  /** A run's reply is in: done, unless its workflow has an output schema
+   * the reply doesn't match. Then the agent is told what's wrong and asked
+   * again in the same conversation, up to MAX_OUTPUT_RETRIES times in all
+   * (counted on the run, across pauses for approval), and the run fails
+   * if it still doesn't match. */
+  private async complete(run: WorkflowRun, text: string): Promise<RunOutcome | { kind: 'failed'; error: string }> {
+    const schema = run.workflow_id ? this.outputSchemaFor?.(run.agent, run.workflow_id) : undefined
+    if (!schema) {
+      await this.finish(run.run_id, { status: 'done', result: text })
+      return { kind: 'done', text }
+    }
+    let reply = text
+    let retries = run.output_retries ?? 0
+    for (;;) {
+      const check = checkOutput(schema, reply)
+      if (check.ok) {
+        await this.finish(run.run_id, { status: 'done', result: reply, output: check.value, output_errors: undefined })
+        return { kind: 'done', text: reply }
+      }
+      if (retries >= MAX_OUTPUT_RETRIES) {
+        const error = `The result didn't match the workflow's output schema${retries ? ` after ${retries === 1 ? 'one retry' : `${retries} retries`}` : ''}: ${check.errors.join('; ')}`
+        await this.finish(run.run_id, { status: 'error', result: reply, error, output_errors: check.errors })
+        return { kind: 'failed', error }
+      }
+      retries++
+      await getRunStore().update(run.run_id, (r) => r && { ...r, output_retries: retries, output_errors: check.errors })
+      const outcome = await this.execute(run.agent, outputRetryMessage(check.errors), run.session_id, { workflowId: run.workflow_id, ...(run.decisions_to ? { decisionsTo: run.decisions_to } : {}) })
+      if (outcome.kind === 'pending') {
+        this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
+        return outcome
+      }
+      reply = outcome.text
+    }
+  }
+
+  private async finish(runId: string, end: { status: 'done' | 'error'; result?: string; error?: string; output?: unknown; output_errors?: string[] }): Promise<void> {
     this.changed(await getRunStore().update(runId, (r) => r && { ...r, ...end, pending_ids: undefined, finished_at: new Date().toISOString() }))
   }
 
@@ -601,7 +660,11 @@ export class WorkflowRunner {
       this.changed(await getRunStore().update(run.run_id, (r) => r && { ...r, status: 'awaiting_approval', pending_ids: outcome.pendingIds }))
       return
     }
-    await this.finish(run.run_id, { status: 'done', result: outcome.text })
+    try {
+      await this.complete(run, outcome.text)
+    } catch (err) {
+      await this.finish(run.run_id, { status: 'error', error: err instanceof Error ? err.message : String(err) })
+    }
   }
 
   /** The run a session belongs to, if it's a workflow run's. */

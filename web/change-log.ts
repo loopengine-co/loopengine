@@ -28,7 +28,7 @@ const LABELS: [RegExp, string | ((method: string, m: RegExpMatchArray) => string
   [/^\/agents\/[^/]+$/, (method) => (method === 'DELETE' ? 'Removed the agent' : 'Changed the agent')],
   [/^\/agents\/[^/]+\/workflows$/, 'Created a workflow'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+$/, (method) => (method === 'DELETE' ? 'Removed the workflow' : 'Edited the workflow')],
-  [/^\/agents\/[^/]+\/workflows\/[^/]+\/versions\/(\d+)\/restore$/, (_method, m) => `Restored brief version ${m[1]}`],
+  [/^\/agents\/[^/]+\/workflows\/[^/]+\/versions\/(\d+)\/restore$/, (_method, m) => `Restored workflow version ${m[1]}`],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/messages$/, 'Changed where messages go'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/triggers/, 'Changed webhook triggers'],
   [/^\/agents\/[^/]+\/workflows\/[^/]+\/evals\/criteria/, 'Changed the success criteria'],

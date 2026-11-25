@@ -14,12 +14,19 @@
 // - session_entries: every conversation's messages, in order, each with
 //   when it was written (core/session-store.ts's SqliteSessionStore);
 // - usage: tokens and time of every model call (core/usage.ts);
+// - trace_spans and trace_prompts: each turn's trace (core/trace.ts): the
+//   prompt it ran with, each model call's new input and its output, and
+//   each tool call's input, output and time; system prompts kept once,
+//   by hash;
 // - threads and job_threads: which chat message each request or job is
 //   (core/messaging/threads.ts);
-// - versions: each workflow's brief (its instructions and result format)
-//   and the workspace's shared policies, numbered. A new version is noted
-//   whenever the text differs from the latest, however it changed: saved
-//   in the console, restored, or edited in the file.
+// - versions: each workflow as a whole (its name, inputs, model,
+//   instructions and result format; not its triggers or where its messages
+//   go) and the workspace's shared policies, numbered. A new version is
+//   noted whenever the text differs from the latest, however it changed:
+//   saved in the console, restored, or edited in the file. Workflows were
+//   once versioned by their brief alone (kind "brief"); those versions are
+//   the workflow's first ones, numbers unchanged.
 //
 // It uses node:sqlite, built into Node 22.5 and later. Where that's
 // missing, auditDb() is undefined: runs stay in JSON files and nothing is
@@ -29,8 +36,9 @@ import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
+import { inputSchemaOf } from './input-schema.js'
 
-export type VersionKind = 'brief' | 'policies'
+export type VersionKind = 'workflow' | 'policies'
 
 export interface Version {
   number: number
@@ -142,6 +150,25 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 CREATE INDEX IF NOT EXISTS usage_session ON usage (session_id, id);
 CREATE INDEX IF NOT EXISTS usage_agent ON usage (agent, at);
+CREATE TABLE IF NOT EXISTS trace_spans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  name TEXT,
+  duration_ms INTEGER,
+  input TEXT,
+  output TEXT,
+  error TEXT,
+  meta TEXT
+);
+CREATE INDEX IF NOT EXISTS trace_spans_session ON trace_spans (session_id, id);
+CREATE INDEX IF NOT EXISTS trace_spans_at ON trace_spans (at);
+CREATE TABLE IF NOT EXISTS trace_prompts (
+  hash TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS versions (
   agent TEXT NOT NULL,
   workflow_id TEXT NOT NULL,
@@ -183,6 +210,9 @@ export function openAuditDb(dir: string): DatabaseSync | undefined {
   const db = new sqlite.DatabaseSync(path.join(dir, 'loopengine.db'))
   db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;')
   db.exec(SCHEMA)
+  // Brief versions became workflow versions (same numbers, so runs that
+  // name one still find it).
+  db.exec("UPDATE versions SET kind = 'workflow' WHERE kind = 'brief'")
   chainEvents(db)
   return db
 }
@@ -402,6 +432,109 @@ function eventOf(r: Record<string, unknown>): AuditEvent {
   }
 }
 
+// ---------- traces ----------
+
+/** One step of a turn's trace: the prompt it ran with ("prompt"), a model
+ * call ("llm"), or a tool call ("tool"). Input and output are what was
+ * sent and what came back, as JSON values. */
+export interface TraceSpan {
+  id: number
+  sessionId: string
+  at: string
+  kind: 'prompt' | 'llm' | 'tool'
+  name?: string
+  durationMs?: number
+  input?: unknown
+  output?: unknown
+  error?: string
+  meta?: Record<string, unknown>
+}
+
+// A field longer than this is cut, so one huge tool result can't swell the
+// database; the cut says how much was left out.
+const MAX_TRACE_FIELD = 100_000
+
+function traceJson(value: unknown): string | null {
+  if (value === undefined) return null
+  const text = JSON.stringify(value)
+  if (text.length <= MAX_TRACE_FIELD) return text
+  return JSON.stringify({ truncated: true, chars: text.length, start: text.slice(0, MAX_TRACE_FIELD) })
+}
+
+/** Keeps a system prompt once, by its hash, and returns the hash. */
+export function recordTracePrompt(text: string, database = auditDb()): string | undefined {
+  if (!database) return undefined
+  try {
+    const hash = hashOf(text)
+    database.prepare('INSERT OR IGNORE INTO trace_prompts (hash, text, at) VALUES (?, ?, ?)').run(hash, text, new Date().toISOString())
+    return hash
+  } catch (err) {
+    console.error('[loopengine] could not keep a trace prompt:', err)
+    return undefined
+  }
+}
+
+/** Appends a step to a turn's trace. Never throws: the trace must not stop
+ * the work it records. */
+export function recordTraceSpan(span: Omit<TraceSpan, 'id'>, database = auditDb()): void {
+  if (!database) return
+  try {
+    database.prepare('INSERT INTO trace_spans (session_id, at, kind, name, duration_ms, input, output, error, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      span.sessionId, span.at, span.kind, span.name ?? null, span.durationMs ?? null,
+      traceJson(span.input), traceJson(span.output), span.error ?? null, span.meta ? JSON.stringify(span.meta) : null,
+    )
+  } catch (err) {
+    console.error('[loopengine] could not record a trace step:', err)
+  }
+}
+
+/** A session's trace, oldest first; each prompt step carries its system
+ * prompt's text (as input.system). */
+export function listTraceSpans(sessionId: string, database = auditDb()): TraceSpan[] {
+  if (!database) return []
+  const rows = database.prepare('SELECT * FROM trace_spans WHERE session_id = ? ORDER BY id').all(sessionId) as Record<string, unknown>[]
+  const prompts = new Map<string, string>()
+  const promptText = (hash: string) => {
+    if (!prompts.has(hash)) prompts.set(hash, String((database.prepare('SELECT text FROM trace_prompts WHERE hash = ?').get(hash) as { text?: string } | undefined)?.text ?? ''))
+    return prompts.get(hash)!
+  }
+  const parse = (v: unknown) => (v == null ? undefined : JSON.parse(String(v)))
+  return rows.map((r) => {
+    let input = parse(r.input)
+    if (r.kind === 'prompt' && input && typeof input === 'object' && typeof (input as { systemHash?: unknown }).systemHash === 'string') {
+      const { systemHash, ...rest } = input as { systemHash: string }
+      input = { system: promptText(systemHash), ...rest }
+    }
+    return {
+      id: Number(r.id),
+      sessionId: String(r.session_id),
+      at: String(r.at),
+      kind: String(r.kind) as TraceSpan['kind'],
+      ...(r.name != null ? { name: String(r.name) } : {}),
+      ...(r.duration_ms != null ? { durationMs: Number(r.duration_ms) } : {}),
+      ...(input !== undefined ? { input } : {}),
+      ...(r.output != null ? { output: parse(r.output) } : {}),
+      ...(r.error != null ? { error: String(r.error) } : {}),
+      ...(r.meta != null ? { meta: JSON.parse(String(r.meta)) as Record<string, unknown> } : {}),
+    }
+  })
+}
+
+/** At most hourly: trace steps older than the retention period, and the
+ * system prompts no step uses any more. */
+let lastTracePrune = 0
+export function pruneTraces(database = auditDb()): void {
+  if (!database || Date.now() - lastTracePrune < 60 * 60 * 1000) return
+  lastTracePrune = Date.now()
+  try {
+    const before = new Date(Date.now() - retentionDays() * 24 * 60 * 60 * 1000).toISOString()
+    database.prepare('DELETE FROM trace_spans WHERE at < ?').run(before)
+    database.prepare("DELETE FROM trace_prompts WHERE at < ? AND hash NOT IN (SELECT json_extract(input, '$.systemHash') FROM trace_spans WHERE kind = 'prompt' AND input IS NOT NULL)").run(before)
+  } catch (err) {
+    console.error('[loopengine] could not prune old traces:', err)
+  }
+}
+
 // ---------- versions ----------
 
 const hashOf = (content: string): string => createHash('sha256').update(content).digest('hex')
@@ -451,14 +584,119 @@ export function getVersion(key: { agent: string; workflowId: string; kind: Versi
   return listVersions(key, database).find((v) => v.number === number)
 }
 
-/** What a workflow's brief version holds: its instructions and the
- * result format, as one text (the format under a heading). */
-export function briefContent(workflow: { instructions: string; output?: string }): string {
-  return workflow.output?.trim() ? `${workflow.instructions}\n\n## Result format\n\n${workflow.output.trim()}` : workflow.instructions
+/** What a workflow version holds, as text people can read and compare
+ * line by line: which workflow it is, its name and description, its input
+ * schema, model, the tools it uses with each one's permission, its
+ * triggers, its success criteria, its output schema, its instructions and
+ * its result format. */
+export interface WorkflowSnapshot {
+  agent: string
+  workflowId: string
+  title: string
+  description: string
+  /** Each input: what it is, whether it's required, and any type and
+   * limits (core/input-schema.ts). */
+  parameters: Record<string, { description: string; required: boolean; [limit: string]: unknown }>
+  model?: { provider: string; model: string }
+  /** The agent's tools its instructions name, each with its permission
+   * (allow, ask or deny): the workflow's contract. */
+  tools: { name: string; permission: string }[]
+  /** Each schedule and webhook that starts it, in a line. */
+  triggers: string[]
+  criteria: { text: string; kind: string; value?: string }[]
+  instructions: string
+  output?: string
+  /** The JSON Schema its result must match (core/output-schema.ts). */
+  outputSchema?: Record<string, unknown>
+  /** Its inputs as one JSON Schema, as the version holds them (read
+   * back from a version; made from `parameters` when one is written). */
+  inputSchema?: Record<string, unknown>
 }
 
-/** The instructions and result format a brief version holds. */
-export function briefFromContent(content: string): { instructions: string; output?: string } {
-  const at = content.lastIndexOf('\n\n## Result format\n\n')
-  return at < 0 ? { instructions: content } : { instructions: content.slice(0, at), output: content.slice(at + '\n\n## Result format\n\n'.length) }
+const INSTRUCTIONS_HEADING = '\n## Instructions\n\n'
+const RESULT_HEADING = '\n\n## Result format\n\n'
+
+export function workflowContent(w: WorkflowSnapshot): string {
+  const line = (text: string) => text.replace(/\s+/g, ' ').trim()
+  const list = (items: string[]) => (items.length ? items.join('\n') : 'None')
+  const json = (schema: unknown) => `\`\`\`json\n${JSON.stringify(schema, null, 2)}\n\`\`\``
+  const criteria = w.criteria.map((c) => `- [${c.kind}${c.value !== undefined ? `: ${JSON.stringify(c.value)}` : ''}] ${line(c.text)}`)
+  const head = `# ${line(w.title)}` +
+    (line(w.description) ? `\n\n${line(w.description)}` : '') +
+    `\n\n## Workflow\n\n${w.agent}/${w.workflowId}` +
+    `\n\n## Input schema\n\n${json(inputSchemaOf(w.parameters as Parameters<typeof inputSchemaOf>[0]))}` +
+    `\n\n## Model\n\n${w.model ? `${w.model.provider}/${w.model.model}` : "The agent's"}` +
+    `\n\n## Tools\n\n${list(w.tools.map((t) => `- ${t.name}: ${t.permission}`))}` +
+    `\n\n## Triggers\n\n${list(w.triggers.map((t) => `- ${line(t)}`))}` +
+    `\n\n## Success criteria\n\n${list(criteria)}` +
+    `\n\n## Output schema\n\n${w.outputSchema ? json(w.outputSchema) : 'None'}\n`
+  return head + INSTRUCTIONS_HEADING + w.instructions + (w.output?.trim() ? RESULT_HEADING + w.output.trim() : '')
+}
+
+/** A section's ```json block, parsed. */
+function jsonBlock(text: string | undefined): Record<string, unknown> | undefined {
+  const json = text?.match(/^```json\n([\s\S]*)\n```$/)?.[1]
+  if (!json) return undefined
+  try {
+    return JSON.parse(json) as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
+/** A workflow's inputs, from its input schema (inputSchemaOf's): each
+ * property's description, whether it's required, and its type and
+ * limits (a text input's "string" type left out, as it's saved). */
+function parametersFromSchema(schema: Record<string, unknown>): WorkflowSnapshot['parameters'] {
+  const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : [])
+  const properties = (schema.properties && typeof schema.properties === 'object' ? schema.properties : {}) as Record<string, Record<string, unknown>>
+  return Object.fromEntries(Object.entries(properties).map(([name, prop]) => {
+    const { description, type, ...spec } = prop
+    return [name, { description: typeof description === 'string' ? description : '', required: required.has(name), ...(type && type !== 'string' ? { type } : {}), ...spec }]
+  }))
+}
+
+/** What a version holds. Older versions hold less: one from when only
+ * the brief was numbered has just the instructions and result format;
+ * one from before tools, triggers and criteria were part of it has no
+ * such sections, and none comes back. */
+export function workflowFromContent(content: string): Partial<WorkflowSnapshot> & { instructions: string } {
+  const split = (body: string) => {
+    const at = body.lastIndexOf(RESULT_HEADING)
+    return at < 0 ? { instructions: body } : { instructions: body.slice(0, at), output: body.slice(at + RESULT_HEADING.length) }
+  }
+  const at = content.indexOf(INSTRUCTIONS_HEADING)
+  if (!content.startsWith('# ') || at < 0) return split(content)
+  const head = content.slice(0, at)
+  const section = (name: string): string | undefined => head.match(new RegExp(`\\n## ${name}\\n\\n([\\s\\S]*?)(?=\\n## |$)`))?.[1]?.trim()
+  const lines = (name: string) => (section(name) ?? '').split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2))
+  const firstLines = head.split('\n## ')[0]!.split('\n').filter((l) => l.trim())
+  const inputSchema = jsonBlock(section('Input schema'))
+  const outputSchema = jsonBlock(section('Output schema'))
+  const model = (section('Model') ?? '').match(/^([a-z0-9-]+)\/(.+)$/)
+  const which = (section('Workflow') ?? '').match(/^([^/\s]+)\/(\S+)$/)
+  const criteria = section('Success criteria') === undefined ? undefined : lines('Success criteria').flatMap((l) => {
+    const m = l.match(/^\[([a-z_]+)(?:: (".*"))?\] (.*)$/)
+    if (!m) return []
+    let value: string | undefined
+    try {
+      value = m[2] ? String(JSON.parse(m[2])) : undefined
+    } catch {
+      value = m[2]
+    }
+    return [{ kind: m[1]!, text: m[3]!, ...(value !== undefined ? { value } : {}) }]
+  })
+  return {
+    ...(which ? { agent: which[1]!, workflowId: which[2]! } : {}),
+    title: firstLines[0]!.slice(2).trim(),
+    description: firstLines.slice(1).join(' ').trim(),
+    parameters: inputSchema ? parametersFromSchema(inputSchema) : {},
+    ...(inputSchema ? { inputSchema } : {}),
+    ...(model ? { model: { provider: model[1]!, model: model[2]! } } : {}),
+    ...(section('Tools') !== undefined ? { tools: lines('Tools').flatMap((l) => { const m = l.match(/^(.+): (\S+)$/); return m ? [{ name: m[1]!, permission: m[2]! }] : [] }) } : {}),
+    ...(section('Triggers') !== undefined ? { triggers: lines('Triggers') } : {}),
+    ...(criteria ? { criteria } : {}),
+    ...(outputSchema ? { outputSchema } : {}),
+    ...split(content.slice(at + INSTRUCTIONS_HEADING.length)),
+  }
 }

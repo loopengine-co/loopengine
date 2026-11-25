@@ -1,9 +1,9 @@
 // A workflow's health (the workflow page's Health panel): how its runs
-// went over the last 30 days, per brief version and day by day, and an
+// went over the last 30 days, per workflow version and day by day, and an
 // alert when a measure suddenly gets worse. Built from the runs
 // (core/workflow-runs.ts: status, decisions, answers, feedback, the brief
 // version each ran under) and their model calls' cost (core/usage.ts).
-import type { WorkflowRun } from '../core/workflow-runs.js'
+import { workflowVersionOf, type WorkflowRun } from '../core/workflow-runs.js'
 
 export interface HealthNumbers {
   runs: number
@@ -29,7 +29,7 @@ export interface HealthNumbers {
 }
 
 export interface HealthVersion extends HealthNumbers {
-  /** The brief version, or null for runs from before versions. */
+  /** The workflow version, or null for runs from before versions. */
   version: number | null
   /** Its first and last run in the period. */
   from: string
@@ -133,7 +133,7 @@ export function workflowHealth(runs: WorkflowRun[], costs: RunCosts, options: { 
 
   const byVersion = new Map<number | null, WorkflowRun[]>()
   for (const r of inPeriod) {
-    const v = r.versions?.brief ?? null
+    const v = workflowVersionOf(r) ?? null
     byVersion.set(v, [...(byVersion.get(v) ?? []), r])
   }
   const versions = [...byVersion.entries()]

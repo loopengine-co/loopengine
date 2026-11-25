@@ -51,6 +51,21 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-kv { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 6px 14px; font-size: 13.5px; }
   .ib-kv dt { color: var(--ink-muted); font-family: var(--font-mono); font-size: 12.5px; padding-top: 1px; }
   .ib-kv dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ib-trace-sum { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 13px; padding: 10px 12px; background: var(--surface); border-radius: 10px; }
+  .ib-trace-sum dt { color: var(--ink-muted); }
+  .ib-trace-sum dd { margin: 0; overflow-wrap: anywhere; }
+  .ib-trace-span.event { background: var(--surface); }
+  .ib-trace-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .ib-trace-span { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+  .ib-trace-span.err { border-color: var(--bad); }
+  .ib-trace-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  .ib-trace-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-ink); }
+  .ib-trace-span.tool .ib-trace-kind { color: var(--ink-muted); }
+  .ib-trace-meta { font-size: 12.5px; color: var(--ink-muted); }
+  .ib-trace-span details > summary { cursor: pointer; font-size: 13px; color: var(--ink-muted); }
+  .ib-trace-span details .ib-pre { margin-top: 6px; }
+  .ib-trace-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ib-trace-tools code { font-size: 12px; background: var(--surface); padding: 1px 6px; border-radius: 6px; }
   .ib-pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; background: var(--surface); padding: 10px 12px; border-radius: 8px; max-height: 360px; overflow: auto; }
   .ib-question { margin: 0; font-size: 14.5px; }
   .ib-card textarea { width: 100%; box-sizing: border-box; min-height: 80px; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
@@ -376,14 +391,141 @@ ${renderMarkdownScript}
       (run && run.params ? '<div class="ib-card"><h3>Inputs</h3>' + kvHtml(run.params) + '</div>' : '') +
       (c.steps.length ? '<div class="ib-card"><h3>What the agent did</h3>' + totalsHtml(c) + '<ol class="ib-steps">' + c.steps.map(stepHtml).join('') + '</ol></div>' : '') +
       (run ? decidedHtml(run) : '') +
-      (run && run.result ? '<div class="ib-card"><h3>Result</h3><div class="ib-md">' + renderMarkdownPreview(run.result) + '</div></div>' : '') +
+      // With an output schema, the result is its JSON, shown once.
+      (run && run.output !== undefined ? '<div class="ib-card"><h3>Result <span class="hint">(JSON, matches its output schema' + (run.output_retries ? ', after ' + run.output_retries + (run.output_retries === 1 ? ' retry' : ' retries') : '') + ')</span></h3><pre class="ib-pre">' + esc(JSON.stringify(run.output, null, 2)) + '</pre></div>'
+        : run && run.result ? '<div class="ib-card"><h3>Result</h3><div class="ib-md">' + renderMarkdownPreview(run.result) + '</div></div>' : '') +
+      (run && run.status === 'error' && run.output_errors && run.output_errors.length ? '<div class="ib-card"><h3>Didn' + String.fromCharCode(8217) + 't match its output schema</h3><ul class="ib-schema-errors">' + run.output_errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>' : '') +
       (run && run.error ? '<div class="ib-card"><h3>Failed</h3><p class="error">' + esc(run.error) + '</p></div>' : '') +
+      traceHtml(c) +
       exportHtml(c) +
       evalCaseHtml(c);
     var print = page.querySelector('[data-act="print"]');
     if (print) print.addEventListener('click', function () { window.print(); });
     wireEvalCase(c);
+    wireTrace(c);
     wireCase(c);
+  }
+
+  // The run's trace (owners, admins and editors): the prompt it ran with,
+  // each model call (what was new in its input, and its output) and each
+  // tool call (input, output, time), word for word. Loaded when opened.
+  function traceHtml(c) {
+    if (!fullAccess || !c.run) return '';
+    return '<div class="ib-card ib-trace"><h3>Trace</h3>' +
+      '<p class="hint" style="margin:0">Every step word for word: the prompt the agent ran with, what each model call was given and answered, and what each tool was sent and returned.</p>' +
+      '<div class="ib-actions"><button type="button" class="ib-btn plain" data-act="trace">Show trace</button><span class="hint ib-trace-status" role="status"></span></div>' +
+      '<ol class="ib-trace-list" hidden></ol></div>';
+  }
+  var NL = String.fromCharCode(10);
+  // A traced value as text: a cut one says how much was left out.
+  function traceText(v) {
+    if (v == null) return '';
+    if (typeof v === 'object' && !Array.isArray(v) && v.truncated) return String(v.start) + NL + NL + '(cut: ' + count(v.chars) + ' characters in all)';
+    if (typeof v === 'string') return v;
+    if (Array.isArray(v)) return v.map(blockText).join(NL + NL);
+    return JSON.stringify(v, null, 2);
+  }
+  function blockText(b) {
+    if (b && typeof b === 'object' && 'role' in b) return b.role.toUpperCase() + NL + traceText(b.content);
+    if (!b || typeof b !== 'object') return String(b);
+    if (b.type === 'text') return b.text;
+    if (b.type === 'tool_use') return 'Calls ' + b.name + ' ' + JSON.stringify(b.input, null, 2);
+    if (b.type === 'tool_result') return 'Result for ' + b.tool_use_id + (b.is_error ? ' (error)' : '') + ':' + NL + traceText(b.content);
+    return JSON.stringify(b, null, 2);
+  }
+  function tracePart(label, v, open) {
+    var text = traceText(v);
+    if (!text) return '';
+    return '<details' + (open ? ' open' : '') + '><summary>' + esc(label) + '</summary><pre class="ib-pre">' + esc(text) + '</pre></details>';
+  }
+  // The trace's own fields at the top: which run of which version, the
+  // model, how long, what it cost, and the feedback on it.
+  function traceSummaryHtml(t) {
+    var rows = [
+      ['Execution id', t.execution_id],
+      ['Workflow', t.workflow_id + (t.workflow_version_id ? ' (' + t.workflow_version_id + ')' : '')],
+      ['Model', t.model ? (t.model.provider ? t.model.provider + ' ' : '') + t.model.model : ''],
+      ['Status', t.status],
+      ['Duration', t.duration_ms != null ? duration(t.duration_ms) : ''],
+      ['Cost', (t.cost.usd != null ? dollars(t.cost.usd) + DOT : '') + t.cost.model_calls + (t.cost.model_calls === 1 ? ' model call' : ' model calls') + DOT + count(t.cost.input_tokens) + ' in ' + String.fromCharCode(183) + ' ' + count(t.cost.output_tokens) + ' out tokens'],
+      ['Tool calls', String(t.tool_calls.length)],
+      ['Feedback', t.feedback ? [t.feedback.verdict, t.feedback.edit ? t.feedback.edit + ' edits' : '', t.feedback.note].filter(Boolean).join(DOT) || 'reported' : 'none yet'],
+      ['Error', t.error || ''],
+    ].filter(function (r) { return r[1]; });
+    return '<dl class="ib-trace-sum">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl>';
+  }
+  function traceStepHtml(st, i, steps) {
+    var meta = [];
+    if (st.duration_ms != null) meta.push(duration(st.duration_ms));
+    var head = function (kind, name) {
+      return '<div class="ib-trace-head"><span class="ib-trace-kind">' + kind + '</span>' + (name ? '<strong>' + esc(name) + '</strong>' : '') +
+        '<span class="ib-trace-meta">' + esc(meta.join(DOT)) + '</span></div>';
+    };
+    var err = st.error ? '<p class="error" style="margin:0">' + esc(st.error) + '</p>' : '';
+    if (st.type === 'prompt') {
+      return '<li class="ib-trace-span prompt">' + head(st.resumed ? 'Prompt (resumed)' : 'Prompt', '') +
+        (st.tools.length ? '<div class="ib-trace-tools">' + st.tools.map(function (t) { return '<code>' + esc(t) + '</code>'; }).join('') + '</div>' : '') +
+        (st.prior_messages ? '<span class="ib-trace-meta">After ' + st.prior_messages + ' earlier messages in this conversation</span>' : '') +
+        tracePart('System prompt', st.system, false) +
+        tracePart(st.resumed ? 'Resumed with' : 'Input', st.input, true) + '</li>';
+    }
+    if (st.type === 'model_call') {
+      if (st.input_tokens != null) meta.push(count(st.input_tokens) + ' in ' + String.fromCharCode(183) + ' ' + count(st.output_tokens) + ' out tokens');
+      if (st.messages_sent != null) meta.push(st.messages_sent + (st.messages_sent === 1 ? ' message' : ' messages') + ' sent');
+      if (st.stop_reason) meta.push('stopped: ' + st.stop_reason);
+      var fresh = Array.isArray(st.input) && st.input.length ? st.input : null;
+      var afterPrompt = i > 0 && steps[i - 1].type === 'prompt';
+      return '<li class="ib-trace-span llm' + (st.error ? ' err' : '') + '">' + head('Model call', st.model) + err +
+        (fresh ? tracePart('New input', fresh, false) : '<span class="ib-trace-meta">' + (afterPrompt ? 'Given the prompt above' : 'No new input since the step before') + '</span>') +
+        tracePart('Output', st.output, true) + '</li>';
+    }
+    if (st.type === 'tool_call') {
+      if (st.status) meta.push(st.status);
+      return '<li class="ib-trace-span tool' + (st.error ? ' err' : '') + '">' + head('Tool call', st.name) + err +
+        tracePart('Input', st.input, false) + tracePart('Output', st.output, false) + '</li>';
+    }
+    var who = st.by ? ' by ' + st.by : '';
+    if (st.type === 'decision') {
+      return '<li class="ib-trace-span event">' + head('Decision', (st.approved ? (st.changed ? 'Approved as changed: ' : 'Approved: ') : 'Denied: ') + st.tool) +
+        '<span class="ib-trace-meta">' + esc(when(st.at) + who) + '</span>' + (st.reason ? '<div>' + esc(st.reason) + '</div>' : '') + '</li>';
+    }
+    if (st.type === 'answer') {
+      return '<li class="ib-trace-span event">' + head('Answer', '') + '<span class="ib-trace-meta">' + esc(when(st.at) + who) + '</span>' +
+        tracePart('Question', st.question, false) + '<div>' + esc(st.answer) + '</div></li>';
+    }
+    return '<li class="ib-trace-span event">' + head('Feedback', [st.verdict, st.edit ? st.edit + ' edits' : ''].filter(Boolean).join(', ')) +
+      '<span class="ib-trace-meta">' + esc(when(st.at) + who) + '</span>' + (st.note ? '<div>' + esc(st.note) + '</div>' : '') + '</li>';
+  }
+  function wireTrace(c) {
+    var btn = page.querySelector('[data-act="trace"]');
+    if (!btn) return;
+    var list = page.querySelector('.ib-trace-list');
+    var status = page.querySelector('.ib-trace-status');
+    var loaded = false;
+    btn.addEventListener('click', function () {
+      if (loaded) {
+        list.hidden = !list.hidden;
+        btn.textContent = list.hidden ? 'Show trace' : 'Hide trace';
+        return;
+      }
+      btn.disabled = true;
+      status.textContent = 'Loading' + ELLIPSIS;
+      fetch('/inbox/cases/' + encodeURIComponent(c.id) + '/trace', { headers: { accept: 'application/json' } })
+        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'Could not load the trace'); return b; }); })
+        .then(function (t) {
+          loaded = true;
+          btn.disabled = false;
+          var steps = t.step_events || [];
+          var traced = steps.some(function (x) { return x.type === 'prompt' || x.type === 'model_call'; });
+          status.textContent = traced ? '' : 'No step-by-step trace for this run: it ran before traces were kept.';
+          list.innerHTML = '<li>' + traceSummaryHtml(t) + '</li>' + steps.map(traceStepHtml).join('') +
+            (t.final_output ? '<li class="ib-trace-span">' + '<div class="ib-trace-head"><span class="ib-trace-kind">Final output</span></div>' + tracePart('Output', t.final_output, true) + '</li>' : '') +
+            '<li><a class="ib-link" href="/agents/' + encodeURIComponent(t.agent) + '/runs/' + encodeURIComponent(t.execution_id) + '/trace" download="trace-' + esc(t.execution_id.slice(0, 8)) + '.json">Download trace as JSON</a></li>';
+          list.hidden = false;
+          btn.textContent = 'Hide trace';
+        })
+        .catch(function (err) { btn.disabled = false; status.textContent = err.message; });
+    });
   }
 
   // Save this run as one of its workflow's eval cases (owners, admins and

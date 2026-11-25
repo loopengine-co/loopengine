@@ -3,7 +3,7 @@
 // core/audit-store.ts's events; the cases, core/workflow-runs.ts's runs.
 import type { AuditEvent } from '../core/audit-store.js'
 import { changesSummary, type FieldChange } from './change-log.js'
-import type { WorkflowRun } from '../core/workflow-runs.js'
+import { workflowVersionOf, type WorkflowRun } from '../core/workflow-runs.js'
 
 const short = (text: string, max: number): string => {
   const flat = text.replace(/\s+/g, ' ').trim()
@@ -16,9 +16,10 @@ export function eventText(e: AuditEvent): { what: string; detail: string } {
   const d = e.data
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   if (e.kind === 'change') {
-    const brief = d.brief as { from?: number; to?: number } | undefined
+    // The workflow's version before and after ("brief" on older events).
+    const version = (d.version ?? d.brief) as { from?: number; to?: number } | undefined
     const summary = Array.isArray(d.changes) ? changesSummary(d.changes as FieldChange[]) : ''
-    return { what: str(d.label) || 'Changed a setting', detail: [brief?.from && brief.to ? `brief v${brief.from} → v${brief.to}` : '', summary].filter(Boolean).join('; ') }
+    return { what: str(d.label) || 'Changed a setting', detail: [version?.from && version.to ? `workflow v${version.from} → v${version.to}` : '', summary].filter(Boolean).join('; ') }
   }
   if (e.kind === 'decision') {
     const what = `${d.approved ? (d.edited ? 'Approved as changed' : 'Approved') : 'Denied'} ${str(d.tool)}`
@@ -58,7 +59,7 @@ export interface AuditCaseRow {
   status: WorkflowRun['status']
   startedAt: string
   finishedAt?: string
-  briefVersion?: number
+  workflowVersion?: number
   /** Everyone who decided or answered something in it. */
   people: string[]
   /** The start of its result, or its error. */
@@ -79,7 +80,7 @@ export function caseRow(run: WorkflowRun, workflowTitle: string | undefined, eva
     status: run.status,
     startedAt: run.started_at,
     ...(run.finished_at ? { finishedAt: run.finished_at } : {}),
-    ...(run.versions?.brief ? { briefVersion: run.versions.brief } : {}),
+    ...(workflowVersionOf(run) ? { workflowVersion: workflowVersionOf(run) } : {}),
     people,
     outcome: short(run.status === 'error' ? run.error ?? '' : run.result ?? '', 200),
     ...(evalCase ? { evalCase: true } : {}),

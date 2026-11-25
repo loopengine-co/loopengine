@@ -668,7 +668,8 @@ ${consoleShellScript}
     });
   }
 
-  // The next run's inputs: each from the result, or one of the first run's
+  // The next run's inputs: each from the result, one field of it (when the
+  // first run's workflow has an output schema), or one of the first run's
   // inputs (shown when the step's "run" changes).
   function stepInputs(card) {
     var box = card.querySelector('[data-step-inputs]');
@@ -680,9 +681,14 @@ ${consoleShellScript}
     if (!target) { box.innerHTML = '<p class="hint" style="margin:0">Loading its inputs' + ELLIPSIS + '</p>'; return; }
     var params = Object.keys(target.parameters || {});
     if (!params.length) { box.innerHTML = '<p class="hint" style="margin:0">' + esc(target.title) + ' takes no inputs.</p>'; return; }
+    // With an output schema, each of its result's top-level fields too.
+    var schema = source && source.outputSchema;
+    var fields = schema && schema.type === 'object' && schema.properties ? Object.keys(schema.properties) : [];
     var choices = function (p) {
       var srcParams = source ? Object.keys(source.parameters || {}) : [];
-      return '<option value=""' + (target.parameters[p].required ? ' disabled' : '') + '>(leave empty)</option><option value="result"' + (target.parameters[p].required ? ' selected' : '') + '>the result of the run before</option>' +
+      var same = fields.indexOf(p) !== -1;
+      return '<option value=""' + (target.parameters[p].required ? ' disabled' : '') + '>(leave empty)</option><option value="result"' + (target.parameters[p].required && !same ? ' selected' : '') + '>the result of the run before</option>' +
+        fields.map(function (f) { return '<option value="result.' + esc(f) + '"' + (f === p ? ' selected' : '') + '>its result' + String.fromCharCode(8217) + 's ' + esc(f) + '</option>'; }).join('') +
         srcParams.map(function (sp) { return '<option value="input:' + esc(sp) + '"' + (sp === p && !target.parameters[p].required ? ' selected' : '') + '>its input ' + esc(sp) + '</option>'; }).join('');
     };
     box.innerHTML = params.map(function (p) { return '<div class="gl-row"><span class="hint"><code>' + esc(p) + '</code>' + (target.parameters[p].required ? '' : ' (optional)') + ' from</span><select class="gl-select" data-input="' + esc(p) + '">' + choices(p) + '</select></div>'; }).join('');

@@ -5,7 +5,7 @@ describe('the change log', () => {
   it('names settings changes, with their agent and workflow', () => {
     expect(changeOf('PUT', '/agents/cs/workflows/refund-check')).toEqual({ label: 'Edited the workflow', agent: 'cs', workflowId: 'refund-check' })
     expect(changeOf('PUT', '/agents/cs/workflows/refund-check/messages')).toMatchObject({ label: 'Changed where messages go' })
-    expect(changeOf('POST', '/agents/cs/workflows/refund-check/versions/2/restore')).toMatchObject({ label: 'Restored brief version 2' })
+    expect(changeOf('POST', '/agents/cs/workflows/refund-check/versions/2/restore')).toMatchObject({ label: 'Restored workflow version 2' })
     expect(changeOf('PUT', '/agents/cs/actauth/rules/r1')).toMatchObject({ label: 'Changed permissions', agent: 'cs' })
     expect(changeOf('PUT', '/config/policies')).toEqual({ label: 'Changed shared policies' })
   })

@@ -1,7 +1,7 @@
 // A workflow's audit report (web/workflow-audit.ts) as a page to read,
 // print, or save as a PDF from the browser's print dialog: the summary,
 // the numbers, who decided what, every denial and change with its reason,
-// how the brief changed (line by line), other settings changed, every
+// how the workflow changed (line by line), other settings changed, every
 // case, and whether the log checks out. Rendered here, with no script, so
 // the printed copy is exactly what's shown.
 import { devUiCss } from './dev-ui-styles.js'
@@ -35,7 +35,7 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
       <td>${d.reason ? `“${esc(d.reason)}”` : ''}${(d.changes ?? []).map((ch) => `<div><code>${esc(ch.field)}</code>: <del>${esc(ch.from)}</del> → <ins>${esc(ch.to)}</ins></div>`).join('')}</td>
       <td><a href="${esc(options.caseHref(d.runId))}">case</a></td></tr>`).join('')
   const people = audit.people.map((p) => `<tr><td>${esc(p.by)}</td><td>${p.approved}</td><td>${p.changed}</td><td>${p.denied}</td><td>${p.answered}</td></tr>`).join('')
-  const cases = audit.cases.slice(0, 500).map((k) => `<tr><td>${esc(when(k.at))}</td><td>${STATUS[k.status] ?? esc(k.status)}</td><td>${esc(k.inputs)}</td><td>${k.briefVersion ? `v${k.briefVersion}` : ''}</td><td>${esc(k.decidedBy.join(', '))}</td><td class="ar-outcome">${esc(k.outcome)}</td><td><a href="${esc(options.caseHref(k.runId))}">open</a></td></tr>`).join('')
+  const cases = audit.cases.slice(0, 500).map((k) => `<tr><td>${esc(when(k.at))}</td><td>${STATUS[k.status] ?? esc(k.status)}</td><td>${esc(k.inputs)}</td><td>${k.workflowVersion ? `v${k.workflowVersion}` : ''}</td><td>${esc(k.decidedBy.join(', '))}</td><td class="ar-outcome">${esc(k.outcome)}</td><td><a href="${esc(options.caseHref(k.runId))}">open</a></td></tr>`).join('')
   const changes = audit.changes.map((ch) => `<li>${esc(when(ch.at))} · ${esc(ch.label)}${ch.by ? ` · ${esc(ch.by)}` : ''}${(ch.fields ?? []).map((f) => (f.added || f.removed
     ? `<div class="ar-diff"><div class="hint">${esc(f.field)}</div>${(f.removed ?? []).map((l) => `<div class="del">− ${esc(l)}</div>`).join('')}${(f.added ?? []).map((l) => `<div class="ins">+ ${esc(l)}</div>`).join('')}</div>`
     : `<div class="hint">${esc(f.field)}: <del>${esc(f.from)}</del> → <ins>${esc(f.to)}</ins></div>`)).join('')}</li>`).join('')
@@ -105,7 +105,7 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
   <section>
     <h2>Runs and decisions</h2>
     <table><thead><tr><th></th><th>Runs</th><th>Done</th><th>Failed</th><th>Decided</th><th>Approved as asked</th><th>Changed</th><th>Denied</th><th>Questions answered</th></tr></thead>
-    <tbody>${countsRow('All', c)}${audit.versions.filter((ver) => ver.counts.runs).map((ver) => countsRow(`Brief v${ver.number}`, ver.counts)).join('')}</tbody></table>
+    <tbody>${countsRow('All', c)}${audit.versions.filter((ver) => ver.counts.runs).map((ver) => countsRow(`Version ${ver.number}`, ver.counts)).join('')}</tbody></table>
     ${audit.cost ? `<p class="hint">Model cost ${dollars(audit.cost.totalUsd)}, ${dollars(audit.cost.perRunUsd)} a run${audit.cost.pricedRuns < c.runs ? ` (${audit.cost.pricedRuns} of ${c.runs} runs priced)` : ''}.</p>` : ''}
   </section>
 
@@ -117,7 +117,7 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
   </section>
 
   <section>
-    <h2>The brief</h2>
+    <h2>Workflow versions</h2>
     ${versions || '<p class="hint">No versions recorded.</p>'}
   </section>
 
@@ -128,7 +128,7 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
 
   <section>
     <h2>Cases (${audit.cases.length})</h2>
-    ${cases ? `<table><thead><tr><th>Started</th><th>Outcome</th><th>Inputs</th><th>Brief</th><th>Decided by</th><th>Result</th><th></th></tr></thead><tbody>${cases}</tbody></table>${audit.cases.length > 500 ? '<p class="hint">The 500 most recent are listed; the JSON has them all.</p>' : ''}` : '<p class="hint">None.</p>'}
+    ${cases ? `<table><thead><tr><th>Started</th><th>Outcome</th><th>Inputs</th><th>Version</th><th>Decided by</th><th>Result</th><th></th></tr></thead><tbody>${cases}</tbody></table>${audit.cases.length > 500 ? '<p class="hint">The 500 most recent are listed; the JSON has them all.</p>' : ''}` : '<p class="hint">None.</p>'}
   </section>
 </div>
 </body>

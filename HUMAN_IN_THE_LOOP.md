@@ -293,6 +293,14 @@ trigger:
   on, and its next decision goes to the callback again.
 - `"result_to_chat": true` (once `"notify"`, still accepted) also sends
   the final result to the messaging app.
+- A workflow with an output schema (Edit → Output schema, a JSON Schema)
+  ends with JSON that matches it: `run.done` carries it as `run.output`
+  beside the text `run.result`. A reply that doesn't match is sent back to
+  the agent to fix, twice at most; then the run fails (`run.failed`, with
+  `run.output_errors` saying what didn't match).
+- `GET /agents/:agent/runs/:runId/trace` gives the run's whole trace: its
+  workflow version, input, final output (and its JSON), model, tool calls,
+  every step, error, duration, cost and feedback.
 
 To set it for every run of a workflow, however it starts (Run now, a
 schedule, a webhook, the API), use the workflow's **Messages** tab in the

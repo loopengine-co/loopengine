@@ -39,7 +39,7 @@ describe('the Audit page', () => {
     expect((await searchRuns({ before: '2026-11-03T00:00:00.000Z', limit: 1 })).map((r) => r.run_id)).toEqual(['2'])
     expect((await searchRuns({ q: '100%' })).map((r) => r.run_id)).toEqual([])
     expect(caseRow(run('2', { decisions: [{ tool: 'refund', approved: false, at: 'x', by: 'ana@shop.com' }], status: 'error', error: 'Stripe timed out', versions: { brief: 3 } }), 'Refunds'))
-      .toMatchObject({ workflowTitle: 'Refunds', status: 'error', briefVersion: 3, people: ['ana@shop.com'], outcome: 'Stripe timed out' })
+      .toMatchObject({ workflowTitle: 'Refunds', status: 'error', workflowVersion: 3, people: ['ana@shop.com'], outcome: 'Stripe timed out' })
   })
 
   it('lists the log by person and text, and exports it as CSV safe to open in a spreadsheet', () => {

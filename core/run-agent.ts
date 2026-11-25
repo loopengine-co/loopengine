@@ -26,6 +26,7 @@ import { skillsForResult, skillsInHistory, toolSkillsFor, type ToolSkills } from
 import { systemTools, createAskUserTool, createScheduleTools, CliQuestionHandler, isDurableQuestionHandler, type PendingQuestion } from './system-tools/index.js'
 import { resolveHttpNotifier } from './http-notifier.js'
 import type { LoopEvent } from './loop-events.js'
+import { startTurnTrace, type TurnTrace } from './trace.js'
 import { CRASH_RECOVERY_CONTINUATION } from './session-store.js'
 export { systemTools } from './system-tools/index.js'
 export type * from './loop-events.js'
@@ -865,11 +866,28 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
  * fresh in each case) but mutated here via pushMessage, same as the
  * single function this was split out of always did. */
 async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
-  const { modelCall, log, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel, evalMode, unattended } = ctx
+  // The turn's trace (core/trace.ts): its prompt, each model call and each
+  // tool call, as they happen; what's left is written however it ends.
+  const trace = startTurnTrace(ctx.sessionId)
+  try {
+    return await runTracedLoop(ctx, trace, messages, newMessages, starterMessage)
+  } finally {
+    trace.flush()
+  }
+}
+
+async function runTracedLoop(ctx: TurnContext, trace: TurnTrace, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
+  const { modelCall, log: logEvent, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel, evalMode, unattended } = ctx
+
+  const log = (event: LoopEvent): void => {
+    trace.event(event)
+    logEvent(event)
+  }
 
   function pushMessage(message: Message): void {
     messages.push(message)
     newMessages.push(message)
+    trace.message(message)
   }
 
   // See known-urls.ts's own doc comment — seeded once from this
@@ -924,6 +942,14 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
     },
   })
 
+  trace.start({
+    system: systemPrompt,
+    tools: toolSchemas.map((t) => t.name),
+    model: modelLabel,
+    history: [...messages],
+    starter: starterMessage,
+    resumed: typeof starterMessage.content !== 'string' && starterMessage.content.some((b) => b.type === 'tool_result'),
+  })
   pushMessage(starterMessage)
 
   let turn = 0
@@ -953,7 +979,14 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
     // spent tokens and then failed is still counted.
     const { value: response } = await recovery.call(async (msgs) => {
       const started = Date.now()
-      const result = await modelCall(msgs, systemPrompt, toolSchemas)
+      let result: ModelResponse
+      try {
+        result = await modelCall(msgs, systemPrompt, toolSchemas)
+      } catch (err) {
+        trace.llm({ sent: msgs, error: err, durationMs: Date.now() - started, model: modelLabel })
+        throw err
+      }
+      trace.llm({ sent: msgs, response: result, durationMs: Date.now() - started, model: modelLabel })
       if (result.usage) {
         recordUsage({
           at: new Date().toISOString(),

@@ -87,7 +87,7 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowFields, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
-import { briefContent, briefFromContent, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
+import { listTraceSpans, workflowContent, workflowFromContent, type Version, type WorkflowSnapshot, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
 import { caseRow, eventsCsv } from '#web/audit-admin.js'
 import { auditPageFor } from '#web/audit-page.js'
 import { changeOf, describeChanges, keptBody } from '#web/change-log.js'
@@ -98,7 +98,7 @@ import { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
 import { EvidenceError, type StandIn, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
-import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, type WorkflowRun } from '#core/workflow-runs.js'
+import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, workflowVersionOf, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
 import {
   TriggerError, checkRunDelivery, createTrigger, deliveryId, fillChatNotice, findTriggerByToken, getTriggerStore, listTriggers, paramsFromPayload, parsePayload, passesFilter,
@@ -134,6 +134,9 @@ import { workflowsOverviewPageHtml } from '#web/workflows-overview-page.js'
 import { homePageHtml } from '#web/home-page.js'
 import { homeOverview, workflowsOverview } from '#web/workflows-overview.js'
 import { getInboxCase, listInbox, type InboxDeps } from '#web/inbox-admin.js'
+import { buildRunTrace, type RunTrace } from '#web/run-trace.js'
+import { checkOutputSchema } from '#core/output-schema.js'
+import { inputSchemaOf } from '#core/input-schema.js'
 import { activePlaybook, setPlaybookProjectDir } from '#core/system-agents/goal-playbooks.js'
 import { startPlaybookSync } from '#core/playbook-sync.js'
 import { GoalError, addJob, chainedRuns, jobsByWorkflow, editJob, goalView, migrateGoalFiles, type Goal, checkBuiltWorkflows, createGoal, deleteGoal, generateMore, getGoal, goalContextFrom, listGoals, markBuilt, prepareBuild, readGoalSettings, setWorkflowState, writeGoalSettings, type GoalsDeps } from '#web/goals-admin.js'
@@ -1046,7 +1049,7 @@ const goalsDeps: GoalsDeps = {
   },
   workflowInfo: (agent, workflowId) => {
     const w = getEntry(agent) ? readWorkflow(agentDir(agent), workflowId) : undefined
-    return w && { title: w.title, parameters: w.parameters }
+    return w && { title: w.title, parameters: w.parameters, ...(w.outputSchema ? { outputSchema: w.outputSchema } : {}) }
   },
 }
 
@@ -1745,13 +1748,7 @@ const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_0
 async function workflowsView(agentName: string): Promise<Record<string, unknown>> {
   const entry = getEntry(agentName)!
   const workflows = await listAgentWorkflows(agentName, agentDir(agentName))
-  let names: string[] = []
-  try {
-    const all = [...(entry.config.tools ?? (await loadDefaultTools(entry.config))), ...(await loadSubagentAsTools(entry.config)), ...(await loadGatewayToolsFromDir(agentDir(agentName)))]
-    names = [...new Set(all.map((t) => t.name))]
-  } catch {}
-  const rules = loadRules(entry.config)
-  const scope = { tenant: 'default', environment: process.env.LOOPENGINE_ENV ?? 'production', agent: agentName }
+  const toolsOf = await contractTools(agentName)
   // Its webhooks for the contract: whose events, which ones, and what
   // fills each input.
   const triggers = await listTriggers(agentName).catch(() => [])
@@ -1760,7 +1757,6 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
     const n = describeAgentNotifier(entry.config, defaultWebhook)
     messaging = n.source === 'none' ? null : (n.primary ?? n.channel ?? null)
   } catch {}
-  const escape = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   // The jobs each workflow does (a goal's or the person's own).
   let jobsOf = new Map<string, { id: string; title: string }[]>()
   try {
@@ -1770,9 +1766,9 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
     workflows: workflows.map((w) => ({
       ...w,
       ...(jobsOf.get(`${agentName}|${w.id}`)?.length ? { jobs: jobsOf.get(`${agentName}|${w.id}`) } : {}),
-      tools: names
-        .filter((n) => new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(w.instructions))
-        .map((n) => ({ name: n, decision: rules.resolve(n, {}, scope)[0] })),
+      tools: toolsOf(w.instructions),
+      // Its inputs as one JSON Schema, for apps that start it.
+      inputSchema: inputSchemaOf(w.parameters),
       triggers: triggers.filter((t) => t.workflow_id === w.id).map((t) => ({
         trigger_id: t.trigger_id, name: t.name, sender: t.verify?.sender ?? 'custom', enabled: t.enabled, waiting: !t.enabled && !!t.verify && !t.verify.secret,
         ...(t.filter ? { filter: t.filter } : {}), ...(t.mapping ? { mapping: t.mapping } : {}), ...(resultToChat(t) ? { result_to_chat: true } : {}), ...(t.callback_url ? { callback: true } : {}), ...(t.decisions_to ? { decisions_to: t.decisions_to } : {}), ...(t.chat_notice ? { chat_notice: true } : {}),
@@ -1782,6 +1778,25 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
     agentModel: modelLabelOf(entry.config),
     messaging,
   }
+}
+
+// A workflow's contract tools: the agent's tools its instructions name,
+// each with the permission it has (allow, ask or deny). Returns a lookup,
+// so one read of the agent's tools serves all its workflows.
+async function contractTools(agentName: string): Promise<(instructions: string) => { name: string; decision: string }[]> {
+  const entry = getEntry(agentName)
+  if (!entry) return () => []
+  let names: string[] = []
+  try {
+    const all = [...(entry.config.tools ?? (await loadDefaultTools(entry.config))), ...(await loadSubagentAsTools(entry.config)), ...(await loadGatewayToolsFromDir(agentDir(agentName)))]
+    names = [...new Set(all.map((t) => t.name))]
+  } catch {}
+  const rules = loadRules(entry.config)
+  const scope = { tenant: 'default', environment: process.env.LOOPENGINE_ENV ?? 'production', agent: agentName }
+  const escape = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return (instructions) => names
+    .filter((n) => new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(instructions))
+    .map((n) => ({ name: n, decision: String(rules.resolve(n, {}, scope)[0]) }))
 }
 
 // A judge for eval results: a model other than the one being tested
@@ -1851,11 +1866,12 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
     if (part === 'run' && req.method === 'POST') {
       const tested = await runModel(agentName, id)
       const judge = await evalJudge(tested.config)
-      const briefVersion = noteBrief(agentName, id)
+      const workflowVersion = await noteWorkflowVersion(agentName, id)
       const round = startEvalRound({
         agentDir: dir,
         workflowId: id,
-        ...(briefVersion ? { briefVersion } : {}),
+        ...(workflowVersion ? { workflowVersion } : {}),
+        ...(workflow.outputSchema ? { outputSchema: workflow.outputSchema } : {}),
         instructions: workflow.instructions,
         model: modelLabelOf(tested.config),
         judgeLabel: judge.label,
@@ -1946,32 +1962,54 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
         : saved.parameters
       const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : saved.title
       const output = typeof body.output === 'string' ? body.output.trim() : saved.output
-      return json(200, { message: workflowPreviewMessage({ ...saved, title, startMessage: '', steps: instructions, instructions, parameters, ...(output ? { output } : { output: undefined }) }, readWorkspacePolicies(process.cwd())) })
+      // The schema being edited, when it checks out; else the saved one.
+      let outputSchema = saved.outputSchema
+      if (typeof body.outputSchema === 'string') {
+        try {
+          outputSchema = body.outputSchema.trim() ? checkOutputSchema(body.outputSchema) : undefined
+        } catch {}
+      }
+      return json(200, { message: workflowPreviewMessage({ ...saved, title, startMessage: '', steps: instructions, instructions, parameters, ...(output ? { output } : { output: undefined }), outputSchema }, readWorkspacePolicies(process.cwd())) })
     }
     if (id && !action && req.method === 'PUT') {
       // The brief as it was, numbered first if it never was.
-      noteBrief(agentName, id)
+      await noteWorkflowVersion(agentName, id)
       updateWorkflow(dir, id, await readJsonBody(req))
-      noteBrief(agentName, id, { by: changedBy(req), reason: 'Edited in the console' })
+      await noteWorkflowVersion(agentName, id, { by: changedBy(req), reason: 'Edited in the console' })
       return json(200, await workflowsView(agentName))
     }
-    // The brief's versions, newest first, and restoring one (which saves
-    // it as a new version).
+    // The workflow's versions, newest first, and restoring one (which
+    // saves it as a new version): its name, inputs, model, instructions and
+    // result format. A version from when only the brief was numbered
+    // restores just the instructions and result format.
     if (id && action === 'versions' && req.method === 'GET') {
       if (!readWorkflow(dir, id)) return json(404, { error: `No workflow ${id}.` })
-      const current = noteBrief(agentName, id)
-      return json(200, { current: current ?? null, versions: listVersions({ agent: agentName, workflowId: id, kind: 'brief' }) })
+      const current = await noteWorkflowVersion(agentName, id)
+      return json(200, { current: current ?? null, versions: listVersions({ agent: agentName, workflowId: id, kind: 'workflow' }).map(workflowVersionView) })
     }
     if (id && action === 'versions' && restoreNumber !== undefined && req.method === 'POST') {
       const workflow = readWorkflow(dir, id)
       if (!workflow) return json(404, { error: `No workflow ${id}.` })
-      const version = getVersion({ agent: agentName, workflowId: id, kind: 'brief' }, restoreNumber)
+      const version = getVersion({ agent: agentName, workflowId: id, kind: 'workflow' }, restoreNumber)
       if (!version) return json(404, { error: `No version ${restoreNumber} of ${id}.` })
-      noteBrief(agentName, id)
-      const brief = briefFromContent(version.content)
-      setWorkflowFields(dir, id, { title: workflow.title, description: workflow.description, instructions: brief.instructions, parameters: workflow.parameters, output: brief.output ?? null })
-      const current = noteBrief(agentName, id, { by: changedBy(req), reason: `Restored version ${restoreNumber}` })
-      return json(200, { current: current ?? null, versions: listVersions({ agent: agentName, workflowId: id, kind: 'brief' }) })
+      await noteWorkflowVersion(agentName, id)
+      const saved = workflowFromContent(version.content)
+      setWorkflowFields(dir, id, {
+        title: saved.title || workflow.title,
+        description: saved.description ?? workflow.description,
+        instructions: saved.instructions,
+        parameters: saved.parameters ?? workflow.parameters,
+        output: saved.output ?? null,
+        ...(saved.title !== undefined ? { model: saved.model ?? null } : {}),
+        // A version from before output schemas were recorded leaves it be.
+        ...(saved.criteria !== undefined ? { outputSchema: saved.outputSchema ?? null } : {}),
+      })
+      // Its success criteria come back too; its tools' permissions (the
+      // agent's, shared by its other workflows) and its triggers (live
+      // webhooks and schedules) stay as they are.
+      if (saved.criteria) setEvalCriteria(dir, id, saved.criteria)
+      const current = await noteWorkflowVersion(agentName, id, { by: changedBy(req), reason: `Restored version ${restoreNumber}` })
+      return json(200, { current: current ?? null, versions: listVersions({ agent: agentName, workflowId: id, kind: 'workflow' }).map(workflowVersionView) })
     }
     if (id && !action && req.method === 'DELETE') {
       const { cancelled } = await forgetWorkflow(agentName, dir, id)
@@ -2432,7 +2470,7 @@ function runCosts(agent: string, runs: WorkflowRun[]): Map<string, number> {
 }
 
 // A workflow's audit for a period (web/workflow-audit.ts): its runs,
-// decisions, brief versions, settings changes and cost, and the log's
+// decisions, workflow versions, settings changes and cost, and the log's
 // hash-chain check.
 async function workflowAuditOf(agent: string, workflowId: string, since: string, until: string): Promise<WorkflowAudit | undefined> {
   const workflow = readWorkflow(agentDir(agent), workflowId)
@@ -2444,7 +2482,7 @@ async function workflowAuditOf(agent: string, workflowId: string, since: string,
     until,
     runs,
     costs: runCosts(agent, runs),
-    versions: listVersions({ agent, workflowId, kind: 'brief' }),
+    versions: listVersions({ agent, workflowId, kind: 'workflow' }),
     changes: listEvents({ agent, workflowId, kind: 'change', since, until, limit: 500 }),
     verification: verifyEventChain(),
   })
@@ -2521,14 +2559,78 @@ function inboxDepsFor(req: IncomingMessage): InboxDeps {
 }
 
 // Workflow runs, whatever starts them, each recorded apart from schedules.
-const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun, onChange: reportWorkflowRun, versionsFor: (agent, workflowId) => ({ brief: noteBrief(agent, workflowId), policies: notePolicies() }) })
+const workflowRunner = new WorkflowRunner({ execute: executeUnattendedRun, onChange: reportWorkflowRun, versionsFor: async (agent, workflowId) => ({ workflow: await noteWorkflowVersion(agent, workflowId), policies: notePolicies() }), outputSchemaFor: (agent, workflowId) => (getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.outputSchema : undefined) })
 
-// The brief and policies versions as they are now (core/audit-store.ts):
+// A workflow version as the API gives it: its text, and its input and
+// output schemas as JSON (null when the version has none, as older ones
+// don't).
+function workflowVersionView(v: Version): Version & { inputSchema: Record<string, unknown> | null; outputSchema: Record<string, unknown> | null } {
+  const saved = workflowFromContent(v.content)
+  return { ...v, inputSchema: saved.inputSchema ?? null, outputSchema: saved.outputSchema ?? null }
+}
+
+// A run's trace as one record (web/run-trace.ts): the run read in full
+// (the case's own copy leaves its session out), its steps, priced model
+// calls and feedback.
+async function traceOfRun(agent: string, runId: string): Promise<RunTrace | undefined> {
+  const run = await getRun(agent, runId)
+  if (!run) return undefined
+  return buildRunTrace({
+    run,
+    spans: run.session_id ? listTraceSpans(run.session_id) : [],
+    usage: run.session_id ? pricedUsage(sessionUsage(run.agent, run.session_id)) : [],
+    events: runEvents(run.run_id),
+  })
+}
+
+// The workflow and policies versions as they are now (core/audit-store.ts):
 // the latest when unchanged, else a new one, so an edit made anywhere,
 // the console or the file, is numbered before a run uses it.
-function noteBrief(agent: string, workflowId: string, about: { by?: string; reason?: string } = {}): number | undefined {
-  const workflow = getEntry(agent) ? readWorkflow(agentDir(agent), workflowId) : undefined
-  return workflow ? noteVersion({ agent, workflowId, kind: 'brief' }, briefContent(workflow), about) : undefined
+async function noteWorkflowVersion(agent: string, workflowId: string, about: { by?: string; reason?: string } = {}): Promise<number | undefined> {
+  const snapshot = await workflowSnapshot(agent, workflowId)
+  if (!snapshot) return undefined
+  // A version from before tools, triggers and success criteria were part
+  // of it: the next one says so, rather than "changed outside the console".
+  const latest = about.reason ? undefined : listVersions({ agent, workflowId, kind: 'workflow' })[0]
+  const older = latest && !latest.content.includes('\n## Workflow\n')
+  return noteVersion({ agent, workflowId, kind: 'workflow' }, workflowContent(snapshot), older ? { ...about, reason: 'Now also records its tools, triggers and success criteria' } : about)
+}
+
+// Everything a workflow version holds (core/audit-store.ts): the
+// workflow itself, its contract tools and their permissions, the
+// schedules and webhooks that start it, and its success criteria.
+async function workflowSnapshot(agent: string, workflowId: string): Promise<WorkflowSnapshot | undefined> {
+  const dir = getEntry(agent) ? agentDir(agent) : undefined
+  const workflow = dir ? readWorkflow(dir, workflowId) : undefined
+  if (!dir || !workflow) return undefined
+  const [toolsOf, tasks, hooks] = await Promise.all([
+    contractTools(agent),
+    listScheduledTasks({ agent }).catch(() => [] as ScheduledTask[]),
+    listTriggers(agent, workflowId).catch(() => []),
+  ])
+  const inputs = (params?: Record<string, string>) => (params && Object.keys(params).length ? `, inputs ${Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ')}` : '')
+  const triggers = [
+    ...tasks.filter((t) => t.workflow_id === workflowId && t.status !== 'cancelled' && t.status !== 'done')
+      .map((t) => `Schedule${t.task_name ? ` "${t.task_name}"` : ''}: ${describeSchedule(t.schedule)}${'anchor' in t.schedule && t.schedule.anchor ? ` from ${t.schedule.anchor}` : ''}${'time_zone' in t.schedule && t.schedule.time_zone ? ` (${t.schedule.time_zone})` : ''}, ${t.status}${inputs(t.params)}`),
+    ...hooks.map((h) => `Webhook "${h.name}": from ${h.verify?.sender ?? 'any sender'}, ${h.enabled ? 'on' : 'off'}` +
+      `${h.filter ? `, only when ${h.filter.path} is ${h.filter.values.join(' or ')}` : ''}` +
+      `${h.mapping && Object.keys(h.mapping).length ? `, inputs ${Object.entries(h.mapping).map(([k, v]) => `${k}←${v}`).join(' ')}` : ''}` +
+      `${h.payload_param ? `, payload into ${h.payload_param}` : ''}`),
+  ].sort()
+  return {
+    agent,
+    workflowId,
+    title: workflow.title,
+    description: workflow.description,
+    parameters: { ...workflow.parameters } as WorkflowSnapshot['parameters'],
+    ...(workflow.model ? { model: workflow.model } : {}),
+    tools: toolsOf(workflow.instructions).map((t) => ({ name: t.name, permission: t.decision })),
+    triggers,
+    criteria: readEvals(dir, workflowId).criteria.map((c) => ({ text: c.text, kind: c.kind, ...(c.value !== undefined ? { value: c.value } : {}) })),
+    instructions: workflow.instructions,
+    ...(workflow.output ? { output: workflow.output } : {}),
+    ...(workflow.outputSchema ? { outputSchema: workflow.outputSchema } : {}),
+  }
 }
 function notePolicies(about: { by?: string; reason?: string } = {}): number | undefined {
   return noteVersion({ agent: '', workflowId: '', kind: 'policies' }, readWorkspacePolicies(process.cwd()), about)
@@ -5170,13 +5272,20 @@ const server = createServer(async (req, res) => {
     const path = (req.url ?? '/').split('?')[0]
     const snapshot = () => settingsSnapshot(change.agent, change.workflowId, path)
     const before = snapshot()
-    const briefBefore = change.agent && change.workflowId ? noteBrief(change.agent, change.workflowId) : undefined
-    res.once('finish', () => {
+    // The versions it touches: its workflow's, or for a change to the
+    // agent (its tools' permissions, its schedules), each of the agent's
+    // workflows. Numbered before, so the change is credited to who made it.
+    const touched = change.agent && getEntry(change.agent) ? (change.workflowId ? [change.workflowId] : readWorkflows(agentDir(change.agent)).map((w) => w.id)) : []
+    const versionBefore = change.workflowId ? await noteWorkflowVersion(change.agent!, change.workflowId).catch(() => undefined) : undefined
+    if (!change.workflowId) for (const id of touched) await noteWorkflowVersion(change.agent!, id).catch(() => undefined)
+    res.once('finish', () => void (async () => {
       if (res.statusCode < 200 || res.statusCode >= 300) return
       const body = keptBody(path, readBodies.get(req))
       const after = before ? snapshot() : undefined
       const changes = before && after ? describeChanges(before, after) : []
-      const briefAfter = change.agent && change.workflowId ? noteBrief(change.agent, change.workflowId) : undefined
+      const about = { by: changedBy(req), reason: change.label }
+      const versionAfter = change.workflowId ? await noteWorkflowVersion(change.agent!, change.workflowId, about) : undefined
+      if (!change.workflowId) for (const id of touched) await noteWorkflowVersion(change.agent!, id, about)
       recordEvent({
         agent: change.agent ?? '',
         ...(change.workflowId ? { workflow_id: change.workflowId } : {}),
@@ -5185,11 +5294,11 @@ const server = createServer(async (req, res) => {
         data: {
           label: change.label, method: req.method, path,
           ...(changes.length ? { changes } : {}),
-          ...(briefBefore && briefAfter && briefBefore !== briefAfter ? { brief: { from: briefBefore, to: briefAfter } } : {}),
+          ...(versionBefore && versionAfter && versionBefore !== versionAfter ? { version: { from: versionBefore, to: versionAfter } } : {}),
           ...(body !== undefined ? { body } : {}),
         },
       })
-    })
+    })().catch((err) => console.error('[loopengine] recording a change failed:', err)))
   }
 
   // One catch-all around both routes. node:http does not catch rejections
@@ -5470,25 +5579,39 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && (pathname === '/inbox/items' || pathname === '/inbox/count' || pathname.startsWith('/inbox/cases/'))) {
       const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
       // A case, or (…/export) its whole record as a file: the case, every
-      // event in it, and the brief and policies it ran under, word for word.
+      // event in it, and the workflow and policies it ran under, word for word.
       const exportMatch = pathname.match(/^\/inbox\/cases\/([^/]+)\/export$/)
       if (exportMatch) {
         const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(exportMatch[1]))
         if (!found) return json(404, { error: 'No such case: it may have been removed.' })
         const run = found.run
-        const brief = run?.versions?.brief ? getVersion({ agent: run.agent, workflowId: run.workflow_id, kind: 'brief' }, run.versions.brief) : undefined
+        const workflowVersion = run ? workflowVersionOf(run) : undefined
+        const workflow = run && workflowVersion ? getVersion({ agent: run.agent, workflowId: run.workflow_id, kind: 'workflow' }, workflowVersion) : undefined
         const policies = run?.versions?.policies ? getVersion({ agent: '', workflowId: '', kind: 'policies' }, run.versions.policies) : undefined
+        const trace = run && !inboxOnly(callerOf(req).role) ? await traceOfRun(run.agent, run.run_id) : undefined
         const record = {
           exportedAt: new Date().toISOString(),
           exportedBy: changedBy(req),
           case: found,
           events: run ? runEvents(run.run_id) : [],
-          ...(brief ? { brief: { version: brief.number, savedAt: brief.at, ...(brief.by ? { savedBy: brief.by } : {}), ...briefFromContent(brief.content) } } : {}),
+          ...(trace ? { trace } : {}),
+          ...(workflow ? { workflow: { version: workflow.number, savedAt: workflow.at, ...(workflow.by ? { savedBy: workflow.by } : {}), ...workflowFromContent(workflow.content) } } : {}),
           ...(policies ? { policies: { version: policies.number, savedAt: policies.at, text: policies.content } } : {}),
         }
         const name = `case-${(run?.workflow_id || 'chat').replace(/[^a-z0-9-]/gi, '')}-${found.id.slice(0, 8)}.json`
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="${name}"` }).end(JSON.stringify(record, null, 2))
         return
+      }
+      // Its trace (core/trace.ts): the prompt, each model call and each
+      // tool call, word for word. Not for approvers and viewers: it holds
+      // the agent's whole system prompt.
+      const traceMatch = pathname.match(/^\/inbox\/cases\/([^/]+)\/trace$/)
+      if (traceMatch) {
+        if (inboxOnly(callerOf(req).role)) return json(403, { error: 'Only owners, admins and editors can read a trace.' })
+        const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(traceMatch[1]))
+        if (!found) return json(404, { error: 'No such case: it may have been removed.' })
+        const trace = found.run ? await traceOfRun(found.run.agent, found.run.run_id) : undefined
+        return trace ? json(200, trace) : json(404, { error: 'This case has no run to trace.' })
       }
       if (pathname.startsWith('/inbox/cases/')) {
         const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(pathname.slice('/inbox/cases/'.length)))
@@ -5550,6 +5673,17 @@ const server = createServer(async (req, res) => {
     // The secret run callbacks are signed with, for whoever checks them.
     if (req.method === 'GET' && pathname === '/runs/callback-secret') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ secret: callbackSecret() }))
+      return
+    }
+    // A workflow run's trace (web/run-trace.ts): its version, input, final
+    // output, model, tool calls, every step, error, duration, cost and
+    // feedback.
+    const agentRunTraceMatch = req.method === 'GET' && pathname.match(/^\/agents\/([^/]+)\/runs\/([A-Za-z0-9_-]+)\/trace$/)
+    if (agentRunTraceMatch) {
+      const agentName = decodeURIComponent(agentRunTraceMatch[1])
+      const trace = getEntry(agentName) ? await traceOfRun(agentName, agentRunTraceMatch[2]) : undefined
+      res.writeHead(trace ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        .end(JSON.stringify(trace ?? { error: `no run ${agentRunTraceMatch[2]} for ${agentName}` }))
       return
     }
     // One workflow run, by the runId its POST .../run returned.

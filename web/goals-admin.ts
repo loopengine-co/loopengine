@@ -55,7 +55,9 @@ export interface ChainStep {
   when: { kind: 'always' } | { kind: 'contains' | 'line_starts'; text: string }
   run: { agent: string; workflowId: string }
   /** Each input of the next run: "result" (the run it follows ended
-   * with), or "input:<name>" (one of that run's inputs). */
+   * with), "result.<path>" (one field of its JSON output, when its
+   * workflow has an output schema), or "input:<name>" (one of that run's
+   * inputs). */
   with: Record<string, string>
 }
 
@@ -189,7 +191,7 @@ export interface GoalsDeps {
   workflowActivity?: (agent: string, workflowId: string, sinceIso: string) => Promise<{ exists: boolean; runs: number; done: number }>
   /** A workflow on an agent, when it exists: its title and inputs (for
    * linking it to a job and checking a chain). */
-  workflowInfo?: (agent: string, workflowId: string) => { title: string; parameters: Record<string, { required: boolean }> } | undefined
+  workflowInfo?: (agent: string, workflowId: string) => { title: string; parameters: Record<string, { required: boolean }>; outputSchema?: Record<string, unknown> } | undefined
 }
 
 const MAX_GOAL_CHARS = 1000
@@ -587,7 +589,13 @@ function groupChain(deps: GoalsDeps, job: GoalJob, steps: GroupStep[]): ChainSte
     if (!target) continue
     const mapping: Record<string, string> = {}
     const required = Object.entries(target.parameters).filter(([, spec]) => spec.required).map(([p]) => p)
-    for (const p of Object.keys(target.parameters)) if (source?.parameters[p]) mapping[p] = `input:${p}`
+    // An input named like a field of the step before's JSON output takes
+    // that field; else one named like its input takes that input.
+    const props = source?.outputSchema?.type === 'object' && source.outputSchema.properties && typeof source.outputSchema.properties === 'object' ? Object.keys(source.outputSchema.properties) : []
+    for (const p of Object.keys(target.parameters)) {
+      if (props.includes(p)) mapping[p] = `result.${p}`
+      else if (source?.parameters[p]) mapping[p] = `input:${p}`
+    }
     const unfilled = required.filter((p) => !mapping[p])
     if (unfilled.length === 1) mapping[unfilled[0]] = 'result'
     if (required.some((p) => !mapping[p])) continue
@@ -701,7 +709,7 @@ export function checkChain(deps: GoalsDeps, job: GoalJob, raw: unknown): ChainSt
     for (const [param, from] of Object.entries(withRaw)) {
       if (typeof from !== 'string' || !from) continue
       if (!target.parameters[param]) throw new GoalError(`${n}: ${target.title} has no input "${param}".`)
-      if (from !== 'result' && !(from.startsWith('input:') && source.parameters[from.slice(6)])) throw new GoalError(`${n}: "${param}" comes from "result" or "input:<one of ${source.title}'s inputs>".`)
+      if (from !== 'result' && !RESULT_FIELD.test(from) && !(from.startsWith('input:') && source.parameters[from.slice(6)])) throw new GoalError(`${n}: "${param}" comes from "result", "result.<field>" (a field of its JSON output) or "input:<one of ${source.title}'s inputs>".`)
       mapping[param] = from
     }
     const missing = Object.entries(target.parameters).filter(([p, spec]) => spec.required && !mapping[p]).map(([p]) => p)
@@ -760,7 +768,22 @@ export function chainConditionMet(when: ChainStep['when'], result: string): bool
  * active job's chain, that follows its workflow and whose condition its
  * result meets, with the next run's inputs filled in. None past
  * MAX_CHAIN_DEPTH. */
-export function chainedRuns(deps: GoalsDeps, run: { run_id: string; agent: string; workflow_id: string; status: string; result?: string; params?: Record<string, string>; chain_depth?: number }): { goal: string; job: string; step: string; agent: string; workflowId: string; params: Record<string, string>; depth: number }[] {
+/** "result.<path>": one field of a run's JSON output (its workflow's output
+ * schema), by a dot path: "result.lead.email", "result.items.0.id". */
+const RESULT_FIELD = /^result\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/
+
+/** A field of a run's JSON output, as text: a string as it is, anything
+ * else as JSON; empty when the output doesn't have it. */
+export function resultField(output: unknown, path: string): string {
+  let at: unknown = output
+  for (const key of path.split('.')) {
+    if (at === null || typeof at !== 'object') return ''
+    at = (at as Record<string, unknown>)[key]
+  }
+  return at === undefined || at === null ? '' : typeof at === 'string' ? at : JSON.stringify(at)
+}
+
+export function chainedRuns(deps: GoalsDeps, run: { run_id: string; agent: string; workflow_id: string; status: string; result?: string; output?: unknown; params?: Record<string, string>; chain_depth?: number }): { goal: string; job: string; step: string; agent: string; workflowId: string; params: Record<string, string>; depth: number }[] {
   if (run.status !== 'done' || !run.workflow_id) return []
   const depth = (run.chain_depth ?? 0) + 1
   if (depth > MAX_CHAIN_DEPTH) return []
@@ -770,7 +793,7 @@ export function chainedRuns(deps: GoalsDeps, run: { run_id: string; agent: strin
     .filter((st) => sameRef(st.after, from) && chainConditionMet(st.when, result))
     .map((st) => ({
       goal: goal.id, job: job.id, step: st.id, agent: st.run.agent, workflowId: st.run.workflowId, depth,
-      params: Object.fromEntries(Object.entries(st.with).map(([param, src]) => [param, src === 'result' ? result : run.params?.[src.slice(6)] ?? ''])),
+      params: Object.fromEntries(Object.entries(st.with).map(([param, src]) => [param, src === 'result' ? result : RESULT_FIELD.test(src) ? resultField(run.output, src.slice(7)) : run.params?.[src.slice(6)] ?? ''])),
     }))))
 }
 

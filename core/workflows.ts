@@ -28,7 +28,8 @@
 //
 // A workflow's contract can also set, in its front matter: `model` (its
 // own provider and model, instead of the agent's), `output` (what its
-// result must look like, said to the agent last) and `delivery` (an app
+// result must look like, said to the agent last), `output_schema` (a JSON
+// Schema its result must match: core/output-schema.ts) and `delivery` (an app
 // that gets every run's updates, and maybe its approvals and questions
 // instead of the messaging app, and a message posted to the messaging app
 // when a run starts):
@@ -51,8 +52,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { dirname, join } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { parseSkillFile } from './skillgarden/index.js'
+import { checkOutputSchema, outputSchemaInstructions, type JsonSchema } from './output-schema.js'
+import { checkInputValue, inputSpecFrom, type InputSpec } from './input-schema.js'
 
-export interface WorkflowParameter {
+/** One of a workflow's inputs: what it is, whether a run must give it,
+ * and optionally its type and limits (core/input-schema.ts). */
+export interface WorkflowParameter extends InputSpec {
   description: string
   required: boolean
 }
@@ -87,6 +92,8 @@ export interface Workflow {
   model?: WorkflowModel
   /** What its result must look like. */
   output?: string
+  /** A JSON Schema its result must match (core/output-schema.ts). */
+  outputSchema?: JsonSchema
   /** Where every run's updates, decisions and start notice go, however
    * it starts. A webhook or API call with its own callback_url overrides
    * the address and decisions for its run. */
@@ -121,6 +128,9 @@ export interface WorkflowFields {
   /** null (or empty) clears it; left out keeps what's saved. */
   model?: WorkflowModel | null
   output?: string | null
+  /** A JSON Schema (object or its text); null clears it. Checked with
+   * checkOutputSchema: an invalid one throws OutputSchemaError. */
+  outputSchema?: unknown
   delivery?: WorkflowDelivery | null
 }
 
@@ -130,7 +140,19 @@ const PARAMETER_NAME = /^[a-z_][a-z0-9_]*$/
 const WORKFLOW_KEYS = ['workflow', 'title', 'start_message', 'trigger', 'parameters', 'original_request'] as const
 /** The contract's keys: kept when a save doesn't give them. `gather`
  * (lookups done before the agent, since removed) is dropped. */
-const CONTRACT_KEYS = ['model', 'output', 'delivery', 'gather'] as const
+const CONTRACT_KEYS = ['model', 'output', 'output_schema', 'delivery', 'gather'] as const
+
+// A saved output schema that still checks out; one that doesn't is
+// ignored (logged), so a bad edit to the file can't stop its runs.
+function outputSchemaFrom(value: unknown): JsonSchema | undefined {
+  if (value === undefined || value === null) return undefined
+  try {
+    return checkOutputSchema(value)
+  } catch (err) {
+    console.error(`[loopengine] ignoring a workflow's output_schema: ${err instanceof Error ? err.message : String(err)}`)
+    return undefined
+  }
+}
 
 function modelFrom(value: unknown): WorkflowModel | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -216,7 +238,7 @@ function parametersFrom(value: unknown): Record<string, WorkflowParameter> {
   for (const [name, spec] of Object.entries(value as Record<string, unknown>)) {
     if (!PARAMETER_NAME.test(name)) continue
     const s = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : {}
-    parameters[name] = { description: typeof s.description === 'string' ? s.description : '', required: s.required === true }
+    parameters[name] = { description: typeof s.description === 'string' ? s.description : '', required: s.required === true, ...inputSpecFrom(name, s) }
   }
   return parameters
 }
@@ -246,6 +268,7 @@ function workflowFrom(id: string, frontmatter: Record<string, unknown>, body: st
     instructions: combineInstructions(startMessage, body),
     ...(modelFrom(frontmatter.model) ? { model: modelFrom(frontmatter.model) } : {}),
     ...(typeof frontmatter.output === 'string' && frontmatter.output.trim() ? { output: frontmatter.output.trim() } : {}),
+    ...(outputSchemaFrom(frontmatter.output_schema) ? { outputSchema: outputSchemaFrom(frontmatter.output_schema) } : {}),
     ...(deliveryFrom(frontmatter.delivery) ? { delivery: deliveryFrom(frontmatter.delivery) } : {}),
   }
 }
@@ -292,6 +315,10 @@ export function setWorkflowFields(agentDir: string, id: string, fields: Workflow
     if (fields.output?.trim()) frontmatter.output = fields.output.trim().slice(0, 2000)
     else delete frontmatter.output
   }
+  if (fields.outputSchema !== undefined) {
+    if (fields.outputSchema === null || fields.outputSchema === '') delete frontmatter.output_schema
+    else frontmatter.output_schema = checkOutputSchema(fields.outputSchema)
+  }
   if (fields.delivery !== undefined) {
     const saved = deliveryFrontmatter(fields.delivery)
     if (saved) frontmatter.delivery = saved
@@ -336,20 +363,31 @@ export function validateParams(workflow: Workflow, input: unknown): Record<strin
   const given = (input ?? {}) as Record<string, unknown>
   const params: Record<string, string> = {}
   const problems: string[] = []
+  // Given but not valid: said once, not also as missing.
+  const invalid = new Set<string>()
   for (const [name, value] of Object.entries(given)) {
-    if (!(name in workflow.parameters)) {
+    const spec = workflow.parameters[name]
+    if (!spec) {
       problems.push(`unknown parameter "${name}"`)
       continue
     }
     if (value === undefined || value === null || value === '') continue
-    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-      problems.push(`"${name}" must be text`)
+    // Each value checked against its type and limits, and kept as text
+    // (core/input-schema.ts); an input with no type takes text.
+    const checked = checkInputValue(name, spec, value)
+    if (!checked.ok) {
+      problems.push(checked.error)
+      invalid.add(name)
       continue
     }
-    params[name] = String(value)
+    params[name] = checked.text
   }
   for (const [name, spec] of Object.entries(workflow.parameters)) {
-    if (spec.required && !params[name]?.trim()) problems.push(`"${name}" is required`)
+    if (params[name] !== undefined || invalid.has(name) || spec.default === undefined) continue
+    params[name] = typeof spec.default === 'string' ? spec.default : JSON.stringify(spec.default)
+  }
+  for (const [name, spec] of Object.entries(workflow.parameters)) {
+    if (spec.required && !invalid.has(name) && !params[name]?.trim()) problems.push(`"${name}" is required`)
   }
   if (problems.length) {
     const known = Object.keys(workflow.parameters)
@@ -414,7 +452,17 @@ export function workflowRunMessage(workflow: Workflow, params: Record<string, st
   const start = workflow.startMessage ? fill(workflow.startMessage) : `Run the "${workflow.title}" workflow.`
   const steps = fill(workflow.steps).trim()
   const order = [...new Set([...declared, ...Object.keys(params)])]
-  const inputs = order.filter((name) => params[name]?.trim()).map((name) => inputLine(name, params[name]!, workflow.parameters[name]?.description))
+  // A list or an object reads better laid out.
+  const shown = (name: string) => {
+    const type = workflow.parameters[name]?.type
+    if (type !== 'object' && type !== 'array') return params[name]!
+    try {
+      return JSON.stringify(JSON.parse(params[name]!), null, 2)
+    } catch {
+      return params[name]!
+    }
+  }
+  const inputs = order.filter((name) => params[name]?.trim()).map((name) => inputLine(name, shown(name), workflow.parameters[name]?.description))
   const policies = extras.policies?.trim()
   return [
     start,
@@ -422,6 +470,7 @@ export function workflowRunMessage(workflow: Workflow, params: Record<string, st
     steps ? `${workflow.startMessage ? 'These are the steps' : 'These are its instructions'}, from your "${workflow.id}" skill:\n\n${steps}` : '',
     policies ? `Your business's policies, shared by all its workflows (always follow them; this workflow's own instructions win where they say more):\n\n${policies}` : '',
     workflow.output ? `Your result, the reply you end with, must be:\n${workflow.output}` : '',
+    workflow.outputSchema ? outputSchemaInstructions(workflow.outputSchema) : '',
   ].filter(Boolean).join('\n\n')
 }
 

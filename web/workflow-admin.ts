@@ -18,6 +18,8 @@ import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } fro
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { contextToolsFor, type AppToolInputs } from '../core/mcp-apps.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowDelivery, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowDelivery, type WorkflowModel } from '../core/workflows.js'
+import { checkOutputSchema, type JsonSchema } from '../core/output-schema.js'
+import { checkInputSpec, type InputSpec } from '../core/input-schema.js'
 import { readEvals, setEvalCriteria, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
 import { cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
@@ -946,8 +948,8 @@ export async function prepareWorkflowRun(agentName: string, agentDir: string, id
 /** The contract fields an edit gives: `model` ({ provider, model }, or
  * null for the agent's) and `output` (text). Left out, each keeps what's
  * saved. */
-export function contractFields(input: Record<string, unknown>): { model?: WorkflowModel | null; output?: string | null } {
-  const fields: { model?: WorkflowModel | null; output?: string | null; delivery?: WorkflowDelivery | null } = {}
+export function contractFields(input: Record<string, unknown>): { model?: WorkflowModel | null; output?: string | null; outputSchema?: JsonSchema | null } {
+  const fields: { model?: WorkflowModel | null; output?: string | null; outputSchema?: JsonSchema | null; delivery?: WorkflowDelivery | null } = {}
   if (input.model !== undefined) {
     const m = input.model as Record<string, unknown> | null | string
     if (m === null || m === '') fields.model = null
@@ -958,6 +960,18 @@ export function contractFields(input: Record<string, unknown>): { model?: Workfl
     if (input.output !== null && typeof input.output !== 'string') throw new WorkflowError('The result format must be text.')
     if (typeof input.output === 'string' && input.output.length > 2000) throw new WorkflowError('The result format is too long: keep it under 2000 characters.')
     fields.output = typeof input.output === 'string' ? input.output : null
+  }
+  // A JSON Schema its result must match (core/output-schema.ts): an
+  // object, or its text; null or empty for none.
+  if (input.outputSchema !== undefined) {
+    if (input.outputSchema === null || (typeof input.outputSchema === 'string' && !input.outputSchema.trim())) fields.outputSchema = null
+    else {
+      try {
+        fields.outputSchema = checkOutputSchema(input.outputSchema)
+      } catch (err) {
+        throw new WorkflowError(err instanceof Error ? err.message : String(err))
+      }
+    }
   }
   // Where every run's updates and decisions go: { callback_url, decisions,
   // chat_notice }, or null for the messaging app only.
@@ -1003,11 +1017,17 @@ export function updateWorkflow(agentDir: string, id: string, input: Record<strin
   const trigger = instructions === undefined ? text(input.trigger, 'When it runs', 200) : ''
   const raw = input.parameters ?? {}
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new WorkflowError('parameters must be an object of names to { description, required }.')
-  const parameters: Record<string, { description: string; required: boolean }> = {}
+  const parameters: Record<string, InputSpec & { description: string; required: boolean }> = {}
   for (const [name, spec] of Object.entries(raw as Record<string, unknown>)) {
     if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new WorkflowError(`Parameter "${name}": use lowercase letters, digits and _, starting with a letter, e.g. "order_number".`)
     const s = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : {}
-    parameters[name] = { description: text(s.description, `The description of "${name}"`, 300), required: s.required === true }
+    let typed: InputSpec
+    try {
+      typed = checkInputSpec(name, s)
+    } catch (err) {
+      throw new WorkflowError(err instanceof Error ? err.message : String(err))
+    }
+    parameters[name] = { description: text(s.description, `The description of "${name}"`, 300), required: s.required === true, ...typed }
   }
   const named = { ...(title ? { title } : {}), ...(description ? { description: description.replace(/\s+/g, ' ') } : {}), ...contractFields(input) }
   setWorkflowFields(agentDir, id, instructions !== undefined ? { ...named, instructions, parameters } : { ...named, startMessage, ...(trigger ? { trigger } : {}), parameters })

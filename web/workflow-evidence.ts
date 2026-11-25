@@ -26,6 +26,7 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ModelCall } from '#core/run-agent.js'
 import type { RunFeedback, WorkflowRun } from '#core/workflow-runs.js'
+import { checkOutput, type JsonSchema } from '#core/output-schema.js'
 import { editAmount } from './goals-admin.js'
 
 export class EvidenceError extends Error {}
@@ -104,7 +105,11 @@ export interface EvalCase {
  * `not_contains`: `value` is or isn't in the result, ignoring case.
  * `tool_called` / `tool_not_called`: the run did or didn't call tool
  * `value` (in a test run, a call it would have made counts). */
-export type CriterionKind = 'judge' | 'reference' | 'contains' | 'not_contains' | 'tool_called' | 'tool_not_called'
+export type CriterionKind = 'judge' | 'reference' | 'contains' | 'not_contains' | 'tool_called' | 'tool_not_called' | 'output_schema'
+
+/** The check every round adds for a workflow with an output schema: its
+ * result matches the schema (core/output-schema.ts), checked in code. */
+export const OUTPUT_SCHEMA_CRITERION: EvalCriterion = { id: 'output-schema', text: 'Matches the output schema', kind: 'output_schema' }
 
 export interface EvalCriterion {
   id: string
@@ -143,7 +148,9 @@ export interface EvalCaseResult {
 
 export interface EvalRound {
   at: string
-  /** The brief version it tested (core/audit-store.ts), when kept. */
+  /** The workflow version it tested (core/audit-store.ts), when kept. */
+  workflowVersion?: number
+  /** On rounds from when only the brief was versioned: the same number. */
   briefVersion?: number
   /** The workflow's model and the judge's, as "provider model". */
   model: string
@@ -256,7 +263,7 @@ export function effectiveCriteria(evals: Pick<WorkflowEvals, 'criteria'>): EvalC
 }
 
 /** The checks a program answers, on one result. */
-export function codeCheck(criterion: EvalCriterion, run: { result: string; tools: string[] }): EvalCheck | undefined {
+export function codeCheck(criterion: EvalCriterion, run: { result: string; tools: string[]; outputSchema?: JsonSchema }): EvalCheck | undefined {
   const value = (criterion.value ?? '').toLowerCase()
   const text = run.result.toLowerCase()
   switch (criterion.kind) {
@@ -269,6 +276,11 @@ export function codeCheck(criterion: EvalCriterion, run: { result: string; tools
     case 'tool_not_called': {
       const called = run.tools.some((t) => t.toLowerCase() === value)
       return { criterionId: criterion.id, pass: !called, ...(called ? { reason: `It called ${criterion.value}.` } : {}) }
+    }
+    case 'output_schema': {
+      if (!run.outputSchema) return { criterionId: criterion.id, pass: true }
+      const check = checkOutput(run.outputSchema, run.result)
+      return { criterionId: criterion.id, pass: check.ok, ...(check.ok ? {} : { reason: check.errors.join('; ').slice(0, 500) }) }
     }
     default: return undefined
   }
@@ -308,13 +320,13 @@ export async function judgeCriteria(judge: ModelCall, input: { instructions: str
 /** Every check on one case's result: the program's, then the judge's in
  * one call. A case with no good result skips the reference check; a
  * failed run fails every check that applies. */
-export async function checkCase(judge: ModelCall, input: { instructions: string; criteria: EvalCriterion[]; reference: string; run: { result: string; tools: string[] } | { error: string } }): Promise<EvalCheck[]> {
+export async function checkCase(judge: ModelCall, input: { instructions: string; criteria: EvalCriterion[]; reference: string; outputSchema?: JsonSchema; run: { result: string; tools: string[] } | { error: string } }): Promise<EvalCheck[]> {
   const applies = input.criteria.filter((c) => c.kind !== 'reference' || input.reference.trim())
   if ('error' in input.run) {
     const error = input.run.error
     return applies.map((c) => ({ criterionId: c.id, pass: false, reason: `The run failed: ${error.slice(0, 200)}` }))
   }
-  const run = input.run
+  const run = { ...input.run, ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}) }
   const coded = new Map(applies.flatMap((c) => { const r = codeCheck(c, run); return r ? [[c.id, r] as const] : [] }))
   const forJudge = applies.filter((c) => !coded.has(c.id))
   let judged = new Map<string, EvalCheck>()
@@ -378,8 +390,10 @@ export async function draftCriteria(model: ModelCall, input: { instructions: str
 export interface EvalRunDeps {
   agentDir: string
   workflowId: string
-  /** The brief version being tested, recorded on the round. */
-  briefVersion?: number
+  /** The workflow version being tested, recorded on the round. */
+  workflowVersion?: number
+  /** Its output schema: each case is also checked against it. */
+  outputSchema?: JsonSchema
   instructions: string
   /** The workflow's model and the judge's, as "provider model". */
   model: string
@@ -401,7 +415,7 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
   const cases = evals.cases
   const startedAt = new Date().toISOString()
   writeEvals(deps.agentDir, deps.workflowId, { ...evals, running: { startedAt, done: 0, total: cases.length } })
-  const criteria = effectiveCriteria(evals)
+  const criteria = [...effectiveCriteria(evals), ...(deps.outputSchema ? [OUTPUT_SCHEMA_CRITERION] : [])]
   return (async () => {
     const results: EvalCaseResult[] = []
     for (const c of cases) {
@@ -411,7 +425,7 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
       } catch (err) {
         run = { error: err instanceof Error ? err.message : String(err) }
       }
-      const checks = await checkCase(deps.judge, { instructions: deps.instructions, criteria, reference: c.reference ?? '', run })
+      const checks = await checkCase(deps.judge, { instructions: deps.instructions, criteria, reference: c.reference ?? '', ...(deps.outputSchema ? { outputSchema: deps.outputSchema } : {}), run })
       results.push({
         caseId: c.id,
         ...('error' in run ? { error: run.error } : { result: run.result.slice(0, 20000), tools: [...new Set(run.tools)], ...(run.standIns?.length ? { standIns: run.standIns.slice(0, 50) } : {}) }),
@@ -422,7 +436,7 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
     }
     const round: EvalRound = {
       at: startedAt,
-      ...(deps.briefVersion ? { briefVersion: deps.briefVersion } : {}),
+      ...(deps.workflowVersion ? { workflowVersion: deps.workflowVersion } : {}),
       model: deps.model,
       judge: deps.judgeLabel,
       cases: results,

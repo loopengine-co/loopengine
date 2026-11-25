@@ -203,7 +203,7 @@ ${consoleShellScript}
   function eventLink(e) {
     var d = e.data || {};
     if (e.run_id) return { href: '/cases/' + encodeURIComponent(e.run_id) + '?back=' + encodeURIComponent(location.pathname + location.search), text: 'Case' };
-    if (e.workflow_id) return { href: workflowHref(e.agent, e.workflow_id, /brief version/i.test(d.label || '') || /Edited the workflow/.test(d.label || '') ? 'brief' : 'activity'), text: 'Workflow' };
+    if (e.workflow_id) return { href: workflowHref(e.agent, e.workflow_id, /(brief|workflow) version/i.test(d.label || '') || /Edited the workflow/.test(d.label || '') ? 'brief' : 'activity'), text: 'Workflow' };
     if (e.agent) return { href: '/agents/config?agent=' + encodeURIComponent(e.agent), text: 'Agent' };
     var path = String(d.path || '');
     if (path.indexOf('/config/models') === 0) return { href: '/config?section=models', text: 'Models' };
@@ -225,20 +225,22 @@ ${consoleShellScript}
   // lines added (+) and removed (−), a few shown and the rest folded.
   function changeDetailsHtml(d) {
     var list = d.changes || [];
-    if (!list.length && !d.brief) return '';
+    var version = d.version || d.brief;
+    if (!list.length && !version) return '';
     var MINUS = String.fromCharCode(8722);
     var lineHtml = function (sign, cls, l) { return '<div class="' + cls + '">' + sign + ' ' + esc(l) + '</div>'; };
     var rows = list.map(function (c) {
       if (c.added || c.removed) {
         var lines = (c.removed || []).map(function (l) { return lineHtml(MINUS, 'chg-del', l); }).concat((c.added || []).map(function (l) { return lineHtml('+', 'chg-ins', l); }));
-        var head = '<strong>' + esc(c.field) + '</strong>' + (c.field === 'instructions' && d.brief ? ' <span class="chg-note">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</span>' : '');
+        var head = '<strong>' + esc(c.field) + '</strong>';
         var shown = lines.slice(0, 6).join('');
         var more = lines.length > 6 ? '<details><summary>' + (lines.length - 6) + ' more line' + (lines.length - 6 === 1 ? '' : 's') + '</summary>' + lines.slice(6).join('') + '</details>' : '';
         return '<div class="chg-field">' + head + '<div class="chg-lines">' + (shown || '<div class="chg-note">Only spacing changed.</div>') + more + '</div></div>';
       }
       return '<div class="chg-field"><strong>' + esc(c.field) + '</strong>: <del>' + esc(c.from) + '</del> ' + String.fromCharCode(8594) + ' <ins>' + esc(c.to) + '</ins></div>';
     }).join('');
-    if (!rows && d.brief) rows = '<div class="chg-field">brief v' + d.brief.from + ' ' + String.fromCharCode(8594) + ' v' + d.brief.to + '</div>';
+    // The workflow's version before and after ("brief" on older changes).
+    if (version) rows = '<div class="chg-note">Workflow v' + version.from + ' ' + String.fromCharCode(8594) + ' v' + version.to + '</div>' + rows;
     return '<div class="chg">' + rows + '</div>';
   }
 
@@ -260,7 +262,7 @@ ${consoleShellScript}
     return '<div class="au-row au-case"><span class="au-state ' + pill[0] + '">' + pill[1] + '</span>' +
       '<span class="au-what"><strong>' + esc(c.workflowTitle) + (c.inputs ? DOT + esc(c.inputs) : '') + '</strong>' +
         (c.outcome ? '<span class="au-detail">' + esc(c.outcome) + '</span>' : '') +
-        '<span class="au-where">' + esc(when(c.startedAt)) + DOT + esc(agentLabel(c.agent)) + (c.briefVersion ? DOT + 'brief v' + c.briefVersion : '') + (c.people.length ? DOT + 'decided by ' + esc(c.people.join(', ')) : '') + (c.evalCase ? DOT + '<span class="au-evalcase">eval case</span>' : '') + '</span></span>' +
+        '<span class="au-where">' + esc(when(c.startedAt)) + DOT + esc(agentLabel(c.agent)) + (c.workflowVersion ? DOT + 'workflow v' + c.workflowVersion : '') + (c.people.length ? DOT + 'decided by ' + esc(c.people.join(', ')) : '') + (c.evalCase ? DOT + '<span class="au-evalcase">eval case</span>' : '') + '</span></span>' +
       '<a class="au-open" href="/cases/' + encodeURIComponent(c.id) + '?back=' + encodeURIComponent(location.pathname + location.search) + '">Open ' + String.fromCharCode(8594) + '</a></div>';
   }
 
