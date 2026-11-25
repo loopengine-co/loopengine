@@ -292,7 +292,7 @@ export {
   type WorkflowMcpCreateDeps,
   resolveMcpServers,
   prepareMcpAbilities, moveScheduleResultsToWorkflows, postWorkflowResults } from './web/workflow-admin.js'
-export { WORKFLOW_PLANNER_PROMPT, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep } from './core/system-agents/workflow-planner.js'
+export { WORKFLOW_PLANNER_PROMPT, planCriteria, planParameters, planWorkflowWithModel, validateWorkflowPlan, workflowTemplate, type WorkflowPlan, type WorkflowPlannerTools, type WorkflowStep, type PlannedCriterion } from './core/system-agents/workflow-planner.js'
 export { WORKFLOW_EXAMPLES, workflowExample, type WorkflowExample } from './core/system-agents/workflow-examples.js'
 export { WORKFLOW_EXAMPLE_MESSAGES, type WorkflowExampleMessage } from './core/system-agents/workflow-example-messages.js'
 export { createTrigger, updateTrigger, rotateTrigger, listTriggers, findTriggerByToken, publicTrigger, checkTriggerSettings, verifySenderSignature, parsePayload, valueAt, deliveryId, passesFilter, paramsFromPayload, checkRunDelivery, fillChatNotice, resultToChat, recordDelivery as recordTriggerDelivery, FileTriggerStore, getTriggerStore, setTriggerStore, TriggerError, type WorkflowTrigger, type PublicTrigger, type TriggerSettings, type TriggerVerify, type TriggerFilter, type TriggerSender, type SignatureAlgorithm, type TriggerDelivery, type TriggerOutcome, type TriggerStore } from './core/workflow-triggers.js'

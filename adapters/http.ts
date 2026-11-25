@@ -5551,6 +5551,25 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html' }).end(workflowPageHtml)
       return
     }
+    // Success criteria for a plan that came without them (a ready-made
+    // example): drafted from its brief and the tools its steps use, by
+    // a model from another provider than the agent's.
+    if (req.method === 'POST' && pathname === '/workflows/criteria') {
+      const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      try {
+        const body = await readJsonBody(req)
+        const plan = (body.plan ?? {}) as { skill?: { body?: unknown }; steps?: { tool?: unknown }[]; rules?: { tool?: unknown }[] }
+        const instructions = typeof plan.skill?.body === 'string' ? plan.skill.body : ''
+        if (!instructions.trim()) return void json(400, { error: 'The plan has no instructions to draft from.' })
+        const tools = [...(plan.steps ?? []), ...(plan.rules ?? [])].flatMap((x) => (typeof x?.tool === 'string' ? [x.tool] : []))
+        const agent = typeof body.agent === 'string' ? getEntry(body.agent)?.config : undefined
+        const judge = await evalJudge(agent ?? ({ name: '', systemPrompt: '' } as AgentConfig))
+        const drafted = await draftCriteria(judge.call, { instructions, tools: [...new Set(tools)] })
+        return void json(200, { criteria: drafted.map(({ text, kind, value }) => ({ text, kind, ...(value ? { value } : {}) })) })
+      } catch (err) {
+        return void json(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
+      }
+    }
     if (pathname === '/workflows' || pathname === '/workflows/plan' || pathname.startsWith('/workflows/plan/') || pathname === '/workflows/check' || pathname === '/workflows/create') {
       await handleWorkflows(req, res, pathname)
       return

@@ -68,3 +68,22 @@ describe('a case page', () => {
     expect(inboxOnlyAllows('GET', '/audit')).toBe(false)
   })
 })
+
+describe("a plan's success criteria", () => {
+  it('keep their words and kinds, judge a tool check for a tool it does not use, and drop repeats', async () => {
+    const { planCriteria } = await import('#core/system-agents/workflow-planner.js')
+    expect(planCriteria([
+      { text: 'Looks up the order first', kind: 'tool_called', value: 'lookup_order' },
+      { text: 'Never emails the customer', kind: 'tool_not_called', value: 'send_fax' },
+      { text: 'Signed Everymarket Support', kind: 'contains', value: 'Everymarket Support' },
+      { text: 'States where the parcel is', kind: 'contains' },
+      { text: 'states where the parcel is', kind: 'judge' },
+      { text: '', kind: 'judge' },
+    ], ['lookup_order', 'send_email'])).toEqual([
+      { text: 'Looks up the order first', kind: 'tool_called', value: 'lookup_order' },
+      { text: 'Never emails the customer', kind: 'judge' },
+      { text: 'Signed Everymarket Support', kind: 'contains', value: 'Everymarket Support' },
+      { text: 'States where the parcel is', kind: 'judge' },
+    ])
+  })
+})

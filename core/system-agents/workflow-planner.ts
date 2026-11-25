@@ -65,6 +65,33 @@ export interface PlannedMcpServer {
   existing?: string
 }
 
+export interface PlannedCriterion {
+  text: string
+  kind: 'judge' | 'contains' | 'not_contains' | 'tool_called' | 'tool_not_called'
+  value?: string
+}
+
+/** A plan's success criteria, tidied: words, a known kind, at most 8; a
+ * phrase check with no phrase, or a tool check for a tool the workflow
+ * doesn't use, is judged by reading instead. Also used on a plan edited
+ * before Create. */
+export function planCriteria(raw: unknown, tools: string[]): PlannedCriterion[] {
+  const known = new Set(tools.map((t) => t.toLowerCase()))
+  const kinds = ['judge', 'contains', 'not_contains', 'tool_called', 'tool_not_called']
+  const seen = new Set<string>()
+  return (Array.isArray(raw) ? raw : []).flatMap((x): PlannedCriterion[] => {
+    const c = (x ?? {}) as Record<string, unknown>
+    const text = typeof c.text === 'string' ? c.text.trim().slice(0, 300) : ''
+    let kind = (kinds.includes(c.kind as string) ? c.kind : 'judge') as PlannedCriterion['kind']
+    const value = typeof c.value === 'string' ? c.value.trim().slice(0, 300) : ''
+    if ((kind === 'tool_called' || kind === 'tool_not_called') && !known.has(value.toLowerCase())) kind = 'judge'
+    if ((kind === 'contains' || kind === 'not_contains') && !value) kind = 'judge'
+    if (!text || seen.has(text.toLowerCase())) return []
+    seen.add(text.toLowerCase())
+    return [{ text, kind, ...(kind !== 'judge' ? { value } : {}) }]
+  }).slice(0, 8)
+}
+
 export interface WorkflowPlan {
   name: string
   /** lowercase-hyphenated: the workflow's id and its skill's folder. */
@@ -125,6 +152,10 @@ export interface WorkflowPlan {
   newAgent?: { name: string; systemPrompt: string }
   /** What the workspace can't do yet, in plain words. */
   gaps: string[]
+  /** Yes or no checks a good result meets, specific to this workflow:
+   * saved as its success criteria on Create (web/workflow-evidence.ts),
+   * edited on the plan first. */
+  successCriteria?: PlannedCriterion[]
   /** MCP servers its steps use, set up on Create (filled in after planning). */
   mcpServers?: PlannedMcpServer[]
   /** Connected apps it adds to the agent, with just the tools its steps
@@ -219,6 +250,7 @@ How to plan:
 9. fit: whether this job is the kind of work the agent does, judged from its name, description and instructions (not its tools or apps: missing ones get added). matches false only when the job is clearly a different line of work (a customer support agent asked to run payroll); a related or broader job still matches, and so does any job for an agent with no description or instructions yet. reason: one short sentence the person reads, naming what the agent does and what the job is ("Support desk answers customers' questions; this workflow runs payroll."); empty when it matches. Plan the workflow fully either way.
 10. Messaging: questions, approvals and results reach the person through the agent's messaging app when they're not in Chat. You don't set it up; if the agent has none, plan as usual and the person sets it up before Create. If the person names a different app ("send them to me in Slack") than the agent's messaging app, say in gaps that results will arrive in the agent's app, and that they can change it on the agent's Messaging tab.
 11. output: what the final reply must be, when an app or a person reads it ("The draft reply only, with nothing before or after it", "A line Decision: approve, partial or reject, then the reason"). Only when the request or the trigger makes the format matter: an app shows or parses it, or a person acts on it. Empty otherwise.
+13. successCriteria: three to six yes or no checks a good result of THIS workflow meets: what a person reviewing a run would check before using it. Each checks one thing, in a short statement under 20 words true of a good result, specific to this job and taken from the request and the skill's rules ("The reply gives the order's tracking number", "Every disputed charge has the delivery photo attached", "It never offers more than a full refund"); never generic ("The response is helpful", "It is accurate"), and never a requirement the request doesn't imply. kind: "judge" for a statement a reviewer decides by reading the result (most); "contains" / "not_contains" with value only for exact words the request names (a sign-off, a banned phrase); "tool_called" / "tool_not_called" with value only for a tool in your steps the job must or mustn't use.
 12. keys: the setting names its abilities need that list_connections or the agents don't show as set (from ability_details settings). Leave out a setting its description calls optional unless the workflow uses what it's for (a setting only for posting, in a workflow that never posts). Not for MCP servers: their keys are asked for on the plan.
 
 Then call save_plan once, with the whole plan. Don't ask the person questions: if something is unclear, plan the most reasonable version and note the assumption in gaps.`
@@ -299,8 +331,13 @@ export function workflowPlannerTools(withMcp = false): ToolSchema[] {
           output: { type: 'string', description: 'what the final reply must be, when an app or person reads it; empty otherwise' },
           fit: { type: 'object', properties: { matches: { type: 'boolean' }, reason: { type: 'string' } }, required: ['matches', 'reason'] },
           gaps: { type: 'array', items: { type: 'string' } },
+          successCriteria: {
+            type: 'array',
+            description: 'three to six yes or no checks a good result of this workflow meets, specific to it',
+            items: { type: 'object', properties: { text: { type: 'string' }, kind: { type: 'string', enum: ['judge', 'contains', 'not_contains', 'tool_called', 'tool_not_called'] }, value: { type: 'string' } }, required: ['text', 'kind'] },
+          },
         },
-        required: ['name', 'summary', 'trigger', 'steps', 'rules', 'skill', 'startMessage', 'fit'],
+        required: ['name', 'summary', 'trigger', 'steps', 'rules', 'skill', 'startMessage', 'fit', 'successCriteria'],
       },
     },
   ]
@@ -411,6 +448,7 @@ export function validateWorkflowPlan(raw: unknown): WorkflowPlan | undefined {
     ...(str(r.output, 2000) ? { output: str(r.output, 2000) } : {}),
     ...(r.fit ? { fit: planFit(r.fit) } : {}),
     gaps: [...gaps, ...planned.notes].slice(0, 12),
+    successCriteria: planCriteria(r.successCriteria, [...steps.flatMap((s) => (s.tool ? [s.tool] : [])), ...rules.map((x) => x.tool)]),
   }
 }
 

@@ -56,6 +56,13 @@ export const workflowPageHtml: string = `<!doctype html>
   .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
   @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
   .wf-part { display: grid; gap: 2px; margin-top: 8px; }
+  .wf-crit-rows { display: grid; gap: 8px; }
+  .wf-crit-row { display: grid; grid-template-columns: minmax(0, 1fr) 210px auto; gap: 8px; align-items: center; }
+  .wf-crit-row:has(.wf-crit-value:not([hidden])) { grid-template-columns: minmax(0, 1fr) 210px 160px auto; }
+  .wf-crit-row input, .wf-crit-row select { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); min-width: 0; }
+  .wf-crit-row input[hidden] { display: none; }
+  .wf-crit-remove { border: 0; background: none; font-size: 18px; line-height: 1; color: var(--ink-muted); cursor: pointer; padding: 4px 8px; }
+  @media (max-width: 640px) { .wf-crit-row, .wf-crit-row:has(.wf-crit-value:not([hidden])) { grid-template-columns: 1fr auto; } .wf-crit-row select, .wf-crit-row .wf-crit-value { grid-column: 1; } }
   .wf-part h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-ink); }
   .wf-mono { font-family: var(--font-mono); font-size: 12.5px; }
   .wf-model-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -448,13 +455,60 @@ ${consoleShellScript}
   var PROVIDERS = ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'];
   function contractExtrasHtml(p) {
     var m = p.model || {};
-    return '<h3>Result</h3>' +
-      '<p class="hint" style="margin:0">What its final reply must be, when an app or a person reads it. Empty: a reply in its own words.</p>' +
-      '<textarea id="wfOutput" rows="2" placeholder="The draft only, then a line Flag: reason if a person must act.">' + esc(p.output || '') + '</textarea>' +
-      '<h3>Model</h3>' +
+    return '<h3>Model</h3>' +
       '<div class="wf-model-row"><select id="wfModelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' + PROVIDERS.map(function (x) { return '<option value="' + x + '"' + (m.provider === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>' +
       '<input id="wfModelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + esc(m.model || '') + '"></div>';
   }
+  // ---- Success criteria: yes or no checks a good result of this
+  // workflow meets, drafted with the plan (or from its brief, for an
+  // example that came without them), edited here, saved on Create. ----
+  var CRIT_KINDS = [['judge', 'Judged by reading'], ['contains', 'Must say'], ['not_contains', 'Must not say'], ['tool_called', 'Must use the tool'], ['tool_not_called', 'Must not use the tool']];
+  function critRow(c) {
+    c = c || { text: '', kind: 'judge' };
+    var needsValue = c.kind !== 'judge';
+    return '<div class="wf-crit-row">' +
+      '<input class="wf-crit-text" value="' + esc(c.text) + '" placeholder="e.g. The reply gives the order' + String.fromCharCode(8217) + 's tracking number" aria-label="Criterion">' +
+      '<select class="wf-crit-kind" aria-label="How it' + String.fromCharCode(8217) + 's checked">' + CRIT_KINDS.map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === c.kind ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>' +
+      '<input class="wf-crit-value" value="' + esc(c.value || '') + '" placeholder="' + (String(c.kind).indexOf('tool') === 0 ? 'tool name' : 'exact text') + '"' + (needsValue ? '' : ' hidden') + ' aria-label="What to look for">' +
+      '<button type="button" class="wf-crit-remove" aria-label="Remove">' + String.fromCharCode(215) + '</button></div>';
+  }
+  function criteriaHtml(p) {
+    var list = p.successCriteria || [];
+    return '<div class="wf-part"><h3>Success criteria</h3><span class="hint">What every good result of this workflow must get right. Once it runs, each eval case is checked against these, yes or no.</span></div>' +
+      '<div class="wf-card" id="wfCriteria">' +
+        (state.planned.drafting ? '<p class="hint" style="margin:0">Suggesting criteria from its instructions' + ELLIPSIS + '</p>' : '') +
+        '<div class="wf-crit-rows">' + list.map(critRow).join('') + '</div>' +
+        (state.planned.draftError ? '<p class="hint" style="margin:0">' + esc(state.planned.draftError) + '</p>' : '') +
+        '<div class="wf-actions"><button type="button" class="wf-btn plain" id="wfCritAdd">+ Add a criterion</button>' +
+          '<button type="button" class="wf-btn plain" id="wfCritDraft"' + (state.planned.drafting ? ' disabled' : '') + '>' + (list.length ? 'Suggest again from the instructions' : 'Suggest from the instructions') + '</button></div>' +
+      '</div>';
+  }
+  function readCriteria() {
+    var rows = document.querySelectorAll('#wfCriteria .wf-crit-row');
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var text = rows[i].querySelector('.wf-crit-text').value.trim();
+      var kind = rows[i].querySelector('.wf-crit-kind').value;
+      var value = rows[i].querySelector('.wf-crit-value').value.trim();
+      if (!text) continue;
+      out.push(kind === 'judge' || !value ? { text: text, kind: kind === 'judge' || value ? kind : 'judge' } : { text: text, kind: kind, value: value });
+    }
+    return out;
+  }
+  // Drafts criteria from the plan's instructions, when it has none.
+  function draftCriteria(p, agent) {
+    state.planned.drafting = true;
+    state.planned.draftError = '';
+    readPlanEdits(p);
+    renderPlan();
+    post('/workflows/criteria', { plan: p, agent: agent }).then(function (r) {
+      state.planned.drafting = false;
+      if (r.ok) p.successCriteria = r.body.criteria || [];
+      else state.planned.draftError = (r.body && r.body.error) || 'Could not suggest criteria: add them by hand.';
+      renderPlan();
+    }).catch(function (err) { state.planned.drafting = false; state.planned.draftError = err.message; renderPlan(); });
+  }
+
   // The plan's contract as one block, the way the workflow's Contract tab
   // shows it once created: trigger, inputs, tools, result, model.
   function planContractBlockHtml(p) {
@@ -492,8 +546,7 @@ ${consoleShellScript}
   function readPlanEdits(p) {
     p.context = contextValue();
     p.skill.body = document.getElementById('wfSkill').value;
-    var o = document.getElementById('wfOutput');
-    if (o) p.output = o.value;
+    if (document.getElementById('wfCriteria')) p.successCriteria = readCriteria();
     var prov = document.getElementById('wfModelProvider');
     var name = document.getElementById('wfModelName');
     if (prov && name) p.model = prov.value && name.value.trim() ? { provider: prov.value, model: name.value.trim() } : null;
@@ -519,8 +572,14 @@ ${consoleShellScript}
         : '') +
       '<div class="wf-card">' +
         '<h2>' + esc(p.name) + '</h2><p style="margin:0">' + esc(p.summary) + '</p>' +
-        '<p class="hint" style="margin:0">A workflow has three parts: its <strong>contract</strong>, what the system holds it to; its <strong>brief</strong>, what the agent reads on every run; and its <strong>evidence</strong>, which builds up as it runs.</p>' +
+        '<p class="hint" style="margin:0">Check its <strong>brief</strong>, what the agent reads on every run; its <strong>success criteria</strong>, what a good result must get right; and its <strong>contract</strong>, how it starts and what it may use. You can change any of them later.</p>' +
       '</div>' +
+      '<div class="wf-part"><h3>Brief</h3><span class="hint">What the agent reads on every run: what to do, its rules, and what it needs to know about your business.</span></div>' +
+      '<div class="wf-card"><label for="wfSkill"><strong>Instructions</strong> <span class="hint">(what the agent gets done, the rules it keeps, and what it needs to know about your business. Add your policies and special cases with the buttons below: the agent only knows what' + String.fromCharCode(8217) + 's written here. Saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit.)</span></label>' +
+        '<textarea id="wfSkill" class="wf-skill-edit">' + esc(p.skill.body) + '</textarea>' +
+        '<div class="wp-sections"><span class="hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +
+        '<p class="hint" style="margin:0">Each run lists its inputs above these instructions, long ones like an email or a thread in their own blocks, so the instructions refer to them by name.</p></div>' +
+      criteriaHtml(p) +
       '<div class="wf-part"><h3>Contract</h3><span class="hint">What the system holds it to: how it starts, what it' + String.fromCharCode(8217) + 's given, what it may use, its model and its result.</span></div>' +
       '<div class="wf-card">' +
         planContractBlockHtml(p) +
@@ -548,22 +607,31 @@ ${consoleShellScript}
         (misfit && !fitPending ? '<p class="hint" style="margin:0">You chose to add it here, though it' + String.fromCharCode(8217) + 's not this agent' + String.fromCharCode(8217) + 's usual work.</p>' : '') +
       '</div>' +
       needsHtml(reqs) +
-      '<div class="wf-part"><h3>Brief</h3><span class="hint">What the agent reads on every run: what to do, its rules, and what it needs to know about your business.</span></div>' +
-      '<div class="wf-card"><label for="wfSkill"><strong>Instructions</strong> <span class="hint">(what the agent gets done, the rules it keeps, and what it needs to know about your business. Add your policies and special cases with the buttons below: the agent only knows what' + String.fromCharCode(8217) + 's written here. Saved as its skill <code>' + esc(p.id) + '</code>; edit them here, or later from the workflow' + String.fromCharCode(8217) + 's Edit.)</span></label>' +
-        '<textarea id="wfSkill" class="wf-skill-edit">' + esc(p.skill.body) + '</textarea>' +
-        '<div class="wp-sections"><span class="hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +
-        '<p class="hint" style="margin:0">Each run lists its inputs above these instructions, long ones like an email or a thread in their own blocks, so the instructions refer to them by name.</p></div>' +
       (p.gaps.length ? '<div class="wf-gaps"><strong>Worth knowing</strong><ul>' + p.gaps.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div>' : '') +
       (p.notes && p.notes.length ? '<div class="wf-card"><strong>After it' + String.fromCharCode(8217) + 's created, you also</strong><ul class="wf-list">' + p.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></div>' : '') +
-      '<div class="wf-part"><h3>Evidence</h3><span class="hint">Builds up once it runs.</span></div>' +
-      '<div class="wf-card"><ul class="wf-list">' +
-        '<li><strong>History:</strong> every run, its result, and the approvals you gave or refused.</li>' +
-        '<li><strong>Eval cases:</strong> save a good run as a case, then run the cases after each change to the instructions or model; a different model scores each result.</li>' +
-        '<li><strong>Feedback:</strong> an app can report the text it actually used, so you see how much results get edited.</li>' +
-      '</ul><p class="hint" style="margin:0">All on the workflow' + String.fromCharCode(8217) + 's Evidence tab, once it' + String.fromCharCode(8217) + 's created.</p></div>' +
       '<div class="wf-actions"><button type="button" class="wf-btn" id="wfCreate"' + (blocked ? ' disabled' : '') + '>Create it</button><button type="button" class="wf-btn plain" id="wfBack">' + (state.planned.example ? 'Back to the examples' : 'Change the description') + '</button>' +
         '<span class="hint" id="wfStatus">' + (fitPending ? 'Choose where it goes, above, first.' : '') + '</span></div>' +
       (error ? '<p class="error">' + esc(error) + '</p>' : '');
+    var critBox = document.getElementById('wfCriteria');
+    critBox.addEventListener('click', function (ev) {
+      if (ev.target.classList.contains('wf-crit-remove')) ev.target.closest('.wf-crit-row').remove();
+    });
+    critBox.addEventListener('change', function (ev) {
+      if (!ev.target.classList.contains('wf-crit-kind')) return;
+      var value = ev.target.closest('.wf-crit-row').querySelector('.wf-crit-value');
+      value.hidden = ev.target.value === 'judge';
+      value.placeholder = ev.target.value.indexOf('tool') === 0 ? 'tool name' : 'exact text';
+    });
+    document.getElementById('wfCritAdd').addEventListener('click', function () {
+      critBox.querySelector('.wf-crit-rows').insertAdjacentHTML('beforeend', critRow(null));
+      critBox.querySelector('.wf-crit-rows').lastElementChild.querySelector('.wf-crit-text').focus();
+    });
+    document.getElementById('wfCritDraft').addEventListener('click', function () { draftCriteria(p, agent); });
+    if (!(p.successCriteria || []).length && !state.planned.drafting && !state.planned.drafted) {
+      state.planned.drafted = true;
+      draftCriteria(p, agent);
+      return;
+    }
     document.querySelector('.wp-sections').addEventListener('click', function (ev) {
       addWorkflowSection(document.getElementById('wfSkill'), ev.target.dataset && ev.target.dataset.section);
     });

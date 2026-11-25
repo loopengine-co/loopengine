@@ -340,7 +340,7 @@ export function roundSummary(criteria: EvalCriterion[], cases: EvalCaseResult[])
 
 export const DRAFT_CRITERIA_PROMPT = `You write the checks a workflow's results are tested against, from its brief: what the agent is told to do, its rules and policies.
 
-Write three to six yes or no checks, the ones that matter most: a result failing one is a result a person would have to fix. Each is a short statement true of a good result ("The reply gives the order's tracking number", "It doesn't promise a refund"). Take them from the brief's rules and its job; never invent requirements it doesn't state.
+Write three to six yes or no checks, the ones that matter most: a result failing one is a result a person would have to fix. Each checks one thing, in a short statement under 20 words that is true of a good result ("The reply gives the order's tracking number", "It doesn't promise a refund"); split a rule with several parts into separate checks, keeping the ones that matter most. Take them from the brief's rules and its job; never invent requirements it doesn't state.
 
 Each check has a kind:
 - "judge": a statement a reviewer decides by reading the result (most checks).

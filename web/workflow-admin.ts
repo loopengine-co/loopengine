@@ -12,13 +12,13 @@ import { writeSkill } from './skills-admin.js'
 import { setAgentEnvVar } from './env-admin.js'
 import { installFailureReason, templateChecklist, type CreatedTemplateAgent, type TemplateChecklistItem, type TemplateCreateDeps } from './templates-admin.js'
 import { templateScheduleStart } from '../core/system-agents/templates.js'
-import { planParameters, planWebhook, planWorkflowWithModel, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
+import { planCriteria, planParameters, planWebhook, planWorkflowWithModel, workflowTemplate, type PlannedMcpServer, type WorkflowPlan, type WorkflowPlannerTools } from '../core/system-agents/workflow-planner.js'
 import { checkRunDelivery, createTrigger, getTriggerStore, listTriggers, publicTrigger, type PublicTrigger } from '../core/workflow-triggers.js'
 import { mcpAbilityNames, type GeneratedMcpAbility, type McpAbilityRequest } from '../core/mcp-ability-generator.js'
 import type { McpDirectoryServer } from '../core/mcp-directory.js'
 import { contextToolsFor, type AppToolInputs } from '../core/mcp-apps.js'
 import { clearWorkflowFields, migrateWorkflowsFile, readWorkflow, readWorkflows, setWorkflowDelivery, setWorkflowFields, validateParams, workflowRunMessage, type Workflow, type WorkflowDelivery, type WorkflowModel } from '../core/workflows.js'
-import { readEvals, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
+import { readEvals, setEvalCriteria, workflowScores, type WorkflowEvals, type WorkflowScores } from './workflow-evidence.js'
 import { isUnderWay, listRuns, type WorkflowRun } from '../core/workflow-runs.js'
 import { cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, getSchedulerStore, listScheduledTasks, pauseScheduledTask, type ScheduledTask } from '../core/scheduler.js'
 import { wallTimeAt, workspaceTimeZone } from '../core/time-zone.js'
@@ -772,6 +772,16 @@ export async function createWorkflow(input: { plan?: unknown; agent?: unknown; t
   }
 
   markWorkflow(deps.agentDir(agent.name), typeof input.workflowContext === 'string' ? input.workflowContext.slice(0, 6000) : '')
+  // Its success criteria, as planned or as edited on the plan: what every
+  // eval case is checked against from the start.
+  const criteria = planCriteria(plan.successCriteria, [...plan.steps.flatMap((st) => (st.tool ? [st.tool] : [])), ...(plan.rules ?? []).map((r) => r.tool)])
+  if (criteria.length) {
+    try {
+      setEvalCriteria(deps.agentDir(agent.name), plan.id, criteria)
+    } catch (err) {
+      console.error(`[loopengine] could not save ${plan.id}'s success criteria:`, err instanceof Error ? err.message : err)
+    }
+  }
   const hook = await makePlannedWebhook(plan, agent.name, deps.agentDir(agent.name))
   return {
     agent: agent.name,
