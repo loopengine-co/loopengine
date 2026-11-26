@@ -1017,11 +1017,20 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-xd-error { border-radius: 0; }
   .wf-tv-pre { border-radius: 0; }
   .wf-tv-pre.is-text { font-family: inherit; font-size: 13.5px; line-height: 1.55; }
-  .wf-tl { border: 1px solid var(--line); background: var(--bg); }
-  .wf-tl-step { border: 0; border-radius: 0; padding: 12px 14px 12px 9px; }
-  .wf-tl-step + .wf-tl-step { border-top: 1px solid var(--line); }
-  .wf-tl-step[aria-pressed="true"] { background: var(--surface); border-color: var(--line); box-shadow: inset 3px 0 0 var(--ink); }
+  .wf-tl { border: 1px solid var(--line); background: var(--bg); padding: 6px 0; }
+  /* The line through the dots: centred on them (a step's dot sits 14px
+     in, 12px wide). */
+  .wf-tl::before { left: 19px; width: 2px; top: 20px; bottom: 20px; }
+  .wf-tl-step { border: 0; border-radius: 0; padding: 10px 16px 10px 14px; }
+  .wf-tl-step:hover { background: var(--surface); }
+  .wf-tl-step[aria-pressed="true"] { background: var(--surface); border-color: transparent; box-shadow: none; }
+  .wf-tl-step[aria-pressed="true"] .wf-tl-title { color: var(--ink); }
+  .wf-tl-step.k-model[aria-pressed="true"] .wf-tl-dot { background: var(--accent); }
+  .wf-tl-step.k-tool[aria-pressed="true"] .wf-tl-dot { background: var(--good); }
+  .wf-tl-step.k-person[aria-pressed="true"] .wf-tl-dot { background: var(--warn); }
+  .wf-tl-step.k-prompt[aria-pressed="true"] .wf-tl-dot { background: var(--ink-faint); }
   .wf-tl-kind { font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .wf-tl-time { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; gap: 1px; }
   .wf-tl-detail { border-radius: 0; background: var(--bg); padding: 18px 20px; }
 </style>
 </head>
