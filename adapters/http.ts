@@ -5505,6 +5505,26 @@ const server = createServer(async (req, res) => {
     return
   }
 
+  // The host's own calls (its waker, over the private network): what's
+  // running, and firing what's due. They're signed as the system (sub
+  // "system", which no person's identity has), so a person's role
+  // doesn't apply (the Inbox-only gate below once turned the waker away
+  // as a viewer); and only the system may make them.
+  // The router never forwards /internal/*. Neither counts as activity.
+  const internalPath = (req.url ?? '/').split('?')[0]
+  if (trustedProxySecret && internalPath.startsWith('/internal/')) {
+    const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+    if (verifyProxyIdentity(req.headers[TRUSTED_PROXY_IDENTITY_HEADER], trustedProxySecret)?.sub !== 'system') return json(403, { error: 'only the host may call this' })
+    try {
+      if (req.method === 'GET' && internalPath === '/internal/activity') return await handleActivityGet(res)
+      // A host waking this server for a due task: fire whatever is due now.
+      if (req.method === 'POST' && internalPath === '/internal/scheduler/tick') return json(200, { fired: await scheduler.tick() })
+      return json(404, { error: 'not found' })
+    } catch (err) {
+      return json(500, { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
   // An approver or viewer sees the Inbox only: the front page opens it,
   // and anything else is refused, saying where to go.
   const caller = callerOf(req)
@@ -5575,17 +5595,6 @@ const server = createServer(async (req, res) => {
     // route individually.
     const pathname = (req.url ?? '/').split('?')[0]
 
-    // Only exists in trusted-proxy mode, and polling it doesn't count as
-    // activity itself.
-    if (trustedProxySecret && req.method === 'GET' && pathname === '/internal/activity') {
-      await handleActivityGet(res)
-      return
-    }
-    // A host waking this server for a due task: fire whatever is due now.
-    if (trustedProxySecret && req.method === 'POST' && pathname === '/internal/scheduler/tick') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ fired: await scheduler.tick() }))
-      return
-    }
     lastRequestAt = Date.now()
 
     const streamMatch = req.method === 'POST' && pathname.match(/^\/agents\/([^/]+)\/messages\/stream$/)
