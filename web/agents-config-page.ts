@@ -83,7 +83,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-page-mode .le-page { max-width: none; }
   .wf-page > :not(.wf-page-head), .wf-page-hero { max-width: 1076px; }
   .wf-page-crumb-row .wf-row-actions .le-btn-dark:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
-  .wf-page-hero { display: grid; gap: 12px; padding: 32px 32px 26px; border: 1px solid var(--line); }
+  .wf-page-hero { display: grid; gap: 12px; padding: 32px 22px 26px; border: 1px solid var(--line); }
   .wf-page-hero h1 { margin: 0; font-size: 36px; font-weight: 400; letter-spacing: -0.03em; line-height: 1.15; overflow-wrap: anywhere; }
   .wf-page-desc { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-muted); max-width: 80ch; }
   .wf-page-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; margin-top: 4px; }
@@ -91,7 +91,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-page-meta-k { font-size: 12px; font-weight: 400; color: var(--ink-faint); }
   .wf-page-meta-item a { color: var(--ink); font-weight: 600; text-decoration: none; }
   .wf-page-meta-item a:hover { text-decoration: underline; }
-  @media (max-width: 860px) { .wf-page-crumb-row { margin: -28px -16px 20px; } .wf-page-hero { padding: 22px 18px; } .wf-page-hero h1 { font-size: 28px; } }
+  @media (max-width: 860px) { .wf-page-crumb-row { margin: -28px -16px 20px; } .wf-page-hero { padding: 22px; } .wf-page-hero h1 { font-size: 28px; } }
   .wf-page .wf-page-body { padding: 0; gap: 16px; }
   .wf-page-starts { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; color: var(--ink); }
   .wf-page-last { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
@@ -617,18 +617,18 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   /* Overview, in the other pages' style: a big title with the agent's
      instructions and the mascot, its parts in a hairline grid of cards,
      then its settings in another. */
-  .ov-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .ov-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 22px 28px; border: 1px solid var(--line); border-bottom: 0; }
   .ov-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
   .ov-hero-text { display: grid; gap: 10px; min-width: 0; }
   .ov-hero-sub { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-muted); max-width: 72ch; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .ov-section-title { margin: 0; padding: 30px 32px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .ov-section-title { margin: 0; padding: 30px 22px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
   .ov-cards.le-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .ov-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ov-settings > section { margin: 0; padding: 20px 22px; background: var(--bg); min-width: 0; }
   .ov-settings > section.ov-wide { grid-column: 1 / -1; }
   .ov-settings pre { margin: 0; }
   @media (max-width: 1100px) { .ov-cards.le-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 860px) { .ov-hero { padding: 24px 18px 20px; } .ov-hero .le-mascot { display: none; } .ov-settings, .ov-cards.le-grid { grid-template-columns: minmax(0, 1fr); } .ov-section-title { padding: 24px 18px 14px; } }
+  @media (max-width: 860px) { .ov-hero { padding: 24px 22px 20px; } .ov-hero .le-mascot { display: none; } .ov-settings, .ov-cards.le-grid { grid-template-columns: minmax(0, 1fr); } .ov-section-title { padding: 24px 22px 14px; } }
   section { margin-bottom: 28px; }
   section h3 {
     font-size: 15px;

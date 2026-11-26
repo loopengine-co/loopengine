@@ -43,13 +43,13 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-new-btn { text-decoration: none; }
   .gl-new-btn[hidden], .le-search[hidden] { display: none; }
   /* The top of each view: a big, light title, a line under it, the mascot. */
-  .gl-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .gl-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 22px 28px; border: 1px solid var(--line); border-bottom: 0; }
   .gl-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
   .gl-hero-text { display: grid; gap: 10px; min-width: 0; }
   .gl-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
   .gl-display { margin: 0; font-size: 32px; line-height: 1.18; font-weight: 400; letter-spacing: -0.025em; color: var(--ink); overflow-wrap: anywhere; }
   .gl-hero-sub { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-muted); max-width: 70ch; }
-  .gl-section-title { margin: 0; padding: 30px 32px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .gl-section-title { margin: 0; padding: 30px 22px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .gl-section-title .hint { font-size: 13px; letter-spacing: 0; }
   .gl-cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row dense; }
   .gl-cols3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -172,10 +172,10 @@ const goalsPageTemplate: string = `<!doctype html>
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
   @media (max-width: 860px) {
-    .gl-hero { padding: 24px 18px 20px; }
+    .gl-hero { padding: 24px 22px 20px; }
     .gl-hero .le-mascot { display: none; }
     .gl-cols2, .gl-cols3 { grid-template-columns: minmax(0, 1fr); }
-    .gl-section-title { padding: 24px 18px 14px; }
+    .gl-section-title { padding: 24px 22px 14px; }
     .le-search { display: none; }
   }
 </style>

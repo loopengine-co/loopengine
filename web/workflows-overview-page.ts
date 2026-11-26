@@ -15,7 +15,7 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
 <title>Workflows</title>
 <style>${devUiCss}${MASCOT_CSS}
   .wo { max-width: 1120px; display: grid; gap: 0; }
-  .wo-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .wo-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 22px 28px; border: 1px solid var(--line); border-bottom: 0; }
   .wo-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
   .wo-cols4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .wo-cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -25,7 +25,7 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
   .wo-stat span { font-size: 13px; color: var(--ink-muted); }
   .wo-stat.warn b { color: var(--warn); }
   .wo-stat.bad b { color: var(--bad); }
-  .wo-section-title { margin: 0; padding: 30px 32px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .wo-section-title { margin: 0; padding: 30px 22px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
   .wo-card { display: grid; gap: 14px; align-content: start; padding: 20px 22px; background: var(--bg); }
   .wo-card-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: start; }
   .wo-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
@@ -56,11 +56,11 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
   @media (max-width: 860px) {
-    .wo-hero { padding: 24px 18px 20px; }
+    .wo-hero { padding: 24px 22px 20px; }
     .wo-hero .le-mascot { display: none; }
     .wo-cols4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .wo-cols2 { grid-template-columns: minmax(0, 1fr); }
-    .wo-section-title { padding: 24px 18px 14px; }
+    .wo-section-title { padding: 24px 22px 14px; }
     .le-search { display: none; }
   }
 </style>

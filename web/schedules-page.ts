@@ -32,7 +32,7 @@ export const schedulesPageHtml: string = `<!doctype html>
 <title>Schedules</title>
 <style>${devUiCss}${MASCOT_CSS}
   .sc { max-width: 1120px; display: grid; gap: 0; }
-  .sc-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .sc-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 22px 28px; border: 1px solid var(--line); border-bottom: 0; }
   .sc-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
   .sc-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sc-card { display: grid; gap: 14px; padding: 20px 22px; background: var(--bg); }
@@ -58,7 +58,7 @@ export const schedulesPageHtml: string = `<!doctype html>
   .sc-menu-list { display: none; position: absolute; right: 0; top: 32px; z-index: 20; min-width: 170px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
   .sc-menu-list a, .sc-menu-list button { display: block; width: 100%; text-align: left; height: auto; padding: 7px 10px; border: 0; border-radius: 7px; background: none; font-size: 13px; color: var(--ink); text-decoration: none; }
   .sc-menu-list a:hover, .sc-menu-list button:hover:not(:disabled) { background: var(--surface); }
-  .sc-section-title { margin: 0; padding: 30px 32px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .sc-section-title { margin: 0; padding: 30px 22px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
   .sc-adds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sc-add { display: grid; gap: 6px; align-content: start; padding: 22px; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); text-align: left; height: auto; cursor: pointer; transition: background .15s; }
   .sc-add:hover:not(:disabled) { background: var(--surface); }
@@ -120,7 +120,7 @@ export const schedulesPageHtml: string = `<!doctype html>
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
   @media (max-width: 860px) {
-    .sc-hero { padding: 24px 18px 20px; }
+    .sc-hero { padding: 24px 22px 20px; }
     .sc-cards, .sc-adds { grid-template-columns: minmax(0, 1fr); }
     .sc-week { grid-template-columns: minmax(0, 1fr); }
     .sc-day { min-height: 0; }

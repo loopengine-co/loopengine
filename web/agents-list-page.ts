@@ -17,7 +17,7 @@ export const agentsListPageHtml: string = `<!doctype html>
 <title>LoopEngine Agents</title>
 <style>${devUiCss}${MASCOT_CSS}
   .ag { max-width: 1120px; display: grid; gap: 0; }
-  .ag-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .ag-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 22px 28px; border: 1px solid var(--line); border-bottom: 0; }
   .ag-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
   .ag-cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ag-cols1 { grid-template-columns: minmax(0, 1fr); }
@@ -73,7 +73,7 @@ export const agentsListPageHtml: string = `<!doctype html>
   .ag-dlg-foot { padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); min-height: 46px; display: flex; align-items: center; }
   .ag-dlg-foot:not(:has(.error[style*="block"])) { display: none; }
   @media (max-width: 860px) {
-    .ag-hero { padding: 24px 18px 20px; }
+    .ag-hero { padding: 24px 22px 20px; }
     .ag-hero .le-mascot { display: none; }
     .ag-cols2 { grid-template-columns: minmax(0, 1fr); }
     .ag-dlg-body { grid-template-columns: minmax(0, 1fr); }
