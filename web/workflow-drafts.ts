@@ -52,6 +52,8 @@ export interface WorkflowDraft {
   savedBy?: string
   /** The published version it was started from. */
   basedOn?: number
+  /** The earlier version restored into it, for publishing's default note. */
+  restoredFrom?: number
 }
 
 const draftPath = (projectDir: string, agent: string, workflowId: string) => join(projectDir, '.loopengine', 'workflow-drafts', agent, `${workflowId}.json`)

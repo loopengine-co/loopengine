@@ -259,11 +259,23 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-change-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); min-width: 64px; }
   .wf-change-kind.change { color: var(--accent-ink); }
   .wf-change-text { flex: 1 1 280px; }
-  .wf-versions { display: grid; gap: 8px; margin-bottom: 12px; font-size: 13px; }
-  .wf-versions[hidden], .wf-versions-list[hidden], .wf-version-text[hidden] { display: none; }
-  .wf-versions-line, .wf-versions-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
-  .wf-versions-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; border-left: 2px solid var(--line); padding-left: 12px; }
-  .wf-versions-list li { display: grid; gap: 6px; }
+  .wf-page-meta-item[hidden] { display: none; }
+  .wf-versions { display: grid; gap: 10px; font-size: 13px; }
+  .wf-version-cards { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .wf-version-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
+  .wf-version-card.is-current { border-color: var(--accent); }
+  .wf-version-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .wf-version-head strong { font-size: 14px; }
+  .wf-version-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+  .wf-version-actions button { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .wf-version-actions button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-version-actions .wf-version-restore { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-version-reason { margin: 0; color: var(--ink-muted); }
+  .wf-version-text[hidden], .wf-version-diff[hidden] { display: none; }
+  .wf-version-diff { margin: 0; }
+  .wf-version-diff .chg-lines { margin: 0; max-height: 480px; overflow: auto; }
+  .chg-same { color: var(--ink-muted); padding: 1px 6px; }
+  .chg-gap { color: var(--ink-faint); font-family: var(--font-sans, inherit); font-style: italic; padding: 2px 6px; }
   .wf-crit-form { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
   .wf-crit-form[hidden] { display: none; }
   .wf-crit-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 180px auto; gap: 8px; align-items: center; }
@@ -1416,9 +1428,7 @@ ${renderMarkdownScript}
 
   function workflowBriefHtml(w) {
     var policies = workflowsMeta.policies;
-    // Filled by loadWorkflowVersions once the card is on the page.
-    return '<div class="wf-versions" hidden></div>' +
-      '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
+    return '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
       (policies
         ? '<details class="wf-original"><summary>Shared policies, read by every workflow</summary><div class="workflow-steps-text">' + escapeHtml(policies) + '</div><p class="hint" style="margin:6px 0 0">Change them in <a href="/config?section=settings">Settings</a>.</p></details>'
         : '<p class="hint" style="margin:0">No shared policies yet. Rules every workflow should follow, like your refund window or who signs messages, go in <a href="/config?section=settings">Settings</a>, so you write them once.</p>') +
@@ -1635,24 +1645,27 @@ ${renderMarkdownScript}
             '<div class="wf-page-crumb-row"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
             '<a class="wf-page-crumb" href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows">' + String.fromCharCode(8592) + ' ' + escapeHtml(agentLabel) + ' ' + String.fromCharCode(183) + ' Workflows</a></div>' +
             '<div class="wf-page-title-row"><h1>' + escapeHtml(w.title) + '</h1>' +
-              '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit</button></span></div>' +
+              '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit workflow</button></span></div>' +
             (w.description && w.description !== w.title ? '<p class="wf-page-desc">' + escapeHtml(w.description) + '</p>' : '') +
             '<div class="wf-page-meta">' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Agent</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '">' + escapeHtml(agentLabel) + '</a></span>' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Starts</span><span class="wf-page-starts">' + workflowStartsSummary(w) + '</span></span>' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Last run</span><span class="wf-page-last">' + workflowLastRunHtml(last) + '</span></span>' +
+              // Filled by loadWorkflowVersions.
+              '<span class="wf-page-meta-item wf-page-version-item" hidden><span class="wf-page-meta-k">Version</span><span class="wf-page-version"></span></span>' +
               (w.jobs && w.jobs.length ? '<span class="wf-page-meta-item"><span class="wf-page-meta-k">For goal</span><span>' + w.jobs.map(function (j) { return '<a href="/goals?goal=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span></span>' : '') +
             '</div>' +
           '</header>' +
           workflowDraftBannerHtml(w) +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('contract', 'Contract') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Prompt') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
             panel('activity', workflowActivityHtml(w, runs, name)) +
             panel('evaluation', workflowEvaluationHtml(w)) +
             panel('triggers', workflowTriggersHtml(w, name, params)) +
             panel('messages', workflowMessagesHtml(w, name)) +
             panel('contract', workflowContractHtml(w, name, params)) +
+            panel('versions', workflowVersionsHtml()) +
             '<div class="hint workflow-result"></div>' +
             '<div class="wf-row-foot"><span class="hint">ID <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks</span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
           '</div>' +
@@ -1671,8 +1684,9 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Brief') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Prompt') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
+          panel('versions', workflowVersionsHtml()) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('messages', workflowMessagesHtml(w, name)) +
           panel('brief', workflowBriefHtml(w)) +
@@ -1867,7 +1881,7 @@ ${renderMarkdownScript}
         '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
       '<label>Description <span class="hint">(one line on what this workflow does; the agent uses it to recognise the workflow when you ask in Chat)</span>' +
         '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
-      '<h4 class="wf-editor-part">Brief <span class="hint">what the agent reads on every run</span></h4>' +
+      '<h4 class="wf-editor-part">Prompt <span class="hint">what the agent reads on every run</span></h4>' +
       '<div class="body-field"><div class="wp-instructions-head"><label for="wpInstructions">Instructions <span class="hint">(everything the agent needs for this job: what to get done, the rules it keeps, and your policies, special cases and examples. It handles each case on its own judgment, so describe the job rather than every step. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span></label>' +
         '<button type="button" class="wp-preview">Preview</button></div>' +
         '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
@@ -1997,7 +2011,7 @@ ${renderMarkdownScript}
         '<p class="wf-pub-version">' + (v.current ? 'Publishing makes this <strong>version ' + v.next + '</strong>, replacing version ' + v.current + ' for every run from now on.' : 'Publishing makes this the version every run uses from now on.') + '</p>' +
         (v.stale ? '<p class="wf-pub-stale">The published workflow changed since this draft began (it was version ' + v.draft.basedOn + '). Publishing replaces those changes with the draft' + String.fromCharCode(8217) + 's: check below.</p>' : '') +
         '<h4>What' + String.fromCharCode(8217) + 's changed</h4>' + changeDetailsHtml({ changes: v.changes }) +
-        '<label>Note <span class="hint">(optional: what changed and why, kept with the version)</span><textarea class="wf-pub-note" rows="2" maxlength="500" placeholder="e.g. Ask for the order number before looking it up"></textarea></label>' +
+        '<label>Note <span class="hint">(optional: what changed and why, kept with the version)</span><textarea class="wf-pub-note" rows="2" maxlength="500" placeholder="e.g. Ask for the order number before looking it up">' + (v.draft.restoredFrom ? 'Restored version ' + v.draft.restoredFrom : '') + '</textarea></label>' +
         '<div class="ed-actions"><span class="hint wf-pub-result" role="status"></span><button type="button" class="wf-pub-cancel">Cancel</button><button type="button" class="primary wf-pub-go">Publish version ' + (v.next || '') + '</button></div>';
       body.querySelector('.wf-pub-cancel').addEventListener('click', close);
       var go = body.querySelector('.wf-pub-go');
@@ -2435,16 +2449,33 @@ ${renderMarkdownScript}
     render(shown ? shown.url : null, shown ? shown.id : null);
   }
 
-  // The workflow's versions (its name, inputs, model, instructions and
-  // result format), on the Brief tab: which one is in use, who saved it
-  // and why, and every earlier one to read or restore (restoring saves it
-  // as a new version). Hidden where the workspace keeps no versions.
-  function loadWorkflowVersions(card, base) {
+  // The Versions tab: each version of the workflow (its name, inputs,
+  // model, tools, triggers, success criteria, instructions and result
+  // format) as a card, newest first, with who saved it, when and why.
+  // View shows it in full, Compare what changed from the version before
+  // it, and Restore makes it the workflow's draft, to review and publish
+  // as the next version. Filled by loadWorkflowVersions.
+  function workflowVersionsHtml() {
+    return '<div class="wf-versions"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>';
+  }
+
+  function loadWorkflowVersions(name, card, base) {
     var box = card.querySelector('.wf-versions');
-    if (!box) return;
+    var meta = card.querySelector('.wf-page-version');
     fetch(base + '/versions', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) { if (data) renderWorkflowVersions(box, base, data); })
+      .then(function (data) {
+        if (!data) { if (box) box.innerHTML = '<p class="hint" style="margin:0">This workspace keeps no versions.</p>'; return; }
+        var versions = data.versions || [];
+        var current = versions.filter(function (v) { return v.number === data.current; })[0] || versions[0];
+        if (meta && current) {
+          var draft = workflowsById[card.dataset.workflow] && workflowsById[card.dataset.workflow].draft;
+          meta.innerHTML = '<a href="' + workflowPageHref(name, card.dataset.workflow, 'versions') + '">v' + current.number + '</a>' + (draft ? ' <span class="hint">+ draft</span>' : '');
+          meta.querySelector('a').addEventListener('click', function (ev) { ev.preventDefault(); showWorkflowTab(card, 'versions'); });
+          meta.parentNode.hidden = false;
+        }
+        if (box) renderWorkflowVersions(name, card, box, base, data);
+      })
       .catch(function () {});
   }
 
@@ -2452,47 +2483,143 @@ ${renderMarkdownScript}
     return new Date(v.at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
-  function renderWorkflowVersions(box, base, data) {
-    var versions = data.versions || [];
-    if (!versions.length) { box.hidden = true; return; }
-    var current = versions.filter(function (v) { return v.number === data.current; })[0] || versions[0];
-    var about = function (v) { return [v.by ? 'by ' + escapeHtml(v.by) : '', escapeHtml(versionWhen(v)), v.reason ? escapeHtml(v.reason) : ''].filter(Boolean).join(DOT); };
-    box.innerHTML = '<div class="wf-versions-line"><strong>Workflow version ' + current.number + '</strong><span class="hint">' + about(current) + '</span>' +
-        (versions.length > 1 ? '<button type="button" class="wf-link wf-versions-toggle">History (' + versions.length + ')</button>' : '') + '</div>' +
-      '<ol class="wf-versions-list" hidden>' + versions.map(function (v) {
-        var isCurrent = v.number === current.number;
-        return '<li data-version="' + v.number + '"><div class="wf-versions-row"><strong>v' + v.number + '</strong><span class="hint">' + about(v) + '</span>' +
-          (isCurrent ? '<span class="le-pill good">In use</span>' : '') +
-          '<button type="button" class="wf-link wf-version-view">View</button>' +
-          (isCurrent ? '' : '<button type="button" class="wf-link wf-version-restore">Restore</button>') + '</div>' +
-          '<div class="workflow-steps-text wf-version-text" hidden>' + escapeHtml(v.content) + '</div></li>';
-      }).join('') + '</ol><span class="hint wf-versions-status" role="status"></span>';
-    box.hidden = false;
-    var list = box.querySelector('.wf-versions-list');
-    var toggle = box.querySelector('.wf-versions-toggle');
-    if (toggle) toggle.addEventListener('click', function () {
-      list.hidden = !list.hidden;
-      toggle.textContent = list.hidden ? 'History (' + versions.length + ')' : 'Hide history';
+  // Two texts line by line (longest common subsequence): each line kept,
+  // added or removed, in order. A very long pair is told by which lines
+  // each has that the other hasn't.
+  function versionLineDiff(before, after) {
+    var NL = String.fromCharCode(10);
+    var a = before.split(NL);
+    var b = after.split(NL);
+    var out = [];
+    if (a.length * b.length > 4000000) {
+      var inA = {}, inB = {};
+      a.forEach(function (l) { inA[l] = true; });
+      b.forEach(function (l) { inB[l] = true; });
+      a.forEach(function (l) { if (!inB[l]) out.push({ t: '-', l: l }); });
+      b.forEach(function (l) { out.push({ t: inA[l] ? ' ' : '+', l: l }); });
+      return out;
+    }
+    var t = [];
+    for (var i = a.length; i >= 0; i--) {
+      t[i] = [];
+      for (var j = b.length; j >= 0; j--) t[i][j] = i === a.length || j === b.length ? 0 : a[i] === b[j] ? t[i + 1][j + 1] + 1 : Math.max(t[i + 1][j], t[i][j + 1]);
+    }
+    i = 0; j = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { out.push({ t: ' ', l: a[i] }); i++; j++; }
+      else if (t[i + 1][j] >= t[i][j + 1]) out.push({ t: '-', l: a[i++] });
+      else out.push({ t: '+', l: b[j++] });
+    }
+    while (i < a.length) out.push({ t: '-', l: a[i++] });
+    while (j < b.length) out.push({ t: '+', l: b[j++] });
+    return out;
+  }
+
+  // The diff with three lines of context around each change; the
+  // unchanged stretches between are folded into a line saying how many.
+  function versionDiffHtml(before, after) {
+    var lines = versionLineDiff(before, after);
+    if (!lines.some(function (x) { return x.t !== ' '; })) return '<p class="hint" style="margin:0">Nothing changed from the version before.</p>';
+    var near = lines.map(function () { return false; });
+    lines.forEach(function (x, k) {
+      if (x.t === ' ') return;
+      for (var d = Math.max(0, k - 3); d <= Math.min(lines.length - 1, k + 3); d++) near[d] = true;
     });
-    list.addEventListener('click', function (ev) {
+    var html = '';
+    var skipped = 0;
+    var MINUS = String.fromCharCode(8722);
+    lines.forEach(function (x, k) {
+      if (!near[k]) { skipped++; return; }
+      if (skipped) { html += '<div class="chg-gap">' + skipped + ' unchanged line' + (skipped === 1 ? '' : 's') + '</div>'; skipped = 0; }
+      var cls = x.t === '+' ? 'chg-ins' : x.t === '-' ? 'chg-del' : 'chg-same';
+      html += '<div class="' + cls + '">' + (x.t === '+' ? '+' : x.t === '-' ? MINUS : ' ') + ' ' + escapeHtml(x.l) + '</div>';
+    });
+    if (skipped) html += '<div class="chg-gap">' + skipped + ' unchanged line' + (skipped === 1 ? '' : 's') + '</div>';
+    return '<div class="chg-lines">' + html + '</div>';
+  }
+
+  function renderWorkflowVersions(name, card, box, base, data) {
+    var versions = data.versions || [];
+    if (!versions.length) { box.innerHTML = '<p class="hint" style="margin:0">No versions yet: the first is numbered when it' + RSQ + 's first run or published.</p>'; return; }
+    var current = versions.filter(function (v) { return v.number === data.current; })[0] || versions[0];
+    var byNumber = {};
+    versions.forEach(function (v) { byNumber[v.number] = v; });
+    // The version before each: the next older one kept.
+    var previous = function (v) {
+      var older = versions.filter(function (x) { return x.number < v.number; });
+      return older.length ? older[0] : null;
+    };
+    var hasDraft = Boolean(workflowsById[card.dataset.workflow] && workflowsById[card.dataset.workflow].draft);
+    box.innerHTML = '<p class="hint" style="margin:0">Every published change is numbered and kept. Restoring one makes it the draft' + (hasDraft ? ' (replacing what the draft changes in the prompt, inputs, model, result format and success criteria)' : '') + ': review it, then publish it as version ' + (versions[0].number + 1) + '.</p>' +
+      '<ol class="wf-version-cards">' + versions.map(function (v) {
+        var isCurrent = v.number === current.number;
+        var prev = previous(v);
+        var about = [v.by ? 'by ' + escapeHtml(v.by) : '', escapeHtml(versionWhen(v))].filter(Boolean).join(DOT);
+        return '<li class="wf-version-card' + (isCurrent ? ' is-current' : '') + '" data-version="' + v.number + '">' +
+          '<div class="wf-version-head"><strong>Version ' + v.number + '</strong>' +
+            (isCurrent ? '<span class="le-pill good">In use</span>' : '') +
+            '<span class="hint">' + about + '</span>' +
+            '<span class="wf-version-actions">' +
+              '<button type="button" class="wf-version-view" aria-pressed="false">View</button>' +
+              (prev ? '<button type="button" class="wf-version-compare" aria-pressed="false" title="What changed from version ' + prev.number + '">Compare</button>' : '') +
+              (isCurrent ? '' : '<button type="button" class="wf-version-restore">Restore</button>') +
+            '</span></div>' +
+          (v.reason ? '<p class="wf-version-reason">' + escapeHtml(v.reason) + '</p>' : '') +
+          '<div class="workflow-steps-text wf-version-text" hidden>' + escapeHtml(v.content) + '</div>' +
+          '<div class="wf-version-diff" hidden></div>' +
+          '<span class="hint wf-version-status" role="status"></span>' +
+        '</li>';
+      }).join('') + '</ol>';
+    box.querySelector('.wf-version-cards').addEventListener('click', function (ev) {
       var item = ev.target.closest('li[data-version]');
-      if (!item) return;
-      if (ev.target.closest('.wf-version-view')) {
-        var text = item.querySelector('.wf-version-text');
-        text.hidden = !text.hidden;
-        ev.target.textContent = text.hidden ? 'View' : 'Hide';
+      var btn = ev.target.closest('button');
+      if (!item || !btn) return;
+      var v = byNumber[item.getAttribute('data-version')];
+      var text = item.querySelector('.wf-version-text');
+      var diff = item.querySelector('.wf-version-diff');
+      var viewBtn = item.querySelector('.wf-version-view');
+      var compareBtn = item.querySelector('.wf-version-compare');
+      // View and Compare show one at a time.
+      var show = function (which) {
+        text.hidden = which !== 'view';
+        diff.hidden = which !== 'compare';
+        viewBtn.setAttribute('aria-pressed', String(which === 'view'));
+        viewBtn.textContent = which === 'view' ? 'Hide' : 'View';
+        if (compareBtn) {
+          compareBtn.setAttribute('aria-pressed', String(which === 'compare'));
+          compareBtn.textContent = which === 'compare' ? 'Hide changes' : 'Compare';
+        }
+      };
+      if (btn.classList.contains('wf-version-view')) { show(text.hidden ? 'view' : null); return; }
+      if (btn.classList.contains('wf-version-compare')) {
+        if (!diff.hidden) { show(null); return; }
+        var prev = previous(v);
+        if (!diff.innerHTML) diff.innerHTML = '<p class="hint" style="margin:0 0 6px">What changed from version ' + prev.number + ' to version ' + v.number + '.</p>' + versionDiffHtml(prev.content, v.content);
+        show('compare');
         return;
       }
-      var restore = ev.target.closest('.wf-version-restore');
-      if (!restore) return;
-      if (restore.getAttribute('data-confirming') !== '1') { restore.setAttribute('data-confirming', '1'); restore.textContent = 'Click again to restore'; return; }
-      restore.disabled = true;
-      var status = box.querySelector('.wf-versions-status');
-      status.textContent = 'Restoring' + String.fromCharCode(8230);
-      fetch(base + '/versions/' + item.getAttribute('data-version') + '/restore', { method: 'POST' })
-        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'That did not work'); return b; }); })
-        .then(function () { location.reload(); })
-        .catch(function (err) { status.textContent = err.message; restore.disabled = false; });
+      if (btn.classList.contains('wf-version-restore')) {
+        if (btn.getAttribute('data-confirming') !== '1') { btn.setAttribute('data-confirming', '1'); btn.textContent = 'Click again to restore as a draft'; return; }
+        btn.disabled = true;
+        var status = item.querySelector('.wf-version-status');
+        status.textContent = 'Making a draft from version ' + v.number + String.fromCharCode(8230);
+        fetchJsonRetryOnce(base + '/versions/' + v.number + '/restore', { method: 'POST' }).then(function (r) {
+          if (!r.ok) { status.textContent = r.body.error || 'That did not work'; btn.disabled = false; return; }
+          if (!r.body.draft || !r.body.changes.length) {
+            status.textContent = 'Version ' + v.number + ' is the same as the published workflow: there' + RSQ + 's nothing to restore.';
+            btn.disabled = false;
+            btn.removeAttribute('data-confirming');
+            btn.textContent = 'Restore';
+            return;
+          }
+          var id = card.dataset.workflow;
+          if (workflowsById[id]) workflowsById[id].draft = r.body.draft;
+          workflowTabs[id] = 'versions';
+          loadWorkflowsSection(name);
+          // Straight to the review: what it changes, then Publish.
+          openPublishDialog(name, workflowsById[id] || { id: id, title: '' });
+        });
+      }
     });
   }
 
@@ -2515,7 +2642,7 @@ ${renderMarkdownScript}
     }
     var tabs = card.querySelectorAll('.wf-tab');
     for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener('click', function (ev) { showWorkflowTab(card, ev.currentTarget.dataset.tab); });
-    loadWorkflowVersions(card, base);
+    loadWorkflowVersions(name, card, base);
     wireDraftBanner(name, card);
     loadWorkflowHealth(card, base);
     loadCandidates(card, base);

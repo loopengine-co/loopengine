@@ -86,7 +86,7 @@ import {
 import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundError } from '#web/skills-admin.js'
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
-import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowDelivery, setWorkflowFields, setWorkflowName, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow } from '#core/workflows.js'
+import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowDelivery, setWorkflowFields, setWorkflowName, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow, type WorkflowFields } from '#core/workflows.js'
 import { listTraceSpans, workflowContent, workflowFromContent, type Version, type WorkflowSnapshot, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
 import { caseRow, eventsCsv } from '#web/audit-admin.js'
 import { auditPageFor } from '#web/audit-page.js'
@@ -1996,13 +1996,16 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
       const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
       const previous = await noteWorkflowVersion(agentName, id)
       await publishDraft(agentName, workflow, draft)
-      const version = await noteWorkflowVersion(agentName, id, { by: changedBy(req), reason: note || 'Published' })
+      const version = await noteWorkflowVersion(agentName, id, { by: changedBy(req), reason: note || (draft.restoredFrom ? `Restored version ${draft.restoredFrom}` : 'Published') })
       return json(200, { version: version ?? null, previous: previous ?? null, changes })
     }
-    // The workflow's versions, newest first, and restoring one (which
-    // saves it as a new version): its name, inputs, model, instructions and
-    // result format. A version from when only the brief was numbered
-    // restores just the instructions and result format.
+    // The workflow's versions, newest first, and restoring one: its
+    // inputs, model, instructions, result format, output schema and
+    // success criteria become the workflow's draft (replacing any draft of
+    // those), to review and publish as the next version. Its name and
+    // description aren't drafted, so they stay as they are. A version from
+    // when only the brief was numbered restores just the instructions and
+    // result format.
     if (id && action === 'versions' && req.method === 'GET') {
       if (!readWorkflow(dir, id)) return json(404, { error: `No workflow ${id}.` })
       const current = await noteWorkflowVersion(agentName, id)
@@ -2013,24 +2016,30 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
       if (!workflow) return json(404, { error: `No workflow ${id}.` })
       const version = getVersion({ agent: agentName, workflowId: id, kind: 'workflow' }, restoreNumber)
       if (!version) return json(404, { error: `No version ${restoreNumber} of ${id}.` })
-      await noteWorkflowVersion(agentName, id)
+      const basedOn = await noteWorkflowVersion(agentName, id)
       const saved = workflowFromContent(version.content)
-      setWorkflowFields(dir, id, {
-        title: saved.title || workflow.title,
-        description: saved.description ?? workflow.description,
+      const fields: WorkflowFields = {
         instructions: saved.instructions,
-        parameters: saved.parameters ?? workflow.parameters,
+        parameters: (saved.parameters as Workflow['parameters'] | undefined) ?? workflow.parameters,
         output: saved.output ?? null,
         ...(saved.title !== undefined ? { model: saved.model ?? null } : {}),
         // A version from before output schemas were recorded leaves it be.
         ...(saved.criteria !== undefined ? { outputSchema: saved.outputSchema ?? null } : {}),
-      })
-      // Its success criteria come back too; its tools' permissions (the
-      // agent's, shared by its other workflows) and its triggers (live
-      // webhooks and schedules) stay as they are.
-      if (saved.criteria) setEvalCriteria(dir, id, saved.criteria)
-      const current = await noteWorkflowVersion(agentName, id, { by: changedBy(req), reason: `Restored version ${restoreNumber}` })
-      return json(200, { current: current ?? null, versions: listVersions({ agent: agentName, workflowId: id, kind: 'workflow' }).map(workflowVersionView) })
+      }
+      const same = (a: { text: string; kind: string; value?: string }[], b: { text: string; kind: string; value?: string }[]) =>
+        JSON.stringify(a.map((c) => [c.text, c.kind, c.value ?? ''])) === JSON.stringify(b.map((c) => [c.text, c.kind, c.value ?? '']))
+      const fieldsSame = !draftChanges({ workflow, criteria: [], delivery: undefined, triggers: [] }, { workflow: withDraft(workflow, fields), criteria: [], delivery: undefined, triggers: [] }).length
+      const criteriaSame = !saved.criteria || same(saved.criteria, readEvals(dir, id).criteria)
+      // Its tools' permissions (the agent's, shared by its other
+      // workflows) and its triggers (live webhooks and schedules) stay as
+      // they are.
+      changeDraft(projectDir(), agentName, id, { by: changedBy(req), ...(basedOn ? { basedOn } : {}) }, ({ fields: _f, criteria: _c, restoredFrom: _r, ...d }) => ({
+        ...d,
+        ...(fieldsSame ? {} : { fields }),
+        ...(criteriaSame ? {} : { criteria: saved.criteria }),
+        ...(fieldsSame && criteriaSame ? {} : { restoredFrom: restoreNumber }),
+      }))
+      return json(200, await draftView(agentName, readWorkflow(dir, id)!))
     }
     if (id && !action && req.method === 'DELETE') {
       const { cancelled } = await forgetWorkflow(agentName, dir, id)
