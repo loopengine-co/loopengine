@@ -149,7 +149,7 @@ ${consoleShellScript}
     var s = d.summary;
     var html =
       '<div class="hm-stats">' +
-        '<a class="hm-stat' + (s.waiting ? ' warn' : '') + '" href="/inbox"><b>' + s.waiting + '</b><span>' + (s.waiting === 1 ? 'Case waiting for you' : 'Cases waiting for you') + '</span></a>' +
+        '<a class="hm-stat' + (s.waiting ? ' warn' : '') + '" href="/inbox"><b>' + s.waiting + '</b><span>' + 'Waiting for you' + '</span></a>' +
         '<a class="hm-stat" href="/workflows"><b>' + s.runsThisWeek + '</b><span>Runs in the last 7 days</span></a>' +
         '<a class="hm-stat" href="/workflows"><b>' + s.failedThisWeek + '</b><span>Failed in the last 7 days</span></a>' +
       '</div>';

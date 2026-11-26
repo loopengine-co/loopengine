@@ -389,8 +389,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
   /* Triggers in the pink of .delete-btn, apart from Edit's accent. */
-  .wf-row-actions .workflow-triggers-open { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
-  .wf-row-actions .workflow-triggers-open:hover:not(:disabled) { background: var(--bad-soft); }
+  .wf-row-actions .workflow-triggers-open { border-color: var(--line); background: var(--bg); color: var(--ink); }
+  .wf-row-actions .workflow-triggers-open:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
   .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
   .wf-row-foot .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   @media (max-width: 760px) {
@@ -614,7 +614,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .decision-deny { color: var(--bad); }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 13px; }
   .kv dt { color: var(--ink-muted); }
-  .kv dd { margin: 0; font-family: ui-monospace, monospace; }
+  .kv dd .hint { margin-left: 6px; }
+  #systemPromptDisplay { font-family: inherit; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; background: var(--surface); }
+  .kv dd { margin: 0; }
   .error { color: var(--bad); font-size: 13px; }
   .hint { font-size: 11px; color: var(--ink-muted); }
   #playgroundLink { font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: normal; text-decoration: none; margin-left: 8px; }
@@ -911,9 +913,10 @@ ${renderMarkdownScript}
     var decisions = [];
     matching.forEach(function (r) { if (decisions.indexOf(r.decision) === -1) decisions.push(r.decision); });
     var conditional = matching.some(function (r) { return r.when; });
-    if (!matching.length) return '<span class="le-pill ' + perms.defaultDecision + '" title="No rule names this tool; the default applies">' + escapeHtml(perms.defaultDecision) + '</span>';
-    if (decisions.length === 1 && !conditional) return '<span class="le-pill ' + decisions[0] + '">' + escapeHtml(decisions[0]) + '</span>';
-    return '<span class="le-pill neutral" title="' + escapeHtml(decisions.join(' / ')) + ', depending on tenant, environment or condition">depends</span>';
+    var word = function (d) { return DEFAULT_DECISIONS[d] ? DEFAULT_DECISIONS[d].charAt(0).toUpperCase() + DEFAULT_DECISIONS[d].slice(1) : d; };
+    if (!matching.length) return '<span class="le-pill ' + perms.defaultDecision + '" title="No rule names this tool; the default applies">' + escapeHtml(word(perms.defaultDecision)) + '</span>';
+    if (decisions.length === 1 && !conditional) return '<span class="le-pill ' + decisions[0] + '">' + escapeHtml(word(decisions[0])) + '</span>';
+    return '<span class="le-pill neutral" title="' + escapeHtml(decisions.map(word).join(' / ')) + ', depending on who, where or the call' + String.fromCharCode(8217) + 's values">Depends</span>';
   }
 
   function renderTools(tools) {
@@ -922,9 +925,9 @@ ${renderMarkdownScript}
       return '<tr><td><code>' + escapeHtml(t.name) + '</code></td>' +
         '<td>' + escapeHtml(t.description) + '</td>' +
         '<td>' + runsPill(t.name) + '</td>' +
-        '<td>' + (t.safe ? 'yes' : 'no') + '</td></tr>';
+        '<td>' + (t.safe ? 'Yes' : 'No') + '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Only reads</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Permission</th><th>Only reads</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // Local tools' own table, unlike renderTools above (shared by Agent as
@@ -944,10 +947,10 @@ ${renderMarkdownScript}
       return '<tr><td><code>' + escapeHtml(t.name) + '</code></td>' +
         '<td>' + escapeHtml(t.description) + '</td>' +
         '<td>' + runsPill(t.name) + '</td>' +
-        '<td>' + (t.safe ? 'yes' : 'no') + '</td>' +
+        '<td>' + (t.safe ? 'Yes' : 'No') + '</td>' +
         '<td>' + actions + '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Runs</th><th>Only reads</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<table><thead><tr><th>Name</th><th>What it does</th><th>Permission</th><th>Only reads</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // Overview's own tools table, unlike the Tools tab's three separately-
@@ -1018,7 +1021,7 @@ ${renderMarkdownScript}
       card('tools', 'Tools &amp; skills', cfg.tools.length + (cfg.tools.length === 1 ? ' tool' : ' tools'),
         (cfg.skills.length + (cfg.skills.length === 1 ? ' skill' : ' skills')) + (toolNames.length ? ' \u00b7 ' + escapeHtml(toolNames.slice(0, 2).join(', ') + (toolNames.length > 2 ? ', \u2026' : '')) : '')) +
       card('actauth', 'Permissions', rules.length + (rules.length === 1 ? ' rule' : ' rules'),
-        (asks ? asks + ' need approval \u00b7 ' : '') + 'unmatched calls: ' + escapeHtml(cfg.permissions.defaultDecision)) +
+        (asks ? asks + ' ask you first \u00b7 ' : '') + escapeHtml(defaultDecisionText(cfg.permissions.defaultDecision).toLowerCase())) +
       card('messaging', 'Messaging Apps', '<span id="ovMessagingValue">&hellip;</span>', '<span id="ovMessagingDetail">Loading&hellip;</span>') +
       card('schedules', 'Schedules', '<span id="ovSchedulesValue">&hellip;</span>', '<span id="ovSchedulesDetail">Loading&hellip;</span>') +
       card('env', 'Environment', 'Settings', '<span data-le-env-count="' + escapeHtml(cfg.name) + '">' + leShell.envCountHtml(cfg.name) + '</span> Values your installed abilities read') +
@@ -1357,7 +1360,7 @@ ${renderMarkdownScript}
         '<div class="wf-msg-dest"><div class="wf-msg-dest-k">' + chatCol + '</div><div class="hint">' +
           (chatName ? 'The agent' + RSQ + 's messaging app, set in its <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">Messaging Apps</a> tab.'
             : 'Not set up. <a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=messaging">Set one up in Messaging</a> (Slack, Telegram or Lark) to post to chat.') + '</div></div>' +
-        '<div class="wf-msg-dest"><div class="wf-msg-dest-k">Inbox</div><div class="hint">Always. Every run is kept as a case, and approvals and questions can be answered there.</div></div>' +
+        '<div class="wf-msg-dest"><div class="wf-msg-dest-k">Inbox</div><div class="hint">Always. Every run is a conversation there, where approvals and questions can be answered.</div></div>' +
         '<div class="wf-msg-dest"><div class="wf-msg-dest-k">Your app</div><div class="hint">Optional. Only when you set an address: it then gets each update as signed JSON (a webhook).</div>' +
           '<input name="msgUrl" inputmode="url" placeholder="https://example.com/hooks/loopengine" value="' + escapeHtml(d.callback_url || '') + '"></div>' +
       '</div>' +
@@ -1396,7 +1399,7 @@ ${renderMarkdownScript}
       return '<section class="wf-way wf-way-' + key + '"><h4>' + title + '</h4><p class="wf-way-what">' + what + '</p>' + body + '</section>';
     };
     return '<div class="wf-ways">' +
-      way('run', 'Run now', 'Starts a run right away, from here. It shows under Evidence as it goes.', workflowRunBarHtml(w, params)) +
+      way('run', 'Run now', 'Starts a run right away, from here. Follow it in Activity.', workflowRunBarHtml(w, params)) +
       way('schedule', 'Schedule', 'Runs it on a timer, like every day at 9:00. Approvals and questions go where its Messaging tab says.',
         (schedules || '<p class="hint" style="margin:0">None yet.</p>') +
         '<div><button type="button" class="workflow-add-schedule">+ Schedule</button></div>') +
@@ -3401,7 +3404,7 @@ ${renderMarkdownScript}
         btn.disabled = false;
         if (!r.ok) { result.textContent = r.body.error || 'Could not start it.'; return; }
         var started = workflowsById[id];
-        result.innerHTML = 'Started. Questions and approvals go to ' + workflowDecisionsTo(started || {}) + '; the result shows under Evidence.' + (started && started.delivery && started.delivery.result_to_chat ? ' The result will also be posted to the messaging app when it finishes.' : '') +
+        result.innerHTML = 'Started. Questions and approvals go to ' + workflowDecisionsTo(started || {}) + '; follow it in Activity.' + (started && started.delivery && started.delivery.result_to_chat ? ' The result will also be posted to the messaging app when it finishes.' : '') +
           (r.body.warnings ? ' ' + escapeHtml(r.body.warnings.join(' ')) : '');
         setTimeout(function () { loadWorkflowsSection(name); }, 800);
       });
@@ -3494,9 +3497,9 @@ ${renderMarkdownScript}
         '</form>');
 
     var systemPromptSection =
-      '<h3>Identity <button type="button" class="edit-btn" id="editSystemPromptBtn">Edit</button></h3>' +
+      '<h3>Instructions <button type="button" class="edit-btn" id="editSystemPromptBtn">Edit</button></h3>' +
       '<pre id="systemPromptDisplay">' + escapeHtml(cfg.systemPrompt) + '</pre>' +
-      editDialogHtml('<h3>Edit identity</h3>', '<p>What the agent reads on every run: who it is and the rules it always follows.</p>',
+      editDialogHtml('<h3>Edit instructions</h3>', '<p>What the agent reads on every run: who it is and the rules it always follows.</p>',
         '<form class="add-source" id="systemPromptForm" style="display:none">' +
           '<textarea name="systemPrompt" class="ed-tall">' + escapeHtml(cfg.systemPrompt) + '</textarea>' +
           '<div class="error" id="systemPromptError"></div>' +
@@ -3515,13 +3518,13 @@ ${renderMarkdownScript}
       modelSection =
         '<h3>Model <button type="button" class="edit-btn" id="editModelBtn">Edit</button></h3>' +
         '<dl class="kv" id="modelDisplay">' +
-          '<dt>Provider</dt><dd>' + escapeHtml(cfg.model.provider) + '</dd>' +
+          '<dt>Provider</dt><dd>' + escapeHtml(providerName(cfg.model.provider)) + '</dd>' +
           '<dt>Model</dt><dd>' + escapeHtml(cfg.model.model || '(provider default)') + '</dd>' +
-          '<dt>Max tokens</dt><dd>' + escapeHtml(cfg.model.maxTokens != null ? cfg.model.maxTokens : '(default)') + '</dd>' +
+          '<dt>Longest reply</dt><dd>' + escapeHtml(cfg.model.maxTokens != null ? Number(cfg.model.maxTokens).toLocaleString() + ' tokens' : 'The provider' + String.fromCharCode(8217) + 's default') + '</dd>' +
           // Unset is low for OpenAI's reasoning models (core/model-calls/openai-model-call.ts).
           '<dt>Reasoning effort</dt><dd>' + escapeHtml(cfg.model.reasoningEffort ||
             (cfg.model.provider === 'openai' && /^(gpt-[5-9]|o[0-9])/i.test(cfg.model.model || '') ? 'low (default)'
-              : REASONING_PROVIDERS.indexOf(cfg.model.provider) !== -1 ? '(model default)' : 'n/a')) + '</dd>' +
+              : REASONING_PROVIDERS.indexOf(cfg.model.provider) !== -1 ? 'The model' + String.fromCharCode(8217) + 's default' : 'Not supported by this provider')) + '</dd>' +
         '</dl>' +
         editDialogHtml('<h3>Edit model</h3>', '<p>The model this agent uses, and how much it may write and think.</p>',
         '<form class="add-source" id="modelForm" style="display:none">' +
@@ -3554,21 +3557,21 @@ ${renderMarkdownScript}
       '<section>' + nameSection + '</section>' +
       '<section>' + systemPromptSection + '</section>' +
       '<section>' + modelSection + '</section>' +
-      '<section><h3>Limits &amp; budgets <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
-        '<dl class="kv" id="limitsDisplay">' +
-          '<dt>maxTurns</dt><dd>' + escapeHtml(cfg.maxTurns) + '</dd>' +
-          '<dt>contextBudgetTokens</dt><dd>' + escapeHtml(cfg.contextBudgetTokens) + '</dd>' +
-          '<dt>skillIndexBudgetTokens</dt><dd>' + escapeHtml(cfg.skillIndexBudgetTokens) + '</dd>' +
+      '<section><h3>Limits <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
+        '<dl class="kv kv-wide" id="limitsDisplay">' +
+          '<dt>Model turns per run</dt><dd>' + escapeHtml(cfg.maxTurns) + ' <span class="hint">then the run stops</span></dd>' +
+          '<dt>Conversation size</dt><dd>' + escapeHtml(Number(cfg.contextBudgetTokens).toLocaleString()) + ' tokens <span class="hint">older steps are summarised beyond this</span></dd>' +
+          '<dt>Skill list size</dt><dd>' + escapeHtml(Number(cfg.skillIndexBudgetTokens).toLocaleString()) + ' tokens <span class="hint">for the names and descriptions of its skills</span></dd>' +
         '</dl>' +
-        editDialogHtml('<h3>Edit limits &amp; budgets</h3>', '<p>Caps on how long a turn runs and how much context it keeps.</p>',
+        editDialogHtml('<h3>Edit limits</h3>', '<p>How long a run may go on, and how much of its conversation it keeps.</p>',
         '<form class="add-source" id="limitsForm" style="display:none">' +
-          '<label>Max turns <span class="hint">(hard cap on model calls in one turn)</span>' +
+          '<label>Model turns per run <span class="hint">(the most model calls in one chat turn or workflow run; then it stops)</span>' +
             '<input type="number" name="maxTurns" min="1" step="1" value="' + escapeHtml(cfg.maxTurns) + '">' +
           '</label>' +
-          '<label>Context budget <span class="hint">(tokens — triggers compaction of older messages once exceeded)</span>' +
+          '<label>Conversation size <span class="hint">(tokens; beyond this, older steps are summarised)</span>' +
             '<input type="number" name="contextBudgetTokens" min="1" step="1" value="' + escapeHtml(cfg.contextBudgetTokens) + '">' +
           '</label>' +
-          '<label>Skill index budget <span class="hint">(tokens — caps the always-loaded skill name/description index)</span>' +
+          '<label>Skill list size <span class="hint">(tokens for the names and descriptions of its skills, which it always reads)</span>' +
             '<input type="number" name="skillIndexBudgetTokens" min="1" step="1" value="' + escapeHtml(cfg.skillIndexBudgetTokens) + '">' +
           '</label>' +
           '<div class="error" id="limitsError"></div>' +
@@ -3577,7 +3580,7 @@ ${renderMarkdownScript}
       '</section>';
   }
 
-  // Wires the Identity / Model / Limits & budgets Edit buttons rendered by
+  // Wires the Instructions / Model / Limits Edit buttons rendered by
   // renderOverviewHtml above — called every time that HTML gets (re)set
   // (renderDetail, refreshOverviewPanel, refreshSkillsDependentPanels),
   // same pattern every other tab's own wireXHandlers already follows.
@@ -3944,7 +3947,7 @@ ${renderMarkdownScript}
   // its package name.
   function abilityCellHtml(x) {
     if (x.app) return '<span title="' + escapeHtml(x.ability || '') + '">' + escapeHtml(x.app) + '</span>';
-    return x.ability ? '<code>' + escapeHtml(x.ability) + '</code>' : '';
+    return x.ability ? '<code>' + escapeHtml(x.ability) + '</code>' : '<span class="hint">The agent' + String.fromCharCode(8217) + 's own</span>';
   }
 
   // The Permissions tab: every tool the agent has, each with its ability
@@ -3959,15 +3962,15 @@ ${renderMarkdownScript}
         : '<span class="le-pill ' + escapeHtml(t.decision) + '">' + escapeHtml(DECISION_LABELS[t.decision] || t.decision) + '</span>';
       var note = t.isDefault ? 'default' : t.scopeNote;
       return '<tr>' +
-        '<td>' + abilityCellHtml(t) + '</td>' +
         '<td><code>' + escapeHtml(t.tool) + '</code></td>' +
+        '<td>' + abilityCellHtml(t) + '</td>' +
         '<td>' + decision + (note ? ' <span class="hint">' + escapeHtml(note) + '</span>' : '') + '</td>' +
         '</tr>';
     }).join('');
     return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own (Allow), which wait for a person (Ask me), and which never run (Never). Click to change; it&#39;s saved at once. Scoped rules, adding and removing rules are in <a href="?tab=advanced" data-tab="advanced">Advanced</a>.</p>' +
       '<section><h3>Tools (' + tools.length + ')</h3>' +
         (tools.length
-          ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>App/Ability</th><th>Tool</th><th>Decision</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+          ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>Tool</th><th>From</th><th>Permission</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
           : '<p class="hint">This agent has no tools yet. Install an ability, or add a tool in Advanced.</p>') +
         '<p class="error" id="toolsDecisionError" style="margin:6px 0 0"></p></section>' +
       '<section><h3>When no rule matches</h3>' +
@@ -6125,7 +6128,7 @@ ${renderMarkdownScript}
   // describeGatewayTools), a real cost not worth paying up front. ----
 
   function renderToolsTabHtml(cfg) {
-    return '<p class="muted" style="margin:0 0 20px">Everything this agent can call. <strong>Runs</strong> comes from Permissions: allow runs on its own, ask waits for a person, deny never runs.</p>' +
+    return '<p class="muted" style="margin:0 0 20px">Everything this agent can call. <strong>Permission</strong> is set in the Permissions tab.</p>' +
       '<section><h3>Your tools (' + cfg.localTools.length + ')</h3>' + renderLocalTools(cfg.localTools) +
       '<div class="admin-subsection"><button type="button" class="open-http-tool-form">Create an HTTP tool</button>' +
         editDialogHtml('<h3 id="httpToolFormHeading">Create an HTTP tool</h3>', '<p>A tool that calls a web address, with the fields the agent fills in.</p>', renderHttpToolFormHtml()) + '</div>' +
@@ -6831,9 +6834,16 @@ ${renderMarkdownScript}
       .catch(function () {});
   }
 
+  // A model provider by its name: OpenAI, Anthropic, Gemini...
+  var PROVIDER_NAMES = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', meta: 'Meta', xai: 'xAI', deepseek: 'DeepSeek', kimi: 'Kimi', glm: 'GLM' };
+  function providerName(p) { return PROVIDER_NAMES[p] || p; }
+  // What a call no rule covers does, in words.
+  var DEFAULT_DECISIONS = { allow: 'runs on its own', ask: 'asks you first', deny: 'never runs' };
+  var OTHER_CALLS = { allow: 'run on their own', ask: 'ask you first', deny: 'never run' };
+  function defaultDecisionText(d) { return 'Other tool calls ' + (OTHER_CALLS[d] || d); }
   function modelChip(cfg) {
     if (typeof cfg.model === 'string') return { text: cfg.model, mono: true };
-    return { text: cfg.model.provider + ' \u00b7 ' + (cfg.model.model || 'default model'), mono: true };
+    return { text: providerName(cfg.model.provider) + ' \u00b7 ' + (cfg.model.model || 'default model') };
   }
 
   function renderDetail(cfg) {
@@ -6844,7 +6854,7 @@ ${renderMarkdownScript}
         name: cfg.name,
         displayName: cfg.displayName,
         prompt: cfg.systemPrompt,
-        chips: [modelChip(cfg), { text: 'unmatched calls: ' + cfg.permissions.defaultDecision }],
+        chips: [modelChip(cfg), { text: defaultDecisionText(cfg.permissions.defaultDecision) }],
         tab: currentTab,
         counts: { tools: cfg.tools.length, skills: cfg.skills.length, abilities: cfg.abilityCount, workflows: cfg.skills.filter(function (s) { return s.workflow; }).length },
       }) +

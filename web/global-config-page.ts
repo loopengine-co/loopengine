@@ -30,6 +30,9 @@ export const globalConfigPageHtml: string = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Settings</title>
 <style>${devUiCss}
+  .ability-name { display: grid; gap: 1px; }
+  .ability-name .hint { white-space: nowrap; }
+  .ability-name .hint code { font-size: 11px; }
   .policy-versions { margin-top: 12px; max-width: 720px; font-size: 13px; }
   .policy-versions summary { cursor: pointer; font-weight: 600; color: var(--accent-ink); }
   .policy-versions ol { list-style: none; margin: 10px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); display: grid; gap: 10px; }
@@ -166,8 +169,9 @@ ${consoleShellScript}
 
   // Each provider's logo (web/provider-icons.ts), shown beside its name.
   var PROVIDER_ICONS = ${JSON.stringify(PROVIDER_ICONS)};
+  var PROVIDER_NAMES = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', meta: 'Meta', xai: 'xAI', deepseek: 'DeepSeek', kimi: 'Kimi', glm: 'GLM' };
   function providerName(provider) {
-    return '<span class="provider-name">' + (PROVIDER_ICONS[provider] || '') + '<code>' + escapeHtml(provider) + '</code></span>';
+    return '<span class="provider-name">' + (PROVIDER_ICONS[provider] || '') + '<span>' + escapeHtml(PROVIDER_NAMES[provider] || provider) + '</span></span>';
   }
 
   function renderModels(data) {
@@ -180,25 +184,27 @@ ${consoleShellScript}
             '<button type="submit">Save</button>' +
             (p.configured ? '<button type="button" class="delete-btn" data-remove-key="' + escapeHtml(p.provider) + '">Remove</button>' : '') +
           '</form><div class="key-msg" data-key-msg="' + escapeHtml(p.provider) + '"></div>'
-        : '<span class="hint">Set LOOPENGINE_ADMIN_AUTH to manage keys here, or put ' + escapeHtml(p.envVar) + ' in .env.</span>';
+        : '';
       return '<tr><td>' + providerName(p.provider) + '</td>' +
+        '<td>' + badge(p.configured, 'Key set', 'No key') + '</td>' +
         '<td><code>' + escapeHtml(p.envVar) + '</code></td>' +
-        '<td>' + badge(p.configured, 'configured', 'not set') + '</td>' +
-        '<td>' + keyCell + '</td></tr>';
+        (data.canSave ? '<td>' + keyCell + '</td>' : '') + '</tr>';
     }).join('');
+    // Without the admin sign-in, keys can't be saved here: said once.
+    var keysNote = data.canSave ? '' : '<p class="hint" style="margin:0 0 8px">To add keys here, set <code>LOOPENGINE_ADMIN_AUTH</code> first. Or put each key in the project' + String.fromCharCode(8217) + 's <code>.env</code> under the name shown.</p>';
 
     var agentRows = data.agents.length
       ? data.agents.map(function (a) {
-          return '<tr><td><code>' + escapeHtml(a.agent) + '</code></td>' +
+          return '<tr><td><a href="/agents/config?agent=' + encodeURIComponent(a.agent) + '">' + escapeHtml(a.agent) + '</a></td>' +
             '<td>' + providerName(a.provider) + '</td>' +
             '<td><code>' + escapeHtml(a.model) + '</code></td></tr>';
         }).join('')
       : '<tr><td colspan="3"><p class="hint">No agents with a resolved model config (a custom createModelCall has nothing to report here).</p></td></tr>';
 
-    return '<section><h3>Providers</h3>' +
-        '<table><thead><tr><th>Provider</th><th>Env var</th><th>Status</th><th>Key</th></tr></thead><tbody>' + providerRows + '</tbody></table>' +
+    return '<section><h3>Providers</h3>' + keysNote +
+        '<table><thead><tr><th>Provider</th><th>Status</th><th>Key name in .env</th>' + (data.canSave ? '<th>API key</th>' : '') + '</tr></thead><tbody>' + providerRows + '</tbody></table>' +
       '</section>' +
-      '<section><h3>Agents</h3>' +
+      '<section><h3>Which model each agent uses</h3>' +
         '<table><thead><tr><th>Agent</th><th>Provider</th><th>Model</th></tr></thead><tbody>' + agentRows + '</tbody></table>' +
       '</section>';
   }
@@ -390,13 +396,25 @@ ${consoleShellScript}
     else if (btn.classList.contains('workspace-remove-btn')) removeFromWorkspace(btn);
   });
 
+  // An ability as people read it: its name (Gmail, from @loopengine-co/gmail)
+  // with its package and version under it.
+  function abilityNameHtml(name, version) {
+    var base = String(name).replace(/^@[^/]+[/]/, '').replace(/^loopengine-ability-/, '');
+    var title = base.split('-').map(function (w) { return w ? w.charAt(0).toUpperCase() + w.slice(1) : w; }).join(' ');
+    return '<div class="ability-name"><strong>' + escapeHtml(title) + '</strong><span class="hint"><code>' + escapeHtml(name) + '</code>' + (version ? ' ' + escapeHtml(version) : '') + '</span></div>';
+  }
+  // Its description without the "A loopengine ability:" every one begins with.
+  function abilityAbout(text) {
+    return escapeHtml(String(text || '').replace(/^an? loopengine ability: */i, '').replace(/^./, function (c) { return c.toUpperCase(); }));
+  }
+
   function renderSearchResults() {
     var resultsEl = document.getElementById('abilitySearchResults');
     var results = lastSearch.results;
     resultsEl.innerHTML = results.length
       ? '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' + results.map(function (pkg) {
-          return '<tr><td><code>' + escapeHtml(pkg.name) + '</code> <span class="hint">' + escapeHtml(pkg.version) + '</span></td>' +
-            '<td>' + escapeHtml(pkg.description || '') + '</td>' +
+          return '<tr><td>' + abilityNameHtml(pkg.name, pkg.version) + '</td>' +
+            '<td>' + abilityAbout(pkg.description) + '</td>' +
             '<td style="white-space:nowrap">' + detailsButton(pkg.name + '@' + pkg.version) + '</td></tr>';
         }).join('') + '</tbody></table>'
       : '<p class="hint">No published abilities match.</p>';
@@ -445,8 +463,8 @@ ${consoleShellScript}
                 : copy.version && a.version && copy.version !== a.version
                   ? '<span class="hint">In workspace (' + escapeHtml(copy.version) + ')</span> <button type="button" class="workspace-install-btn" data-spec="' + escapeHtml(a.spec) + '">Update to ' + escapeHtml(a.version) + '</button>'
                   : '<span class="hint">In workspace</span>';
-              return '<tr><td><code>' + escapeHtml(a.name) + '</code>' + (a.version ? ' <span class="hint">' + escapeHtml(a.version) + '</span>' : '') + '</td>' +
-                '<td>' + escapeHtml(a.description || '') + '</td>' +
+              return '<tr><td>' + abilityNameHtml(a.name, a.version) + '</td>' +
+                '<td>' + abilityAbout(a.description) + '</td>' +
                 '<td style="white-space:nowrap">' + detailsButton(a.spec) + ' ' + action + '</td></tr>';
             }).join('') + '</tbody></table>'
           : '<p class="hint" style="margin:0">No abilities found here.</p>';
@@ -1014,11 +1032,12 @@ ${consoleShellScript}
       ['Environment name', '<code>' + escapeHtml(d.environment) + '</code> <span class="hint">(LOOPENGINE_ENV)</span>'],
       ['Public address', d.publicUrl ? '<code>' + escapeHtml(d.publicUrl) + '</code>' : '<span class="hint">Not set (LOOPENGINE_PUBLIC_URL); links in notifications use the address saved with each notifier</span>'],
       ['Scheduled tasks', d.scheduler === 'off' ? 'Off on this server (LOOPENGINE_SCHEDULER=off)' : 'Run by this server'],
-      ['Time zone', d.timeZone ? '<code>' + escapeHtml(d.timeZone) + '</code>' : '<span class="hint">The server' + String.fromCharCode(8217) + 's own. Update the template below to choose one here.</span>'],
+      // With a time zone to choose, it has its own section below.
+      d.timeZone ? null : ['Time zone', '<span class="hint">The server' + String.fromCharCode(8217) + 's own. Update the template below to choose one here.</span>'],
       ['Theme', 'Follows your system'],
     ];
     return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
-      rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
+      rows.filter(Boolean).map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
       '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +

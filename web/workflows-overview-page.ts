@@ -107,7 +107,7 @@ ${consoleShellScript}
     var s = d.summary;
     var stats =
       '<div class="wo-stats">' +
-        '<a class="wo-stat' + (s.waiting ? ' warn' : '') + '" href="/inbox"><b>' + s.waiting + '</b><span>' + (s.waiting === 1 ? 'Case waiting for you' : 'Cases waiting for you') + '</span></a>' +
+        '<a class="wo-stat' + (s.waiting ? ' warn' : '') + '" href="/inbox"><b>' + s.waiting + '</b><span>' + 'Waiting for you' + '</span></a>' +
         '<div class="wo-stat"><b>' + s.runsThisWeek + '</b><span>Runs in the last 7 days</span></div>' +
         '<div class="wo-stat"><b>' + s.failedThisWeek + '</b><span>Failed in the last 7 days</span></div>' +
         '<div class="wo-stat"><b>' + s.workflows + '</b><span>' + (s.workflows === 1 ? 'Workflow' : 'Workflows') + '</span></div>' +
@@ -118,12 +118,12 @@ ${consoleShellScript}
         '<span style="min-width:0"><div class="wo-title">' + esc(w.title) + '</div><div class="wo-sub">' + esc(w.agentLabel) + '</div></span>' +
         '<span class="wo-col-starts wo-sub" title="' + esc(w.starts.join(', ')) + '">' + esc(w.starts.join(DOT)) + '</span>' +
         '<span class="wo-col-runs wo-runs"><span>' + plural(w.runsThisWeek, 'run', 'runs') + ' this week' + (w.failedThisWeek ? ', <span style="color:var(--bad)">' + w.failedThisWeek + ' failed</span>' : '') + '</span>' +
-          '<span class="wo-sub">' + (w.lastRun ? 'Last ' + esc(ago(w.lastRun.at)) : 'Not run yet') + (decided ? DOT + w.approved + ' of ' + decided + ' approved' : '') + '</span></span>' +
+          '<span class="wo-sub">' + (w.lastRun ? 'Last run ' + esc(ago(w.lastRun.at)) : 'Not run yet') + (decided ? DOT + w.approved + ' of ' + decided + ' approved' : '') + '</span></span>' +
         '<span class="wo-side">' + lastRunPill(w) + '</span>' +
       '</a>';
     }).join('');
     page.innerHTML = stats +
-      '<div class="wo-list"><div class="wo-row wo-head"><span>Workflow</span><span class="wo-col-starts">Starts</span><span class="wo-col-runs">Runs</span><span></span></div>' + rows + '</div>';
+      '<div class="wo-list"><div class="wo-row wo-head"><span>Workflow</span><span class="wo-col-starts">Starts</span><span class="wo-col-runs">Runs</span><span>Last run</span></div>' + rows + '</div>';
   }
 
   // The sidebar asks for the same list as the page opens: one request.

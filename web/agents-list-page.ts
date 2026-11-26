@@ -49,9 +49,9 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Agents</h1><p>Every agent under agents/ in this project. Open one to chat with it or change its tools, permissions and settings.</p></div>
+        <div><h1>Agents</h1><p>Each agent has its own instructions, tools and permissions. Open one to chat with it, give it workflows, or change how it works.</p></div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/workflows/new#examples" style="padding:6px 12px;border:1px solid var(--line);border-radius:6px;text-decoration:none;color:var(--ink);font-size:13px">Workflow examples</a><a href="/interview" style="padding:6px 12px;border:1px solid var(--line);border-radius:6px;text-decoration:none;color:var(--ink);font-size:13px">Find your first agent</a>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/interview" style="padding:6px 12px;border:1px solid var(--line);border-radius:6px;text-decoration:none;color:var(--ink);font-size:13px">Find your first agent</a>
       <button type="button" id="newAgentBtn" class="primary">New agent</button></div>
     </div>
   </div>
@@ -65,7 +65,7 @@ ${consoleSidebarHtml}
       <label>ID <span class="hint">(lowercase and hyphens; its folder agents/&lt;id&gt;/ and API address use it, so it can't be changed later)</span>
         <input type="text" name="name" placeholder="weather-assistant" pattern="[a-z0-9]+(-[a-z0-9]+)*" required>
       </label>
-      <label>Identity <span class="hint">(who it is and the rules it always follows)</span>
+      <label>Instructions <span class="hint">(who it is and the rules it always follows)</span>
         <textarea name="systemPrompt" placeholder="You are ..."></textarea>
       </label>
       <label>Model provider
