@@ -431,7 +431,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-pub-stale { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-soft, #fff8e1); font-size: 13px; }
   .wf-publish .ed-actions { align-items: center; }
   .wf-publish .ed-actions .hint { margin-right: auto; }
-  .workflow-editor-dialog .ed-actions .hint { margin-right: auto; font-size: 12.5px; }
+  .workflow-editor-dialog .ed-actions .hint { margin-right: auto; font-size: 12.5px; flex: 1 1 auto; min-width: 0; line-height: 1.4; }
+  /* With Save and publish there, Save as draft is the plain one. */
+  .workflow-editor-dialog .ed-actions .wp-save-draft:not(.primary) { background: var(--bg); border-color: var(--line); color: var(--ink); }
+  .workflow-editor-dialog .ed-actions .wp-save-draft:not(.primary):hover:not(:disabled) { background: var(--surface); opacity: 1; }
   .wp-schema { font-family: var(--font-mono); font-size: 12.5px; }
   .wf-schema { display: block; flex-basis: 100%; width: 100%; }
   .wf-schema summary { cursor: pointer; color: var(--ink-muted); font-size: 12.5px; }
@@ -542,7 +545,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .ed-body textarea.ed-tall { min-height: min(55vh, 520px); font-family: var(--font-mono); font-size: 13px; }
   .ed-body input:focus, .ed-body select:focus, .ed-body textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .ed-actions { position: sticky; bottom: -20px; z-index: 1; display: flex; justify-content: flex-end; gap: 8px; margin: 6px -24px -20px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
-  .ed-actions button { height: 38px; padding: 0 16px; border-radius: 8px; font-weight: 600; }
+  .ed-actions button { height: 38px; padding: 0 16px; border-radius: 8px; font-weight: 600; flex: none; white-space: nowrap; }
   .edit-dialog [data-dialog-cancel] { display: inline-block !important; }
   .ov-name { margin: 0; font-size: 15px; }
   .ov-name code { font-size: 12.5px; }
