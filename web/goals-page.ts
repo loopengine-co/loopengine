@@ -24,9 +24,9 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl textarea { width: 100%; box-sizing: border-box; min-height: 64px; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
   .gl textarea:focus, .gl select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .gl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .gl-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); cursor: pointer; }
-  .gl-btn:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
-  .gl-btn.soft { background: var(--accent-soft); color: var(--accent-ink); }
+  .gl-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); cursor: pointer; }
+  .gl-btn:hover:not(:disabled) { filter: brightness(1.08); background: var(--primary); }
+  .gl-btn.soft { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
   .gl-btn.soft:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: none; }
   .gl-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
   .gl-btn.danger { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }

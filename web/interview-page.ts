@@ -33,7 +33,7 @@ export const interviewPageHtml: string = `<!doctype html>
   .iv-preview pre { white-space: pre-wrap; max-height: 180px; overflow: auto; margin: 0; }
   .iv-list { display: grid; gap: 6px; max-width: 760px; }
   .iv-list a { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: var(--ink); font-size: 13.5px; }
-  .iv-btn { display: inline-block; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500; background: var(--accent); color: var(--on-accent); }
+  .iv-btn { display: inline-block; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500; background: var(--primary); color: var(--on-primary); }
   .iv-btn.plain { background: none; color: var(--ink); border: 1px solid var(--line); }
   .hint { font-size: 12px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); }

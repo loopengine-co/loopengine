@@ -36,7 +36,7 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
   .wo-pill.good { background: var(--good-soft); color: var(--good); }
   .wo-pill.bad { background: var(--bad-soft); color: var(--bad); }
   .wo-pill.run { background: var(--accent-soft); color: var(--accent-ink); }
-  .wo-new { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; background: var(--accent); color: var(--on-accent); text-decoration: none; white-space: nowrap; }
+  .wo-new { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; background: var(--primary); color: var(--on-primary); text-decoration: none; white-space: nowrap; }
   .wo-empty { border: 1px dashed var(--line); border-radius: 12px; padding: 28px 24px; display: grid; gap: 14px; }
   .wo-empty h2 { margin: 0; font-size: 17px; }
   .wo-ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }

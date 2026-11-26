@@ -305,7 +305,7 @@ export const playgroundHtml: string = `<!doctype html>
   }
   .send-row { display: flex; gap: 8px; align-items: flex-end; }
   #messageInput { flex: 1; min-width: 0; resize: vertical; height: 64px; border-radius: var(--radius); padding: 10px 12px; }
-  #sendButton { background: var(--accent); border-color: var(--accent); color: var(--on-accent); padding: 8px 16px; }
+  #sendButton { background: var(--primary); border-color: var(--primary); color: var(--on-primary); padding: 8px 16px; }
   #messageInput:disabled, #sendButton:disabled { cursor: not-allowed; }
   details summary { cursor: pointer; font-size: 12px; color: var(--ink-muted); }
   .advanced-hint { margin: 6px 0 0; font-size: 11px; }

@@ -88,12 +88,12 @@ export const workflowPageHtml: string = `<!doctype html>
   ${WORKFLOW_SECTIONS_CSS}
   .wf-skill { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; max-height: 280px; overflow: auto; }
   .wf-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .wf-btn { display: inline-block; padding: 7px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; background: var(--accent); color: var(--on-accent); border: 0; cursor: pointer; }
+  .wf-btn { display: inline-block; padding: 7px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; background: var(--primary); color: var(--on-primary); border: 0; cursor: pointer; }
   .wf-btn.plain { background: none; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
   .wf-btn:disabled { opacity: 0.6; cursor: progress; }
   /* The console's own button hover turns any button grey; these keep their
      colours and just brighten (or, plain ones, get a soft fill). */
-  .wf-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: brightness(1.08); }
+  .wf-btn:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); filter: brightness(1.08); }
   .wf-btn.plain:hover:not(:disabled) { background: var(--surface); color: var(--ink); filter: none; }
   .wf-agent { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13.5px; }
   .wf-agent select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); max-width: 100%; }

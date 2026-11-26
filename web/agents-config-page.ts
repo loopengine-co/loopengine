@@ -91,7 +91,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-page .workflow-result:empty { display: none; }
   .wf-tab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
   .wf-tab-head p { margin: 0; max-width: 72ch; }
-  .wf-new-btn { flex: none; display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 8px; background: var(--accent); color: var(--on-accent); font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .wf-new-btn { flex: none; display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
   .wf-new-btn:hover { filter: brightness(1.08); }
   .wf-card { margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: 0 1px 2px rgba(15, 23, 42, .04); overflow: hidden; }
   .wf-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px 16px; }
@@ -239,7 +239,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-health-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .wf-audit-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
   .wf-audit-tools a { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
-  .wf-audit-tools a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .wf-audit-tools a.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
   .wf-health-more summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent-ink); }
   .wf-health-more .wf-health-table { margin-top: 8px; }
   .wf-sub-sub { font-size: 12px; font-weight: 700; color: var(--ink-muted); margin-top: 6px; }
@@ -389,6 +389,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   @media (max-width: 640px) { .wf-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .wf-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
   /* Triggers in the pink of .delete-btn, apart from Edit's accent. */
+  .wf-page .wf-row-actions .workflow-edit { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+  .wf-page .wf-row-actions .workflow-edit:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); opacity: 0.88; }
   .wf-row-actions .workflow-triggers-open { border-color: var(--line); background: var(--bg); color: var(--ink); }
   .wf-row-actions .workflow-triggers-open:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
   .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }

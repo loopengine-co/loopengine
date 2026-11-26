@@ -41,7 +41,7 @@ export const auditPageHtml: string = `<!doctype html>
   .au-summary ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; }
   .au-summary-tools { display: flex; gap: 8px; flex-wrap: wrap; }
   .au-summary-tools a { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
-  .au-summary-tools a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .au-summary-tools a.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
   .au-export { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
   .au-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
   .au-row, .au-head { display: grid; grid-template-columns: 136px minmax(0, 170px) minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }

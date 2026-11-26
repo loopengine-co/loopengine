@@ -25,7 +25,7 @@ export const agentsListPageHtml: string = `<!doctype html>
   .agent-card .does .hint { font-size: 12.5px; }
   .agent-card .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
   .agent-card .links a { font-size: 12.5px; font-weight: 500; text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; color: var(--ink); }
-  .agent-card .links a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .agent-card .links a.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
   #empty { color: var(--ink-muted); }
   .hint { font-size: 12px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); }

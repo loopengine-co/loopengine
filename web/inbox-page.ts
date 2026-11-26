@@ -102,7 +102,7 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-card textarea { width: 100%; box-sizing: border-box; min-height: 80px; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
   .ib-card textarea.mono { font-family: var(--font-mono); font-size: 12.5px; min-height: 200px; }
   .ib-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .ib-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); cursor: pointer; }
+  .ib-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); cursor: pointer; }
   .ib-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
   .ib-btn.bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
   .ib-btn.opt { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; font-weight: 500; }
@@ -201,6 +201,7 @@ ${renderMarkdownScript}
   function stateHtml(item) {
     if (item.waiting && item.waiting.length) return '<span class="ib-state warn">' + (item.waiting.indexOf('approval') !== -1 ? 'Approval needed' : 'Question for you') + '</span>';
     if (item.status === 'running') return '<span class="ib-state run">Running</span>';
+    if (item.status === 'awaiting_approval') return '<span class="ib-state warn">Waiting</span>';
     if (item.status === 'error') return '<span class="ib-state bad">Failed</span>';
     if (item.status === 'done') return '<span class="ib-state good">Completed</span>';
     return '<span class="ib-state">' + esc(item.status) + '</span>';

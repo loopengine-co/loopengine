@@ -53,7 +53,7 @@ export const homePageHtml: string = `<!doctype html>
   .hm-t-warn { background: var(--warn-soft); color: var(--warn); }
   .hm-slug { font-family: var(--font-mono); font-size: 13px; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; color: var(--ink); text-decoration: none; }
   a.hm-slug:hover { text-decoration: underline; }
-  .hm-new { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; background: var(--accent); color: var(--on-accent); text-decoration: none; white-space: nowrap; }
+  .hm-new { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; background: var(--primary); color: var(--on-primary); text-decoration: none; white-space: nowrap; }
   .hm-empty { border: 1px dashed var(--line); border-radius: 12px; padding: 28px 24px; display: grid; gap: 14px; }
   .hm-empty h2 { margin: 0; font-size: 17px; }
   .hm-ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
