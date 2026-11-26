@@ -1,7 +1,10 @@
-// The console's Audit page (/audit): the workspace's log of who changed
-// what and who decided what (Activity), and every case kept, searched
-// (Cases). Its data is web/audit-admin.ts's, behind /audit/events,
-// /audit/events.csv, /audit/cases and /audit/filters. Owners, admins and
+// The console's Audit page (/audit): the workspace's audit log, a record
+// of who did what, when, and to which resource: workflows created, edited,
+// published and deleted, schedules, webhooks, permissions and settings
+// changed, and (filtered for) approvals, answers and feedback in runs.
+// Runs themselves are on each workflow's Activity tab. Its data is
+// web/audit-admin.ts's, behind /audit/events, /audit/events.csv and
+// /audit/filters. Owners, admins and
 // editors see it; approvers and viewers use the Inbox only. Like the
 // other console pages, its inline script avoids backslashes and template
 // placeholders, since it lives inside a template literal.
@@ -23,9 +26,6 @@ export const auditPageHtml: string = `<!doctype html>
 <title>Audit</title>
 <style>${devUiCss}
   .au { max-width: 1080px; display: grid; gap: 14px; }
-  .au-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-  .au-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; font-size: 14px; font-weight: 600; color: var(--ink-muted); margin-bottom: -1px; }
-  .au-tabs button[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
   .au-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .au-bar select, .au-bar input { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); max-width: 180px; }
   .au-bar input[type="search"] { flex: 1; min-width: 160px; max-width: none; }
@@ -36,6 +36,7 @@ export const auditPageHtml: string = `<!doctype html>
   .au-check.bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
   .au-check .hint { display: block; margin-top: 2px; font-weight: 400; }
   .au-summary { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; background: var(--bg); }
+  .au-summary[hidden], .au-check[hidden] { display: none; }
   .au-summary h2 { margin: 0; font-size: 15px; }
   .au-summary ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; }
   .au-summary-tools { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -43,8 +44,16 @@ export const auditPageHtml: string = `<!doctype html>
   .au-summary-tools a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .au-export { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
   .au-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
-  .au-row { display: grid; grid-template-columns: 136px 80px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
-  .au-row:first-child { border-top: 0; }
+  .au-row, .au-head { display: grid; grid-template-columns: 136px minmax(0, 170px) minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
+  .au-head { border-top: 0; padding-top: 8px; padding-bottom: 8px; background: var(--surface); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .au-who { overflow-wrap: anywhere; }
+  .au-who.system { color: var(--ink-muted); font-style: italic; }
+  .au-res { display: grid; gap: 1px; min-width: 0; }
+  .au-res-type { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .au-res a { color: var(--accent-ink); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+  .au-res a:hover { text-decoration: underline; }
+  .au-res .hint { font-size: 12px; }
+  .au-what details summary { cursor: pointer; color: var(--accent-ink); font-size: 12px; }
   .au-when { color: var(--ink-muted); white-space: nowrap; font-size: 12.5px; }
   .au-kind { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
   .au-kind.change { color: var(--accent-ink); }
@@ -55,13 +64,7 @@ export const auditPageHtml: string = `<!doctype html>
   .au-where { font-size: 12.5px; color: var(--ink-muted); }
   .au-open { color: var(--accent-ink); font-weight: 600; text-decoration: none; white-space: nowrap; font-size: 12.5px; }
   .au-open:hover { text-decoration: underline; }
-  .au-case { grid-template-columns: 80px minmax(0, 1fr) auto; }
-  .au-state { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); justify-self: start; }
-  .au-state.good { background: var(--good-soft); color: var(--good); }
-  .au-state.bad { background: var(--bad-soft); color: var(--bad); }
-  .au-state.warn { background: var(--warn-soft); color: var(--warn); }
-  .au-state.run { background: var(--accent-soft); color: var(--accent-ink); }
-  .au-evalcase { color: var(--accent-ink); font-weight: 600; }
+  .au-action.denied { color: var(--bad); }
   .chg { display: grid; gap: 6px; margin-top: 4px; font-size: 12.5px; flex-basis: 100%; }
   .chg-field del { color: var(--bad); }
   .chg-field ins { color: var(--good); text-decoration: none; }
@@ -74,8 +77,8 @@ export const auditPageHtml: string = `<!doctype html>
   .au-more { justify-self: center; }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
   @media (max-width: 720px) {
-    .au-row, .au-case { grid-template-columns: minmax(0, 1fr) auto; }
-    .au-when { grid-column: 1 / -1; }
+    .au-head { display: none; }
+    .au-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   }
 </style>
 </head>
@@ -86,27 +89,17 @@ ${consoleSidebarHtml}
   <div class="le-head plain">
     <div class="le-head-row">
       <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Audit</h1><p>Who changed what, and who decided what, across the workspace; and every case kept, to search and open.</p></div>
+        <div><h1>Audit</h1><p>Who did what, when, and to which resource, across the workspace: workflows created, edited, published and deleted, and every other setting changed. Runs are on each workflow's Activity tab.</p></div>
       </div>
     </div>
   </div>
   <div class="le-scroll"><div class="le-page"><div class="au">
-    <div class="au-tabs" role="tablist">
-      <button type="button" role="tab" data-tab="activity" aria-selected="true">Activity</button>
-      <button type="button" role="tab" data-tab="cases" aria-selected="false">Cases</button>
-    </div>
     <div class="au-bar">
       <select id="auAgent" aria-label="Agent"><option value="">All agents</option></select>
       <select id="auWorkflow" aria-label="Workflow"><option value="">All workflows</option></select>
       <select id="auBy" aria-label="Person"><option value="">Anyone</option></select>
       <select id="auKind" aria-label="Kind">
-        <option value="">Everything</option><option value="change">Settings changed</option><option value="decision">Approvals</option><option value="answer">Answers</option><option value="feedback">Feedback</option>
-      </select>
-      <select id="auFlag" aria-label="Worth a look" hidden>
-        <option value="">Any case</option><option value="overruled">Denied or changed</option><option value="bad">Marked bad</option><option value="asked">Asked a question</option>
-      </select>
-      <select id="auStatus" aria-label="Status" hidden>
-        <option value="">Any outcome</option><option value="done">Done</option><option value="error">Failed</option><option value="awaiting_approval">Waiting for a decision</option><option value="running">Running</option>
+        <option value="change">Changes to workflows and settings</option><option value="decision">Approvals in runs</option><option value="answer">Answers in runs</option><option value="feedback">Feedback on runs</option><option value="all">Everything</option>
       </select>
       <select id="auPeriod" aria-label="Period">
         <option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="">All time</option>
@@ -128,10 +121,11 @@ ${consoleShellScript}
 (function () {
   var DOT = ' ' + String.fromCharCode(183) + ' ';
   var params = new URLSearchParams(location.search);
+  // Changes by default: who did what to which workflow or setting.
+  var KINDS = ['change', 'decision', 'answer', 'feedback', 'all'];
   var state = {
-    tab: params.get('tab') === 'cases' ? 'cases' : 'activity',
     agent: params.get('agent') || '', workflow: params.get('workflow') || '', by: params.get('by') || '',
-    kind: params.get('kind') || '', status: params.get('status') || '', flag: params.get('flag') || '',
+    kind: KINDS.indexOf(params.get('kind')) >= 0 ? params.get('kind') : 'change',
     period: params.has('period') ? params.get('period') : '30', q: params.get('q') || '',
   };
   // The filters' choices come with the page (auditPageFor), so they show
@@ -143,7 +137,7 @@ ${consoleShellScript}
   var more = document.getElementById('auMore');
   var el = {
     agent: document.getElementById('auAgent'), workflow: document.getElementById('auWorkflow'), by: document.getElementById('auBy'),
-    kind: document.getElementById('auKind'), status: document.getElementById('auStatus'), flag: document.getElementById('auFlag'), period: document.getElementById('auPeriod'),
+    kind: document.getElementById('auKind'), period: document.getElementById('auPeriod'),
     q: document.getElementById('auQ'), exportLink: document.getElementById('auExport'),
   };
 
@@ -178,9 +172,7 @@ ${consoleShellScript}
     if (state.agent) q.set('agent', state.agent);
     if (state.workflow) q.set('workflow', state.workflow);
     if (state.by) q.set('by', state.by);
-    if (state.tab === 'activity' && state.kind) q.set('kind', state.kind);
-    if (state.tab === 'cases' && state.status) q.set('status', state.status);
-    if (state.tab === 'cases' && state.flag) q.set('flag', state.flag);
+    if (state.kind !== 'all') q.set('kind', state.kind);
     if (state.period) q.set('since', new Date(Date.now() - Number(state.period) * 86400000).toISOString());
     if (state.q) q.set('q', state.q);
     Object.keys(extra || {}).forEach(function (k) { q.set(k, extra[k]); });
@@ -189,27 +181,31 @@ ${consoleShellScript}
   // The page's own address keeps the filters, so a view can be shared.
   function remember() {
     var q = new URLSearchParams();
-    if (state.tab === 'cases') q.set('tab', 'cases');
     ['agent', 'workflow', 'by', 'q'].forEach(function (k) { if (state[k]) q.set(k, state[k]); });
-    if (state.tab === 'activity' && state.kind) q.set('kind', state.kind);
-    if (state.tab === 'cases' && state.status) q.set('status', state.status);
-    if (state.tab === 'cases' && state.flag) q.set('flag', state.flag);
+    if (state.kind !== 'change') q.set('kind', state.kind);
     if (state.period !== '30') q.set('period', state.period);
     history.replaceState(null, '', '/audit' + (q.toString() ? '?' + q.toString() : ''));
   }
 
-  // Where an event leads: its case, the workflow's version or changes,
-  // the agent, or the workspace setting.
-  function eventLink(e) {
+  // The resource an event acted on (e.resource, from the server), as a
+  // link where it still exists: a run's trace, a workflow, an agent, or
+  // the workspace setting.
+  function resourceHtml(e) {
+    var r = e.resource || { type: 'Workspace', name: 'Settings' };
     var d = e.data || {};
-    if (e.run_id) return { href: '/cases/' + encodeURIComponent(e.run_id) + '?back=' + encodeURIComponent(location.pathname + location.search), text: 'Case' };
-    if (e.workflow_id) return { href: workflowHref(e.agent, e.workflow_id, /(brief|workflow) version/i.test(d.label || '') || /Edited the workflow|Published the workflow/.test(d.label || '') ? 'brief' : 'activity'), text: 'Workflow' };
-    if (e.agent) return { href: '/agents/config?agent=' + encodeURIComponent(e.agent), text: 'Agent' };
-    var path = String(d.path || '');
-    if (path.indexOf('/config/models') === 0) return { href: '/config?section=models', text: 'Models' };
-    if (path.indexOf('/config/apps') === 0) return { href: '/config?section=apps', text: 'Apps' };
-    if (path.indexOf('/abilities') === 0) return { href: '/config?section=abilities', text: 'Abilities' };
-    return { href: '/config?section=settings', text: 'Settings' };
+    var href = '';
+    if (r.runId && r.workflowId) href = workflowHref(r.agent, r.workflowId, 'activity') + '&run=' + encodeURIComponent(r.runId);
+    else if (r.runId) href = '/cases/' + encodeURIComponent(r.runId) + '?back=' + encodeURIComponent(location.pathname + location.search);
+    else if (r.workflowId && /deleted$/.test(e.action || '')) href = '';
+    else if (r.workflowId) href = workflowHref(r.agent, r.workflowId, /published|restored|edited/.test(e.action || '') ? 'versions' : '');
+    else if (r.agent && !/deleted$/.test(e.action || '')) href = '/agents/config?agent=' + encodeURIComponent(r.agent);
+    else if (r.type === 'Workspace') {
+      var path = String(d.path || '');
+      href = path.indexOf('/config/models') === 0 ? '/config?section=models' : path.indexOf('/config/apps') === 0 ? '/config?section=apps' : path.indexOf('/abilities') === 0 ? '/config?section=abilities' : '/config?section=settings';
+    }
+    var name = esc(r.name) + (r.type === 'Run' && r.runId ? ' <span class="hint">run ' + esc(String(r.runId).slice(0, 8)) + '</span>' : '');
+    var where = r.agent && r.type !== 'Agent' && r.type !== 'Workspace' ? '<span class="hint">' + esc(agentLabel(r.agent)) + '</span>' : '';
+    return '<span class="au-res"><span class="au-res-type">' + esc(r.type) + '</span>' + (href ? '<a href="' + esc(href) + '">' + name + '</a>' : '<span>' + name + '</span>') + where + '</span>';
   }
 
   function eventWords(e) {
@@ -244,44 +240,39 @@ ${consoleShellScript}
     return '<div class="chg">' + rows + '</div>';
   }
 
+  // A row: when, who, what they did (with its detail and, for a change,
+  // what it changed), and the resource.
   function eventRow(e) {
     var words = eventWords(e);
-    var link = eventLink(e);
-    var kind = e.kind === 'change' ? 'Setting' : e.kind === 'decision' ? 'Approval' : e.kind === 'answer' ? 'Answer' : 'Feedback';
+    var detail = e.kind === 'change' ? '' : words.detail;
+    var changes = e.kind === 'change' ? changeDetailsHtml(e.data || {}) : '';
     var denied = e.kind === 'decision' && e.data && !e.data.approved ? ' denied' : '';
-    var where = agentLabel(e.agent) + (e.workflow_id ? DOT + workflowTitle(e.agent, e.workflow_id) : '');
     return '<div class="au-row"><span class="au-when">' + esc(when(e.at)) + '</span>' +
-      '<span class="au-kind ' + esc(e.kind) + denied + '">' + kind + '</span>' +
-      '<span class="au-what"><strong>' + esc(words.what) + '</strong>' + (words.detail ? '<span class="au-detail">' + esc(words.detail) + '</span>' : '') + (e.kind === 'change' ? changeDetailsHtml(e.data || {}) : '') +
-        '<span class="au-where">' + (e.by ? esc(e.by) + DOT : '') + esc(where) + '</span></span>' +
-      '<a class="au-open" href="' + esc(link.href) + '">' + esc(link.text) + ' ' + String.fromCharCode(8594) + '</a></div>';
+      '<span class="au-who' + (e.by ? '' : ' system') + '">' + esc(e.by || 'System') + '</span>' +
+      '<span class="au-what"><strong class="au-action' + denied + '">' + esc(e.action || words.what) + '</strong>' +
+        (e.kind === 'decision' && e.data && e.data.tool ? '<span class="au-detail"><code>' + esc(e.data.tool) + '</code></span>' : '') +
+        (detail ? '<span class="au-detail">' + esc(detail) + '</span>' : '') +
+        (changes ? '<details><summary>What changed</summary>' + changes + '</details>' : '') + '</span>' +
+      resourceHtml(e) + '</div>';
   }
 
-  function caseRow(c) {
-    var pill = c.status === 'done' ? ['good', 'Done'] : c.status === 'error' ? ['bad', 'Failed'] : c.status === 'awaiting_approval' ? ['warn', 'Waiting'] : ['run', 'Running'];
-    return '<div class="au-row au-case"><span class="au-state ' + pill[0] + '">' + pill[1] + '</span>' +
-      '<span class="au-what"><strong>' + esc(c.workflowTitle) + (c.inputs ? DOT + esc(c.inputs) : '') + '</strong>' +
-        (c.outcome ? '<span class="au-detail">' + esc(c.outcome) + '</span>' : '') +
-        '<span class="au-where">' + esc(when(c.startedAt)) + DOT + esc(agentLabel(c.agent)) + (c.workflowVersion ? DOT + 'workflow v' + c.workflowVersion : '') + (c.people.length ? DOT + 'decided by ' + esc(c.people.join(', ')) : '') + (c.evalCase ? DOT + '<span class="au-evalcase">eval case</span>' : '') + '</span></span>' +
-      '<a class="au-open" href="/cases/' + encodeURIComponent(c.id) + '?back=' + encodeURIComponent(location.pathname + location.search) + '">Open ' + String.fromCharCode(8594) + '</a></div>';
-  }
-
+  var HEAD = '<div class="au-head"><span>When</span><span>Who</span><span>Action</span><span>Resource</span></div>';
   function load(append) {
-    var url = state.tab === 'cases' ? '/audit/cases?' : '/audit/events?';
+    var url = '/audit/events?';
     var extra = append && next != null ? { before: String(next) } : {};
-    if (state.tab === 'activity') extra.limit = '100';
+    extra.limit = '100';
     if (!append) list.innerHTML = '<p class="hint">Loading' + String.fromCharCode(8230) + '</p>';
     more.hidden = true;
     return fetch(url + query(extra), { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
       .then(function (data) {
-        var rows = state.tab === 'cases' ? data.cases.map(caseRow) : data.events.map(eventRow);
+        var rows = data.events.map(eventRow);
         next = data.next;
-        if (state.tab === 'activity' && data.events.length < 100) next = null;
+        if (data.events.length < 100) next = null;
         var box = list.querySelector('.au-list');
         if (append && box) box.insertAdjacentHTML('beforeend', rows.join(''));
-        else list.innerHTML = rows.length ? '<div class="au-list">' + rows.join('') + '</div>'
-          : '<div class="au-list"><p class="au-empty">' + (state.tab === 'cases' ? 'No cases match.' : 'Nothing matches. Changes to settings, and every approval, answer and feedback, are listed here as they happen.') + '</p></div>';
+        else list.innerHTML = rows.length ? '<div class="au-list">' + HEAD + rows.join('') + '</div>'
+          : '<div class="au-list"><p class="au-empty">Nothing matches. Workflows created, edited, published and deleted, and every other change to settings, are recorded here with who made them.</p></div>';
         more.hidden = next == null;
       })
       .catch(function (err) { list.innerHTML = '<p class="error">Could not load it: ' + esc(err.message) + '</p>'; });
@@ -296,13 +287,6 @@ ${consoleShellScript}
   }
 
   function sync() {
-    var tabs = document.querySelectorAll('.au-tabs button');
-    for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute('aria-selected', String(tabs[i].getAttribute('data-tab') === state.tab));
-    el.kind.hidden = state.tab !== 'activity';
-    el.status.hidden = state.tab !== 'cases';
-    el.flag.hidden = state.tab !== 'cases';
-    el.exportLink.hidden = state.tab !== 'activity';
-    verifyBtn.hidden = state.tab !== 'activity';
     el.exportLink.href = '/audit/events.csv?' + query();
     remember();
   }
@@ -334,14 +318,8 @@ ${consoleShellScript}
 
   function changed() { sync(); load(false); loadSummary(); }
 
-  document.querySelector('.au-tabs').addEventListener('click', function (ev) {
-    var b = ev.target.closest('button[data-tab]');
-    if (!b || b.getAttribute('data-tab') === state.tab) return;
-    state.tab = b.getAttribute('data-tab');
-    changed();
-  });
   el.agent.addEventListener('change', function () { state.agent = el.agent.value; fillWorkflows(); changed(); });
-  ['workflow', 'by', 'kind', 'status', 'flag', 'period'].forEach(function (k) {
+  ['workflow', 'by', 'kind', 'period'].forEach(function (k) {
     el[k].addEventListener('change', function () { state[k] = el[k].value; changed(); });
   });
   var typing;
@@ -381,8 +359,6 @@ ${consoleShellScript}
 
   el.q.value = state.q;
   el.kind.value = state.kind;
-  el.status.value = state.status;
-  el.flag.value = state.flag;
   el.period.value = state.period;
   function fillFilters(f) {
     filters = f;

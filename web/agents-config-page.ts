@@ -215,7 +215,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-section { display: grid; gap: 10px; min-width: 0; }
   .wf-panel > .wf-section + .wf-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
   .wf-section .wf-sub { margin: 0; }
-  .wf-run-lines, .wf-cand-list, .wf-change-list { min-width: 0; }
+  .wf-run-lines, .wf-cand-list { min-width: 0; }
   .wf-run-line, .wf-run-link { min-width: 0; overflow: hidden; }
   .wf-run-lines, .wf-cand-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   .wf-run-line, .wf-cand-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; }
@@ -236,7 +236,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-health-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .wf-health-table th { text-align: left; font-weight: 600; color: var(--ink-muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .wf-health-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  .wf-audit-summary ul.wf-audit-lines { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; }
   .wf-audit-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
   .wf-audit-tools a { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
   .wf-audit-tools a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -254,12 +253,68 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .chg-ins { background: var(--good-soft); color: var(--good); padding: 1px 6px; }
   .chg-note { color: var(--ink-muted); font-family: inherit; font-weight: 400; }
   .chg details summary { cursor: pointer; color: var(--accent-ink); font-family: var(--font-sans, inherit); font-size: 12px; margin-top: 2px; }
-  .wf-change-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 13px; }
-  .wf-change-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-  .wf-change-kind { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); min-width: 64px; }
-  .wf-change-kind.change { color: var(--accent-ink); }
-  .wf-change-text { flex: 1 1 280px; }
   .wf-page-meta-item[hidden] { display: none; }
+  .wf-sub-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .wf-act-main[hidden], .wf-trace[hidden] { display: none; }
+  .wf-act-main > .wf-section + .wf-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .wf-run-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .wf-run-card { display: grid; gap: 6px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); min-width: 0; font-size: 13px; }
+  .wf-run-card.is-failed { border-left: 3px solid var(--bad); }
+  .wf-run-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .wf-run-card-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  .wf-run-card-actions .wf-run-trace { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-run-card-actions .wf-run-trace:hover { background: var(--accent); color: var(--on-accent); }
+  .wf-run-version { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .wf-run-card-inputs { color: var(--ink-muted); overflow-wrap: anywhere; }
+  .wf-run-card-out { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .wf-run-card-out.error { color: var(--bad); }
+  .wf-trace { display: grid; gap: 20px; min-width: 0; }
+  .wf-trace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .wf-trace-bar a.wf-link { text-decoration: none; }
+  .wf-xd { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .wf-xd-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  .wf-xd-head h3 { margin: 0; font-size: 16px; }
+  .wf-xd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 16px; margin: 0; }
+  .wf-xd-item { display: grid; gap: 2px; min-width: 0; }
+  .wf-xd-item dt, .wf-xd-k { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .wf-xd-item dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+  .wf-xd-item dd a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+  .wf-xd-error { padding: 8px 12px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); font-size: 13px; overflow-wrap: anywhere; }
+  .wf-xd-io { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .wf-xd-io > div { display: grid; gap: 4px; align-content: start; min-width: 0; }
+  .wf-xd-params { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; }
+  .wf-xd-params dt { font-family: var(--font-mono); font-size: 12px; color: var(--ink-muted); }
+  .wf-xd-params dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .wf-tv-pre { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
+  .wf-tv-block { display: grid; gap: 4px; min-width: 0; }
+  .wf-tv-block summary { cursor: pointer; color: var(--accent-ink); font-size: 12.5px; font-weight: 600; }
+  .wf-tl-wrap { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .wf-tl { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; position: relative; }
+  .wf-tl::before { content: ""; position: absolute; left: 15px; top: 14px; bottom: 14px; width: 2px; background: var(--line); }
+  .wf-tl-step { position: relative; width: 100%; height: auto; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: "dot text time" ". bar bar"; gap: 2px 10px; align-items: start; padding: 8px 10px 8px 9px; border: 1px solid transparent; border-radius: 8px; background: none; text-align: left; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
+  .wf-tl-step:hover { background: var(--surface); }
+  .wf-tl-step[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+  .wf-tl-dot { grid-area: dot; width: 12px; height: 12px; margin-top: 3px; border-radius: 50%; background: var(--bg); border: 2px solid var(--ink-faint); position: relative; z-index: 1; }
+  .wf-tl-step.k-model .wf-tl-dot { border-color: var(--accent); }
+  .wf-tl-step.k-tool .wf-tl-dot { border-color: var(--good); }
+  .wf-tl-step.k-person .wf-tl-dot { border-color: var(--warn); }
+  .wf-tl-step.k-start .wf-tl-dot, .wf-tl-step.k-end .wf-tl-dot { background: var(--ink-faint); }
+  .wf-tl-step.is-bad .wf-tl-dot { border-color: var(--bad); background: var(--bad); }
+  .wf-tl-text { grid-area: text; display: grid; gap: 1px; min-width: 0; }
+  .wf-tl-kind { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .wf-tl-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wf-tl-step.is-bad .wf-tl-title { color: var(--bad); }
+  .wf-tl-meta { font-size: 12px; color: var(--ink-muted); }
+  .wf-tl-time { grid-area: time; display: grid; justify-items: end; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-muted); }
+  .wf-tl-bar { grid-area: bar; position: relative; height: 4px; border-radius: 2px; background: var(--surface-2); margin-top: 4px; }
+  .wf-tl-bar span { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--ink-faint); }
+  .wf-tl-step.k-model .wf-tl-bar span { background: var(--accent); }
+  .wf-tl-step.k-tool .wf-tl-bar span { background: var(--good); }
+  .wf-tl-step.is-bad .wf-tl-bar span { background: var(--bad); }
+  .wf-tl-detail { position: sticky; top: 12px; display: grid; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); min-width: 0; }
+  .wf-tl-detail-head { display: grid; gap: 2px; }
+  .wf-tl-detail-head strong { font-size: 14px; overflow-wrap: anywhere; }
+  @media (max-width: 860px) { .wf-tl-wrap, .wf-xd-io { grid-template-columns: minmax(0, 1fr); } .wf-tl-detail { position: static; } }
   .wf-versions { display: grid; gap: 10px; font-size: 13px; }
   .wf-version-cards { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
   .wf-version-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
@@ -1144,8 +1199,8 @@ ${renderMarkdownScript}
     if (!box) return;
     fetch(base + '/health', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (h) { box.innerHTML = '<h4 class="wf-sub">At a glance</h4>' + workflowHealthHtml(h); })
-      .catch(function (err) { box.innerHTML = '<h4 class="wf-sub">Health</h4><p class="error">Could not load it: ' + escapeHtml(err.message) + '</p>'; });
+      .then(function (h) { box.innerHTML = '<div class="wf-sub-row"><h4 class="wf-sub">Execution history</h4><span class="hint">Last ' + h.days + ' days</span></div>' + workflowHealthHtml(h); })
+      .catch(function (err) { box.innerHTML = '<h4 class="wf-sub">Execution history</h4><p class="error">Could not load it: ' + escapeHtml(err.message) + '</p>'; });
   }
 
   function healthPct(part, whole) { return whole ? Math.round(100 * part / whole) + '%' : String.fromCharCode(8212); }
@@ -1195,38 +1250,6 @@ ${renderMarkdownScript}
     }).join('');
     return alerts + stats + healthChartHtml(h.daily) +
       '<details class="wf-health-more"><summary>By version of its instructions</summary><div class="wf-health-table"><table><thead><tr><th>Version</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
-  }
-
-  // The Activity tab's summary: the workflow's last 30 days in sentences, the
-  // same as the Audit page's.
-  function loadAuditSummary(card, base) {
-    var box = card.querySelector('.wf-audit-summary');
-    if (!box) return;
-    fetch(base + '/audit', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (a) { box.innerHTML = '<h4 class="wf-sub">In the last 30 days</h4><ul class="wf-audit-lines">' + a.summary.map(function (line) { return '<li>' + escapeHtml(line) + '</li>'; }).join('') + '</ul>'; })
-      .catch(function (err) { box.innerHTML = '<p class="error">Could not load its summary: ' + escapeHtml(err.message) + '</p>'; });
-  }
-
-  // The Activity tab's latest few settings changes, with what changed.
-  function loadLatestChanges(card, name) {
-    var box = card.querySelector('.wf-changes-latest');
-    if (!box) return;
-    fetch('/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(card.dataset.workflow) + '&kind=change&limit=3', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (data) { box.innerHTML = (data.events || []).length ? workflowChangesHtml(data.events) : '<p class="hint" style="margin:0">No settings changed yet.</p>'; })
-      .catch(function (err) { box.innerHTML = '<p class="error">Could not load its changes: ' + escapeHtml(err.message) + '</p>'; });
-  }
-
-  // A list of changes (and decisions): every change to this workflow's settings, and every
-  // decision, answer and feedback in its runs, newest first, with who.
-  function changeText(e) {
-    var d = e.data || {};
-    if (e.kind === 'change') return escapeHtml(d.label || 'Changed a setting');
-    if (e.kind === 'decision') return (d.approved ? (d.edited ? 'Approved as changed ' : 'Approved ') : 'Denied ') + '<code>' + escapeHtml(d.tool || '') + '</code>' + (d.reason ? ': ' + String.fromCharCode(8220) + escapeHtml(d.reason) + String.fromCharCode(8221) : '');
-    if (e.kind === 'answer') return 'Answered ' + String.fromCharCode(8220) + escapeHtml(String(d.answer || '').slice(0, 200)) + String.fromCharCode(8221);
-    if (e.kind === 'feedback') return 'Feedback: ' + escapeHtml([d.verdict, d.edit ? (d.edit === 'none' ? 'used unedited' : d.edit + ' edits') : '', d.note].filter(Boolean).join(', ') || 'given');
-    return escapeHtml(e.kind);
   }
 
   // A change's details: each setting from and to, and for long texts the
@@ -1459,18 +1482,309 @@ ${renderMarkdownScript}
   }
   var REFERENCE_CRIT = { id: 'reference', text: 'Matches the good result: the same facts and decisions', kind: 'reference' };
 
-  // The Activity tab: what happened and whether it can be trusted. The same
-  // summary as the Audit page's, its health over 30 days, its latest runs
-  // and changes, and the way to the report and the full log.
+  // The Activity tab: its execution history over the last 30 days (runs
+  // per day, failures, approvals, time and cost), then its runs, each a
+  // card with the workflow version it ran and View trace. A trace takes
+  // the tab's place: the run's execution details, then its execution
+  // trace, step by step (see workflowTraceHtml).
   function workflowActivityHtml(w, runsHtml, name) {
-    var auditHref = '/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id);
+    if (!workflowPageId) {
+      return '<section class="wf-section"><h4 class="wf-sub">Latest runs</h4>' +
+        (runsHtml ? '<ul class="wf-run-lines">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') + '</section>';
+    }
     var loading = '<p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p>';
-    return (workflowPageId ? '<section class="wf-section wf-audit-summary">' + loading + '</section>' : '') +
-      (workflowPageId ? '<section class="wf-section wf-health">' + loading + '</section>' : '') +
-      '<section class="wf-section"><h4 class="wf-sub">Latest runs</h4>' +
-        (runsHtml ? '<ul class="wf-run-lines">' + runsHtml + '</ul>' : '<p class="hint" style="margin:0">No runs yet.</p>') + '</section>' +
-      (workflowPageId ? '<section class="wf-section"><h4 class="wf-sub">Latest changes</h4><div class="wf-changes-latest">' + loading + '</div></section>' : '') +
-      (workflowPageId ? '<section class="wf-section"><div class="wf-audit-tools"><a class="primary" href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">See everything in Audit ' + String.fromCharCode(8594) + '</a></div></section>' : '');
+    var auditHref = '/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id);
+    return '<div class="wf-act-main">' +
+        '<section class="wf-section wf-health">' + loading + '</section>' +
+        '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">Runs</h4><span class="hint wf-runs-count"></span></div><div class="wf-runs">' + loading + '</div></section>' +
+        '<section class="wf-section"><div class="wf-audit-tools"><a href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">Who changed it, in Audit ' + String.fromCharCode(8594) + '</a></div></section>' +
+      '</div>' +
+      '<div class="wf-trace" hidden></div>';
+  }
+
+  var RUN_PILLS = { done: ['good', 'Done'], error: ['bad', 'Failed'], awaiting_approval: ['ask', 'Waiting'], running: ['accent', 'Running'] };
+  var RUN_SOURCES = { console: 'Run now', api: 'API', schedule: 'Schedule', webhook: 'Webhook', assignment: 'Assigned', chain: 'Another workflow' };
+  function runPillHtml(status) {
+    var p = RUN_PILLS[status] || ['', status];
+    return '<span class="le-pill ' + p[0] + '">' + p[1] + '</span>';
+  }
+  function runWhen(iso) {
+    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+  function runVersionOf(r) {
+    return r.versions ? (r.versions.workflow || r.versions.brief || null) : null;
+  }
+
+  // Its runs, newest first (the latest 50), each a card.
+  function loadWorkflowRuns(name, card, base) {
+    var box = card.querySelector('.wf-runs');
+    if (!box) return;
+    var w = workflowsById[card.dataset.workflow];
+    fetch(base + '/runs', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (data) {
+        var runs = data.runs || [];
+        var count = card.querySelector('.wf-runs-count');
+        if (count) count.textContent = runs.length >= 50 ? 'Latest 50' : runs.length ? runs.length + ' run' + (runs.length === 1 ? '' : 's') : '';
+        box.innerHTML = runs.length ? '<ol class="wf-run-cards">' + runs.map(function (r) { return runCardHtml(w, r); }).join('') + '</ol>'
+          : '<p class="hint" style="margin:0">No runs yet. Start one from Triggers (Run now), an app, a schedule or a webhook.</p>';
+      })
+      .catch(function (err) { box.innerHTML = '<p class="error">Could not load its runs: ' + escapeHtml(err.message) + '</p>'; });
+    box.addEventListener('click', function (ev) {
+      var b = ev.target.closest('.wf-run-trace');
+      if (!b) return;
+      openRunTrace(name, card, b.getAttribute('data-run'));
+    });
+  }
+
+  function runCardHtml(w, r) {
+    var version = runVersionOf(r);
+    var values = r.params ? Object.keys(r.params).map(function (k) { return k + ': ' + r.params[k]; }).join(DOT) : '';
+    var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
+    var took = r.finished_at ? healthTime(Date.parse(r.finished_at) - Date.parse(r.started_at)) : '';
+    return '<li class="wf-run-card' + (r.status === 'error' ? ' is-failed' : '') + '">' +
+      '<div class="wf-run-card-head">' + runPillHtml(r.status) +
+        '<strong>' + escapeHtml(runWhen(r.started_at)) + '</strong>' +
+        (version ? '<span class="wf-run-version" title="The workflow version it ran">v' + version + '</span>' : '<span class="hint">before versions</span>') +
+        '<span class="hint">' + escapeHtml(RUN_SOURCES[r.source] || r.source || '') + (took ? DOT + escapeHtml(took) : '') + '</span>' +
+        '<span class="wf-run-card-actions"><a class="wf-link" href="' + caseHref(r.run_id) + '">Open case</a><button type="button" class="wf-run-trace" data-run="' + escapeHtml(r.run_id) + '">View trace</button></span>' +
+      '</div>' +
+      (values ? '<div class="wf-run-card-inputs">' + escapeHtml(values.length > 200 ? values.slice(0, 200) + String.fromCharCode(8230) : values) + '</div>' : '') +
+      (outcome ? '<div class="wf-run-card-out' + (r.status === 'error' ? ' error' : '') + '">' + escapeHtml(outcome.length > 280 ? outcome.slice(0, 280) + String.fromCharCode(8230) : outcome) + '</div>' : '') +
+      runEvidenceHtml(w || {}, r) +
+    '</li>';
+  }
+
+  // The run whose trace is open on each workflow's page, and its step, so
+  // a redraw (a running run refreshing) keeps it open.
+  var openTraces = {};
+  if (workflowPageId && pageParams.get('run')) openTraces[workflowPageId] = { run: pageParams.get('run'), step: null };
+
+  function setRunParam(runId) {
+    var q = new URLSearchParams(location.search);
+    if (runId) { q.set('run', runId); q.set('wtab', 'activity'); } else q.delete('run');
+    history.replaceState(null, '', location.pathname + '?' + q.toString());
+  }
+
+  function openRunTrace(name, card, runId) {
+    var id = card.dataset.workflow;
+    var prev = openTraces[id];
+    openTraces[id] = { run: runId, step: prev && prev.run === runId ? prev.step : null };
+    setRunParam(runId);
+    var main = card.querySelector('.wf-act-main');
+    var box = card.querySelector('.wf-trace');
+    if (!main || !box) return;
+    main.hidden = true;
+    box.hidden = false;
+    if (!box.innerHTML) box.innerHTML = '<p class="hint">Loading the trace' + String.fromCharCode(8230) + '</p>';
+    fetch('/agents/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId) + '/trace', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+      .then(function (t) {
+        if (!openTraces[id] || openTraces[id].run !== runId) return;
+        box.innerHTML = workflowTraceHtml(name, t);
+        wireTrace(name, card, box, t);
+      })
+      .catch(function (err) {
+        box.innerHTML = traceBarHtml(name, runId) + '<p class="error">Could not load the trace: ' + escapeHtml(err.message) + '</p>';
+        wireTrace(name, card, box, null);
+      });
+  }
+
+  function closeRunTrace(card) {
+    delete openTraces[card.dataset.workflow];
+    setRunParam(null);
+    var main = card.querySelector('.wf-act-main');
+    var box = card.querySelector('.wf-trace');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+    if (main) main.hidden = false;
+  }
+
+  function traceBarHtml(name, runId) {
+    return '<div class="wf-trace-bar"><button type="button" class="wf-link wf-trace-back">' + String.fromCharCode(8592) + ' All runs</button>' +
+      '<span style="flex:1"></span><a class="wf-link" href="' + caseHref(runId) + '">Open case</a>' +
+      '<a class="wf-link" href="/agents/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId) + '/trace" download="trace-' + escapeHtml(runId) + '.json">Download JSON</a></div>';
+  }
+
+  var STEP_KINDS = {
+    start: ['Run started', 'start'], end: ['Run finished', 'end'], prompt: ['Prompt', 'prompt'], model_call: ['Model call', 'model'],
+    tool_call: ['Tool call', 'tool'], decision: ['Approval', 'person'], answer: ['Answer', 'person'], feedback: ['Feedback', 'person'],
+  };
+  function traceMs(ms) {
+    if (ms == null) return String.fromCharCode(8212);
+    if (ms < 1000) return Math.round(ms) + ' ms';
+    return healthTime(ms);
+  }
+  function traceTokens(n) { return n == null ? String.fromCharCode(8212) : Number(n).toLocaleString(); }
+
+  // The steps from start to end: the run starting (its input), each step
+  // the trace kept, and the run ending (its output or error).
+  function traceSteps(t) {
+    var steps = [{ type: 'start', at: t.started_at, input: t.input }].concat(t.step_events || []);
+    if (t.finished_at) steps.push({ type: 'end', at: t.finished_at, status: t.status, output: t.final_output_json != null ? t.final_output_json : t.final_output, error: t.error });
+    return steps;
+  }
+
+  function stepTitle(s, t) {
+    if (s.type === 'tool_call') return s.name;
+    if (s.type === 'model_call') return s.model || (t.model && t.model.model) || 'Model';
+    if (s.type === 'decision') return (s.approved ? (s.changed ? 'Approved as changed: ' : 'Approved: ') : 'Denied: ') + s.tool;
+    if (s.type === 'answer') return s.question;
+    if (s.type === 'feedback') return [s.verdict, s.edit ? (s.edit === 'none' ? 'used unedited' : s.edit + ' edits') : ''].filter(Boolean).join(', ') || 'Given';
+    if (s.type === 'prompt') return s.resumed ? 'Resumed' : 'System prompt, tools and input';
+    if (s.type === 'end') return s.status === 'error' ? 'Failed' : s.status === 'done' ? 'Done' : s.status;
+    return RUN_SOURCES[t.source] || 'Started';
+  }
+  function stepFailed(s) {
+    return Boolean(s.error) || (s.type === 'decision' && !s.approved) || (s.type === 'end' && s.status === 'error') || (s.type === 'tool_call' && /denied|error|fail/i.test(s.status || ''));
+  }
+
+  function workflowTraceHtml(name, t) {
+    var steps = traceSteps(t);
+    var start = Date.parse(t.started_at);
+    var end = t.finished_at ? Date.parse(t.finished_at) : start;
+    steps.forEach(function (s) { var e = Date.parse(s.at) + (s.duration_ms || 0); if (e > end) end = e; });
+    var total = Math.max(1, end - start);
+    var cost = t.cost || {};
+    // Its model calls as the trace kept them, where usage wasn't recorded.
+    var calls = (t.step_events || []).filter(function (s) { return s.type === 'model_call'; });
+    var sum = function (k) { return calls.reduce(function (n, s) { return n + (s[k] || 0); }, 0); };
+    var tokensIn = cost.input_tokens || sum('input_tokens');
+    var tokensOut = cost.output_tokens || sum('output_tokens');
+    var item = function (k, v) { return '<div class="wf-xd-item"><dt>' + k + '</dt><dd>' + v + '</dd></div>'; };
+    var params = Object.keys((t.input && t.input.params) || {});
+    var details = '<section class="wf-section wf-xd">' +
+      '<div class="wf-xd-head">' + runPillHtml(t.status) + '<h3>Run <code>' + escapeHtml(String(t.execution_id).slice(0, 8)) + '</code></h3>' +
+        (t.workflow_version ? '<span class="wf-run-version">v' + t.workflow_version + '</span>' : '') + '</div>' +
+      '<h4 class="wf-sub">Execution details</h4>' +
+      '<dl class="wf-xd-grid">' +
+        item('Status', escapeHtml((RUN_PILLS[t.status] || [0, t.status])[1])) +
+        item('Started by', escapeHtml(RUN_SOURCES[t.source] || t.source || String.fromCharCode(8212))) +
+        item('Workflow version', t.workflow_version ? '<a href="#" class="wf-xd-version" data-version="' + t.workflow_version + '">v' + t.workflow_version + '</a>' : '<span class="hint">before versions</span>') +
+        item('Started', escapeHtml(new Date(t.started_at).toLocaleString())) +
+        item('Finished', t.finished_at ? escapeHtml(new Date(t.finished_at).toLocaleString()) : '<span class="hint">not yet</span>') +
+        item('Duration', escapeHtml(traceMs(t.duration_ms))) +
+        item('Model', t.model ? escapeHtml((t.model.provider ? t.model.provider + ' ' : '') + t.model.model) : String.fromCharCode(8212)) +
+        item('Steps', String(steps.length - (t.finished_at ? 2 : 1)) + ' <span class="hint">' + calls.length + ' model, ' + (t.tool_calls || []).length + ' tool</span>') +
+        item('Tokens', traceTokens(tokensIn) + ' in' + DOT + traceTokens(tokensOut) + ' out') +
+        item('Cost', escapeHtml(healthCost(cost.usd))) +
+        item('Execution ID', '<code>' + escapeHtml(t.execution_id) + '</code>') +
+      '</dl>' +
+      (t.error ? '<div class="wf-xd-error" role="alert"><strong>Error</strong> ' + escapeHtml(t.error) + '</div>' : '') +
+      '<div class="wf-xd-io">' +
+        '<div><div class="wf-xd-k">Input</div>' + (params.length
+          ? '<dl class="wf-xd-params">' + params.map(function (k) { return '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(t.input.params[k]) + '</dd>'; }).join('') + '</dl>'
+          : '<p class="hint" style="margin:0">No inputs</p>') + '</div>' +
+        '<div><div class="wf-xd-k">Output</div>' + (t.final_output_json != null || t.final_output
+          ? '<pre class="wf-tv-pre">' + escapeHtml(traceValueText(t.final_output_json != null ? t.final_output_json : t.final_output)) + '</pre>'
+          : '<p class="hint" style="margin:0">' + (t.status === 'error' ? 'None: it failed' : 'None yet') + '</p>') +
+          (t.output_schema_check && t.output_schema_check.valid === false ? '<p class="error" style="margin:4px 0 0">Didn' + RSQ + 't match the output schema: ' + escapeHtml((t.output_schema_check.errors || []).join('; ')) + '</p>' : '') +
+        '</div>' +
+      '</div>' +
+    '</section>';
+    var rows = steps.map(function (s, i) {
+      var kind = STEP_KINDS[s.type] || [s.type, 'other'];
+      var at = Date.parse(s.at);
+      var left = Math.min(100, Math.max(0, (at - start) / total * 100));
+      var width = s.duration_ms ? Math.max(0.6, Math.min(100 - left, s.duration_ms / total * 100)) : 0;
+      var meta = s.type === 'model_call' ? traceTokens(s.input_tokens) + ' / ' + traceTokens(s.output_tokens) + ' tokens'
+        : s.type === 'tool_call' ? (s.status || '')
+        : s.by ? s.by : '';
+      return '<li><button type="button" class="wf-tl-step k-' + kind[1] + (stepFailed(s) ? ' is-bad' : '') + '" data-step="' + i + '" aria-pressed="false">' +
+        '<span class="wf-tl-dot" aria-hidden="true"></span>' +
+        '<span class="wf-tl-text"><span class="wf-tl-kind">' + kind[0] + '</span><span class="wf-tl-title">' + escapeHtml(stepTitle(s, t)) + '</span>' +
+          (meta ? '<span class="wf-tl-meta">' + escapeHtml(meta) + '</span>' : '') + '</span>' +
+        '<span class="wf-tl-time"><span>+' + escapeHtml(traceMs(at - start)) + '</span>' + (s.duration_ms != null ? '<span class="hint">' + escapeHtml(traceMs(s.duration_ms)) + '</span>' : '') + '</span>' +
+        '<span class="wf-tl-bar" aria-hidden="true"><span style="left:' + left.toFixed(2) + '%;width:' + (width ? width.toFixed(2) + '%' : '2px') + '"></span></span>' +
+      '</button></li>';
+    }).join('');
+    return traceBarHtml(name, t.execution_id) + details +
+      '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">Execution trace</h4><span class="hint">' + steps.length + ' steps' + DOT + 'click one for its details</span></div>' +
+        '<div class="wf-tl-wrap"><ol class="wf-tl">' + rows + '</ol><div class="wf-tl-detail" aria-live="polite"></div></div>' +
+      '</section>';
+  }
+
+  // A value as text: a string as it is; model messages and replies as
+  // what each said (its text, the tools it called, what they returned);
+  // anything else as JSON.
+  function blockText(b) {
+    if (!b || typeof b !== 'object') return String(b);
+    if (b.type === 'text') return b.text || '';
+    if (b.type === 'tool_use') return String.fromCharCode(8594) + ' ' + b.name + ' ' + JSON.stringify(b.input || {}, null, 2);
+    if (b.type === 'tool_result') return String.fromCharCode(8592) + ' result' + (b.is_error ? ' (error)' : '') + ': ' + (typeof b.content === 'string' ? b.content : Array.isArray(b.content) ? b.content.map(blockText).join(String.fromCharCode(10)) : JSON.stringify(b.content, null, 2));
+    return JSON.stringify(b, null, 2);
+  }
+  function traceValueText(v) {
+    var NL = String.fromCharCode(10);
+    if (v == null) return '';
+    // A tool's JSON reply, laid out.
+    if (typeof v === 'string' && /^[[{]/.test(v.trim())) {
+      try { return JSON.stringify(JSON.parse(v), null, 2); } catch (e) { return v; }
+    }
+    if (typeof v === 'string') return v;
+    if (Array.isArray(v) && v.length && v.every(function (m) { return m && typeof m === 'object' && m.role; })) {
+      return v.map(function (m) { return '[' + m.role + ']' + NL + (typeof m.content === 'string' ? m.content : (m.content || []).map(blockText).join(NL)); }).join(NL + NL);
+    }
+    if (Array.isArray(v) && v.length && v.every(function (b) { return b && typeof b === 'object' && b.type; })) return v.map(blockText).join(NL);
+    return JSON.stringify(v, null, 2);
+  }
+
+  // A step's details: what it was (tool, model, status, who), how long it
+  // took and its tokens, any error, then its input and output in full.
+  function stepDetailHtml(s, t) {
+    var start = Date.parse(t.started_at);
+    var kind = STEP_KINDS[s.type] || [s.type];
+    var rows = [];
+    var row = function (k, v) { rows.push('<div class="wf-xd-item"><dt>' + k + '</dt><dd>' + v + '</dd></div>'); };
+    var block = function (k, v) { return v == null || v === '' ? '' : '<div class="wf-tv-block"><div class="wf-xd-k">' + k + '</div><pre class="wf-tv-pre">' + escapeHtml(traceValueText(v)) + '</pre></div>'; };
+    if (s.type === 'tool_call') { row('Tool', '<code>' + escapeHtml(s.name) + '</code>'); if (s.status) row('Status', escapeHtml(s.status)); }
+    if (s.type === 'model_call') {
+      row('Model', escapeHtml(s.model || (t.model && t.model.model) || String.fromCharCode(8212)));
+      row('Tokens', traceTokens(s.input_tokens) + ' in' + DOT + traceTokens(s.output_tokens) + ' out');
+      if (s.stop_reason) row('Stop reason', escapeHtml(s.stop_reason));
+      if (s.messages_sent != null) row('Messages sent', String(s.messages_sent));
+    }
+    if (s.type === 'prompt') { if (t.model) row('Model', escapeHtml((t.model.provider ? t.model.provider + ' ' : '') + t.model.model)); row('Tools offered', (s.tools || []).length ? s.tools.map(function (x) { return '<code>' + escapeHtml(x) + '</code>'; }).join(', ') : 'none'); if (s.prior_messages) row('Earlier messages', String(s.prior_messages)); }
+    if (s.type === 'decision') { row('Tool', '<code>' + escapeHtml(s.tool) + '</code>'); row('Decision', s.approved ? (s.changed ? 'Approved as changed' : 'Approved') : 'Denied'); }
+    if (s.by) row('By', escapeHtml(s.by));
+    if (s.type === 'start') row('Started by', escapeHtml(RUN_SOURCES[t.source] || t.source || ''));
+    row('At', escapeHtml(new Date(s.at).toLocaleTimeString()) + ' <span class="hint">+' + escapeHtml(traceMs(Date.parse(s.at) - start)) + '</span>');
+    if (s.duration_ms != null || s.type === 'model_call' || s.type === 'tool_call') row('Duration', escapeHtml(traceMs(s.duration_ms)));
+    if (s.type === 'end') row('Total', escapeHtml(traceMs(t.duration_ms)));
+    var io = '';
+    if (s.type === 'start') io = block('Input', s.input && Object.keys(s.input.params || {}).length ? s.input.params : null) + block('Message', s.input && s.input.message);
+    else if (s.type === 'prompt') io = block('Input', s.input) + (s.system ? '<details class="wf-tv-block"><summary>System prompt</summary><pre class="wf-tv-pre">' + escapeHtml(s.system) + '</pre></details>' : '');
+    else if (s.type === 'model_call' || s.type === 'tool_call') io = block('Input', s.input) + block('Output', s.output);
+    else if (s.type === 'decision') io = block('Reason', s.reason);
+    else if (s.type === 'answer') io = block('Question', s.question) + block('Answer', s.answer);
+    else if (s.type === 'feedback') io = block('Note', s.note);
+    else if (s.type === 'end') io = block('Output', s.output);
+    return '<div class="wf-tl-detail-head"><span class="wf-tl-kind">' + kind[0] + '</span><strong>' + escapeHtml(stepTitle(s, t)) + '</strong></div>' +
+      (s.error ? '<div class="wf-xd-error" role="alert"><strong>Error</strong> ' + escapeHtml(s.error) + '</div>' : '') +
+      '<dl class="wf-xd-grid">' + rows.join('') + '</dl>' + io;
+  }
+
+  function wireTrace(name, card, box, t) {
+    var id = card.dataset.workflow;
+    box.querySelector('.wf-trace-back').addEventListener('click', function () { closeRunTrace(card); });
+    if (!t) return;
+    var steps = traceSteps(t);
+    var detailBox = box.querySelector('.wf-tl-detail');
+    var buttons = box.querySelectorAll('.wf-tl-step');
+    function select(i) {
+      for (var k = 0; k < buttons.length; k++) buttons[k].setAttribute('aria-pressed', String(k === i));
+      detailBox.innerHTML = stepDetailHtml(steps[i], t);
+      if (openTraces[id]) openTraces[id].step = i;
+    }
+    box.querySelector('.wf-tl').addEventListener('click', function (ev) {
+      var b = ev.target.closest('.wf-tl-step');
+      if (b) select(Number(b.getAttribute('data-step')));
+    });
+    // The step open before a redraw, else the first that failed, else the start.
+    var kept = openTraces[id] && openTraces[id].step;
+    var failed = steps.map(stepFailed).indexOf(true);
+    select(kept != null && kept < steps.length ? kept : failed >= 0 ? failed : 0);
+    var v = box.querySelector('.wf-xd-version');
+    if (v) v.addEventListener('click', function (ev) { ev.preventDefault(); showWorkflowTab(card, 'versions'); });
   }
 
   // The Evaluation tab: the success criteria, the eval cases (saved, then
@@ -2646,8 +2960,8 @@ ${renderMarkdownScript}
     wireDraftBanner(name, card);
     loadWorkflowHealth(card, base);
     loadCandidates(card, base);
-    loadAuditSummary(card, base);
-    loadLatestChanges(card, name);
+    loadWorkflowRuns(name, card, base);
+    if (openTraces[id] && card.querySelector('.wf-trace')) openRunTrace(name, card, openTraces[id].run);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // Opens the workflow's page on its Triggers tab.
     var triggersBtn = card.querySelector('.workflow-triggers-open');

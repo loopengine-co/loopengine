@@ -242,7 +242,7 @@ ${renderMarkdownScript}
       '</div>' +
       (items.length ? '<div class="ib-list">' + rows + '</div>'
         : '<div class="ib-list"><p class="ib-empty">' + (needs ? 'Nothing needs you right now. Questions and approvals from your agents land here, however long ago they were asked.' : 'Nothing in the last 7 days. Every run shows here for a week: done automatically, decided by someone, or failed.') + '</p></div>') +
-      (needs ? '' : '<p class="hint ib-older">Showing the last 7 days.' + (fullAccess ? ' Older cases: <a class="ib-link" href="/audit?tab=cases">search all cases in Audit</a>.' : '') + '</p>');
+      (needs ? '' : '<p class="hint ib-older">Showing the last 7 days.' + (fullAccess ? ' Older runs are on each workflow' + String.fromCharCode(8217) + 's Activity tab, in <a class="ib-link" href="/workflows">Workflows</a>.' : '') + '</p>');
     var buttons = page.querySelectorAll('[data-view]');
     for (var b = 0; b < buttons.length; b++) buttons[b].addEventListener('click', function (ev) { state.view = ev.currentTarget.getAttribute('data-view'); refreshList(); });
     page.querySelector('#ibWorkflow').addEventListener('change', function (ev) { state.workflow = ev.currentTarget.value; refreshList(); });

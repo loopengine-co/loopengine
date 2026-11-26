@@ -88,7 +88,7 @@ import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgent
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowDelivery, setWorkflowFields, setWorkflowName, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow, type WorkflowFields } from '#core/workflows.js'
 import { listTraceSpans, workflowContent, workflowFromContent, type Version, type WorkflowSnapshot, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
-import { caseRow, eventsCsv } from '#web/audit-admin.js'
+import { caseRow, eventAction, eventsCsv, type EventNames } from '#web/audit-admin.js'
 import { auditPageFor } from '#web/audit-page.js'
 import { changeOf, describeChanges, keptBody, type FieldChange } from '#web/change-log.js'
 import { sessionUsage, usageBySession, type UsageRow } from '#core/usage.js'
@@ -1693,6 +1693,11 @@ async function handleWorkflows(req: IncomingMessage, res: ServerResponse, pathna
           return entry ? describeAgentNotifier(entry.config, defaultWebhook).source !== 'none' : false
         },
       })
+      // In the log as who created which workflow, and numbered as its
+      // first version, credited to them.
+      const by = changedBy(req)
+      await noteWorkflowVersion(created.agent, created.workflowId, { by, reason: 'Created' }).catch(() => undefined)
+      recordEvent({ agent: created.agent, workflow_id: created.workflowId, kind: 'change', by, data: { label: 'Created a workflow', method: 'POST', path: '/workflows/create', title: created.workflow } })
       // The planned webhook's URL, shown once on the done screen.
       if (created.webhook) {
         const { token, ...webhook } = created.webhook
@@ -2858,6 +2863,14 @@ function notePolicies(about: { by?: string; reason?: string } = {}): number | un
 }
 
 // What the Audit page's filters offer: agents, workflows, people.
+// Agents and workflows by their names now, for the log's resources.
+function auditNames(): EventNames {
+  return {
+    agentLabel: (agent) => getEntry(agent)?.config.displayName ?? agent,
+    workflowTitle: (agent, workflowId) => (getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.title : undefined),
+  }
+}
+
 function auditFilters(): { agents: { name: string; label: string }[]; workflows: { agent: string; id: string; title: string }[]; people: string[] } {
   const agents = listAgents().filter((name) => getEntry(name))
   return {
@@ -6123,7 +6136,8 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'GET' && (pathname === '/audit' || pathname === '/audit/events')) {
       const events = listEvents(eventFilterOf(req))
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ events, next: events.length ? events.at(-1)!.id : null }))
+      const names = auditNames()
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ events: events.map((e) => ({ ...e, ...eventAction(e, names) })), next: events.length ? events.at(-1)!.id : null }))
       return
     }
     // Checks the log's hash chain, every event in order.
@@ -6143,7 +6157,7 @@ const server = createServer(async (req, res) => {
         before = page.at(-1)!.id
       }
       const name = `audit-${new Date().toISOString().slice(0, 10)}.csv`
-      res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="${name}"` }).end('\ufeff' + eventsCsv(events))
+      res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="${name}"` }).end('\ufeff' + eventsCsv(events, auditNames()))
       return
     }
     // Every case kept, searched (the Audit page's Cases).

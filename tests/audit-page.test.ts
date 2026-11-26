@@ -5,7 +5,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openAuditDb, recordEvent, listEvents, eventPeople, setAuditDb } from '#core/audit-store.js'
 import { SqliteRunStore, searchRuns, setRunStore, type WorkflowRun } from '#core/workflow-runs.js'
-import { caseRow, eventText, eventsCsv } from '#web/audit-admin.js'
+import { caseRow, eventAction, eventText, eventsCsv } from '#web/audit-admin.js'
 
 let dir: string
 let db: DatabaseSync
@@ -50,8 +50,23 @@ describe('the Audit page', () => {
     const [decision] = listEvents({ by: 'ana@shop.com' })
     expect(eventText(decision)).toEqual({ what: 'Denied refund', detail: '=Already, "refunded"' })
     const csv = eventsCsv(listEvents({}))
-    expect(csv.split('\r\n')[0]).toBe('When (UTC),Kind,Person,Agent,Workflow,What,Detail,Case,Event,Hash')
-    expect(csv).toContain(`,decision,ana@shop.com,cs,refunds,Denied refund,"'=Already, ""refunded""",r1,2,`)
+    expect(csv.split('\r\n')[0]).toBe('When (UTC),Person,Action,Resource type,Resource,Kind,Agent,Workflow,What,Detail,Case,Event,Hash')
+    expect(csv).toContain(`,ana@shop.com,Tool call denied,Run,refunds,decision,cs,refunds,Denied refund,"'=Already, ""refunded""",r1,2,`)
+  })
+
+  it('says who did what to which resource, from the request a change kept', () => {
+    const at = '2026-11-26T00:00:00.000Z'
+    const change = (data: Record<string, unknown>, over: Record<string, unknown> = {}) => ({ id: 1, at, agent: 'cs', kind: 'change' as const, by: 'ana@shop.com', data, ...over })
+    const names = { agentLabel: (a: string) => (a === 'cs' ? 'Customer service' : a), workflowTitle: (_a: string, id: string) => (id === 'refunds' ? 'Refund check' : undefined) }
+    expect(eventAction(change({ label: 'Published the workflow', method: 'POST', path: '/agents/cs/workflows/refunds/publish' }, { workflow_id: 'refunds' }), names))
+      .toEqual({ action: 'Workflow published', resource: { type: 'Workflow', name: 'Refund check', agent: 'cs', workflowId: 'refunds' } })
+    expect(eventAction(change({ method: 'POST', path: '/workflows/create', title: 'Order lookup' }, { workflow_id: 'order-lookup' }), names).action).toBe('Workflow created')
+    // A deleted workflow goes by the name it had.
+    expect(eventAction(change({ method: 'DELETE', path: '/agents/cs/workflows/old', changes: [{ field: 'title', from: 'Old flow', to: '(none)' }] }, { workflow_id: 'old' }), names))
+      .toMatchObject({ action: 'Workflow deleted', resource: { type: 'Workflow', name: 'Old flow' } })
+    expect(eventAction(change({ method: 'DELETE', path: '/agents/cs/schedules/t1' }), names)).toMatchObject({ action: 'Schedule deleted', resource: { type: 'Schedule', name: 'Customer service' } })
+    expect(eventAction(change({ method: 'PUT', path: '/config/policies' }, { agent: '' }), names)).toEqual({ action: 'Shared policies changed', resource: { type: 'Workspace', name: 'Shared policies' } })
+    expect(eventAction(change({ label: 'Changed something' }, { agent: '' }), names)).toEqual({ action: 'Changed something', resource: { type: 'Workspace', name: 'Settings' } })
   })
 })
 

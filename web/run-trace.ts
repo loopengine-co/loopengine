@@ -41,6 +41,9 @@ export interface RunTrace {
   workflow_version: number | null
   workflow_version_id: string | null
   status: WorkflowRun['status']
+  /** What started it: the console, an app's API call, a schedule, a
+   * webhook, an assignment or another workflow. */
+  source: WorkflowRun['source']
   started_at: string
   finished_at: string | null
   input: { params: Record<string, string>; message: string }
@@ -115,6 +118,7 @@ export function buildRunTrace(input: { run: WorkflowRun; spans: TraceSpan[]; usa
     workflow_version: version,
     workflow_version_id: version ? `${run.workflow_id}@v${version}` : null,
     status: run.status,
+    source: run.source,
     started_at: run.started_at,
     finished_at: run.finished_at ?? null,
     input: { params: run.params ?? {}, message: run.message },
