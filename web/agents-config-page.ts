@@ -1008,7 +1008,7 @@ ${renderMarkdownScript}
       var inner = '<span class="le-card-label"><span>' + label + '</span>' + (tab ? '<span aria-hidden="true">&rarr;</span>' : '') + '</span>' +
         '<span class="le-card-value">' + value + '</span>' +
         '<span class="le-card-detail">' + detailText + '</span>';
-      var adv = ['tools', 'schedules', 'env'].indexOf(tab) !== -1 ? ' data-advanced' : '';
+      var adv = ['tools', 'env'].indexOf(tab) !== -1 ? ' data-advanced' : '';
       return tab
         ? '<a class="le-card" data-tab="' + tab + '" href="' + leShell.tabHref(cfg.name, tab) + '"' + adv + '>' + inner + '</a>'
         : '<div class="le-card">' + inner + '</div>';
@@ -3491,7 +3491,7 @@ ${renderMarkdownScript}
     // saved records all use it).
     var nameSection =
       '<h3>Name <button type="button" class="edit-btn" id="editDisplayNameBtn">Edit</button></h3>' +
-      '<p class="ov-name"><span id="displayNameDisplay">' + escapeHtml(cfg.displayName || leShell.displayNameOf(cfg.name)) + '</span>' +
+      '<p class="ov-name"><span id="displayNameDisplay">' + escapeHtml(cfg.displayName || cfg.name) + '</span>' +
         ' <span class="muted" data-advanced>&middot; id <code>' + escapeHtml(cfg.name) + '</code></span></p>' +
       editDialogHtml('<h3>Edit name</h3>', '<p>The name shown in the sidebar and at the top of its pages. Its id, <code>' + escapeHtml(cfg.name) + '</code>, stays the same: its API address and saved runs use it.</p>',
         '<form class="add-source" id="displayNameForm" style="display:none">' +

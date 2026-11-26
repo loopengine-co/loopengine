@@ -110,12 +110,6 @@ ${consoleShellScript}
   var cancelNewAgentBtn = document.getElementById('cancelNewAgentBtn');
 
   var agentNames = [];
-  // An id as a name, for an agent without one: customer-service is
-  // Customer service.
-  function readableName(id) {
-    var words = String(id).split('-').join(' ');
-    return words.charAt(0).toUpperCase() + words.slice(1);
-  }
   // What each agent does, from its workflows: on each card, the first
   // few by name, each opening its page.
   function fillWorkflows() {
@@ -163,7 +157,7 @@ ${consoleShellScript}
           var qs = '?agent=' + encodeURIComponent(agent.name);
           li.innerHTML =
             '<div class="le-card agent-card">' +
-            '<div class="name">' + escapeHtml(agent.displayName || readableName(agent.name)) + ' <span class="hint" data-advanced style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span></div>' +
+            '<div class="name">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? ' <span class="hint" data-advanced style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span>' : '') + '</div>' +
             '<div class="does" data-agent-does="' + escapeHtml(agent.name) + '"></div>' +
             '<div class="prompt">' + escapeHtml(agent.systemPrompt) + '</div>' +
             '<div class="links">' +

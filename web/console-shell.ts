@@ -146,7 +146,7 @@ export const consoleShellScript: string = `<script>
   ];
 
   // The agent tabs for Advanced view only.
-  var ADVANCED_TABS = ['schedules', 'env', 'advanced'];
+  var ADVANCED_TABS = ['env', 'advanced'];
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -232,7 +232,7 @@ export const consoleShellScript: string = `<script>
       var meta = n ? '<span class="le-pill warn" title="Settings this agent must set before its tools work">' + n + ' to set</span>' : '';
       return '<li><a class="le-agent-item" href="' + agentHref(a.name) + '" data-le-agent="' + esc(a.name) + '"' + (a.displayName ? ' title="' + esc(a.name) + '"' : '') + (a.name === activeAgent ? ' aria-current="page"' : '') + '>' +
         '<span class="le-dot' + (n ? ' warn' : '') + '" aria-hidden="true"></span>' +
-        '<span class="le-name">' + esc(a.displayName || readableName(a.name)) + '</span>' + meta + '</a></li>';
+        '<span class="le-name">' + esc(a.displayName || a.name) + '</span>' + meta + '</a></li>';
     }).join('');
   }
 
@@ -363,8 +363,8 @@ export const consoleShellScript: string = `<script>
     }).join('');
     return '<div class="le-head"><div class="le-head-row">' +
       '<div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
-      '<div style="min-width:0"><h1><span data-le-head-name>' + esc(opts.displayName || readableName(opts.name)) + '</span>' +
-        '<span class="le-head-id" data-le-head-id data-advanced>' + esc(opts.name) + '</span></h1>' + (opts.prompt ? '<p>' + esc(opts.prompt) + '</p>' : '') + '</div></div>' +
+      '<div style="min-width:0"><h1><span data-le-head-name>' + esc(opts.displayName || opts.name) + '</span>' +
+        '<span class="le-head-id" data-le-head-id data-advanced' + (opts.displayName ? '' : ' hidden') + '>' + esc(opts.name) + '</span></h1>' + (opts.prompt ? '<p>' + esc(opts.prompt) + '</p>' : '') + '</div></div>' +
       '<div class="le-chips">' + chips + '</div></div>' +
       '<nav class="le-tabs" aria-label="Agent sections">' + tabs + '</nav></div>';
   }
@@ -396,19 +396,15 @@ export const consoleShellScript: string = `<script>
     agents.forEach(function (a) { if (a.name === name) { if (displayName) a.displayName = displayName; else delete a.displayName; } });
     renderList();
     var title = document.querySelector('[data-le-head-name]');
-    if (title) title.textContent = displayName || readableName(name);
+    var id = document.querySelector('[data-le-head-id]');
+    if (title) title.textContent = displayName || name;
+    if (id) id.hidden = !displayName;
   }
 
   /** An agent's name for people: its display name, or its id. */
   function displayNameOf(name) {
     var a = agents.filter(function (x) { return x.name === name; })[0];
-    return (a && a.displayName) || readableName(name);
-  }
-  // An agent without a name of its own goes by its id in words:
-  // customer-service is Customer service.
-  function readableName(id) {
-    var words = String(id || '').split('-').join(' ');
-    return words.charAt(0).toUpperCase() + words.slice(1);
+    return (a && a.displayName) || name;
   }
 
   var section = params.get('section');
