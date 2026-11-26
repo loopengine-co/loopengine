@@ -929,6 +929,28 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   /* Plain buttons, as on the other pages. */
   .wf-evals-bar button, .wf-case-actions button, .wf-crit-bar button, .wf-crit-edit { border-color: var(--line); background: var(--bg); color: var(--ink); }
   .wf-evals-bar button:hover:not(:disabled), .wf-case-actions button:hover:not(:disabled), .wf-crit-bar button:hover:not(:disabled), .wf-crit-edit:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
+
+  /* The Schedules tab: + Add schedule, and its dialog, like Create
+     schedule on the Schedules page. */
+  .sched-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+  .sched-top .le-btn-dark { flex: none; }
+  .sched-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
+  .sched-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
+  .sched-dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100vh - 50px); margin: 0; }
+  .sched-dlg-head { display: flex; align-items: center; gap: 8px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .sched-dlg-head h2 { margin: 0 auto 0 0; font-size: 18px; font-weight: 500; }
+  .sched-dlg-head button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
+  .sched-dlg-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: auto; }
+  .sched-dlg-col { display: grid; align-content: start; }
+  .sched-dlg-col + .sched-dlg-col { border-left: 1px solid var(--line); background: var(--surface); }
+  .sched-field { display: grid; gap: 9px; padding: 16px 22px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .sched-field[hidden] { display: none; }
+  .sched-field-k { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .sched-field textarea { min-height: 90px; border-radius: 9px; }
+  .sched-field input:not([type="radio"]):not([type="checkbox"]), .sched-field select { height: 36px; border-radius: 9px; }
+  .sched-dlg-foot { padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); min-height: 46px; display: flex; align-items: center; }
+  .sched-dlg-foot:has(#scheduleResult:empty) { display: none; }
+  @media (max-width: 760px) { .sched-dlg-body { grid-template-columns: minmax(0, 1fr); } .sched-dlg-col + .sched-dlg-col { border-left: 0; border-top: 1px solid var(--line); } .sched-top { flex-direction: column; } }
 </style>
 </head>
 <body data-le-page="agent-config">
@@ -5105,13 +5127,16 @@ ${renderMarkdownScript}
     var active = tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; });
     var list = tasks.length
       ? '<div class="le-table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Status</th><th>Last run</th><th></th></tr></thead><tbody>' + tasks.map(renderScheduleRow).join('') + '</tbody></table></div>'
-      : '<p class="hint">Nothing scheduled yet.</p>';
-    return '<p class="muted" style="margin:0 0 20px">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule runs the workflow&#39;s instructions as they are at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging Apps tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p>' +
+      : '<p class="hint">Nothing scheduled yet. Add one with + Add schedule.</p>';
+    return '<div class="sched-top"><p class="muted" style="margin:0">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule runs the workflow&#39;s instructions as they are at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging Apps tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p><button type="button" class="le-btn-dark" id="scheduleAddBtn">+ Add schedule</button></div>' +
       '<section><h3>Scheduled (' + active.length + ' active)</h3>' + list + '</section>' +
-      '<section><h3>New schedule</h3>' +
-        '<form class="add-source" id="scheduleForm" style="max-width:560px">' +
+      // + Add schedule opens this, like Create schedule on the Schedules page.
+      '<dialog class="sched-dialog" id="scheduleDialog" aria-labelledby="scheduleDlgTitle">' +
+        '<form id="scheduleForm">' +
+          '<div class="sched-dlg-head"><h2 id="scheduleDlgTitle">Create schedule</h2><button type="button" id="scheduleCancel">Cancel</button><button type="submit" class="primary">Save</button></div>' +
+          '<div class="sched-dlg-body"><div class="sched-dlg-col">' +
           (schedulesWorkflows.length
-            ? '<div class="body-field">Runs' +
+            ? '<div class="sched-field"><span class="sched-field-k">Runs</span>' +
                 '<div class="schedule-when"><input type="radio" name="runs" value="workflow" id="runsWorkflow" checked><label for="runsWorkflow">A workflow</label>' +
                   '<select name="workflow_id" aria-label="Workflow">' + schedulesWorkflows.map(function (w) {
                     return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.title) + '</option>';
@@ -5121,22 +5146,24 @@ ${renderMarkdownScript}
                 '<div class="schedule-when"><input type="radio" name="runs" value="message" id="runsMessage"><label for="runsMessage">A message</label></div>' +
               '</div>'
             : '') +
-          '<label id="scheduleMessageField"' + (schedulesWorkflows.length ? ' hidden' : '') + '>Message <span class="hint">(what the agent receives each time, as if someone typed it)</span><textarea name="message" placeholder="Summarize yesterday&#39;s support tickets and post the summary."></textarea></label>' +
-          '<div class="body-field">When' +
+          '<label class="sched-field" id="scheduleMessageField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><span class="sched-field-k">Message</span><span class="hint">What the agent receives each time, as if someone typed it.</span><textarea name="message" placeholder="Summarize yesterday&#39;s support tickets and post the summary."></textarea></label>' +
+          '<label class="sched-field"><span class="sched-field-k">Name <span class="hint">(optional)</span></span><input name="task_name" placeholder="Daily ticket summary"></label>' +
+          '</div><div class="sched-dlg-col">' +
+          '<div class="sched-field"><span class="sched-field-k">When</span>' +
             '<div class="schedule-when"><input type="radio" name="when" value="every" id="whenEvery" checked><label for="whenEvery">Every</label>' +
               '<input type="number" name="everyN" value="1" min="1" aria-label="How many">' +
-              '<select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option><option value="w">weeks</option></select>' +
-              '<label for="everyStart">starting</label><input type="datetime-local" name="everyStart" id="everyStart" aria-label="First run"></div>' +
+              '<select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option><option value="w">weeks</option></select></div>' +
+            '<div class="schedule-when" style="margin-left:22px"><label for="everyStart">starting</label><input type="datetime-local" name="everyStart" id="everyStart" aria-label="First run"></div>' +
             '<p class="hint" style="margin:0 0 4px 22px">Optional. The first run, which sets the time of day (and the weekday, for weeks) every later run keeps, e.g. every 1 day starting tomorrow 09:00. Without it, the first run is one interval from now.' +
               (schedulesTimeZone ? ' Times are in ' + escapeHtml(schedulesTimeZone.replace(/_/g, ' ')) + ' (<a href="/config?section=settings">change</a>).' : '') + '</p>' +
             '<div class="schedule-when"><input type="radio" name="when" value="once" id="whenOnce"><label for="whenOnce">Once at</label>' +
               '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
           '</div>' +
-          '<label>Name <span class="hint">(optional)</span><input name="task_name" placeholder="Daily ticket summary"></label>' +
-          '<label class="http-tool-inline-label" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><input type="checkbox" name="notify"> Send result to messaging app <span class="hint">(through its Messaging Apps tab: Slack, email, Lark or a webhook)</span></label>' +
-          '<div style="display:flex;gap:8px"><button type="submit">Schedule</button></div>' +
-          '<div id="scheduleResult" class="hint"></div>' +
-        '</form></section>';
+          '<label class="sched-field http-tool-inline-label" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><span><input type="checkbox" name="notify"> Send result to messaging app</span><span class="hint">Through its Messaging Apps tab: Slack, email, Lark or a webhook.</span></label>' +
+          '<div class="sched-field"><span class="sched-field-k">When it starts</span><p class="hint" style="margin:0">Right away: the first run is at the time you chose. Pause or remove it from the list.</p></div>' +
+          '</div></div>' +
+          '<div class="sched-dlg-foot"><span id="scheduleResult"></span></div>' +
+        '</form></dialog>';
   }
 
   // The New schedule form's parameter fields ("param:<name>"), filled ones only.
@@ -5208,12 +5235,18 @@ ${renderMarkdownScript}
           inputControlHtml('param:' + p, parameters[p], false) + '</label>';
       }).join('');
     }
+    // + Add schedule opens the form in a dialog.
+    var dialog = content.querySelector('#scheduleDialog');
+    var openDialog = function () { result.textContent = ''; if (!dialog.open) dialog.showModal(); };
+    content.querySelector('#scheduleAddBtn').addEventListener('click', openDialog);
+    content.querySelector('#scheduleCancel').addEventListener('click', function () { dialog.close(); });
+    dialog.addEventListener('click', function (ev) { if (ev.target === dialog) dialog.close(); });
     // Opened from a workflow's "Add a schedule": that workflow, chosen.
     if (pendingScheduleWorkflow && workflowSelect) {
       workflowSelect.value = pendingScheduleWorkflow;
       var runsWorkflowRadio = form.querySelector('#runsWorkflow');
       if (runsWorkflowRadio) runsWorkflowRadio.checked = true;
-      form.scrollIntoView({ block: 'start' });
+      openDialog();
     }
     pendingScheduleWorkflow = null;
     focusScheduleRow();
@@ -5256,7 +5289,8 @@ ${renderMarkdownScript}
           { schedule: schedule, task_name: data.get('task_name'), result_to_chat: !runsWorkflow && data.get('notify') === 'on' }
         )),
       }).then(function (r) {
-        if (!r.ok) { result.textContent = r.body.error || 'Could not schedule'; return; }
+        if (!r.ok) { result.innerHTML = '<span class="error">' + escapeHtml(r.body.error || 'Could not schedule') + '</span>'; return; }
+        dialog.close();
         loadSchedulesTab(name);
       });
     });
@@ -5266,6 +5300,9 @@ ${renderMarkdownScript}
     var content = schedulesContentEl();
     if (!content) return;
     if (schedulesRefreshTimer) { clearTimeout(schedulesRefreshTimer); schedulesRefreshTimer = null; }
+    // Not while someone is filling in Create schedule: try again shortly.
+    var openDlg = content.querySelector('#scheduleDialog');
+    if (openDlg && openDlg.open) { schedulesRefreshTimer = setTimeout(function () { loadSchedulesTab(name); }, 3000); return; }
     fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/schedules').then(function (r) {
       if (currentName !== name) return;
       if (!r.ok) throw new Error(r.body.error || 'request failed');
