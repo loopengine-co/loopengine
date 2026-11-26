@@ -206,6 +206,8 @@ ${consoleShellScript}
   // A goal to start from (?new=1&text=...): one typed on the website's
   // goal box before signing up, carried in by "Open workspace".
   var startText = (new URLSearchParams(location.search).get('text') || '').slice(0, 500);
+  // From Home's box (&go=1): suggest at once, without a second click.
+  var autoStart = Boolean(startText) && new URLSearchParams(location.search).get('go') === '1';
   var state = { addOpen: false, addDraft: '', addShare: false, addNotice: null, flows: {}, openJobs: {}, goals: [], about: '', settings: {}, current: null, creating: startNew, showDiscarded: false, justDiscarded: null, error: '', poll: null, startedAt: 0 };
 
   function esc(s) {
@@ -226,6 +228,7 @@ ${consoleShellScript}
     if (id) url.searchParams.set('goal', id); else url.searchParams.delete('goal');
     url.searchParams.delete('new');
     url.searchParams.delete('text');
+    url.searchParams.delete('go');
     if (url.pathname === '/') url.pathname = '/goals';
     history.replaceState(null, '', url);
   }
@@ -571,6 +574,7 @@ ${consoleShellScript}
         render();
       });
     });
+    if (submit && autoStart) { autoStart = false; submit.click(); }
     var kind = document.getElementById('glKind');
     if (kind) kind.addEventListener('change', function () { saveSettings({ businessKind: kind.value || null }); });
     var share = document.getElementById('glShare');

@@ -5604,15 +5604,15 @@ const server = createServer(async (req, res) => {
     // web/playground.ts. GET, not POST, and an exact path match
     // (neither has a :name segment), so no risk of colliding with the
     // regexes above (already partitioned by method).
-    // The bare address opens the Workflows overview, as does /workflows
-    // from a browser (the planner's data stays at /workflows for scripts).
-    // Goals (/goals) and their tree of jobs and workflows (/home) are out
-    // of the menu; agents are at /agents/config.
-    if (req.method === 'GET' && pathname === '/home') {
+    // The Workflows overview is /workflows from a browser (the planner's
+    // data stays at /workflows for scripts); agents are at /agents/config.
+    // Home (/): "What should your agents take care of?", what's waiting
+    // and the latest runs (web/home-page.ts).
+    if (req.method === 'GET' && (pathname === '/' || pathname === '/home')) {
       res.writeHead(200, { 'content-type': 'text/html' }).end(homePageHtml)
       return
     }
-    if (req.method === 'GET' && (pathname === '/' || (pathname === '/workflows' && String(req.headers.accept ?? '').includes('text/html')))) {
+    if (req.method === 'GET' && pathname === '/workflows' && String(req.headers.accept ?? '').includes('text/html')) {
       res.writeHead(200, { 'content-type': 'text/html' }).end(workflowsOverviewPageHtml)
       return
     }
