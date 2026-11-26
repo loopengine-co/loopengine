@@ -948,6 +948,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .sched-field-k { font-size: 14px; font-weight: 500; color: var(--ink); }
   .sched-field textarea { min-height: 90px; border-radius: 9px; }
   .sched-field input:not([type="radio"]):not([type="checkbox"]), .sched-field select { height: 36px; border-radius: 9px; }
+  .sched-field .le-seg { display: flex; }
+  .sched-field .le-seg button { flex: 1; justify-content: center; }
+  .sched-field .le-seg[hidden], .sched-row[hidden], .sched-field select[hidden] { display: none; }
+  .sched-row { display: flex; gap: 8px; }
+  .sched-message { display: grid; gap: 6px; }
+  .sched-message[hidden] { display: none; }
+  .sched-row > * { flex: 1; min-width: 0; }
+  .sched-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .sched-dlg-foot { padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); min-height: 46px; display: flex; align-items: center; }
   .sched-dlg-foot:has(#scheduleResult:empty) { display: none; }
   @media (max-width: 760px) { .sched-dlg-body { grid-template-columns: minmax(0, 1fr); } .sched-dlg-col + .sched-dlg-col { border-left: 0; border-top: 1px solid var(--line); } .sched-top { flex-direction: column; } }
@@ -5134,33 +5142,31 @@ ${renderMarkdownScript}
       '<dialog class="sched-dialog" id="scheduleDialog" aria-labelledby="scheduleDlgTitle">' +
         '<form id="scheduleForm">' +
           '<div class="sched-dlg-head"><h2 id="scheduleDlgTitle">Create schedule</h2><button type="button" id="scheduleCancel">Cancel</button><button type="submit" class="primary">Save</button></div>' +
+          // The same settings as Create schedule on the Schedules page, and
+          // here a message can run instead of a workflow.
           '<div class="sched-dlg-body"><div class="sched-dlg-col">' +
-          (schedulesWorkflows.length
-            ? '<div class="sched-field"><span class="sched-field-k">Runs</span>' +
-                '<div class="schedule-when"><input type="radio" name="runs" value="workflow" id="runsWorkflow" checked><label for="runsWorkflow">A workflow</label>' +
-                  '<select name="workflow_id" aria-label="Workflow">' + schedulesWorkflows.map(function (w) {
-                    return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.title) + '</option>';
-                  }).join('') + '</select></div>' +
-                '<div class="workflow-params" id="scheduleParams" style="margin:0 0 4px 22px"></div>' +
-                '<p class="hint" style="margin:0 0 4px 22px">Each run follows the workflow&#39;s instructions as they are then, so changing the workflow changes what runs.</p>' +
-                '<div class="schedule-when"><input type="radio" name="runs" value="message" id="runsMessage"><label for="runsMessage">A message</label></div>' +
-              '</div>'
-            : '') +
-          '<label class="sched-field" id="scheduleMessageField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><span class="sched-field-k">Message</span><span class="hint">What the agent receives each time, as if someone typed it.</span><textarea name="message" placeholder="Summarize yesterday&#39;s support tickets and post the summary."></textarea></label>' +
-          '<label class="sched-field"><span class="sched-field-k">Name <span class="hint">(optional)</span></span><input name="task_name" placeholder="Daily ticket summary"></label>' +
-          '</div><div class="sched-dlg-col">' +
-          '<div class="sched-field"><span class="sched-field-k">When</span>' +
-            '<div class="schedule-when"><input type="radio" name="when" value="every" id="whenEvery" checked><label for="whenEvery">Every</label>' +
-              '<input type="number" name="everyN" value="1" min="1" aria-label="How many">' +
-              '<select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option><option value="w">weeks</option></select></div>' +
-            '<div class="schedule-when" style="margin-left:22px"><label for="everyStart">starting</label><input type="datetime-local" name="everyStart" id="everyStart" aria-label="First run"></div>' +
-            '<p class="hint" style="margin:0 0 4px 22px">Optional. The first run, which sets the time of day (and the weekday, for weeks) every later run keeps, e.g. every 1 day starting tomorrow 09:00. Without it, the first run is one interval from now.' +
-              (schedulesTimeZone ? ' Times are in ' + escapeHtml(schedulesTimeZone.replace(/_/g, ' ')) + ' (<a href="/config?section=settings">change</a>).' : '') + '</p>' +
-            '<div class="schedule-when"><input type="radio" name="when" value="once" id="whenOnce"><label for="whenOnce">Once at</label>' +
-              '<input type="datetime-local" name="runAt" aria-label="Date and time"></div>' +
+          '<div class="sched-field"><span class="sched-field-k">Runs</span>' +
+            '<input type="hidden" name="runs" value="' + (schedulesWorkflows.length ? 'workflow' : 'message') + '">' +
+            (schedulesWorkflows.length ? '<span class="le-seg" id="scheduleRuns"><button type="button" data-runs="workflow" aria-pressed="true">A workflow</button><button type="button" data-runs="message" aria-pressed="false">A message</button></span>' : '') +
+            (schedulesWorkflows.length ? '<select name="workflow_id" aria-label="Workflow" id="scheduleWorkflowField">' + schedulesWorkflows.map(function (w) {
+              return '<option value="' + escapeHtml(w.id) + '">' + escapeHtml(w.title) + '</option>';
+            }).join('') + '</select>' : '') +
+            '<div id="scheduleMessageField" class="sched-message"' + (schedulesWorkflows.length ? ' hidden' : '') + '><textarea name="message" placeholder="Summarize yesterday&#39;s support tickets and post the summary."></textarea><span class="hint">What the agent receives each time, as if someone typed it.</span></div>' +
           '</div>' +
-          '<label class="sched-field http-tool-inline-label" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><span><input type="checkbox" name="notify"> Send result to messaging app</span><span class="hint">Through its Messaging Apps tab: Slack, email, Lark or a webhook.</span></label>' +
-          '<div class="sched-field"><span class="sched-field-k">When it starts</span><p class="hint" style="margin:0">Right away: the first run is at the time you chose. Pause or remove it from the list.</p></div>' +
+          '<label class="sched-field"><span class="sched-field-k">Name <span class="hint">(optional)</span></span><input name="task_name" maxlength="80" placeholder="e.g. Monday sales summary"></label>' +
+          '<div class="sched-field"><span class="sched-field-k">Schedule</span>' +
+            '<span class="le-seg" id="scheduleKind"><button type="button" data-skind="repeat" aria-pressed="true">Recurring</button><button type="button" data-skind="once" aria-pressed="false">One time</button></span>' +
+            '<span class="le-seg" id="scheduleFreq"><button type="button" data-sfreq="interval" aria-pressed="false">Interval</button><button type="button" data-sfreq="daily" aria-pressed="true">Daily</button><button type="button" data-sfreq="weekly" aria-pressed="false">Weekly</button></span>' +
+            '<div class="sched-row" data-swhen="interval" hidden><input type="number" name="everyN" min="1" step="1" value="1" aria-label="Every"><select name="everyUnit" aria-label="Unit"><option value="m">minutes</option><option value="h" selected>hours</option><option value="d">days</option></select></div>' +
+            '<div class="sched-row" data-swhen="daily"><input type="time" name="dailyAt" value="09:00" aria-label="At"></div>' +
+            '<div class="sched-row" data-swhen="weekly" hidden><select name="weekday" aria-label="On">' + ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(function (d) { return '<option value="' + d + '">' + d.charAt(0).toUpperCase() + d.slice(1) + '</option>'; }).join('') + '</select><input type="time" name="weeklyAt" value="09:00" aria-label="At"></div>' +
+            '<div class="sched-row" data-swhen="once" hidden><input type="date" name="onceDate" aria-label="Date"><input type="time" name="onceAt" value="09:00" aria-label="At"></div>' +
+            (schedulesTimeZone ? '<p class="hint" style="margin:0">Times are in ' + escapeHtml(schedulesTimeZone.replace(/_/g, ' ')) + ', the workspace' + String.fromCharCode(8217) + 's time zone (<a href="/config?section=settings">change</a>).</p>' : '') +
+          '</div>' +
+          '</div><div class="sched-dlg-col">' +
+          (schedulesWorkflows.length ? '<div class="sched-field" id="scheduleInputsField"><span class="sched-field-k">Inputs for every run</span><div class="workflow-params" id="scheduleParams"></div><p class="hint" style="margin:0">Each run follows the workflow&#39;s instructions as they are then, so changing the workflow changes what runs.</p></div>' : '') +
+          '<div class="sched-field" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><div class="sched-switch-row"><span class="sched-field-k">Send each result to chat</span><input type="checkbox" name="notify" aria-label="Send each result to chat"></div><p class="hint" style="margin:0">After every run, its result goes to the agent&#39;s messaging app (Slack, Telegram, Lark or email), if it has one. A workflow&#39;s results go where its Messaging tab says.</p></div>' +
+          '<div class="sched-field"><span class="sched-field-k">When it starts</span><p class="hint" style="margin:0">Right away: the first run is at the next time you chose. Pause or remove it from the list.</p></div>' +
           '</div></div>' +
           '<div class="sched-dlg-foot"><span id="scheduleResult"></span></div>' +
         '</form></dialog>';
@@ -5222,7 +5228,6 @@ ${renderMarkdownScript}
     var form = content.querySelector('#scheduleForm');
     var result = content.querySelector('#scheduleResult');
     var messageField = content.querySelector('#scheduleMessageField');
-    var runsRadios = content.querySelectorAll('input[name="runs"]');
     var paramsBox = content.querySelector('#scheduleParams');
     var workflowSelect = form.querySelector('select[name="workflow_id"]');
     // One field per parameter of the chosen workflow.
@@ -5244,39 +5249,65 @@ ${renderMarkdownScript}
     // Opened from a workflow's "Add a schedule": that workflow, chosen.
     if (pendingScheduleWorkflow && workflowSelect) {
       workflowSelect.value = pendingScheduleWorkflow;
-      var runsWorkflowRadio = form.querySelector('#runsWorkflow');
-      if (runsWorkflowRadio) runsWorkflowRadio.checked = true;
       openDialog();
     }
     pendingScheduleWorkflow = null;
     focusScheduleRow();
     renderScheduleParams();
     if (workflowSelect) workflowSelect.addEventListener('change', renderScheduleParams);
-    for (var k = 0; k < runsRadios.length; k++) {
-      runsRadios[k].addEventListener('change', function () {
-        var byMessage = form.querySelector('input[name="runs"]:checked').value === 'message';
-        messageField.hidden = !byMessage;
-        if (paramsBox) paramsBox.hidden = byMessage;
-        // A workflow's result goes where its Messaging tab says.
-        var notifyField = form.querySelector('#scheduleNotifyField');
-        if (notifyField) notifyField.hidden = !byMessage;
-      });
-    }
+    // A workflow or a message; Recurring (an interval, daily or weekly) or
+    // one time: segmented controls, as on the Schedules page.
+    var press = function (box, attr, value) {
+      var bs = box ? box.querySelectorAll('[' + attr + ']') : [];
+      for (var q = 0; q < bs.length; q++) bs[q].setAttribute('aria-pressed', String(bs[q].getAttribute(attr) === value));
+    };
+    var runsBox = form.querySelector('#scheduleRuns');
+    if (runsBox) runsBox.addEventListener('click', function (ev) {
+      var bt = ev.target.closest('[data-runs]');
+      if (!bt) return;
+      var byMessage = bt.getAttribute('data-runs') === 'message';
+      form.runs.value = byMessage ? 'message' : 'workflow';
+      press(runsBox, 'data-runs', form.runs.value);
+      messageField.hidden = byMessage ? false : true;
+      if (workflowSelect) workflowSelect.hidden = byMessage;
+      var inputs = form.querySelector('#scheduleInputsField');
+      if (inputs) inputs.hidden = byMessage;
+      // A workflow's result goes where its Messaging tab says.
+      form.querySelector('#scheduleNotifyField').hidden = !byMessage;
+    });
+    var skind = 'repeat', sfreq = 'daily';
+    var showWhen = function () {
+      form.querySelector('#scheduleFreq').hidden = skind !== 'repeat';
+      var rows = form.querySelectorAll('[data-swhen]');
+      for (var q = 0; q < rows.length; q++) rows[q].hidden = rows[q].getAttribute('data-swhen') !== (skind === 'once' ? 'once' : sfreq);
+    };
+    form.querySelector('#scheduleKind').addEventListener('click', function (ev) {
+      var bt = ev.target.closest('[data-skind]');
+      if (!bt) return;
+      skind = bt.getAttribute('data-skind'); press(form.querySelector('#scheduleKind'), 'data-skind', skind); showWhen();
+    });
+    form.querySelector('#scheduleFreq').addEventListener('click', function (ev) {
+      var bt = ev.target.closest('[data-sfreq]');
+      if (!bt) return;
+      sfreq = bt.getAttribute('data-sfreq'); press(form.querySelector('#scheduleFreq'), 'data-sfreq', sfreq); showWhen();
+    });
+    var tomorrow = new Date(Date.now() + 86400000);
+    form.onceDate.value = tomorrow.getFullYear() + '-' + String(tomorrow.getMonth() + 1).padStart(2, '0') + '-' + String(tomorrow.getDate()).padStart(2, '0');
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var data = new FormData(form);
       var runsWorkflow = data.get('runs') === 'workflow';
       if (!runsWorkflow && !String(data.get('message') || '').trim()) { result.textContent = 'Write the message the agent receives.'; return; }
       var schedule;
-      if (data.get('when') === 'once') {
-        if (!data.get('runAt')) { result.textContent = 'Pick a date and time.'; return; }
-        schedule = { run_at: scheduleFormTime(data.get('runAt')) };
+      if (skind === 'once') {
+        if (!data.get('onceDate') || !data.get('onceAt')) { result.textContent = 'Pick a date and time.'; return; }
+        schedule = { run_at: scheduleFormTime(data.get('onceDate') + 'T' + data.get('onceAt')) };
+      } else if (sfreq === 'interval') {
+        schedule = { every: String(Math.max(1, Number(data.get('everyN')) || 1)) + data.get('everyUnit') };
+      } else if (sfreq === 'weekly') {
+        schedule = { every: '7d', at: data.get('weeklyAt') || '09:00', weekday: data.get('weekday') };
       } else {
-        // Weeks go to the scheduler as days.
-        var unit = data.get('everyUnit');
-        var n = Number(data.get('everyN')) || 1;
-        schedule = { every: unit === 'w' ? String(n * 7) + 'd' : String(n) + unit };
-        if (data.get('everyStart')) schedule.start_at = scheduleFormTime(data.get('everyStart'));
+        schedule = { every: '1d', at: data.get('dailyAt') || '09:00' };
       }
       result.textContent = 'Scheduling' + String.fromCharCode(8230);
       // Live at once, a workflow's schedule too (it's how the workflow
