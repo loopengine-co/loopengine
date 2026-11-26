@@ -30,6 +30,7 @@ import { devUiCss } from './dev-ui-styles.js'
 import { MESSAGING_ICONS } from './messaging-icons.js'
 import { renderMarkdownScript } from './markdown-script.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { MASCOT_CSS, mascotSvg } from './mascot.js'
 import { REASONING_PROVIDERS } from './agent-file-admin.js'
 
 export const agentsConfigPageHtml: string = `<!doctype html>
@@ -38,7 +39,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Console</title>
-<style>${devUiCss}
+<style>${devUiCss}${MASCOT_CSS}
   /* Each tab panel is a .le-page column inside the shell's scrolling
      main area (see web/console-shell.ts); everything below styles the
      panels' own content. */
@@ -72,19 +73,27 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   /* A workflow's own page: the agent's header and list intro give way to it. */
   .wf-page-mode > .le-head, .wf-page-mode .wf-tab-head { display: none; }
   .wf-page { display: grid; gap: 20px; }
-  .wf-page-head { display: grid; gap: 10px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
-  .wf-page-crumb-row { display: flex; align-items: center; gap: 10px; }
-  .wf-page-crumb { font-size: 13px; color: var(--ink-muted); text-decoration: none; }
-  .wf-page-crumb:hover { color: var(--accent-ink); }
-  .wf-page-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-  .wf-page-title-row h1 { margin: 0; font-size: 24px; letter-spacing: -0.01em; line-height: 1.2; }
-  .wf-page-desc { margin: 0; color: var(--ink-muted); max-width: 80ch; }
-  .wf-page-meta { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 13px; }
-  .wf-page-meta-item { display: grid; gap: 2px; min-width: 0; }
-  .wf-page-meta-k { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
-  .wf-page-meta-item a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+  /* Its header, in the other pages' style: a top bar (Workflows / its
+     agent / its name, and Edit workflow), then a big, light title, what
+     it does and its facts as chips. */
+  .wf-page-head { display: grid; gap: 0; }
+  .wf-page-crumb-row { display: flex; align-items: center; gap: 12px; margin: -28px -32px 28px; padding: 10px 20px; min-height: 58px; box-sizing: border-box; border-bottom: 1px solid var(--line); }
+  .wf-page-crumb-row .le-crumb { flex: 1; }
+  /* The top bar spans the page; the rest keeps the page's width. */
+  .wf-page-mode .le-page { max-width: none; }
+  .wf-page > :not(.wf-page-head), .wf-page-hero { max-width: 1076px; }
+  .wf-page-crumb-row .wf-row-actions .le-btn-dark:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
+  .wf-page-hero { display: grid; gap: 12px; padding: 32px 32px 26px; border: 1px solid var(--line); }
+  .wf-page-hero h1 { margin: 0; font-size: 36px; font-weight: 400; letter-spacing: -0.03em; line-height: 1.15; overflow-wrap: anywhere; }
+  .wf-page-desc { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-muted); max-width: 80ch; }
+  .wf-page-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; margin-top: 4px; }
+  .wf-page-meta-item { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 7px; min-width: 0; color: var(--ink); }
+  .wf-page-meta-k { font-size: 12px; font-weight: 400; color: var(--ink-faint); }
+  .wf-page-meta-item a { color: var(--ink); font-weight: 600; text-decoration: none; }
+  .wf-page-meta-item a:hover { text-decoration: underline; }
+  @media (max-width: 860px) { .wf-page-crumb-row { margin: -28px -16px 20px; } .wf-page-hero { padding: 22px 18px; } .wf-page-hero h1 { font-size: 28px; } }
   .wf-page .wf-page-body { padding: 0; gap: 16px; }
-  .wf-page-starts { display: grid; gap: 2px; color: var(--ink); }
+  .wf-page-starts { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; color: var(--ink); }
   .wf-page-last { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
   .wf-list-box.wf-page-box { border: 0; border-radius: 0; background: none; overflow: visible; }
   .wf-page .workflow-steps-text { margin: 0; padding: 14px 16px; border-radius: 10px; background: var(--surface); font-size: 13.5px; line-height: 1.6; max-height: 480px; overflow: auto; white-space: pre-wrap; }
@@ -100,8 +109,8 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-card-title p { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-muted); }
   .wf-card-actions { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
   .wf-card-actions button { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
-  .wf-card-actions .workflow-edit { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
-  .wf-card-actions .workflow-edit:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+  .wf-card-actions .workflow-edit { border-color: var(--line); background: var(--bg); color: var(--ink); font-weight: 600; }
+  .wf-card-actions .workflow-edit:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
   .wf-card-actions .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); font-weight: 600; }
   .wf-card-actions .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   .wf-card-actions .wf-remove[data-confirming="1"] { height: auto; min-height: 32px; padding: 6px 12px; text-align: left; white-space: normal; }
@@ -109,7 +118,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-card > .workflow-result:empty { display: none; }
   .wf-card > .workflow-result { padding: 10px 20px; border-top: 1px solid var(--line); }
   /* The list: one row per workflow; a row opens to its tabs. */
-  .wf-list-box { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+  .wf-list-box { border: 1px solid var(--line); border-radius: 0; background: var(--bg); overflow: hidden; }
   .wf-row + .wf-row { border-top: 1px solid var(--line); }
   .wf-row.workflow-focus { box-shadow: inset 3px 0 0 var(--accent); }
   .wf-row-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) 210px 200px auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
@@ -135,14 +144,16 @@ export const agentsConfigPageHtml: string = `<!doctype html>
      "+2 more schedules") at the same size as its schedule lines. */
   .wf-row-starts .hint, .wf-row-last .hint { font-size: 12.5px; }
   .wf-row-actions { display: flex; gap: 6px; }
-  .wf-row-actions button, .wf-row-foot button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
-  .wf-row-actions button:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+  .wf-row-actions button, .wf-row-foot button { height: 30px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .wf-row-actions button:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
   .wf-row-body { padding: 4px 16px 16px 44px; display: grid; gap: 12px; }
   .wf-row-body[hidden], .wf-panel[hidden] { display: none; }
-  .wf-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-  .wf-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 10px; margin-bottom: -1px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
+  /* Its tabs, as the segmented control the other pages use. */
+  .wf-tabs { display: flex; gap: 2px; width: fit-content; max-width: 100%; padding: 3px; border-radius: 10px; background: var(--surface); overflow-x: auto; scrollbar-width: none; }
+  .wf-tab { border: 0; border-radius: 8px; background: none; height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; color: var(--ink-muted); white-space: nowrap; }
   .wf-tab:hover:not(:disabled) { background: none; color: var(--ink); }
-  .wf-tab[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
+  .wf-tab[aria-selected="true"] { color: var(--ink); background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+  .wf-tab[aria-selected="true"]:hover:not(:disabled) { background: var(--bg); }
   .wf-msg-form { display: flex; flex-direction: column; gap: 14px; }
   .wf-draft-note { margin: 0; display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--ink-muted); }
   .wf-msg-dests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -184,10 +195,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
   .wf-cb-decision.deny { background: var(--bad-soft); color: var(--bad); }
   @media (max-width: 520px) { .wf-cb { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wf-cb-v { margin-bottom: 8px; } }
-  .wf-ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .wf-ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
   @media (max-width: 900px) { .wf-ways { grid-template-columns: minmax(0, 1fr); } }
-  .wf-way { margin: 0; display: grid; gap: 8px; align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); min-width: 0; font-size: 13px; }
-  .wf-way h4 { margin: 0; font-size: 14px; font-weight: 650; color: var(--ink); }
+  .wf-way { margin: 0; display: grid; gap: 10px; align-content: start; padding: 20px 22px; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); min-width: 0; font-size: 13px; }
+  .wf-way h4 { margin: 0; font-size: 18px; font-weight: 400; letter-spacing: -0.01em; color: var(--ink); }
   .wf-way-what { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
   .wf-way .hint[hidden], .wf-way [hidden] { display: none; }
   .wf-way .workflow-hooks:empty { display: none; }
@@ -200,11 +211,12 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-run-bar { display: grid; gap: 10px; }
   .wf-run-bar .workflow-params { margin: 0; }
   .wf-run-bar-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
-  .wf-sub { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
-  .wf-scores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-  .wf-score { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
-  .wf-score-k { font-size: 11.5px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .04em; }
-  .wf-score-v { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .wf-sub { margin: 6px 0 0; font-size: 18px; font-weight: 400; letter-spacing: -0.01em; color: var(--ink); }
+  /* Its numbers, in a hairline grid of cells. */
+  .wf-scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .wf-score { display: grid; gap: 2px; align-content: start; padding: 16px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .wf-score-k { font-size: 12.5px; font-weight: 400; color: var(--ink-muted); }
+  .wf-score-v { font-size: 28px; font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
   .wf-evals-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .wf-evals-bar button, .wf-case-actions button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
   .wf-crits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -294,13 +306,16 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-sub-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
   .wf-act-main[hidden], .wf-trace[hidden] { display: none; }
   .wf-act-main > .wf-section + .wf-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
-  .wf-run-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  .wf-run-card { display: grid; gap: 6px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); min-width: 0; font-size: 13px; }
-  .wf-run-card.is-failed { border-left: 3px solid var(--bad); }
+  /* Runs, as rows sharing their lines. */
+  .wf-run-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); }
+  .wf-run-card { display: grid; gap: 6px; padding: 14px 18px; border: 0; border-radius: 0; background: var(--bg); min-width: 0; font-size: 13px; }
+  .wf-run-card + .wf-run-card { border-top: 1px solid var(--line); }
+  .wf-run-card:hover { background: var(--surface); }
+  .wf-run-card.is-failed { box-shadow: inset 3px 0 0 var(--bad); }
   .wf-run-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
   .wf-run-card-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-  .wf-run-card-actions .wf-run-trace { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
-  .wf-run-card-actions .wf-run-trace:hover { background: var(--accent); color: var(--on-accent); }
+  .wf-run-card-actions .wf-run-trace { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .wf-run-card-actions .wf-run-trace:hover { background: var(--surface); color: var(--ink); }
   .wf-run-version { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
   .wf-run-card-inputs { color: var(--ink-muted); overflow-wrap: anywhere; }
   .wf-run-card-out { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -599,6 +614,21 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   form.add-source.env-inline textarea { flex: 1 1 100%; }
   form.add-source.env-inline button { padding: 4px 10px; }
   .tab-panel .le-table-wrap table { border: 0; border-radius: 0; }
+  /* Overview, in the other pages' style: a big title with the agent's
+     instructions and the mascot, its parts in a hairline grid of cards,
+     then its settings in another. */
+  .ov-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .ov-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
+  .ov-hero-text { display: grid; gap: 10px; min-width: 0; }
+  .ov-hero-sub { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-muted); max-width: 72ch; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .ov-section-title { margin: 0; padding: 30px 32px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .ov-cards.le-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ov-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-settings > section { margin: 0; padding: 20px 22px; background: var(--bg); min-width: 0; }
+  .ov-settings > section.ov-wide { grid-column: 1 / -1; }
+  .ov-settings pre { margin: 0; }
+  @media (max-width: 1100px) { .ov-cards.le-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 860px) { .ov-hero { padding: 24px 18px 20px; } .ov-hero .le-mascot { display: none; } .ov-settings, .ov-cards.le-grid { grid-template-columns: minmax(0, 1fr); } .ov-section-title { padding: 24px 18px 14px; } }
   section { margin-bottom: 28px; }
   section h3 {
     font-size: 15px;
@@ -876,6 +906,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
 </style>
 </head>
 <body data-le-page="agent-config">
+<template id="ovMascot">${mascotSvg(92)}</template>
 <div class="le-app">
 ${consoleSidebarHtml}
 <main class="le-main">
@@ -1085,7 +1116,7 @@ ${renderMarkdownScript}
         ? '<a class="le-card" data-tab="' + tab + '" href="' + leShell.tabHref(cfg.name, tab) + '">' + inner + '</a>'
         : '<div class="le-card">' + inner + '</div>';
     }
-    return '<div class="le-cards" style="margin-bottom:28px">' +
+    return '<div class="le-cards le-grid ov-cards">' +
       card(null, 'Model', escapeHtml(modelValue), escapeHtml(modelDetail)) +
       (cfg.abilityCount != null
         ? card('abilities', 'Apps', String(cfg.abilityCount), cfg.abilityCount ? 'Apps and abilities added to this agent' : 'Add apps and abilities, with the tools you choose')
@@ -2144,19 +2175,20 @@ ${renderMarkdownScript}
         document.title = w.title + ' ' + String.fromCharCode(183) + ' ' + agentLabel;
         return '<article class="workflow-card wf-page is-open" data-workflow="' + escapeHtml(w.id) + '">' +
           '<header class="wf-page-head">' +
+            // A top bar like the other pages': where you are, and Edit.
             '<div class="wf-page-crumb-row"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
-            '<a class="wf-page-crumb" href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows">' + String.fromCharCode(8592) + ' ' + escapeHtml(agentLabel) + ' ' + String.fromCharCode(183) + ' Workflows</a></div>' +
-            '<div class="wf-page-title-row"><h1>' + escapeHtml(w.title) + '</h1>' +
-              '<span class="wf-row-actions"><button type="button" class="workflow-edit">Edit workflow</button></span></div>' +
+              '<div class="le-crumb"><a href="/workflows">Workflows</a><span class="le-crumb-sep" aria-hidden="true">/</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows">' + escapeHtml(agentLabel) + '</a><span class="le-crumb-sep" aria-hidden="true">/</span><span class="le-crumb-here">' + escapeHtml(w.title) + '</span></div>' +
+              '<span class="wf-row-actions"><button type="button" class="workflow-edit le-btn-dark">Edit workflow</button></span></div>' +
+            '<div class="wf-page-hero"><h1>' + escapeHtml(w.title) + '</h1>' +
             (w.description && w.description !== w.title ? '<p class="wf-page-desc">' + escapeHtml(w.description) + '</p>' : '') +
             '<div class="wf-page-meta">' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Agent</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '">' + escapeHtml(agentLabel) + '</a></span>' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Starts</span><span class="wf-page-starts">' + workflowStartsSummary(w) + '</span></span>' +
-              '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Last run</span><span class="wf-page-last">' + workflowLastRunHtml(last) + '</span></span>' +
+              '<span class="wf-page-meta-item"><span class="wf-page-last">' + workflowLastRunHtml(last) + '</span></span>' +
               // Filled by loadWorkflowVersions.
               '<span class="wf-page-meta-item wf-page-version-item" hidden><span class="wf-page-meta-k">Version</span><span class="wf-page-version"></span></span>' +
               (w.jobs && w.jobs.length ? '<span class="wf-page-meta-item"><span class="wf-page-meta-k">For goal</span><span>' + w.jobs.map(function (j) { return '<a href="/goals?goal=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span></span>' : '') +
-            '</div>' +
+            '</div></div>' +
           '</header>' +
           workflowDraftBannerHtml(w) +
           '<div class="wf-row-body wf-page-body">' +
@@ -3828,11 +3860,16 @@ ${renderMarkdownScript}
         '</form>');
     }
 
-    return renderOverviewCards(cfg) +
+    var mascotTpl = document.getElementById('ovMascot');
+    return '<div class="ov-hero"><div class="ov-hero-text"><h2 class="le-display">' + escapeHtml(cfg.displayName || cfg.name) + '</h2>' +
+        (cfg.systemPrompt ? '<p class="ov-hero-sub">' + escapeHtml(cfg.systemPrompt) + '</p>' : '') + '</div>' + (mascotTpl ? mascotTpl.innerHTML : '') + '</div>' +
+      renderOverviewCards(cfg) +
+      '<h3 class="ov-section-title">Settings</h3>' +
+      '<div class="le-grid ov-settings">' +
       '<section>' + nameSection + '</section>' +
-      '<section>' + systemPromptSection + '</section>' +
       '<section>' + modelSection + '</section>' +
-      '<section><h3>Limits <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
+      '<section class="ov-wide">' + systemPromptSection + '</section>' +
+      '<section class="ov-wide"><h3>Limits <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
         '<dl class="kv kv-wide" id="limitsDisplay">' +
           '<dt>Model turns per run</dt><dd>' + escapeHtml(cfg.maxTurns) + ' <span class="hint">then the run stops</span></dd>' +
           '<dt>Conversation size</dt><dd>' + escapeHtml(Number(cfg.contextBudgetTokens).toLocaleString()) + ' tokens <span class="hint">older steps are summarised beyond this</span></dd>' +
@@ -3852,7 +3889,7 @@ ${renderMarkdownScript}
           '<div class="error" id="limitsError"></div>' +
           '<div class="ed-actions"><button type="button" id="cancelLimitsBtn" data-dialog-cancel>Cancel</button><button type="submit" class="primary">Save</button></div>' +
         '</form>') +
-      '</section>';
+      '</section></div>';
   }
 
   // Wires the Instructions / Model / Limits Edit buttons rendered by

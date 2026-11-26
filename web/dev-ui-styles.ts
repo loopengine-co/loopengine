@@ -209,16 +209,32 @@ export const devUiCss: string = `
   .le-head-id { margin-left: 10px; font-family: var(--font-mono); font-size: 12.5px; font-weight: 400; color: var(--ink-faint); letter-spacing: 0; vertical-align: middle; }
   .le-title p { margin: 4px 0 0; color: var(--ink-muted); max-width: 72ch; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .le-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .le-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--surface); color: var(--ink-muted); white-space: nowrap; }
+  .le-chip { display: inline-flex; align-items: center; height: 26px; font-size: 12px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); color: var(--ink-muted); white-space: nowrap; }
   .le-chip.mono { font-family: var(--font-mono); font-size: 11.5px; }
-  .le-tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
-  .le-tab { padding: 10px 12px; color: var(--ink-muted); border-bottom: 2px solid transparent; white-space: nowrap; display: flex; gap: 6px; align-items: center; text-decoration: none; }
+  /* An agent's header: a top bar (Agents / its name, its chips), then its
+     tabs as a segmented control. */
+  .le-agent-head { padding: 0; gap: 0; }
+  .le-agent-bar { display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 10px 20px; }
+  .le-crumb { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0; }
+  .le-crumb a { color: var(--ink-muted); text-decoration: none; }
+  .le-crumb a:hover { color: var(--ink); }
+  .le-crumb-sep { color: var(--ink-faint); font-weight: 400; }
+  .le-crumb-here { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .le-agent-head .le-head-id { font-size: 12px; margin-left: 8px; }
+  .le-tabs { display: flex; gap: 2px; width: fit-content; max-width: calc(100% - 40px); margin: 0 20px 14px; padding: 3px; border-radius: 10px; background: var(--surface); overflow-x: auto; scrollbar-width: none; }
+  .le-tab { height: 30px; padding: 0 12px; border-radius: 8px; color: var(--ink-muted); white-space: nowrap; display: flex; gap: 6px; align-items: center; text-decoration: none; font-size: 13px; font-weight: 500; }
   .le-tab:hover { color: var(--ink); }
-  .le-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 500; }
-  .le-count { font-size: 11px; background: var(--surface-2); color: var(--ink-muted); padding: 0 6px; border-radius: 999px; }
+  .le-tab[aria-selected="true"] { color: var(--ink); background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+  .le-count { font-size: 11px; background: var(--surface-2); color: var(--ink-muted); padding: 0 6px; border-radius: 6px; }
   .le-count.warn { background: var(--warn-soft); color: var(--warn); }
   .le-menu-btn { display: none; border: 0; background: transparent; padding: 2px 6px; font-size: 18px; line-height: 1; color: var(--ink-muted); }
   .le-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  /* Cards in a hairline grid (.le-grid): cells share their lines. */
+  .le-grid.le-cards { gap: 0; }
+  .le-grid > .le-card { border-width: 0 1px 1px 0; border-radius: 0; padding: 20px 22px; gap: 4px; }
+  .le-grid > a.le-card:hover { border-color: var(--line); box-shadow: none; background: var(--surface); }
+  .le-grid > .le-card .le-card-value { font-size: 28px; font-weight: 400; letter-spacing: -0.02em; }
+  .le-grid > .le-card.attention { box-shadow: none; background: var(--warn-soft); }
   .le-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 6px; align-content: start; color: var(--ink); text-decoration: none; background: var(--bg); transition: border-color .15s, box-shadow .15s; }
   a.le-card:hover { border-color: var(--ink-faint); box-shadow: 0 2px 8px rgba(0, 0, 0, .05); }
   .le-card .le-card-label { font-size: 12px; color: var(--ink-faint); display: flex; justify-content: space-between; }

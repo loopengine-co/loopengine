@@ -335,11 +335,15 @@ export const consoleShellScript: string = `<script>
         : (counts[t[0]] != null ? '<span class="le-count">' + counts[t[0]] + '</span>' : '');
       return '<a class="le-tab" data-tab="' + t[0] + '" href="' + tabHref(opts.name, t[0]) + '" aria-selected="' + (t[0] === opts.tab) + '">' + t[1] + count + '</a>';
     }).join('');
-    return '<div class="le-head"><div class="le-head-row">' +
-      '<div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
-      '<div style="min-width:0"><h1><span data-le-head-name>' + esc(opts.displayName || opts.name) + '</span>' +
-        '<span class="le-head-id" data-le-head-id' + (opts.displayName ? '' : ' hidden') + '>' + esc(opts.name) + '</span></h1>' + (opts.prompt ? '<p>' + esc(opts.prompt) + '</p>' : '') + '</div></div>' +
-      '<div class="le-chips">' + chips + '</div></div>' +
+    // A top bar like the other pages': where you are (Agents / its name),
+    // its model and permissions as chips; then its tabs, as a segmented
+    // control. Its instructions are on Overview.
+    return '<div class="le-head le-agent-head"><div class="le-agent-bar">' +
+      '<button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
+      '<h1 class="le-crumb"><a href="/agents">Agents</a><span class="le-crumb-sep" aria-hidden="true">/</span>' +
+        '<span class="le-crumb-here"><span data-le-head-name>' + esc(opts.displayName || opts.name) + '</span>' +
+        '<span class="le-head-id" data-le-head-id' + (opts.displayName ? '' : ' hidden') + '>' + esc(opts.name) + '</span></span></h1>' +
+      '<span class="le-topbar-gap"></span><div class="le-chips">' + chips + '</div></div>' +
       '<nav class="le-tabs" aria-label="Agent sections">' + tabs + '</nav></div>';
   }
 
