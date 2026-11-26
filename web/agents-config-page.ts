@@ -903,6 +903,32 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .app-pick-tool code { overflow-wrap: anywhere; }
   .app-pick-tool select { font: inherit; font-size: 11.5px; padding: 1px 4px; }
   .app-pick-desc { display: block; }
+
+  /* ---------- the new style, across the tabs ----------
+     Headings in the big, light type; boxes square, and side by side or
+     one under another they share their lines; the teal-tinted buttons
+     plain, as on the other pages. */
+  .tab-panel:not([data-tab-panel="overview"]) section h3 { font-size: 20px; font-weight: 400; letter-spacing: -0.01em; }
+  .advanced-part { font-size: 22px; font-weight: 400; letter-spacing: -0.02em; }
+  /* Side by side: a hairline grid. */
+  .wf-msg-dests, .wf-fb-stats, .wf-fb-ways { gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .wf-msg-dest, .wf-fb-stat, .wf-fb-way { border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 16px 18px; }
+  .wf-fb-stat strong, .wf-fb-stat b { font-weight: 400; }
+  /* One under another: rows sharing their lines. */
+  .wf-crits, .wf-fb-list, .msg-conns, .wf-version-cards { gap: 0; border: 1px solid var(--line); }
+  .wf-crit, .wf-fb-item, .msg-conn, .wf-version-card { border: 0; border-radius: 0; }
+  .wf-crit + .wf-crit, .wf-fb-item + .wf-fb-item, .msg-conn + .msg-conn, .wf-version-card + .wf-version-card { border-top: 1px solid var(--line); }
+  .wf-fb-item, .wf-version-card { padding: 14px 18px; }
+  .msg-conn { background: var(--bg); }
+  .wf-version-card { background: var(--bg); }
+  .wf-version-card.is-current { box-shadow: inset 3px 0 0 var(--accent); }
+  .wf-version-cards { list-style: none; margin: 0; padding: 0; display: grid; }
+  /* Boxes on their own: square. */
+  .wf-cb, .wf-fb-improve, .approvals-nudge, .le-table-wrap, .source, .workflow-steps-text, .wf-run-lines, .wf-cand-list, .tab-panel form.add-source, .tab-panel table { border-radius: 0; }
+  .wf-fb-improve { background: var(--surface); }
+  /* Plain buttons, as on the other pages. */
+  .wf-evals-bar button, .wf-case-actions button, .wf-crit-bar button, .wf-crit-edit { border-color: var(--line); background: var(--bg); color: var(--ink); }
+  .wf-evals-bar button:hover:not(:disabled), .wf-case-actions button:hover:not(:disabled), .wf-crit-bar button:hover:not(:disabled), .wf-crit-edit:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
 </style>
 </head>
 <body data-le-page="agent-config">
