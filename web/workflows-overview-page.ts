@@ -5,6 +5,7 @@
 // template placeholders, since it lives inside a template literal.
 import { devUiCss } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
 export const workflowsOverviewPageHtml: string = `<!doctype html>
 <html lang="en">
@@ -12,64 +13,83 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Workflows</title>
-<style>${devUiCss}
-  .wo { max-width: 1040px; display: grid; gap: 20px; }
-  .wo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-  .wo-stat { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 14px 16px; display: grid; gap: 2px; color: var(--ink); text-decoration: none; }
-  a.wo-stat:hover { border-color: var(--accent); }
-  .wo-stat b { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
-  .wo-stat span { font-size: 12.5px; color: var(--ink-muted); }
-  .wo-stat.warn { border-color: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+<style>${devUiCss}${MASCOT_CSS}
+  .wo { max-width: 1120px; display: grid; gap: 0; }
+  .wo-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .wo-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
+  .wo-cols4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .wo-cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wo-stat { padding: 20px 22px; background: var(--bg); display: grid; gap: 2px; color: var(--ink); text-decoration: none; }
+  a.wo-stat:hover { background: var(--surface); }
+  .wo-stat b { font-size: 34px; font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .wo-stat span { font-size: 13px; color: var(--ink-muted); }
   .wo-stat.warn b { color: var(--warn); }
-  .wo-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
-  .wo-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
-  .wo-row:first-child { border-top: 0; }
-  .wo-row:hover { background: var(--surface); }
-  .wo-head { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); background: var(--surface); }
-  .wo-head:hover { background: var(--surface); }
-  .wo-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wo-sub { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wo-runs { font-size: 13px; display: grid; gap: 2px; }
-  .wo-side { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-  .wo-pill { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); white-space: nowrap; }
-  .wo-pill.warn { background: var(--warn-soft); color: var(--warn); }
-  .wo-pill.good { background: var(--good-soft); color: var(--good); }
-  .wo-pill.bad { background: var(--bad-soft); color: var(--bad); }
-  .wo-pill.run { background: var(--accent-soft); color: var(--accent-ink); }
-  .wo-new { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; background: var(--primary); color: var(--on-primary); text-decoration: none; white-space: nowrap; }
-  .wo-empty { border: 1px dashed var(--line); border-radius: 12px; padding: 28px 24px; display: grid; gap: 14px; }
-  .wo-empty h2 { margin: 0; font-size: 17px; }
-  .wo-ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-  .wo-way { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 4px; color: var(--ink); text-decoration: none; background: var(--bg); }
-  .wo-way:hover { border-color: var(--accent); }
-  .wo-way b { font-size: 14px; }
-  .wo-way span { font-size: 12.5px; color: var(--ink-muted); }
+  .wo-stat.bad b { color: var(--bad); }
+  .wo-section-title { margin: 0; padding: 30px 32px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .wo-card { display: grid; gap: 14px; align-content: start; padding: 20px 22px; background: var(--bg); }
+  .wo-card-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+  .wo-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
+  .wo-icon svg { width: 16px; height: 16px; }
+  .wo-icon.live { color: var(--good); }
+  .wo-card-text { display: grid; gap: 3px; min-width: 0; }
+  .wo-card-title { font-size: 15px; font-weight: 600; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+  a.wo-card-title:hover { text-decoration: underline; }
+  .wo-card-desc { font-size: 13px; color: var(--ink-muted); }
+  .wo-open { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--ink); background: var(--bg); }
+  .wo-open:hover { background: var(--surface); }
+  .wo-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .wo-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .wo-chip.strong { background: var(--surface); border-color: transparent; color: var(--ink); font-weight: 500; }
+  .wo-chip.good { background: var(--good-soft); border-color: transparent; color: var(--good); font-weight: 600; }
+  .wo-chip.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); font-weight: 600; }
+  .wo-chip.bad { background: var(--bad-soft); border-color: transparent; color: var(--bad); font-weight: 600; }
+  .wo-chip.run { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
+  .wo-chip-k { color: var(--ink-faint); font-weight: 400; margin-right: 6px; }
+  a.wo-chip:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .wo-next { font-size: 12px; color: var(--ink-faint); margin-left: 4px; white-space: nowrap; }
+  .wo-tile { display: grid; gap: 6px; align-content: start; padding: 22px; background: var(--bg); text-decoration: none; color: inherit; transition: background .15s; }
+  .wo-tile:hover { background: var(--surface); }
+  .wo-tile b { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .wo-tile span { font-size: 13px; color: var(--ink-muted); line-height: 1.45; }
+  .wo-filler { background: var(--bg); }
+  .wo-empty { padding: 40px 32px; text-align: center; color: var(--ink-muted); font-size: 14px; background: var(--bg); grid-column: 1 / -1; margin: 0; }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
-  @media (max-width: 760px) { .wo-row { grid-template-columns: minmax(0, 1fr) auto; } .wo-row .wo-col-starts, .wo-row .wo-col-runs { display: none; } .wo-head { display: none; } }
+  @media (max-width: 860px) {
+    .wo-hero { padding: 24px 18px 20px; }
+    .wo-hero .le-mascot { display: none; }
+    .wo-cols4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wo-cols2 { grid-template-columns: minmax(0, 1fr); }
+    .wo-section-title { padding: 24px 18px 14px; }
+    .le-search { display: none; }
+  }
 </style>
 </head>
 <body data-le-page="workflows-overview">
 <div class="le-app">
 ${consoleSidebarHtml}
 <main class="le-main">
-  <div class="le-head plain">
-    <div class="le-head-row">
-      <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Workflows</h1><p>Every workflow your agents run: how each one starts, how it's been going, and what's waiting for you.</p></div>
-      </div>
-      <a class="wo-new" href="/workflows/new">New workflow</a>
-    </div>
-  </div>
+  <header class="le-topbar">
+    <button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+    <h1 class="le-topbar-title">Workflows</h1>
+    <span class="le-topbar-gap"></span>
+    <label class="le-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="woSearch" placeholder="Search workflows" aria-label="Search workflows"></label>
+    <a class="le-btn-dark" href="/workflows/new">+ New workflow</a>
+  </header>
   <div class="le-scroll"><div class="le-page"><div class="wo" id="woPage"><p class="hint">Loading&hellip;</p></div></div></div>
 </main>
 </div>
+<template id="woMascot">${mascotSvg(92)}</template>
 ${consoleShellScript}
 <script>
 (function () {
   var page = document.getElementById('woPage');
+  var search = document.getElementById('woSearch');
+  var mascot = document.getElementById('woMascot').innerHTML;
   var DOT = ' ' + String.fromCharCode(183) + ' ';
   var esc = window.leShell.esc;
+  var ICON_FLOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/><path d="M7 11v3a3 3 0 0 0 3 3h3"/></svg>';
+  var data = null;
 
   function ago(iso) {
     var s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -78,59 +98,67 @@ ${consoleShellScript}
     if (s < 86400) return Math.round(s / 3600) + ' h ago';
     return Math.round(s / 86400) + ' d ago';
   }
-  function lastRunPill(w) {
-    if (w.waiting) return '<span class="wo-pill warn">' + w.waiting + ' waiting</span>';
-    if (!w.lastRun) return '<span class="wo-pill">Not run yet</span>';
+  function lastRunChip(w) {
+    if (w.waiting) return '<a class="wo-chip warn" href="/inbox?view=needs">' + w.waiting + ' waiting for you</a>';
+    if (!w.lastRun) return '<span class="wo-chip">Not run yet</span>';
     var st = w.lastRun.status;
-    if (st === 'running') return '<span class="wo-pill run">Running</span>';
-    if (st === 'error') return '<span class="wo-pill bad">Last run failed</span>';
-    if (st === 'awaiting_approval') return '<span class="wo-pill warn">Waiting</span>';
-    return '<span class="wo-pill good">Done</span>';
+    if (st === 'running') return '<span class="wo-chip run">Running now</span>';
+    if (st === 'error') return '<span class="wo-chip bad">Last run failed</span>';
+    if (st === 'awaiting_approval') return '<span class="wo-chip warn">Waiting</span>';
+    return '<span class="wo-chip good">Last run done</span>';
   }
   function href(w) {
     return '/agents/config?agent=' + encodeURIComponent(w.agent) + '&tab=workflows&workflow=' + encodeURIComponent(w.id);
   }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function hero(sub) {
+    return '<div class="wo-hero"><div><h2 class="le-display">Your workflows</h2><p class="le-display-sub">' + sub + '</p></div>' + mascot + '</div>';
+  }
+  var TILES = '<a class="wo-tile" href="/workflows/new"><b>Describe a workflow</b><span>Say what the agent should do in a sentence or two, and review the plan.</span></a>' +
+    '<a class="wo-tile" href="/workflows/new#examples"><b>Start from an example</b><span>A ready-made workflow for a common task.</span></a>';
 
-  function renderEmpty() {
-    page.innerHTML =
-      '<div class="wo-empty"><h2>No workflows yet</h2>' +
-        '<p class="hint" style="margin:0">A workflow is how an agent does something again and again: it runs on a schedule, from a webhook or from your app, asks you when it needs to, and every run is kept to check and improve.</p>' +
-        '<div class="wo-ways">' +
-          '<a class="wo-way" href="/workflows/new"><b>Describe a workflow</b><span>Say what the agent should do in a sentence or two and review the plan.</span></a>' +
-          '<a class="wo-way" href="/workflows/new#examples"><b>Start from an example</b><span>A ready-made workflow for a common task.</span></a>' +
-        '</div></div>';
+  function cardHtml(w) {
+    var decided = w.approved + w.refused;
+    return '<div class="wo-card">' +
+      '<div class="wo-card-head"><span class="wo-icon' + (w.live ? ' live' : '') + '">' + ICON_FLOW + '</span>' +
+        '<span class="wo-card-text"><a class="wo-card-title" href="' + href(w) + '">' + esc(w.title) + '</a>' +
+          '<span class="wo-card-desc">' + plural(w.runsThisWeek, 'run', 'runs') + ' this week' + (w.failedThisWeek ? ', <span style="color:var(--bad)">' + w.failedThisWeek + ' failed</span>' : '') + (decided ? DOT + w.approved + ' of ' + decided + ' approved' : '') + '</span></span>' +
+        '<a class="wo-open" href="' + href(w) + '">Open</a></div>' +
+      '<div class="wo-chips">' + w.starts.map(function (x, i) { var t = x === 'Run now' ? 'when someone runs it' : x; return '<span class="wo-chip' + (i === 0 ? ' strong' : '') + '" title="' + esc(t) + '">' + (i === 0 ? '<span class="wo-chip-k">Starts</span>' : '') + esc(t) + '</span>'; }).join('') +
+        '<a class="wo-chip" href="/agents/config?agent=' + encodeURIComponent(w.agent) + '">' + esc(w.agentLabel) + '</a>' +
+        lastRunChip(w) + (w.lastRun ? '<span class="wo-next">Last run ' + esc(ago(w.lastRun.at)) + '</span>' : '') + '</div>' +
+    '</div>';
   }
 
-  function render(d) {
-    if (!d.workflows.length) return renderEmpty();
+  function render() {
+    var d = data;
+    if (!d.workflows.length) {
+      page.innerHTML = hero('A workflow is how an agent does something again and again: on a schedule, from a webhook or your app. It asks you when it needs to, and every run is kept to check and improve.') +
+        '<div class="le-grid wo-cols2">' + TILES + '</div>';
+      return;
+    }
     var s = d.summary;
-    var stats =
-      '<div class="wo-stats">' +
-        '<a class="wo-stat' + (s.waiting ? ' warn' : '') + '" href="/inbox"><b>' + s.waiting + '</b><span>' + 'Waiting for you' + '</span></a>' +
+    var q = (search.value || '').trim().toLowerCase();
+    var shown = d.workflows.filter(function (w) { return !q || [w.title, w.agentLabel, w.starts.join(' ')].join(' ').toLowerCase().indexOf(q) !== -1; });
+    var stats = '<div class="le-grid wo-cols4">' +
+        '<a class="wo-stat' + (s.waiting ? ' warn' : '') + '" href="/inbox"><b>' + s.waiting + '</b><span>Waiting for you</span></a>' +
         '<div class="wo-stat"><b>' + s.runsThisWeek + '</b><span>Runs in the last 7 days</span></div>' +
-        '<div class="wo-stat"><b>' + s.failedThisWeek + '</b><span>Failed in the last 7 days</span></div>' +
+        '<div class="wo-stat' + (s.failedThisWeek ? ' bad' : '') + '"><b>' + s.failedThisWeek + '</b><span>Failed in the last 7 days</span></div>' +
         '<div class="wo-stat"><b>' + s.workflows + '</b><span>' + (s.workflows === 1 ? 'Workflow' : 'Workflows') + '</span></div>' +
       '</div>';
-    var rows = d.workflows.map(function (w) {
-      var decided = w.approved + w.refused;
-      return '<a class="wo-row" href="' + href(w) + '">' +
-        '<span style="min-width:0"><div class="wo-title">' + esc(w.title) + '</div><div class="wo-sub">' + esc(w.agentLabel) + '</div></span>' +
-        '<span class="wo-col-starts wo-sub" title="' + esc(w.starts.join(', ')) + '">' + esc(w.starts.join(DOT)) + '</span>' +
-        '<span class="wo-col-runs wo-runs"><span>' + plural(w.runsThisWeek, 'run', 'runs') + ' this week' + (w.failedThisWeek ? ', <span style="color:var(--bad)">' + w.failedThisWeek + ' failed</span>' : '') + '</span>' +
-          '<span class="wo-sub">' + (w.lastRun ? 'Last run ' + esc(ago(w.lastRun.at)) : 'Not run yet') + (decided ? DOT + w.approved + ' of ' + decided + ' approved' : '') + '</span></span>' +
-        '<span class="wo-side">' + lastRunPill(w) + '</span>' +
-      '</a>';
-    }).join('');
-    page.innerHTML = stats +
-      '<div class="wo-list"><div class="wo-row wo-head"><span>Workflow</span><span class="wo-col-starts">Starts</span><span class="wo-col-runs">Runs</span><span>Last run</span></div>' + rows + '</div>';
+    var cells = shown.map(cardHtml);
+    page.innerHTML = hero(plural(s.workflows, 'workflow', 'workflows') + ': how each one starts, how it' + String.fromCharCode(8217) + 's been going, and what' + String.fromCharCode(8217) + 's waiting for you.') + stats +
+      '<h3 class="wo-section-title">All workflows</h3>' +
+      '<div class="le-grid wo-cols2">' + (cells.length ? cells.join('') + (cells.length % 2 ? '<div class="wo-filler" aria-hidden="true"></div>' : '') : '<p class="wo-empty">No workflow matches.</p>') + '</div>' +
+      (q ? '' : '<h3 class="wo-section-title">Add a workflow</h3><div class="le-grid wo-cols2">' + TILES + '</div>');
   }
+  search.addEventListener('input', function () { if (data) render(); });
 
   // The sidebar asks for the same list as the page opens: one request.
   (window.leShell && window.leShell.getJson
     ? window.leShell.getJson('/workflows/overview').then(function (d) { if (!d) throw new Error('could not reach the server'); return d; })
     : fetch('/workflows/overview', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }))
-    .then(render)
+    .then(function (d) { data = d; render(); })
     .catch(function (err) { page.innerHTML = '<p class="error">Couldn' + String.fromCharCode(8217) + 't load your workflows: ' + esc(err.message) + '</p>'; });
 })();
 </script>
