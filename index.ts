@@ -371,7 +371,7 @@ export { startMcpSignIn, finishMcpSignIn, mcpSignInSupport, mcpOAuthEnvName, par
 export { abilityDetails } from './web/ability-details-admin.js'
 export { WorkspaceAbilityError, listWorkspaceAbilities, addWorkspaceAbility, removeWorkspaceAbility, workspaceAbilitiesDir, type WorkspaceAbility } from './core/workspace-abilities.js'
 export { installWorkspaceAbility, installUploadedAbility, MAX_UPLOAD_BYTES, type AbilityUpload } from './web/workspace-abilities-admin.js'
-export { callCost, modelPrice, describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from './web/global-config.js'
+export { callCost, modelPrice, describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError, requireReview, setRequireReview, REQUIRE_REVIEW_ENV } from './web/global-config.js'
 export { loopengineVersion } from './core/version.js'
 export { describeUpgrade, runUpgrade, UpgradeError } from './web/upgrade-admin.js'
 export type { ModelPrice, ModelPrices, ModelProviderInfo, AgentModelUsage, ModelsView, ProviderModelsView, GatewayProviderInfo, GatewaysView, TimeZoneView } from './web/global-config.js'
