@@ -998,6 +998,31 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .sched-ended { margin-top: 18px; }
   .sched-ended summary { cursor: pointer; margin-bottom: 12px; }
   @media (max-width: 860px) { .sched-cards { grid-template-columns: minmax(0, 1fr); } }
+
+  /* A run's trace, in the new style: the same layout (its details, then
+     its steps beside the one picked), with plain buttons, square cells
+     sharing their lines, labels in normal case, and the picked step
+     marked like the Inbox's open conversation. */
+  .wf-trace-bar a.wf-link, .wf-trace-save-case { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; }
+  .wf-trace-bar a.wf-link:hover, .wf-trace-save-case:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
+  .wf-trace-bar { gap: 8px; }
+  .wf-trace-case { border-radius: 0; }
+  .wf-xd { border-radius: 0; background: var(--bg); padding: 20px 22px; display: grid; gap: 16px; }
+  .wf-xd-head h3 { font-size: 22px; font-weight: 400; letter-spacing: -0.02em; }
+  .wf-xd .wf-sub { margin: 0; }
+  .wf-xd-grid { gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .wf-xd-item { padding: 12px 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); gap: 4px; }
+  .wf-xd-item dt, .wf-xd-k { font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink-muted); }
+  .wf-xd-item dd { font-size: 15px; }
+  .wf-xd-error { border-radius: 0; }
+  .wf-tv-pre { border-radius: 0; }
+  .wf-tv-pre.is-text { font-family: inherit; font-size: 13.5px; line-height: 1.55; }
+  .wf-tl { border: 1px solid var(--line); background: var(--bg); }
+  .wf-tl-step { border: 0; border-radius: 0; padding: 12px 14px 12px 9px; }
+  .wf-tl-step + .wf-tl-step { border-top: 1px solid var(--line); }
+  .wf-tl-step[aria-pressed="true"] { background: var(--surface); border-color: var(--line); box-shadow: inset 3px 0 0 var(--ink); }
+  .wf-tl-kind { font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .wf-tl-detail { border-radius: 0; background: var(--bg); padding: 18px 20px; }
 </style>
 </head>
 <body data-le-page="agent-config">
@@ -1933,7 +1958,7 @@ ${renderMarkdownScript}
           ? '<dl class="wf-xd-params">' + params.map(function (k) { return '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(t.input.params[k]) + '</dd>'; }).join('') + '</dl>'
           : '<p class="hint" style="margin:0">No inputs</p>') + '</div>' +
         '<div><div class="wf-xd-k">Output</div>' + (t.final_output_json != null || t.final_output
-          ? '<pre class="wf-tv-pre">' + escapeHtml(traceValueText(t.final_output_json != null ? t.final_output_json : t.final_output)) + '</pre>'
+          ? '<pre class="wf-tv-pre' + (t.final_output_json != null ? '' : ' is-text') + '">' + escapeHtml(traceValueText(t.final_output_json != null ? t.final_output_json : t.final_output)) + '</pre>'
           : '<p class="hint" style="margin:0">' + (t.status === 'error' ? 'None: it failed' : 'None yet') + '</p>') +
           (t.output_schema_check && t.output_schema_check.valid === false ? '<p class="error" style="margin:4px 0 0">Didn' + RSQ + 't match the output schema: ' + escapeHtml((t.output_schema_check.errors || []).join('; ')) + '</p>' : '') +
         '</div>' +
