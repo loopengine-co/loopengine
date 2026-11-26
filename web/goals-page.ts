@@ -109,6 +109,11 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-flow.built .gl-flow-n { background: var(--good-soft); color: var(--good); }
   .gl-flow.single .gl-flow-n svg { width: 13px; height: 13px; }
   .gl-flow-k { font-size: 11.5px; color: var(--ink-faint); }
+  .gl-single { display: grid; }
+  a.gl-card-title { text-decoration: none; color: var(--ink); }
+  a.gl-card-title:hover { text-decoration: underline; }
+  .gl-single .gl-flow-meta { margin-top: 2px; }
+  .gl-from { font-size: 12px; color: var(--ink-faint); margin-left: 4px; }
   .gl-flow-main { display: grid; gap: 4px; min-width: 0; justify-items: start; }
   .gl-flow-title { font-size: 14px; font-weight: 600; color: var(--ink); text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   a.gl-flow-title:hover { text-decoration: underline; }
@@ -529,10 +534,27 @@ ${consoleShellScript}
     var steps = group ? group.steps : [];
     var builtSteps = steps.filter(function (st) { return st.built; }).length;
     var pill = group && builtSteps < steps.length ? '<span class="gl-chip accent">' + builtSteps + ' of ' + steps.length + ' built</span>' : '<span class="gl-chip" data-card-pill hidden></span>';
+    var attn = '<span class="gl-chip warn" data-attn hidden>Needs you</span>';
+    var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
+    // Built as one workflow: the card is that workflow, by its own name,
+    // with the suggestion it came from noted under it.
+    if (!group && flows.length === 1) {
+      var d = flows[0];
+      var name = d.title || d.workflowId;
+      return '<div class="gl-cell" data-wf="' + esc(w.id) + '"><div class="gl-single" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' +
+        '<div class="gl-card-head"><span class="gl-icon good">' + ICON_FLOW + '</span>' +
+          '<span class="gl-card-text"><a class="gl-card-title gl-wf-title" data-how-title href="' + wfHref(d.agent, d.workflowId) + '">' + esc(name) + '</a>' +
+            (w.why ? '<span class="gl-card-desc">' + esc(w.why) + '</span>' : '') +
+            '<span class="gl-flow-meta">' + esc(agentLabel(d.agent)) + DOT + '<span data-how-meta>' + ELLIPSIS + '</span></span></span>' +
+          '<span class="gl-card-side">' + attn + pill + '<a class="gl-btn plain small gl-link-btn" href="' + wfHref(d.agent, d.workflowId) + '">Open</a></span></div></div>' +
+        '<div class="gl-chips">' + factChips(w, false) +
+          (w.title && w.title !== name ? '<span class="gl-from">Suggested as ' + String.fromCharCode(8220) + esc(w.title) + String.fromCharCode(8221) + '</span>' : '') + '</div>' +
+        manageHtml(w) +
+        '<span class="hint gl-job-status-line" data-wf-status></span>' +
+      '</div>';
+    }
     return '<div class="gl-cell" data-wf="' + esc(w.id) + '">' +
-      // A part of the goal, with the goal's icon; the workflows doing it,
-      // inside, have the workflow icon.
-      cardHead(w, group ? ICON_GROUP : ICON_GOAL, 'good', '<span class="gl-chip warn" data-attn hidden>Needs you</span>' + pill, group ? null : '') +
+      cardHead(w, group ? ICON_GROUP : ICON_FLOW, 'good', attn + pill, group ? null : 'Workflows that run together') +
       '<div class="gl-chips">' + factChips(w, false) + '</div>' +
       (group ? stepsHtml(w, steps) : flowsHtml(w) + manageHtml(w)) +
       '<span class="hint gl-job-status-line" data-wf-status></span>' +
