@@ -64,8 +64,8 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     <a class="le-rail-item" href="/agents" data-le-nav-head="agents" data-le-section="agents">${AGENTS_ICON}<span>Agents</span></a>
     <a class="le-rail-item" href="/workflows" data-le-nav-head="workflows" data-le-section="workflows">${WORKFLOWS_ICON}<span>Workflows</span></a>
     <a class="le-rail-item" href="/schedules" data-le-nav-head="schedules" data-le-section="schedules">${SCHEDULES_ICON}<span>Schedules</span></a>
-    <a class="le-rail-item" href="/audit" data-le-nav-head="audit" data-le-section="audit">${AUDIT_ICON}<span>Audit</span></a>
     <span class="le-rail-gap"></span>
+    <a class="le-rail-item" href="/audit" data-le-nav-head="audit" data-le-section="audit">${AUDIT_ICON}<span>Audit</span></a>
     <a class="le-rail-item" href="/config?section=settings" data-le-nav-head="settings" data-le-section="settings">${SETTINGS_ICON}<span>Settings</span></a>
     <div class="le-who" id="leWho" hidden></div>
   </nav>
