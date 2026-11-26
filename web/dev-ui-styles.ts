@@ -151,10 +151,6 @@ export const devUiCss: string = `
   .le-rail-item .le-inbox-count { position: absolute; top: 2px; right: 4px; margin: 0; padding: 0 5px; font-size: 10px; }
   .le-inbox-count[hidden] { display: none; }
   .le-rail-gap { flex: 1; }
-  button.le-rail-item { border: 0; background: none; height: 40px; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; width: 100%; }
-  .le-adv-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
-  .le-simple [data-advanced] { display: none !important; }
-  html:not(.le-simple) [data-simple] { display: none !important; }
   .le-nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
   .le-panel { width: 228px; flex: none; display: flex; flex-direction: column; min-height: 0; padding-top: 14px; }
   .le-panel[hidden] { display: none; }

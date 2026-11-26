@@ -19,16 +19,8 @@
 //   leShell.applyProviderKeys(form, keys, keep)  only providers with a key
 //   leShell.abilityOriginBadge(origin)    Official/Public/Private badge for an ability
 //   leShell.toggleAbilityDetails(btn)     an ability's tools, skills and settings
-//   leShell.advanced()       whether this person has Advanced view on
 //   leShell.adminNote(tech)  "Only your workspace admin can change this",
-//                            with the technical how-to in Advanced view
-//
-// Simple and Advanced view: the console is for operators first, so what
-// only a developer or the workspace's admin needs (version history,
-// evaluations, the contract, the API, environment, limits) is marked
-// data-advanced and hidden until a person turns on Advanced in the
-// sidebar (kept in this browser). data-simple marks what shows only
-// without it.
+//                            with the technical how-to
 // Same embedded-string conventions as the pages themselves: plain
 // string concatenation and no backslashes inside the script, so nothing
 // here needs double-escaping in the template literal.
@@ -56,7 +48,6 @@ const AUDIT_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" str
 
 // A gear, for Settings.
 const SCHEDULES_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
-const ADVANCED_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>'
 const SETTINGS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 
 // Two columns: the sections (Inbox, Goals, Agents, Workflows, Audit,
@@ -75,7 +66,6 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     <a class="le-rail-item" href="/schedules" data-le-nav-head="schedules" data-le-section="schedules">${SCHEDULES_ICON}<span>Schedules</span></a>
     <a class="le-rail-item" href="/audit" data-le-nav-head="audit" data-le-section="audit">${AUDIT_ICON}<span>Audit</span></a>
     <span class="le-rail-gap"></span>
-    <button type="button" class="le-rail-item le-adv-toggle" id="leAdvToggle" aria-pressed="false" title="Advanced view: also show version history, evaluations, the contract, the API and agent internals">${ADVANCED_ICON}<span>Advanced</span></button>
     <a class="le-rail-item" href="/config?section=settings" data-le-nav-head="settings" data-le-section="settings">${SETTINGS_ICON}<span>Settings</span></a>
     <div class="le-who" id="leWho" hidden></div>
   </nav>
@@ -98,7 +88,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
       <nav class="le-settings-menu" aria-label="Settings">
         <a href="/config?section=models" data-le-nav="models">Models</a>
         <a href="/config?section=apps" data-le-nav="apps">Apps</a>
-        <a href="/config?section=abilities" data-le-nav="abilities" data-advanced>Abilities</a>
+        <a href="/config?section=abilities" data-le-nav="abilities">Abilities</a>
         <a href="/config?section=settings" data-le-nav="settings">General settings</a>
       </nav>
     </section>
@@ -107,25 +97,10 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
 
 export const consoleShellScript: string = `<script>
 (function () {
-  // Simple view unless this person turned Advanced on.
-  var advancedOn = false;
-  try { advancedOn = localStorage.getItem('le-advanced') === '1'; } catch (e) {}
-  document.documentElement.classList.toggle('le-simple', !advancedOn);
-  var advToggle = document.getElementById('leAdvToggle');
-  if (advToggle) {
-    advToggle.setAttribute('aria-pressed', String(advancedOn));
-    advToggle.addEventListener('click', function () {
-      advancedOn = !advancedOn;
-      try { localStorage.setItem('le-advanced', advancedOn ? '1' : '0'); } catch (e) {}
-      document.documentElement.classList.toggle('le-simple', !advancedOn);
-      advToggle.setAttribute('aria-pressed', String(advancedOn));
-      document.dispatchEvent(new CustomEvent('le-advanced', { detail: advancedOn }));
-    });
-  }
   // A setting only the workspace's admin can change: said plainly, with
-  // the technical how-to for Advanced view.
+  // the technical how-to.
   function adminNote(tech) {
-    return '<p class="hint le-admin-note"><span data-simple>Only your workspace admin can change this.</span><span data-advanced>' + tech + '</span></p>';
+    return '<p class="hint le-admin-note">Only your workspace admin can change this. ' + tech + '</p>';
   }
   var page = document.body.getAttribute('data-le-page') || '';
   var params = new URLSearchParams(location.search);
@@ -146,9 +121,6 @@ export const consoleShellScript: string = `<script>
     ['overview', 'Overview'], ['workflows', 'Workflows'], ['abilities', 'Apps'], ['messaging', 'Messaging Apps'],
     ['schedules', 'Schedules'], ['chat', 'Chat'], ['actauth', 'Permissions'], ['env', 'Environment'], ['advanced', 'Advanced']
   ];
-
-  // The agent tabs for Advanced view only.
-  var ADVANCED_TABS = ['env', 'advanced'];
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -361,12 +333,12 @@ export const consoleShellScript: string = `<script>
       var count = t[0] === 'env'
         ? '<span data-le-env-count="' + esc(opts.name) + '">' + envCountHtml(opts.name) + '</span>'
         : (counts[t[0]] != null ? '<span class="le-count">' + counts[t[0]] + '</span>' : '');
-      return '<a class="le-tab" data-tab="' + t[0] + '" href="' + tabHref(opts.name, t[0]) + '" aria-selected="' + (t[0] === opts.tab) + '"' + (ADVANCED_TABS.indexOf(t[0]) !== -1 ? ' data-advanced' : '') + '>' + t[1] + count + '</a>';
+      return '<a class="le-tab" data-tab="' + t[0] + '" href="' + tabHref(opts.name, t[0]) + '" aria-selected="' + (t[0] === opts.tab) + '">' + t[1] + count + '</a>';
     }).join('');
     return '<div class="le-head"><div class="le-head-row">' +
       '<div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
       '<div style="min-width:0"><h1><span data-le-head-name>' + esc(opts.displayName || opts.name) + '</span>' +
-        '<span class="le-head-id" data-le-head-id data-advanced' + (opts.displayName ? '' : ' hidden') + '>' + esc(opts.name) + '</span></h1>' + (opts.prompt ? '<p>' + esc(opts.prompt) + '</p>' : '') + '</div></div>' +
+        '<span class="le-head-id" data-le-head-id' + (opts.displayName ? '' : ' hidden') + '>' + esc(opts.name) + '</span></h1>' + (opts.prompt ? '<p>' + esc(opts.prompt) + '</p>' : '') + '</div></div>' +
       '<div class="le-chips">' + chips + '</div></div>' +
       '<nav class="le-tabs" aria-label="Agent sections">' + tabs + '</nav></div>';
   }
@@ -718,6 +690,6 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { advanced: function () { return advancedOn; }, adminNote: adminNote, loadError: function () { return loadError; }, ready: ready, settings: function () { return settings; }, getJson: getJson, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadWorkflows: reloadWorkflows, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  window.leShell = { adminNote: adminNote, loadError: function () { return loadError; }, ready: ready, settings: function () { return settings; }, getJson: getJson, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadWorkflows: reloadWorkflows, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`

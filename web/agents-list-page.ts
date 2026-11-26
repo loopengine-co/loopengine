@@ -157,7 +157,7 @@ ${consoleShellScript}
           var qs = '?agent=' + encodeURIComponent(agent.name);
           li.innerHTML =
             '<div class="le-card agent-card">' +
-            '<div class="name">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? ' <span class="hint" data-advanced style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span>' : '') + '</div>' +
+            '<div class="name">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? ' <span class="hint" style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span>' : '') + '</div>' +
             '<div class="does" data-agent-does="' + escapeHtml(agent.name) + '"></div>' +
             '<div class="prompt">' + escapeHtml(agent.systemPrompt) + '</div>' +
             '<div class="links">' +

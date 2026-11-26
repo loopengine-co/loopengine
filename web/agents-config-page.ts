@@ -1081,9 +1081,8 @@ ${renderMarkdownScript}
       var inner = '<span class="le-card-label"><span>' + label + '</span>' + (tab ? '<span aria-hidden="true">&rarr;</span>' : '') + '</span>' +
         '<span class="le-card-value">' + value + '</span>' +
         '<span class="le-card-detail">' + detailText + '</span>';
-      var adv = ['tools', 'env'].indexOf(tab) !== -1 ? ' data-advanced' : '';
       return tab
-        ? '<a class="le-card" data-tab="' + tab + '" href="' + leShell.tabHref(cfg.name, tab) + '"' + adv + '>' + inner + '</a>'
+        ? '<a class="le-card" data-tab="' + tab + '" href="' + leShell.tabHref(cfg.name, tab) + '">' + inner + '</a>'
         : '<div class="le-card">' + inner + '</div>';
     }
     return '<div class="le-cards" style="margin-bottom:28px">' +
@@ -1470,7 +1469,7 @@ ${renderMarkdownScript}
     var schedules = workflowScheduleItemsHtml(w, name);
     var hasHooks = Boolean(w.webhooks || w.webhooksWaiting || w.webhooksOff);
     var way = function (key, title, what, body) {
-      return '<section class="wf-way wf-way-' + key + '"' + (key === 'api' ? ' data-advanced' : '') + '><h4>' + title + '</h4><p class="wf-way-what">' + what + '</p>' + body + '</section>';
+      return '<section class="wf-way wf-way-' + key + '"' + '><h4>' + title + '</h4><p class="wf-way-what">' + what + '</p>' + body + '</section>';
     };
     return '<div class="wf-ways">' +
       way('run', 'Run now', 'Starts a run right away, from here. Follow it in Activity.', workflowRunBarHtml(w, params)) +
@@ -2098,10 +2097,6 @@ ${renderMarkdownScript}
     return parts.length ? '<div class="wf-run-evidence">' + parts.join('') + '</div>' : '';
   }
 
-  // A workflow's tabs for Advanced view only: for whoever builds and
-  // audits it, not the operator who runs it.
-  var WORKFLOW_ADVANCED_TABS = ['evaluation', 'contract', 'versions'];
-
   function renderWorkflowsHtml(name, workflows) {
     if (workflowPageId) {
       var page = workflows.filter(function (x) { return x.id === workflowPageId; });
@@ -2143,7 +2138,7 @@ ${renderMarkdownScript}
       var tab = workflowTabs[w.id] || 'activity';
       var open = openWorkflowId === w.id;
       var panel = function (key, html) { return '<div class="wf-panel" data-panel="' + key + '"' + (tab === key ? '' : ' hidden') + '>' + html + '</div>'; };
-      var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '"' + (WORKFLOW_ADVANCED_TABS.indexOf(key) !== -1 ? ' data-advanced' : '') + ' aria-selected="' + (tab === key) + '">' + label + '</button>'; };
+      var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '" aria-selected="' + (tab === key) + '">' + label + '</button>'; };
       if (workflowPageId) {
         var agentLabel = currentCfg && currentCfg.displayName ? currentCfg.displayName : name;
         document.title = w.title + ' ' + String.fromCharCode(183) + ' ' + agentLabel;
@@ -3072,7 +3067,7 @@ ${renderMarkdownScript}
           '<div class="wf-fb-way"><b>Inbox</b><span>Under each finished run' + RSQ + 's conversation: Good or Needs work, a note, and the result as it should have been.</span></div>' +
           '<div class="wf-fb-way"><b>Messaging apps</b><span>' + (toChat ? 'Each result posted to chat ends with Good and Needs work links.' : 'Turn on ' + String.fromCharCode(8220) + 'result to chat' + String.fromCharCode(8221) + ' in Messaging, and each result posted ends with Good and Needs work links.') + '</span></div>' +
           '<div class="wf-fb-way"><b>Other platforms</b><span>Each finished run' + RSQ + 's callback has a <code>feedback_url</code> to post to.</span>' +
-            '<span data-advanced>Or with an API key:</span><pre data-advanced>POST /agents/' + escapeHtml(name) + '/runs/&lt;runId&gt;/feedback' + String.fromCharCode(10) + '{ "verdict": "bad", "note": "...", "final": "...", "source": "api", "by": "jane@acme.com" }</pre></div>' +
+            '<span>Or with an API key:</span><pre>POST /agents/' + escapeHtml(name) + '/runs/&lt;runId&gt;/feedback' + String.fromCharCode(10) + '{ "verdict": "bad", "note": "...", "final": "...", "source": "api", "by": "jane@acme.com" }</pre></div>' +
         '</div></section>';
       var trace = function (ev) {
         var a = ev.target.closest('.wf-fb-trace');
@@ -3772,7 +3767,7 @@ ${renderMarkdownScript}
     var nameSection =
       '<h3>Name <button type="button" class="edit-btn" id="editDisplayNameBtn">Edit</button></h3>' +
       '<p class="ov-name"><span id="displayNameDisplay">' + escapeHtml(cfg.displayName || cfg.name) + '</span>' +
-        ' <span class="muted" data-advanced>&middot; id <code>' + escapeHtml(cfg.name) + '</code></span></p>' +
+        ' <span class="muted">&middot; id <code>' + escapeHtml(cfg.name) + '</code></span></p>' +
       editDialogHtml('<h3>Edit name</h3>', '<p>The name shown in the sidebar and at the top of its pages. Its id, <code>' + escapeHtml(cfg.name) + '</code>, stays the same: its API address and saved runs use it.</p>',
         '<form class="add-source" id="displayNameForm" style="display:none">' +
           '<label>Name<input type="text" name="displayName" maxlength="60" placeholder="' + escapeHtml(cfg.name) + '" value="' + escapeHtml(cfg.displayName || '') + '"></label>' +
@@ -3841,8 +3836,8 @@ ${renderMarkdownScript}
     return renderOverviewCards(cfg) +
       '<section>' + nameSection + '</section>' +
       '<section>' + systemPromptSection + '</section>' +
-      '<section data-advanced>' + modelSection + '</section>' +
-      '<section data-advanced><h3>Limits <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
+      '<section>' + modelSection + '</section>' +
+      '<section><h3>Limits <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
         '<dl class="kv kv-wide" id="limitsDisplay">' +
           '<dt>Model turns per run</dt><dd>' + escapeHtml(cfg.maxTurns) + ' <span class="hint">then the run stops</span></dd>' +
           '<dt>Conversation size</dt><dd>' + escapeHtml(Number(cfg.contextBudgetTokens).toLocaleString()) + ' tokens <span class="hint">older steps are summarised beyond this</span></dd>' +

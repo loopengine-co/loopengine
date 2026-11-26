@@ -1025,7 +1025,7 @@ ${consoleShellScript}
         (si.dashboardUrl ? ' &middot; <a href="' + escapeHtml(si.dashboardUrl) + '">Dashboard</a>' : '')
       : si.mode === 'basic'
         ? 'Basic Auth (<code>LOOPENGINE_ADMIN_AUTH</code>)'
-        : '<span class="error">None: anyone who can reach this workspace can use it.</span><span class="hint" data-advanced> Set <code>LOOPENGINE_ADMIN_AUTH</code>.</span>';
+        : '<span class="error">None: anyone who can reach this workspace can use it.</span><span class="hint"> Set <code>LOOPENGINE_ADMIN_AUTH</code>.</span>';
     var rows = [
       ['Admin sign-in', signIn],
       ['LoopEngine version', '<code>' + escapeHtml(d.version) + '</code>'],
@@ -1037,12 +1037,12 @@ ${consoleShellScript}
       ['Theme', 'Follows your system'],
     ];
     return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
-      rows.filter(Boolean).map(function (r) { return '<tr' + (r[2] ? ' data-advanced' : '') + '><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
+      rows.filter(Boolean).map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
       '<section><h3>Publishing</h3><div class="source" id="publishingBox"></div></section>' +
       '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
-      '<section data-advanced><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
+      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
   }
 
