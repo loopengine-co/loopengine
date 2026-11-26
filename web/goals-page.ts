@@ -11,6 +11,7 @@
 // literal.
 import { devUiCss } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
 const goalsPageTemplate: string = `<!doctype html>
 <html lang="en">
@@ -18,74 +19,93 @@ const goalsPageTemplate: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Goals</title>
-<style>${devUiCss}
-  .gl { max-width: 880px; display: grid; gap: 18px; }
-  .gl-card { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 16px 18px; display: grid; gap: 10px; }
-  .gl textarea { width: 100%; box-sizing: border-box; min-height: 64px; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
+<style>${devUiCss}${MASCOT_CSS}
+  .gl { max-width: 1120px; display: grid; gap: 0; }
+  .gl textarea { width: 100%; box-sizing: border-box; min-height: 64px; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); resize: vertical; }
   .gl textarea:focus, .gl select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .gl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .gl-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); cursor: pointer; }
-  .gl-btn:hover:not(:disabled) { filter: brightness(1.08); background: var(--primary); }
-  .gl-btn.soft { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
-  .gl-btn.soft:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: none; }
-  .gl-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
-  .gl-btn.danger { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
-  .gl-link { background: none; border: 0; padding: 0; color: var(--accent-ink); font-size: 13px; cursor: pointer; font-weight: 500; }
+  .gl-btn { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); cursor: pointer; }
+  .gl-btn:hover:not(:disabled) { opacity: .88; background: var(--primary); }
   .gl-btn.small { height: 30px; font-size: 13px; padding: 0 12px; }
-  .gl-section { display: grid; gap: 12px; }
-  .gl-section-head { display: grid; gap: 2px; margin-top: 8px; }
-  .gl-section h3 { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); display: flex; gap: 8px; align-items: center; }
-  .gl-count { font-size: 11.5px; font-weight: 600; padding: 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
-  /* The goal at a glance. */
-  .gl-hero { gap: 16px; padding: 18px 20px; }
-  .gl-hero-meta { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; font-size: 13.5px; color: var(--ink); }
-  .gl-field { display: inline-flex; gap: 8px; align-items: center; }
-  .gl-fact-k { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
-  .gl-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-  .gl-stat { display: grid; gap: 2px; padding: 12px 14px; border-radius: 10px; background: var(--surface); }
-  .gl-stat b { font-size: 22px; font-weight: 700; line-height: 1.1; }
-  .gl-stat span { font-size: 12.5px; color: var(--ink-muted); }
-  .gl-stat.attn { background: var(--warn-soft); }
-  .gl-stat.attn b { color: var(--warn); }
-  @media (max-width: 560px) { .gl-stats { grid-template-columns: minmax(0, 1fr); } }
-  .gl-callout { margin: 0; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; font-size: 14px; line-height: 1.5; color: var(--ink); }
-  .gl-card-title { margin: 0; font-size: 14.5px; font-weight: 650; }
-  .gl-setup { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.5; display: grid; gap: 6px; }
-  .gl-setup-more summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; font-size: 13px; }
-  .gl-setup-more .gl-setup { margin-top: 6px; }
-  .gl-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: gl-spin 0.8s linear infinite; vertical-align: -1px; margin-right: 4px; }
-  @keyframes gl-spin { to { transform: rotate(360deg); } }
-  /* A workflow built for the goal, or a suggestion. */
-  .gl-item { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 16px 18px; display: grid; gap: 12px; }
-  .gl-item.discarded { opacity: .75; }
-  .gl-item-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; align-items: start; }
-  .gl-item-head { display: grid; gap: 6px; justify-items: start; min-width: 0; }
-  .gl-item-title { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.35; }
-  .gl-item-side { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
-  .gl-item-why { margin: -4px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-muted); max-width: 75ch; }
-  @media (max-width: 560px) { .gl-item-top { grid-template-columns: minmax(0, 1fr); } .gl-item-side { justify-content: flex-start; } }
-  .gl-kind { font-size: 11px; font-weight: 700; letter-spacing: .03em; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
-  .gl-kind.group { background: var(--accent-soft); color: var(--accent-ink); }
-  .gl-facts { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; font-size: 13px; color: var(--ink); }
-  .gl-facts > span { display: inline-flex; gap: 8px; align-items: center; }
-  .gl-agent-chip { font-weight: 600; }
-  .gl-new { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); margin-left: 4px; }
-  .gl-needs { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
-  .gl-need { padding: 2px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
-  .gl-need.ok { background: var(--good-soft); color: var(--good); border-color: transparent; }
-  .gl-need.missing { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .gl-btn.soft { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+  .gl-btn.soft:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); opacity: 1; }
+  .gl-btn.plain { background: var(--bg); border-color: var(--line); color: var(--ink); font-weight: 500; }
+  .gl-btn.plain:hover:not(:disabled) { background: var(--surface); opacity: 1; }
+  .gl-link { background: none; border: 0; padding: 0; height: auto; color: var(--accent-ink); font-size: 13px; cursor: pointer; font-weight: 500; }
+  .gl-link-btn { display: inline-flex; align-items: center; text-decoration: none; }
+  .gl-select { font: inherit; font-size: 13px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+  .gl-input { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .gl-input[hidden] { display: none; }
+  .gl-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; }
+  .gl-crumb a { color: var(--ink-muted); text-decoration: none; font-weight: 600; }
+  .gl-crumb a:hover { color: var(--ink); }
+  .gl-crumb span { color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gl-new-btn { text-decoration: none; }
+  .gl-new-btn[hidden], .le-search[hidden] { display: none; }
+  /* The top of each view: a big, light title, a line under it, the mascot. */
+  .gl-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .gl-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
+  .gl-hero-text { display: grid; gap: 10px; min-width: 0; }
+  .gl-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .gl-display { margin: 0; font-size: 32px; line-height: 1.18; font-weight: 400; letter-spacing: -0.025em; color: var(--ink); overflow-wrap: anywhere; }
+  .gl-hero-sub { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-muted); max-width: 70ch; }
+  .gl-section-title { margin: 0; padding: 30px 32px 16px; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .gl-section-title .hint { font-size: 13px; letter-spacing: 0; }
+  .gl-cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row dense; }
+  .gl-cols3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gl-cols1 { grid-template-columns: minmax(0, 1fr); }
+  .gl-wide { grid-column: 1 / -1; }
+  .gl-cell { padding: 20px 22px; background: var(--bg); display: grid; gap: 14px; align-content: start; }
+  .gl-filler { background: var(--bg); }
+  /* Chips, as on Schedules. */
+  .gl-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .gl-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; text-decoration: none; background: var(--bg); }
+  .gl-chip.strong { background: var(--surface); border-color: transparent; color: var(--ink); font-weight: 500; }
+  .gl-chip.good { background: var(--good-soft); border-color: transparent; color: var(--good); font-weight: 600; }
+  .gl-chip.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); font-weight: 600; }
+  .gl-chip.bad { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
+  .gl-chip.accent { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
+  .gl-chip[hidden] { display: none; }
+  .gl-chip .gl-select { height: 22px; border: 0; padding: 0 2px; background: none; font-weight: 500; }
+  .gl-chip-k { color: var(--ink-faint); font-weight: 400; }
+  .gl-next { font-size: 12px; color: var(--ink-faint); margin-left: 4px; white-space: nowrap; }
+  /* A card: an icon, its title and a line or two, and what to do. */
+  .gl-card-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+  .gl-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); background: var(--bg); }
+  .gl-icon svg { width: 16px; height: 16px; }
+  .gl-icon.good { color: var(--good); }
+  .gl-card-text { display: grid; gap: 3px; min-width: 0; }
+  .gl-card-kind { font-size: 11.5px; font-weight: 600; color: var(--ink-faint); }
+  .gl-card-title { font-size: 15px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; line-height: 1.35; }
+  .gl-card-desc { font-size: 13px; line-height: 1.5; color: var(--ink-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+  .gl-card-side { display: flex; gap: 8px; align-items: center; }
+  a.gl-cell { text-decoration: none; color: inherit; transition: background .15s; }
+  a.gl-cell:hover { background: var(--surface); }
+  .gl-cell.discarded .gl-card-text { opacity: .6; }
+  .gl-menu { position: relative; }
+  .gl-menu summary { list-style: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; cursor: pointer; color: var(--ink-muted); }
+  .gl-menu summary::-webkit-details-marker { display: none; }
+  .gl-menu summary:hover { background: var(--surface); color: var(--ink); }
+  .gl-menu[open] .gl-menu-list { display: grid; }
+  .gl-menu-list { display: none; position: absolute; right: 0; top: 32px; z-index: 20; min-width: 170px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+  .gl-menu-list a, .gl-menu-list button { display: block; width: 100%; text-align: left; height: auto; padding: 7px 10px; border: 0; border-radius: 7px; background: none; font-size: 13px; font-weight: 400; color: var(--ink); text-decoration: none; cursor: pointer; }
+  .gl-menu-list a:hover, .gl-menu-list button:hover:not(:disabled) { background: var(--surface); }
   .gl-what summary { cursor: pointer; font-size: 13px; color: var(--accent-ink); font-weight: 600; }
   .gl-what p { margin: 8px 0 0; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; background: var(--surface); padding: 10px 12px; border-radius: 8px; }
-  .gl-state { font-size: 12px; font-weight: 650; padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
-  .gl-state[hidden] { display: none; }
-  .gl-state.saved { background: var(--accent-soft); color: var(--accent-ink); }
-  .gl-state.built { background: var(--good-soft); color: var(--good); }
-  .gl-state.paused { background: var(--surface-2); color: var(--ink-muted); }
-  /* Its workflows, in the order they run. */
+  .gl-card-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  /* The goal's numbers. */
+  .gl-stat { padding: 20px 22px; background: var(--bg); display: grid; gap: 2px; }
+  .gl-stat b { font-size: 34px; font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; color: var(--ink); }
+  .gl-stat span { font-size: 13px; color: var(--ink-muted); }
+  .gl-stat.attn b { color: var(--warn); }
+  /* Before you start: one step a cell. */
+  .gl-setup-step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; align-items: start; padding: 16px 22px; background: var(--bg); font-size: 13.5px; line-height: 1.5; }
+  .gl-setup-n { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--ink-muted); font-size: 12px; font-weight: 600; display: grid; place-items: center; }
+  /* A built workflow's workflows, in the order they run. */
   .gl-flows { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   .gl-flow { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; background: var(--bg); }
   .gl-flow + .gl-flow { border-top: 1px solid var(--line); }
-  .gl-flow-n { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); color: var(--ink-muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; align-self: start; margin-top: 1px; }
+  .gl-flow-n { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--ink-muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; align-self: start; margin-top: 1px; }
   .gl-flow.built .gl-flow-n { background: var(--good-soft); color: var(--good); }
   .gl-flow-main { display: grid; gap: 4px; min-width: 0; justify-items: start; }
   .gl-flow-title { font-size: 14px; font-weight: 600; color: var(--ink); text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -94,78 +114,70 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-flow-actions { display: flex; gap: 12px; align-items: center; }
   .gl-flow-actions .gl-unlink { color: var(--ink-faint); font-size: 12.5px; }
   .gl-flow-actions .gl-unlink:hover { color: var(--bad); }
-  #glShowDiscarded { justify-self: start; }
   .gl-flow-then { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 14px 6px 50px; font-size: 12.5px; color: var(--ink-muted); background: var(--surface); border-top: 1px solid var(--line); }
   .gl-flow-then .gl-link { font-size: 12px; color: var(--ink-faint); }
-  .gl-paused { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .gl-paused { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--surface); color: var(--ink-muted); }
   .gl-waiting { color: var(--warn); font-weight: 600; }
-  .gl-item-foot { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
-  .gl-more { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .gl-danger { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding-top: 14px; border-top: 1px solid var(--line); }
-  .gl-danger .gl-link { color: var(--bad); }
-  .gl-link-btn { display: inline-flex; align-items: center; text-decoration: none; }
+  .gl-needs { display: contents; }
+  .gl-new { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
   .gl-panel { display: grid; gap: 8px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
   .gl-panel[hidden] { display: none; }
-  .gl-input { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  .gl-input[hidden] { display: none; }
   .gl-step-inputs { display: grid; gap: 6px; }
   [data-attn][hidden] { display: none; }
   .gl-job-status-line:empty { display: none; }
-  .gl-new-btn[hidden], #glAddToggle[hidden] { display: none; }
-  .gl-add { display: grid; gap: 8px; }
+  /* Tiles that do something: suggest more, add your own. */
+  .gl-tile { display: grid; gap: 6px; align-content: start; padding: 22px; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); text-align: left; height: auto; cursor: pointer; transition: background .15s; font: inherit; color: inherit; text-decoration: none; }
+  .gl-tile:hover:not(:disabled) { background: var(--surface); }
+  .gl-tile:disabled { cursor: default; opacity: .6; }
+  .gl-tile b { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .gl-tile span { font-size: 13px; color: var(--ink-muted); line-height: 1.45; }
+  .gl-add-form { display: grid; gap: 8px; padding: 20px 22px; background: var(--bg); }
   .gl-add-form[hidden] { display: none; }
-  .gl-add-form { display: grid; gap: 6px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
-  .gl-notice { display: grid; gap: 4px; padding: 10px 14px; border-radius: 10px; font-size: 13.5px; }
+  .gl-notice { display: grid; gap: 4px; padding: 12px 22px; font-size: 13.5px; }
   .gl-notice.good { background: var(--good-soft); }
   .gl-notice.warn { background: var(--warn-soft); }
   .gl-notice.bad { background: var(--bad-soft); }
-  .gl-try { display: grid; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--surface); }
-  .gl-try + .gl-try { margin-top: 6px; }
-  .gl-result { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.55; max-height: 360px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
-  .gl-result-wrap summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
-  .gl-again { display: grid; gap: 6px; }
-  .gl-again[hidden] { display: none; }
-  .gl-select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  .gl-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
-  .gl-example { font: inherit; font-size: 12.5px; color: var(--accent-ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
-  .gl-example:hover { border-color: var(--accent-ink); }
+  .gl-discarded-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 14px 22px; background: var(--surface); font-size: 13.5px; border: 1px solid var(--line); border-bottom: 0; }
+  .gl-empty { padding: 36px 32px; text-align: center; color: var(--ink-muted); font-size: 14px; background: var(--bg); margin: 0; }
+  .gl-foot { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 22px 2px 0; }
+  .gl-foot .gl-danger { color: var(--bad); }
+  .gl-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; color: var(--ink-muted); }
+  .gl-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: gl-spin .8s linear infinite; }
+  @keyframes gl-spin { to { transform: rotate(360deg); } }
+  /* A new goal. */
+  .gl-form { padding: 24px 26px; background: var(--bg); display: grid; gap: 12px; }
+  .gl-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .gl-example { font: inherit; font-size: 12.5px; height: 28px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 0 10px; cursor: pointer; }
+  .gl-example:hover { border-color: var(--ink-faint); background: var(--surface); }
   .gl-share { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; line-height: 1.45; }
   .gl-share input { margin-top: 2px; }
-  .gl-discarded-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 10px; background: var(--surface); font-size: 13.5px; }
-  .gl-discarded-note .gl-btn { height: 28px; font-size: 12.5px; }
-  .gl-empty { font-size: 13.5px; color: var(--ink-muted); margin: 0; }
-  .gl-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
-  .gl-list li + li { border-top: 1px solid var(--line); }
-  .gl-list a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 12px 16px; text-decoration: none; color: var(--ink); }
-  .gl-list a:hover { background: var(--surface); }
-  .gl-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .gl-list-goal { font-size: 14.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gl-list-meta { grid-column: 1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
-  .gl-list-date { grid-row: 1 / span 2; grid-column: 2; font-size: 12px; color: var(--ink-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .gl-new-btn { display: inline-flex; align-items: center; text-decoration: none; }
-  .gl-state.planning { background: var(--warn-soft); color: var(--warn); }
-  .gl-state.failed { background: var(--bad-soft); color: var(--bad); }
-  @media (max-width: 520px) { .gl-list a { grid-template-columns: minmax(0, 1fr); } .gl-list-date { grid-row: auto; grid-column: 1; } }
-  .gl-status { font-size: 13.5px; color: var(--ink-muted); }
+  .gl-form details summary { cursor: pointer; }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
+  @media (max-width: 860px) {
+    .gl-hero { padding: 24px 18px 20px; }
+    .gl-hero .le-mascot { display: none; }
+    .gl-cols2, .gl-cols3 { grid-template-columns: minmax(0, 1fr); }
+    .gl-section-title { padding: 24px 18px 14px; }
+    .le-search { display: none; }
+  }
 </style>
 </head>
 <body data-le-page="goals">
 <div class="le-app">
 ${consoleSidebarHtml}
 <main class="le-main">
-  <div class="le-head plain">
-    <div class="le-head-row">
-      <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div>__GL_HEAD__</div>
-      </div>
-      <a class="gl-btn gl-new-btn" id="glNewBtn" href="__GL_NEW_HREF__"__GL_NEW_HIDDEN__>__GL_NEW_LABEL__</a>
-    </div>
-  </div>
+  <header class="le-topbar">
+    <button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+    <h1 class="le-topbar-title gl-crumb" id="glTitle">__GL_HEAD__</h1>
+    <span class="le-topbar-gap"></span>
+    <label class="le-search" id="glSearchWrap"__GL_SEARCH_HIDDEN__><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="glSearch" placeholder="Search goals" aria-label="Search goals"></label>
+    <a class="le-btn-dark gl-new-btn" id="glNewBtn" href="/goals?new=1"__GL_NEW_HIDDEN__>+ New goal</a>
+  </header>
   <div class="le-scroll"><div class="le-page"><div class="gl" id="glPage"><p class="hint">Loading&hellip;</p></div></div></div>
 </main>
 </div>
+<template id="glMascot">${mascotSvg(92)}</template>
 ${consoleShellScript}
 <script>
 (function () {
@@ -255,39 +267,13 @@ ${consoleShellScript}
     return state.current ? (state.current.jobs || []).filter(function (j) { return j.id === id; })[0] : undefined;
   }
 
-  function listHtml() {
-    var count = function (g, s) { return (g.jobs || []).filter(function (w) { return w.state === s; }).length; };
-    return '<ul class="gl-list">' + state.goals.map(function (g) {
-      var parts = [];
-      if (g.status === 'planning') parts.push('<span class="gl-state planning">Suggesting' + ELLIPSIS + '</span>');
-      if (g.status === 'failed') parts.push('<span class="gl-state failed">Failed</span>');
-      var suggested = count(g, 'suggested'), active = count(g, 'active');
-      if (suggested) parts.push(suggested + ' suggested');
-      if (active) parts.push('<span class="gl-state built">' + active + ' running</span>');
-      if (!parts.length) parts.push('Nothing kept yet');
-      var date = g.createdAt ? new Date(g.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-      return '<li><a href="/goals?goal=' + encodeURIComponent(g.id) + '"><span class="gl-list-goal" title="' + esc(g.goal) + '">' + esc(g.goal) + '</span>' +
-        '<span class="gl-list-date">' + esc(date) + '</span>' +
-        '<span class="gl-list-meta">' + parts.join(' <span aria-hidden="true">' + String.fromCharCode(183) + '</span> ') + '</span></a></li>';
-    }).join('') + '</ul>';
-  }
-
-  function newGoalHtml() {
-    return '<div class="gl-card">' +
-      '<label for="glGoal"><strong>What should your agents take care of?</strong></label>' +
-      '<p class="hint" style="margin:2px 0 8px">Big or small: work to hand off, or a result to reach.</p>' +
-      '<textarea id="glGoal" placeholder="e.g. Help me research AI industry trends and publish a weekly report">' + esc(startText) + '</textarea>' +
-      '<div class="gl-examples hint">Or try: ' + GOAL_EXAMPLES.map(function (x) { return '<button type="button" class="gl-example" data-example="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
-      '<details' + (state.about ? '' : ' open') + '><summary class="hint">About you or your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)') + '</summary>' +
-        '<textarea id="glAbout" style="margin-top:8px" placeholder="What you do, for whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
-        '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
-        (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '') +
-      '</details>' +
-      '<div class="gl-row"><button type="button" class="gl-btn" id="glSubmit">Suggest workflows</button><span class="hint" id="glSubmitStatus"></span></div>' +
-    '</div>';
-  }
-
   var DOT = ' ' + String.fromCharCode(183) + ' ';
+  var ICON_GOAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>';
+  var ICON_FLOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/><path d="M7 11v3a3 3 0 0 0 3 3h3"/></svg>';
+  var ICON_GROUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>';
+  var ICON_DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
+  var mascotTpl = document.getElementById('glMascot');
+  var mascot = mascotTpl ? mascotTpl.innerHTML : '';
   // An agent by the name it was given, when the sidebar knows it.
   function agentLabel(name) {
     return window.leShell && window.leShell.displayNameOf ? window.leShell.displayNameOf(name) : name;
@@ -295,35 +281,78 @@ ${consoleShellScript}
   function wfHref(agent, id) {
     return '/agents/config?agent=' + encodeURIComponent(agent) + '&tab=workflows&workflow=' + encodeURIComponent(id);
   }
+  // Empty cells to fill a grid's last row.
+  function fillers(count, cols) {
+    var n = count % cols ? cols - (count % cols) : 0;
+    return new Array(n + 1).join('<div class="gl-filler" aria-hidden="true"></div>');
+  }
 
-  // What a suggestion needs: apps connected or to connect.
-  function needsHtml(list) {
-    if (!list || !list.length) return '';
-    return '<div class="gl-needs">' + list.map(function (n) {
-      return '<span class="gl-need ' + (n.connected ? 'ok' : 'missing') + '">' + esc(n.name) + (n.connected ? ' ' + String.fromCharCode(10003) : ' ' + String.fromCharCode(183) + ' connect') + '</span>';
-    }).join('') + '</div>';
+  function listHtml() {
+    var q = ((document.getElementById('glSearch') || {}).value || '').trim().toLowerCase();
+    var count = function (g, s) { return (g.jobs || []).filter(function (w) { return w.state === s; }).length; };
+    var running = state.goals.reduce(function (n, g) { return n + count(g, 'active'); }, 0);
+    var shown = state.goals.filter(function (g) { return !q || g.goal.toLowerCase().indexOf(q) !== -1; });
+    var cards = shown.map(function (g) {
+      var chips = [];
+      if (g.status === 'planning') chips.push('<span class="gl-chip warn">Suggesting' + ELLIPSIS + '</span>');
+      if (g.status === 'failed') chips.push('<span class="gl-chip bad">Planning failed</span>');
+      var suggested = count(g, 'suggested'), active = count(g, 'active');
+      if (active) chips.push('<span class="gl-chip good">' + active + ' built</span>');
+      if (suggested) chips.push('<span class="gl-chip strong">' + suggested + ' to review</span>');
+      if (!active && !suggested && g.status === 'ready') chips.push('<span class="gl-chip">Nothing kept yet</span>');
+      var focus = g.focus || (g.brief && g.brief.focus) || '';
+      if (focus && focus !== 'other') chips.push('<span class="gl-chip">' + esc(focusLabel(focus)) + '</span>');
+      var date = g.createdAt ? new Date(g.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      return '<a class="gl-cell" href="/goals?goal=' + encodeURIComponent(g.id) + '">' +
+        '<div class="gl-card-head"><span class="gl-icon' + (active ? ' good' : '') + '">' + ICON_GOAL + '</span>' +
+          '<span class="gl-card-text"><span class="gl-card-title">' + esc(g.goal) + '</span>' + (g.message ? '<span class="gl-card-desc">' + esc(g.message) + '</span>' : '') + '</span><span></span></div>' +
+        '<div class="gl-chips">' + chips.join('') + (date ? '<span class="gl-next">Set ' + esc(date) + '</span>' : '') + '</div></a>';
+    });
+    var newTile = '<a class="gl-tile" href="/goals?new=1"><b>+ New goal</b><span>Say what your agents should take care of, and get workflows suggested for it.</span></a>';
+    return '<div class="gl-hero"><div class="gl-hero-text"><h2 class="le-display">Your goals</h2><p class="le-display-sub">' +
+        state.goals.length + (state.goals.length === 1 ? ' goal' : ' goals') + (running ? ', ' + running + (running === 1 ? ' workflow' : ' workflows') + ' built for them' : '') + '. Open one to see its workflows and suggestions.</p></div>' + mascot + '</div>' +
+      '<div class="le-grid gl-cols2">' + (cards.length ? cards.join('') + (q ? fillers(cards.length, 2) : newTile + fillers(cards.length + 1, 2)) : '<p class="gl-empty gl-wide">No goal matches.</p>') + '</div>';
+  }
+
+  function newGoalHtml() {
+    return '<div class="gl-hero"><div class="gl-hero-text"><h2 class="le-display">What should your agents <span class="soft">take care of?</span></h2><p class="le-display-sub">Big or small: work to hand off, or a result to reach. LoopEngine suggests the workflows it needs.</p></div>' + mascot + '</div>' +
+      '<div class="le-grid gl-cols1"><div class="gl-form">' +
+      '<label for="glGoal" class="hint">Your goal</label>' +
+      '<textarea id="glGoal" placeholder="e.g. Help me research AI industry trends and publish a weekly report">' + esc(startText) + '</textarea>' +
+      '<div class="gl-examples"><span class="hint">Or try:</span>' + GOAL_EXAMPLES.map(function (x) { return '<button type="button" class="gl-example" data-example="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
+      '<details' + (state.about ? '' : ' open') + '><summary class="hint">About you or your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)') + '</summary>' +
+        '<textarea id="glAbout" style="margin-top:8px" placeholder="What you do, for whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
+        '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
+        (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '') +
+      '</details>' +
+      '<div class="gl-row"><button type="button" class="le-btn-dark" id="glSubmit">Suggest workflows</button><span class="hint" id="glSubmitStatus"></span></div>' +
+    '</div></div>';
+  }
+
+  // What a suggestion needs: apps connected or to connect, as chips.
+  function needChips(list) {
+    return (list || []).map(function (n) {
+      return '<span class="gl-chip ' + (n.connected ? 'good' : 'warn') + '">' + esc(n.name) + (n.connected ? ' ' + String.fromCharCode(10003) : DOT + 'connect') + '</span>';
+    }).join('');
   }
   function agentChip(a) {
-    return '<span class="gl-agent-chip">' + esc(a.isNew ? a.name : agentLabel(a.name)) + (a.isNew ? ' <span class="gl-new">New agent</span>' : '') + '</span>';
+    return '<span class="gl-chip"><span class="gl-chip-k">Runs on</span> ' + esc(a.isNew ? a.name : agentLabel(a.name)) + (a.isNew ? ' <span class="gl-new">New agent</span>' : '') + '</span>';
   }
-  // The facts that say what a suggestion or workflow is worth.
-  function factsHtml(w, withAgent) {
-    var facts = [];
-    if (w.measure) facts.push('<span><span class="gl-fact-k">Measured by</span> ' + esc(w.measure) + '</span>');
-    if (w.humanMinutesPerWeek) facts.push('<span><span class="gl-fact-k">Your time</span> about ' + esc(w.humanMinutesPerWeek) + ' min a week</span>');
-    if (withAgent && w.agent) facts.push('<span><span class="gl-fact-k">Runs on</span> ' + agentChip(w.agent) + '</span>');
-    return facts.length ? '<div class="gl-facts">' + facts.join('') + '</div>' : '';
-  }
-  function itemTop(w, side) {
-    var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
-    var kind = group ? 'Group ' + String.fromCharCode(183) + ' ' + group.steps.length + ' workflows that run in order' : 'Workflow';
-    return '<div class="gl-item-top"><div class="gl-item-head"><span class="gl-kind' + (group ? ' group' : '') + '">' + kind + '</span>' +
-      '<h4 class="gl-item-title gl-wf-title">' + esc(w.title) + '</h4></div>' +
-      '<div class="gl-item-side">' + side + '</div></div>' +
-      (w.why ? '<p class="gl-item-why">' + esc(w.why) + '</p>' : '');
+  function factChips(w, withAgent) {
+    return (w.measure ? '<span class="gl-chip strong"><span class="gl-chip-k">Measured by</span> ' + esc(w.measure) + '</span>' : '') +
+      (w.humanMinutesPerWeek ? '<span class="gl-chip"><span class="gl-chip-k">Your time</span> ~' + esc(w.humanMinutesPerWeek) + ' min a week</span>' : '') +
+      (withAgent && w.agent ? agentChip(w.agent) : '');
   }
   function btn(act, label, cls, step) {
     return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '"' + (step ? ' data-step="' + esc(step) + '"' : '') + '>' + label + '</button>';
+  }
+  function cardHead(w, icon, iconCls, side) {
+    var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
+    var kind = group ? 'Group of ' + group.steps.length + ' workflows that run in order' : 'Workflow';
+    return '<div class="gl-card-head"><span class="gl-icon' + (iconCls ? ' ' + iconCls : '') + '">' + icon + '</span>' +
+      '<span class="gl-card-text"><span class="gl-card-kind">' + kind + '</span><span class="gl-card-title gl-wf-title">' + esc(w.title) + '</span>' +
+        (w.why ? '<span class="gl-card-desc">' + esc(w.why) + '</span>' : '') + '</span>' +
+      '<span class="gl-card-side">' + side + '</span></div>';
   }
 
   // A group's workflows, in the order they run: a built one with how it's
@@ -340,7 +369,7 @@ ${consoleShellScript}
         : '<div class="gl-flow"><span class="gl-flow-n">' + (i + 1) + '</span>' +
             '<div class="gl-flow-main"><span class="gl-flow-title">' + esc(st.name) + '</span>' +
             '<span class="gl-flow-meta">' + esc(st.request) + '</span>' +
-            '<span class="gl-flow-meta">Runs on ' + agentChip(st.agent) + '</span>' + needsHtml(st.needs) + '</div>' +
+            '<div class="gl-chips">' + agentChip(st.agent) + needChips(st.needs) + '</div></div>' +
             '<div class="gl-flow-actions">' + (w.state !== 'discarded' ? btn('buildstep', 'Build', st === next ? 'small' : 'plain small', st.id) : '') + '</div></div>';
       return row + (i < steps.length - 1 ? '<div class="gl-flow-then">then ' + ARROW + ' starts when step ' + (i + 1) + ' finishes, with its result</div>' : '');
     }).join('') + '</div>';
@@ -380,7 +409,7 @@ ${consoleShellScript}
   function manageHtml(w) {
     var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
     var opt = function (d, sel) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '"' + (sel ? ' selected' : '') + '>' + esc(d.title || d.workflowId) + '</option>'; };
-    return '<div class="gl-item-foot"><button type="button" class="gl-link" data-act="addwf">+ Add a workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-link" data-act="addstep">+ Run one after another</button>' : '') + '</div>' +
+    return '<div class="gl-card-foot"><button type="button" class="gl-link" data-act="addwf">+ Add a workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-link" data-act="addstep">+ Run one after another</button>' : '') + '</div>' +
     '<div class="gl-panel" data-panel="addwf" hidden><label class="hint" for="addwf-' + esc(w.id) + '">A workflow already on one of your agents</label>' +
       '<div class="gl-row"><select class="gl-select" id="addwf-' + esc(w.id) + '" data-pick-workflow><option value="">Loading' + ELLIPSIS + '</option></select><button type="button" class="gl-btn soft small" data-act="link">Add it</button></div>' +
       '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for it</button></div></div>' +
@@ -398,29 +427,30 @@ ${consoleShellScript}
     var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
     var steps = group ? group.steps : [];
     var builtSteps = steps.filter(function (st) { return st.built; }).length;
-    var pill = group && builtSteps < steps.length ? '<span class="gl-state saved">' + builtSteps + ' of ' + steps.length + ' built</span>' : '<span class="gl-state" data-card-pill hidden></span>';
-    return '<div class="gl-item built" data-wf="' + esc(w.id) + '">' +
-      itemTop(w, '<span class="gl-state planning" data-attn hidden>Needs you</span>' + pill) +
-      factsHtml(w, false) +
+    var pill = group && builtSteps < steps.length ? '<span class="gl-chip accent">' + builtSteps + ' of ' + steps.length + ' built</span>' : '<span class="gl-chip" data-card-pill hidden></span>';
+    return '<div class="gl-cell" data-wf="' + esc(w.id) + '">' +
+      cardHead(w, group ? ICON_GROUP : ICON_FLOW, 'good', '<span class="gl-chip warn" data-attn hidden>Needs you</span>' + pill) +
+      '<div class="gl-chips">' + factChips(w, false) + '</div>' +
       (group ? stepsHtml(w, steps) : flowsHtml(w) + manageHtml(w)) +
       '<span class="hint gl-job-status-line" data-wf-status></span>' +
     '</div>';
   }
 
   // A suggestion: what it is and why, what it's worth, where it runs and
-  // what it needs; Build or Discard.
+  // what it needs; Build, or Discard from its menu.
   function suggestionHtml(w) {
     var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
     var steps = group ? group.steps : [];
     var discarded = w.state === 'discarded';
-    var actions = discarded ? btn('restore', 'Restore', 'plain small')
-      : (group ? '' : btn('build', 'Build it', 'small')) + btn('discard', 'Discard', 'plain small');
-    return '<div class="gl-item' + (discarded ? ' discarded' : '') + '" data-wf="' + esc(w.id) + '">' +
-      itemTop(w, actions) +
+    var side = discarded ? btn('restore', 'Restore', 'plain small')
+      : '<details class="gl-menu"><summary aria-label="More">' + ICON_DOTS + '</summary><div class="gl-menu-list"><button type="button" data-act="discard">Discard</button></div></details>';
+    return '<div class="gl-cell' + (group ? ' gl-wide' : '') + (discarded ? ' discarded' : '') + '" data-wf="' + esc(w.id) + '">' +
+      cardHead(w, group ? ICON_GROUP : ICON_FLOW, '', side) +
       (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? DOT + esc(w.added.note) : '') + '</p>' : '') +
-      factsHtml(w, !group) +
+      '<div class="gl-chips">' + factChips(w, !group) + (group ? '' : needChips(w.needs)) + '</div>' +
       (group ? stepsHtml(w, steps)
-        : needsHtml(w.needs) + (w.request ? '<details class="gl-what"><summary>What it will do</summary><p>' + esc(w.request) + '</p></details>' : '')) +
+        : (w.request ? '<details class="gl-what"><summary>What it will do</summary><p>' + esc(w.request) + '</p></details>' : '') +
+          (discarded ? '' : '<div class="gl-card-foot">' + btn('build', 'Build it', 'small') + '</div>')) +
       '<span class="hint gl-job-status-line" data-wf-status></span>' +
     '</div>';
   }
@@ -429,18 +459,17 @@ ${consoleShellScript}
   // the planner (added, changed, warned or refused), with what it said.
   function addJobHtml(planning) {
     var n = state.addNotice;
-    var notice = !n ? '' : '<div class="gl-notice ' + (n.verdict === 'refused' ? 'bad' : n.verdict === 'added' ? 'good' : 'warn') + '">' +
+    var notice = !n ? '' : '<div class="gl-notice gl-wide ' + (n.verdict === 'refused' ? 'bad' : n.verdict === 'added' ? 'good' : 'warn') + '">' +
       '<strong>' + (n.verdict === 'refused' ? 'Not added' : n.verdict === 'changed' ? 'Added, with changes' : n.verdict === 'warned' ? 'Added, with a caution' : 'Added') + '</strong>' +
       (n.note ? '<span>' + esc(n.note) + '</span>' : '') +
       (n.alternative ? '<span class="hint">Instead, you could: ' + esc(n.alternative) + '</span>' : '') + '</div>';
-    return '<div class="gl-add">' +
-      '<div class="gl-add-form"' + (state.addOpen ? '' : ' hidden') + '>' +
+    return '<div class="gl-add-form gl-wide"' + (state.addOpen ? '' : ' hidden') + '>' +
         '<label for="glAddIdea"><strong>A workflow you have in mind</strong> <span class="hint">in your own words; LoopEngine shapes it into a workflow (or a group, when it has stages) and says if anything looks off</span></label>' +
         '<textarea id="glAddIdea" rows="2" placeholder="e.g. Thank every new customer by email within a day">' + esc(state.addDraft || '') + '</textarea>' +
         '<label class="hint gl-share"><input type="checkbox" id="glAddShare"' + (state.addShare ? ' checked' : '') + '> Share the approach behind it to improve suggestions for everyone</label>' +
         '<p class="hint" style="margin:0">Your idea stays in your workspace unless you tick that. If you do, only a generic description of the approach is shared, never your words, and only once many workspaces use something similar.</p>' +
-        '<div class="gl-row"><button type="button" class="gl-btn soft" id="glAddJob"' + (planning ? ' disabled' : '') + '>Add it</button><button type="button" class="gl-btn plain" id="glAddCancel">Cancel</button><span class="hint" id="glAddStatus"></span></div>' +
-      '</div>' + notice + '</div>';
+        '<div class="gl-row"><button type="button" class="gl-btn small" id="glAddJob"' + (planning ? ' disabled' : '') + '>Add it</button><button type="button" class="gl-btn plain small" id="glAddCancel">Cancel</button><span class="hint" id="glAddStatus"></span></div>' +
+      '</div>' + notice;
   }
 
   function startsText(w) {
@@ -456,15 +485,15 @@ ${consoleShellScript}
     if (w.webhooks || schedules.some(function (x) { return x.status !== 'paused'; })) return 'live';
     return schedules.length ? 'paused' : 'manual';
   }
-  // A built card's pill, from its workflows: Running when any is started
-  // by a schedule or webhook, Paused when all are paused, else Ready.
+  // A built card's chip, from its workflows: Running when any is started
+  // by a schedule or webhook, Paused when all are paused, else Ready to run.
   function refreshPill(card) {
     var pill = card && card.querySelector('[data-card-pill]');
     if (!pill) return;
     var states = Array.prototype.map.call(card.querySelectorAll('[data-flow-state]'), function (el) { return el.getAttribute('data-flow-state'); });
     if (!states.length) return;
-    var s = states.indexOf('live') >= 0 ? ['built', 'Running'] : states.every(function (x) { return x === 'paused'; }) ? ['paused', 'Paused'] : ['saved', 'Ready to run'];
-    pill.className = 'gl-state ' + s[0];
+    var s = states.indexOf('live') >= 0 ? ['good', 'Running'] : states.every(function (x) { return x === 'paused'; }) ? ['', 'Paused'] : ['accent', 'Ready to run'];
+    pill.className = 'gl-chip ' + s[0];
     pill.textContent = s[1];
     pill.hidden = false;
   }
@@ -522,46 +551,50 @@ ${consoleShellScript}
     var planning = g.status === 'planning';
     var focus = g.focus || (g.brief && g.brief.focus) || '';
     var secs = state.startedAt ? Math.round((Date.now() - state.startedAt) / 1000) : 0;
-    var focusSelect = focus ? '<label class="gl-field"><span class="gl-fact-k">Focus</span><select id="glFocus" class="gl-select"' + (planning ? ' disabled' : '') + '>' + (FOCUS.some(function (f) { return f[0] === focus; }) ? FOCUS : FOCUS.concat([[focus, (g.brief && g.brief.newFocus && g.brief.newFocus.label) || focus]])).map(function (f) { return '<option value="' + esc(f[0]) + '"' + (f[0] === focus ? ' selected' : '') + '>' + esc(f[1]) + '</option>'; }).join('') + '</select></label>' : '';
+    var focusChip = focus ? '<label class="gl-chip strong"><span class="gl-chip-k">Focus</span><select id="glFocus" class="gl-select"' + (planning ? ' disabled' : '') + '>' + (FOCUS.some(function (f) { return f[0] === focus; }) ? FOCUS : FOCUS.concat([[focus, (g.brief && g.brief.newFocus && g.brief.newFocus.label) || focus]])).map(function (f) { return '<option value="' + esc(f[0]) + '"' + (f[0] === focus ? ' selected' : '') + '>' + esc(f[1]) + '</option>'; }).join('') + '</select></label>' : '';
     var stat = function (n, label, id) { return '<div class="gl-stat"><b' + (id ? ' id="' + id + '"' : '') + '>' + n + '</b><span>' + label + '</span></div>'; };
     var setup = g.setup || [];
-    return '<div class="gl-card gl-hero">' +
-      '<div class="gl-hero-meta">' + focusSelect +
-        (g.brief && g.brief.measure ? '<span class="gl-field"><span class="gl-fact-k">Measured by</span> ' + esc(g.brief.measure) + '</span>' : '') +
-        (focus.indexOf('x-') === 0 ? '<span class="hint" title="No focus in the playbook fit this goal, so its planner named one and wrote the approaches it needed. They stay in this workspace for next time.">written for your goals</span>' : '') + '</div>' +
-      '<div class="gl-stats">' + stat(kept.length, kept.length === 1 ? 'workflow built' : 'workflows built') + stat(suggested.length, suggested.length === 1 ? 'suggestion to review' : 'suggestions to review') + stat(0, 'waiting for you', 'glWaiting') + '</div>' +
-      (g.message ? '<p class="gl-callout">' + esc(g.message) + '</p>' : '') +
-      (planning ? '<p class="gl-status"><span class="gl-spinner" aria-hidden="true"></span> Suggesting workflows' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
-      (g.status === 'failed' ? '<p class="error">' + esc(g.error || 'Planning failed.') + '</p>' : '') +
-    '</div>' +
-    (setup.length ? '<div class="gl-card gl-setup-card"><h3 class="gl-card-title">Before you start</h3><ol class="gl-setup">' + setup.slice(0, 4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
-      (setup.length > 4 ? '<details class="gl-setup-more"><summary>Show ' + (setup.length - 4) + ' more</summary><ol class="gl-setup" start="5">' + setup.slice(4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></details>' : '') + '</div>' : '') +
+    var date = g.createdAt ? new Date(g.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    var section = function (title, hint) { return '<h3 class="gl-section-title">' + title + (hint ? '<span class="hint">' + hint + '</span>' : '') + '</h3>'; };
+    return '<div class="gl-hero"><div class="gl-hero-text"><span class="gl-eyebrow">Goal' + (date ? DOT + 'set ' + esc(date) : '') + '</span>' +
+        '<h2 class="gl-display">' + esc(g.goal) + '</h2>' +
+        (g.message ? '<p class="gl-hero-sub">' + esc(g.message) + '</p>' : '') +
+        '<div class="gl-chips">' + focusChip + (g.brief && g.brief.measure ? '<span class="gl-chip"><span class="gl-chip-k">Measured by</span> ' + esc(g.brief.measure) + '</span>' : '') +
+          (focus.indexOf('x-') === 0 ? '<span class="gl-chip" title="No focus in the playbook fit this goal, so its planner named one and wrote the approaches it needed. They stay in this workspace for next time.">Written for your goals</span>' : '') + '</div>' +
+        (planning ? '<p class="gl-status"><span class="gl-spinner" aria-hidden="true"></span>Suggesting workflows' + ELLIPSIS + (secs ? ' ' + secs + 's.' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
+        (g.status === 'failed' ? '<p class="error">' + esc(g.error || 'Planning failed.') + '</p>' : '') +
+      '</div>' + mascot + '</div>' +
+    '<div class="le-grid gl-cols3">' + stat(kept.length, kept.length === 1 ? 'workflow built' : 'workflows built') + stat(suggested.length, suggested.length === 1 ? 'suggestion to review' : 'suggestions to review') + stat(0, 'runs waiting for you', 'glWaiting') + '</div>' +
+    (setup.length ? section('Before you start', 'Do these first, so its workflows can run') +
+      '<div class="le-grid gl-cols2">' + setup.map(function (s, i) { return '<div class="gl-setup-step"><span class="gl-setup-n">' + (i + 1) + '</span><span>' + esc(s) + '</span></div>'; }).join('') + fillers(setup.length, 2) + '</div>' : '') +
+    (kept.length ? section('Your workflows', 'Built for this goal') + '<div class="le-grid gl-cols1">' + kept.map(builtHtml).join('') + '</div>' : '') +
+    section('Suggested', 'Workflows that would move this goal: build the ones you want') +
     (state.justDiscarded ? '<div class="gl-discarded-note" data-discarded="' + esc(state.justDiscarded.id) + '"><span>Discarded <strong>' + esc(state.justDiscarded.title) + '</strong>. Why?</span>' +
       REASONS.map(function (r) { return '<button type="button" class="gl-btn plain small" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '<button type="button" class="gl-link" data-undo="1">Undo</button></div>' : '') +
-    (kept.length ? '<div class="gl-section"><div class="gl-section-head"><h3>Your workflows <span class="gl-count">' + kept.length + '</span></h3><span class="hint">Built for this goal and working on it</span></div>' +
-      kept.map(builtHtml).join('') + '</div>' : '') +
-    '<div class="gl-section"><div class="gl-section-head"><h3>Suggested <span class="gl-count">' + suggested.length + '</span></h3><span class="hint">Workflows that would move this goal. Build the ones you want.</span></div>' +
-      (suggested.length ? suggested.map(suggestionHtml).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting.') + '</p>') +
-      '<div class="gl-more"><button type="button" class="gl-btn plain" id="glMore"' + (planning ? ' disabled' : '') + '>Suggest more</button>' +
-        '<button type="button" class="gl-btn plain" id="glAddToggle"' + (state.addOpen ? ' hidden' : '') + '>Add your own</button>' +
-        '<span class="hint">New ideas only: nothing already here, built or discarded comes back.</span></div>' +
+    '<div class="le-grid gl-cols2">' +
+      (suggested.length ? suggested.map(suggestionHtml).join('') + fillers(suggested.filter(function (w) { return !(w.group && w.group.steps && w.group.steps.length); }).length, 2)
+        : '<p class="gl-empty gl-wide">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Ask for more below.') + '</p>') +
+    '</div>' +
+    '<div class="le-grid gl-cols3" style="border-top:0">' +
+      '<button type="button" class="gl-tile" id="glMore"' + (planning ? ' disabled' : '') + '><b>Suggest more</b><span>New ideas only: nothing already here, built or discarded comes back.</span></button>' +
+      '<button type="button" class="gl-tile" id="glAddToggle"><b>Add your own</b><span>Describe a workflow in your words, and LoopEngine shapes it for this goal.</span></button>' +
+      (discarded.length ? '<button type="button" class="gl-tile" id="glShowDiscarded"><b>' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded</b><span>' + discarded.length + (discarded.length === 1 ? ' suggestion' : ' suggestions') + ' you set aside. Restore any of them.</span></button>' : '<div class="gl-filler" aria-hidden="true"></div>') +
       addJobHtml(planning) +
     '</div>' +
-    (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
-      (state.showDiscarded ? discarded.map(suggestionHtml).join('') : '') + '</div>' : '') +
-    '<div class="gl-danger"><button type="button" class="gl-link" id="glDelete">Delete this goal</button><span class="hint">The workflows built for it stay on their agents.</span></div>';
+    (discarded.length && state.showDiscarded ? section('Discarded') + '<div class="le-grid gl-cols2">' + discarded.map(suggestionHtml).join('') + fillers(discarded.filter(function (w) { return !(w.group && w.group.steps && w.group.steps.length); }).length, 2) + '</div>' : '') +
+    '<div class="gl-foot"><button type="button" class="gl-link gl-danger" id="glDelete">Delete this goal</button><span class="hint">The workflows built for it stay on their agents.</span></div>';
   }
 
   function render() {
     var title = document.getElementById('glTitle');
-    var lead = document.getElementById('glLead');
     var newBtn = document.getElementById('glNewBtn');
+    var search = document.getElementById('glSearchWrap');
     // The list, unless there are no goals yet: then the new-goal form.
     var listing = !state.current && !state.creating && state.goals.length > 0;
-    if (title) title.textContent = state.current ? state.current.goal : listing ? 'Goals' : 'New goal';
-    if (lead) lead.style.display = state.current || listing ? 'none' : '';
-    if (newBtn) newBtn.hidden = !listing;
+    if (title) title.innerHTML = state.current ? '<a href="/goals">Goals</a><span aria-hidden="true" style="color:var(--ink-faint);font-weight:400">/</span><span>' + esc(state.current.goal) + '</span>' : listing ? 'Goals' : 'New goal';
+    if (newBtn) newBtn.hidden = !listing && !state.current;
+    if (search) search.hidden = !listing;
     page.innerHTML = (state.current ? goalHtml(state.current) : listing ? listHtml() : newGoalHtml()) + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '');
     state.error = '';
     wire();
@@ -813,6 +846,9 @@ ${consoleShellScript}
     });
   }
 
+  // Search narrows the list as you type.
+  var searchBox = document.getElementById('glSearch');
+  if (searchBox) searchBox.addEventListener('input', function () { if (!state.current && !state.creating) render(); });
   load();
 })();
 </script>
@@ -824,16 +860,12 @@ ${consoleShellScript}
 // address (and whether there are goals yet); the page's script keeps it
 // in step after that.
 export type GoalsPageView = 'goals' | 'goal' | 'new'
-const GOALS_LEAD = 'LoopEngine suggests the workflows a goal needs: one for a small goal; more, or groups that run in order, for a big one. Build the ones you want.'
 function goalsPageFor(view: GoalsPageView): string {
-  const title = view === 'goal' ? 'Goal' : view === 'goals' ? 'Goals' : 'New goal'
-  // A list or one goal shows no lead; a new goal explains itself.
-  const hideLead = view === 'goal' || view === 'goals'
+  const title = view === 'goal' ? 'Goals' : view === 'goals' ? 'Goals' : 'New goal'
   return goalsPageTemplate
-    .replace('__GL_HEAD__', `<h1 id="glTitle">${title}</h1><p id="glLead"${hideLead ? ' style="display:none"' : ''}>${GOALS_LEAD}</p>`)
-    .replace('__GL_NEW_HREF__', '/goals?new=1')
-    .replace('__GL_NEW_HIDDEN__', view === 'goals' ? '' : ' hidden')
-    .replace('__GL_NEW_LABEL__', 'New goal')
+    .replace('__GL_HEAD__', title)
+    .replace('__GL_SEARCH_HIDDEN__', view === 'goals' ? '' : ' hidden')
+    .replace('__GL_NEW_HIDDEN__', view === 'new' ? ' hidden' : '')
 }
 const goalsPages: Record<GoalsPageView, string> = { goals: goalsPageFor('goals'), goal: goalsPageFor('goal'), new: goalsPageFor('new') }
 export function goalsPageAs(view: GoalsPageView): string {
