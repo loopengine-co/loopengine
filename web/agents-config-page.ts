@@ -121,13 +121,14 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-list-box { border: 1px solid var(--line); border-radius: 0; background: var(--bg); overflow: hidden; }
   .wf-row + .wf-row { border-top: 1px solid var(--line); }
   .wf-row.workflow-focus { box-shadow: inset 3px 0 0 var(--accent); }
-  .wf-row-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) 210px 200px auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
+  .wf-row-head { display: grid; grid-template-columns: 30px minmax(0, 1fr) 210px 200px auto; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
   .wf-row-head:hover, .wf-row.is-open .wf-row-head { background: var(--surface); }
   .wf-row-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .wf-row-job { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wf-row-job a { color: var(--accent-ink); }
-  .wf-row-caret { width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; }
-  .wf-row.is-open .wf-row-caret { transform: rotate(45deg); }
+  .wf-row-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
+  .wf-row-icon svg { width: 15px; height: 15px; }
+  .wf-row-icon.live { color: var(--good); }
   .wf-row-main { min-width: 0; display: grid; gap: 2px; }
   .wf-row-main strong { font-size: 14px; font-weight: 650; color: var(--ink); }
   .wf-desc { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); overflow-wrap: anywhere; }
@@ -447,7 +448,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-row-foot .wf-remove { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
   .wf-row-foot .wf-remove:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
   @media (max-width: 760px) {
-    .wf-row-head { grid-template-columns: 14px minmax(0, 1fr) auto; row-gap: 6px; }
+    .wf-row-head { grid-template-columns: 30px minmax(0, 1fr) auto; row-gap: 6px; }
     .wf-row-starts, .wf-row-last { white-space: normal; }
     .wf-row-starts, .wf-row-last { grid-column: 2 / 3; }
     .wf-row-actions { grid-column: 3; grid-row: 1; }
@@ -2300,7 +2301,9 @@ ${renderMarkdownScript}
       }
       return '<article class="workflow-card wf-row' + (open ? ' is-open' : '') + '" data-workflow="' + escapeHtml(w.id) + '">' +
         '<div class="wf-row-head" role="button" tabindex="0" aria-expanded="' + open + '">' +
-          '<span class="wf-row-caret" aria-hidden="true"></span>' +
+          // The workflow icon the Workflows page uses; green when a
+          // schedule or webhook starts it.
+          '<span class="wf-row-icon' + (w.webhooks || (w.schedules || []).some(function (x) { return x.status !== 'paused' && x.status !== 'cancelled' && x.status !== 'done'; }) ? ' live' : '') + '" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/><path d="M7 11v3a3 3 0 0 0 3 3h3"/></svg></span>' +
           '<div class="wf-row-main"><strong>' + escapeHtml(w.title) + '</strong>' +
             // The job(s) it does, linking back to each job's page.
             (w.jobs && w.jobs.length ? '<span class="wf-row-job">For goal: ' + w.jobs.map(function (j) { return '<a href="/goals?goal=' + encodeURIComponent(j.id) + '">' + escapeHtml(j.title) + '</a>'; }).join(', ') + '</span>' : '') + '</div>' +
