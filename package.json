@@ -1,6 +1,6 @@
 {
   "name": "loopengine",
-  "version": "0.6.0",
+  "version": "0.5.2",
   "type": "module",
   "description": "Runtime for tool-using AI agents with a transparent ReAct loop.",
   "license": "MIT",
