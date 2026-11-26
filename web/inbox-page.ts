@@ -63,27 +63,47 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-thread-tools .ib-thread-back { display: none; }
   /* The back button's place, empty on a wide screen: no gap before the title. */
   .ib-thread-top > .ib-thread-tools:first-child { display: none; }
-  .ib-msgs { list-style: none; margin: 0; padding: 18px 22px 22px; display: grid; gap: 12px; overflow: auto; align-content: start; }
-  .ib-msg { display: grid; gap: 4px; max-width: 86%; min-width: 0; }
-  .ib-msg.person { justify-self: end; justify-items: end; }
-  .ib-msg.system { justify-self: center; justify-items: center; max-width: 100%; }
-  .ib-msg-who { font-size: 11.5px; color: var(--ink-muted); }
+  /* The conversation, as a chat: what started it on the right like a
+     message sent, the agent on the left with its icon, people's answers
+     and decisions on the right with their initial; a name and time once
+     for each run of messages from the same one. */
+  .ib-msgs { list-style: none; margin: 0; padding: 18px 22px 22px; display: grid; gap: 14px; overflow: auto; align-content: start; }
+  .ib-day { justify-self: center; font-size: 12px; color: var(--ink-faint); }
+  .ib-msg { display: grid; grid-template-columns: 32px minmax(0, auto); gap: 10px; align-items: start; justify-self: start; max-width: min(78%, 760px); min-width: 0; }
+  .ib-msg.person { grid-template-columns: minmax(0, auto) 32px; justify-self: end; }
+  .ib-msg.person .ib-avatar { order: 2; }
+  .ib-msg.cont { margin-top: -8px; }
+  .ib-msg.cont .ib-avatar { visibility: hidden; height: 0; }
+  .ib-msg.cont .ib-msg-who { display: none; }
+  .ib-avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-muted); font-size: 13px; font-weight: 600; flex: none; }
+  .ib-avatar svg { width: 16px; height: 16px; }
+  .ib-msg.agent .ib-avatar { background: var(--ink); color: var(--bg); }
+  .ib-msg.person .ib-avatar { background: var(--accent-soft); color: var(--accent-ink); }
+  .ib-msg-body { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+  .ib-msg.person .ib-msg-body { justify-items: end; }
+  .ib-msg-who { font-size: 12px; color: var(--ink-muted); }
   .ib-msg-who strong { color: var(--ink); font-weight: 600; }
-  .ib-bubble { padding: 10px 14px; border-radius: 14px; background: var(--surface); font-size: 14px; line-height: 1.5; min-width: 0; max-width: 100%; overflow-wrap: anywhere; box-sizing: border-box; }
+  .ib-bubble { padding: 10px 14px; border-radius: 16px; background: var(--surface); font-size: 14px; line-height: 1.5; min-width: 0; max-width: 100%; overflow-wrap: anywhere; box-sizing: border-box; }
   .ib-msg.agent .ib-bubble { border-top-left-radius: 4px; }
   .ib-msg.person .ib-bubble { background: var(--accent-soft); color: var(--ink); border-top-right-radius: 4px; }
+  .ib-msg.request .ib-bubble { display: grid; gap: 6px; }
+  .ib-msg.request .ib-kv { grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: 13px; }
   .ib-msg.person.is-denied .ib-bubble { background: var(--bad-soft); }
-  .ib-msg.system .ib-bubble { background: none; border: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-muted); padding: 8px 12px; }
-  .ib-msg.system .ib-kv { text-align: left; margin-top: 6px; color: var(--ink); }
   .ib-msg.failed .ib-bubble { background: var(--bad-soft); color: var(--bad); }
+  .ib-msg.ask { max-width: 100%; width: 100%; grid-template-columns: 32px minmax(0, 1fr); }
   .ib-msg.ask .ib-bubble { background: var(--bg); border: 1px solid var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); width: 100%; display: grid; gap: 10px; }
-  .ib-msg.ask { max-width: 100%; width: 100%; }
+  .ib-msg.ask .ib-msg-body { justify-items: stretch; }
   .ib-msg.ask .ib-card { border: 0; padding: 0; box-shadow: none; background: none; }
-  .ib-act { justify-self: start; display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-muted); max-width: 100%; min-width: 0; }
-  .ib-act summary { cursor: pointer; }
-  .ib-act summary code { font-size: 12px; }
-  .ib-act.failed summary { color: var(--bad); }
-  .ib-typing { font-size: 13px; color: var(--ink-muted); font-style: italic; }
+  /* The tools it used: light lines under its messages, in line with them. */
+  .ib-act { justify-self: start; display: grid; gap: 4px; margin: -6px 0 0 42px; font-size: 12.5px; color: var(--ink-muted); max-width: calc(100% - 42px); min-width: 0; }
+  .ib-act summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); }
+  .ib-act summary::-webkit-details-marker { display: none; }
+  .ib-act summary:hover { background: var(--surface); }
+  .ib-act summary code { font-size: 12px; background: none; padding: 0; }
+  .ib-act .ib-pre { margin-top: 6px; }
+  .ib-act.failed summary { color: var(--bad); border-color: var(--bad-soft); }
+  .ib-typing { margin-left: 42px; font-size: 13px; color: var(--ink-muted); font-style: italic; }
+  .ib-fb { margin-left: 42px; }
   .ib-fb { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
   .ib-fb-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .ib-fb-ask[hidden], .ib-fb-form[hidden], .ib-fb-given[hidden] { display: none; }
@@ -371,14 +391,30 @@ ${renderMarkdownScript}
   }
 
   var SOURCES = { webhook: 'a webhook', schedule: 'a schedule', console: 'Run now', api: 'an app', assignment: 'an assignment', chain: 'another workflow' };
+  // Who a run's first message is from, by what started it.
+  var STARTERS = { webhook: 'Webhook', schedule: 'Schedule', console: 'Run now', api: 'An app', assignment: 'Assignment', chain: 'Another workflow' };
 
+  var ICON_AGENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/></svg>';
+  var ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>';
+  // Who said it, as a chat shows it: the agent's icon, or a person's
+  // initial.
+  function avatarHtml(kind, who) {
+    var face = kind === 'agent' ? ICON_AGENT : esc(String(who || '?').trim().charAt(0).toUpperCase() || '?');
+    return '<span class="ib-avatar" aria-hidden="true">' + face + '</span>';
+  }
+  // The last one to speak in the thread being drawn: a run of messages
+  // from the same one shows its name and time once.
+  var lastSpeaker = '';
   function msgHtml(kind, who, at, body, extra) {
-    return '<li class="ib-msg ' + kind + (extra ? ' ' + extra : '') + '">' +
-      (who || at ? '<span class="ib-msg-who">' + (who ? '<strong>' + esc(who) + '</strong>' : '') + (who && at ? DOT : '') + (at ? '<span title="' + esc(when(at)) + '">' + esc(ago(at)) + '</span>' : '') + '</span>' : '') +
-      '<div class="ib-bubble">' + body + '</div></li>';
+    var speaker = kind + '|' + (who || '');
+    var cont = speaker === lastSpeaker && kind !== 'system';
+    lastSpeaker = speaker;
+    return '<li class="ib-msg ' + kind + (extra ? ' ' + extra : '') + (cont ? ' cont' : '') + '">' + avatarHtml(kind, who) +
+      '<div class="ib-msg-body">' + (who || at ? '<span class="ib-msg-who">' + (who ? '<strong>' + esc(who) + '</strong>' : '') + (who && at ? DOT : '') + (at ? '<span title="' + esc(when(at)) + '">' + esc(ago(at)) + '</span>' : '') + '</span>' : '') +
+      '<div class="ib-bubble">' + body + '</div></div></li>';
   }
   function activityHtml(s) {
-    return '<li class="ib-act' + (s.failed ? ' failed' : '') + '"><details><summary>' + (s.failed ? 'Tried ' : 'Used ') + '<code>' + esc(s.tool) + '</code>' + (s.failed ? ' (failed)' : '') + '</summary>' +
+    return '<li class="ib-act' + (s.failed ? ' failed' : '') + '"><details><summary>' + ICON_GEAR + (s.failed ? 'Tried ' : 'Used ') + '<code>' + esc(s.tool) + '</code>' + (s.failed ? ' (failed)' : '') + '</summary>' +
       '<pre class="ib-pre">' + esc(JSON.stringify(s.args, null, 2)) + '</pre>' + (s.result != null ? '<pre class="ib-pre" style="margin-top:6px">' + esc(s.result) + '</pre>' : '') + '</details></li>';
   }
 
@@ -390,9 +426,15 @@ ${renderMarkdownScript}
     var run = c.run;
     var agent = c.agentLabel || c.agent;
     var out = [];
+    lastSpeaker = '';
     if (run) {
+      // What started it, as the first message: from whoever started it,
+      // with the workflow and its inputs.
       var params = run.params && Object.keys(run.params).length ? kvHtml(run.params) : '';
-      out.push(msgHtml('system', '', run.started_at, 'Started by ' + esc(SOURCES[run.source] || run.source || 'a person') + (params ? params : '')));
+      var from = run.source === 'schedule' ? (run.task_name || 'Schedule') : (STARTERS[run.source] || 'Started');
+      var startedAt = new Date(run.started_at);
+      out.push('<li class="ib-day" title="' + esc(when(run.started_at)) + '">' + esc(startedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: startedAt.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }) + ', ' + startedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })) + '</li>');
+      out.push(msgHtml('person', from, run.started_at, '<div>Run <strong>' + esc(c.workflowTitle || 'the workflow') + '</strong></div>' + params, 'request'));
     }
     var decisions = ((run && run.decisions) || []).slice().sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
     var answers = ((run && run.answers) || []).slice().sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
@@ -423,7 +465,7 @@ ${renderMarkdownScript}
       if (s.result == null && waitingTools.indexOf(s.tool) !== -1) return;
       out.push(activityHtml(s));
     });
-    c.pending.forEach(function (p) { out.push('<li class="ib-msg agent ask"><span class="ib-msg-who"><strong>' + esc(agent) + '</strong>' + (p.createdAt ? DOT + esc(ago(p.createdAt)) : '') + '</span><div class="ib-bubble">' + pendingHtml(p) + '</div></li>'); });
+    c.pending.forEach(function (p) { out.push('<li class="ib-msg agent ask">' + avatarHtml('agent', agent) + '<div class="ib-msg-body"><span class="ib-msg-who"><strong>' + esc(agent) + '</strong>' + (p.createdAt ? DOT + esc(ago(p.createdAt)) : '') + '</span><div class="ib-bubble">' + pendingHtml(p) + '</div></div></li>'); lastSpeaker = ''; });
     if (run && !c.pending.length) {
       if (run.status === 'running') out.push('<li class="ib-msg agent"><span class="ib-typing">' + esc(agent) + ' is working' + ELLIPSIS + '</span></li>');
       if (run.status === 'error') out.push(msgHtml('agent', agent, run.finished_at, '<strong>Failed.</strong> ' + esc(run.error || 'It stopped with an error.') +
