@@ -132,6 +132,7 @@ import { goalsPageAs } from '#web/goals-page.js'
 import { inboxPageHtml, renderInboxOnlyPage } from '#web/inbox-page.js'
 import { workflowsOverviewPageHtml } from '#web/workflows-overview-page.js'
 import { homePageHtml } from '#web/home-page.js'
+import { schedulesPageHtml } from '#web/schedules-page.js'
 import { homeOverview, workflowsOverview } from '#web/workflows-overview.js'
 import { INBOX_VIEWS, getInboxCase, listInbox, type InboxDeps, type InboxView } from '#web/inbox-admin.js'
 import { readArchived, setArchived } from '#web/inbox-archive.js'
@@ -5610,6 +5611,12 @@ const server = createServer(async (req, res) => {
     // and the latest runs (web/home-page.ts).
     if (req.method === 'GET' && (pathname === '/' || pathname === '/home')) {
       res.writeHead(200, { 'content-type': 'text/html' }).end(homePageHtml)
+      return
+    }
+    // Schedules (/schedules): every workflow on a timer, as cards and as a
+    // week (web/schedules-page.ts).
+    if (req.method === 'GET' && pathname === '/schedules') {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(schedulesPageHtml)
       return
     }
     if (req.method === 'GET' && pathname === '/workflows' && String(req.headers.accept ?? '').includes('text/html')) {

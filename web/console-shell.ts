@@ -55,6 +55,7 @@ const GOALS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" str
 const AUDIT_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/></svg>'
 
 // A gear, for Settings.
+const SCHEDULES_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
 const ADVANCED_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>'
 const SETTINGS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 
@@ -71,6 +72,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     <a class="le-rail-item" href="/goals" data-le-nav-head="goals" data-le-section="goals">${GOALS_ICON}<span>Goals</span></a>
     <a class="le-rail-item" href="/agents" data-le-nav-head="agents" data-le-section="agents">${AGENTS_ICON}<span>Agents</span></a>
     <a class="le-rail-item" href="/workflows" data-le-nav-head="workflows" data-le-section="workflows">${WORKFLOWS_ICON}<span>Workflows</span></a>
+    <a class="le-rail-item" href="/schedules" data-le-nav-head="schedules" data-le-section="schedules">${SCHEDULES_ICON}<span>Schedules</span></a>
     <a class="le-rail-item" href="/audit" data-le-nav-head="audit" data-le-section="audit">${AUDIT_ICON}<span>Audit</span></a>
     <span class="le-rail-gap"></span>
     <button type="button" class="le-rail-item le-adv-toggle" id="leAdvToggle" aria-pressed="false" title="Advanced view: also show version history, evaluations, the contract, the API and agent internals">${ADVANCED_ICON}<span>Advanced</span></button>
@@ -419,6 +421,7 @@ export const consoleShellScript: string = `<script>
     : page === 'config' ? 'settings'
     : page === 'inbox' ? 'inbox'
     : page === 'audit' ? 'audit'
+    : page === 'schedules' ? 'schedules'
     : '';
   var railItems = document.querySelectorAll('[data-le-section]');
   for (var ri = 0; ri < railItems.length; ri++) {

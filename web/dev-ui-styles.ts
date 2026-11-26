@@ -137,18 +137,21 @@ export const devUiCss: string = `
   .le-app { display: grid; grid-template-columns: auto minmax(0, 1fr); height: 100%; background: var(--canvas); }
   /* Two columns: the sections, and what's in the current one. */
   .le-sidebar { position: relative; background: var(--sidebar); display: flex; min-height: 0; }
-  .le-rail { width: 76px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 12px 6px 10px; min-height: 0; }
+  .le-rail { width: 62px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 12px 6px 10px; min-height: 0; }
   .le-brand { display: grid; place-items: center; height: 36px; margin-bottom: 8px; text-decoration: none; }
   .le-brand-mark { width: 28px; height: 28px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
-  .le-rail-item { position: relative; display: grid; justify-items: center; gap: 3px; padding: 8px 2px 7px; border-radius: 8px; color: var(--ink-muted); text-decoration: none; font-size: 11px; font-weight: 600; }
+  .le-rail-item { position: relative; display: grid; place-items: center; height: 40px; padding: 0; border-radius: 10px; color: var(--ink-muted); text-decoration: none; font-size: 11px; font-weight: 600; }
   .le-rail-item .le-nav-icon { width: 19px; height: 19px; }
+  /* Icons only: each one's name shows beside it on hover. */
+  .le-rail-item > span:not(.le-inbox-count) { position: absolute; left: calc(100% + 8px); top: 50%; transform: translate(-4px, -50%); padding: 4px 9px; border-radius: 7px; background: var(--primary); color: var(--on-primary); font-size: 12px; font-weight: 500; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .12s, transform .12s; z-index: 60; }
+  .le-rail-item:hover > span:not(.le-inbox-count), .le-rail-item:focus-visible > span:not(.le-inbox-count) { opacity: 1; transform: translate(0, -50%); }
   .le-rail-item:hover { background: var(--surface-2); color: var(--ink); }
   .le-rail-item.is-current { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
   .le-rail-item.is-current .le-nav-icon { color: var(--accent-ink); }
-  .le-rail-item .le-inbox-count { position: absolute; top: 3px; right: 6px; margin: 0; padding: 0 6px; font-size: 10.5px; }
+  .le-rail-item .le-inbox-count { position: absolute; top: 2px; right: 4px; margin: 0; padding: 0 5px; font-size: 10px; }
   .le-inbox-count[hidden] { display: none; }
   .le-rail-gap { flex: 1; }
-  button.le-rail-item { border: 0; background: none; height: auto; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; width: 100%; }
+  button.le-rail-item { border: 0; background: none; height: 40px; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; width: 100%; }
   .le-adv-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
   .le-simple [data-advanced] { display: none !important; }
   html:not(.le-simple) [data-simple] { display: none !important; }
@@ -223,6 +226,40 @@ export const devUiCss: string = `
   .le-card.attention { border-color: var(--warn); box-shadow: inset 0 3px 0 var(--warn-soft); }
   .le-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
   .le-empty { color: var(--ink-faint); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); }
+
+  /* ---------- page language: top bar, display title, hairline grid ---------- */
+  /* A page's top bar: its name and tabs, then search and actions. */
+  .le-topbar { display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 10px 20px; border-bottom: 1px solid var(--line); flex: none; }
+  .le-topbar-title { font-size: 15px; font-weight: 600; margin: 0 6px 0 0; white-space: nowrap; }
+  .le-topbar-gap { flex: 1; }
+  .le-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface); }
+  .le-seg button, .le-seg a { border: 0; background: none; height: 30px; padding: 0 13px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--ink-muted); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .le-seg button:hover:not(:disabled), .le-seg a:hover { background: none; color: var(--ink); }
+  .le-seg [aria-selected="true"], .le-seg [aria-pressed="true"] { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+  .le-btn-dark { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 15px; border-radius: 10px; border: 0; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
+  .le-btn-dark:hover:not(:disabled) { background: var(--primary); opacity: .88; }
+  .le-search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 10px; background: var(--surface); color: var(--ink-faint); min-width: 200px; }
+  .le-search input { border: 0; background: none; padding: 0; height: 100%; font-size: 13px; flex: 1; min-width: 0; }
+  .le-search input:focus { outline: none; }
+  /* A big, light title: a sentence, with its key words darker. */
+  .le-display { margin: 0; font-size: 40px; line-height: 1.12; font-weight: 400; letter-spacing: -0.03em; color: var(--ink); }
+  .le-display .soft { color: var(--ink-faint); }
+  .le-display-sub { margin: 8px 0 0; font-size: 15px; color: var(--ink-muted); }
+  /* A hairline grid: cells share their lines, and small crosses mark the
+     outer corners, like a drawing's guides. */
+  .le-grid { position: relative; display: grid; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .le-grid > * { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+  .le-grid::before, .le-grid::after { content: ""; position: absolute; top: -5px; width: 9px; height: 9px; background: linear-gradient(var(--accent), var(--accent)) center / 1px 100% no-repeat, linear-gradient(var(--accent), var(--accent)) center / 100% 1px no-repeat; pointer-events: none; }
+  .le-grid::before { left: -5px; }
+  .le-grid::after { right: -5px; }
+  /* An on/off switch. */
+  .le-switch { position: relative; width: 36px; height: 21px; flex: none; border-radius: 999px; border: 0; padding: 0; background: var(--surface-2); cursor: pointer; transition: background .15s; }
+  .le-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s; }
+  .le-switch[aria-checked="true"] { background: var(--primary); }
+  .le-switch[aria-checked="true"]::after { left: 18px; }
+  .le-switch:hover:not(:disabled) { background: var(--surface-2); filter: brightness(.96); }
+  .le-switch[aria-checked="true"]:hover:not(:disabled) { background: var(--primary); }
+  .le-mascot { display: block; }
   @media (max-width: 860px) {
     .le-app { grid-template-columns: minmax(0, 1fr); }
     .le-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 24px rgba(0, 0, 0, .25); }
