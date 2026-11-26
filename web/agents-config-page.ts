@@ -959,6 +959,42 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .sched-dlg-foot { padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); min-height: 46px; display: flex; align-items: center; }
   .sched-dlg-foot:has(#scheduleResult:empty) { display: none; }
   @media (max-width: 760px) { .sched-dlg-body { grid-template-columns: minmax(0, 1fr); } .sched-dlg-col + .sched-dlg-col { border-left: 0; border-top: 1px solid var(--line); } .sched-top { flex-direction: column; } }
+
+  /* Its schedules, as cards like the Schedules page's. */
+  .sched-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sched-card { display: grid; gap: 14px; align-content: start; padding: 20px 22px; background: var(--bg); min-width: 0; }
+  .sched-card.is-off .sched-card-text { opacity: .55; }
+  .sched-card.schedule-focus { background: var(--accent-soft); }
+  .sched-card-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 12px; align-items: start; }
+  .sched-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
+  .sched-icon svg { width: 16px; height: 16px; }
+  .sched-card-text { display: grid; gap: 3px; min-width: 0; }
+  .sched-card-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  .sched-card-desc { font-size: 13px; color: var(--ink-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .sched-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .sched-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .sched-chip.strong { background: var(--surface); border-color: transparent; color: var(--ink); font-weight: 500; }
+  .sched-chip.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); font-weight: 600; }
+  .sched-chip.bad { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
+  a.sched-chip:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .sched-chip input { margin: 0; }
+  .sched-next { font-size: 12px; color: var(--ink-faint); margin-left: 4px; white-space: nowrap; }
+  .sched-last { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .sched-last-k { font-size: 12.5px; color: var(--ink-muted); margin-right: 2px; }
+  .sched-last .schedule-result { flex-basis: 100%; font-size: 13px; color: var(--ink); max-height: 4.5em; overflow: hidden; }
+  .sched-history summary { cursor: pointer; }
+  .sched-menu { position: relative; }
+  .sched-menu summary { list-style: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; cursor: pointer; color: var(--ink-muted); }
+  .sched-menu summary::-webkit-details-marker { display: none; }
+  .sched-menu summary:hover { background: var(--surface); color: var(--ink); }
+  .sched-menu[open] .sched-menu-list { display: grid; }
+  .sched-menu-list { display: none; position: absolute; right: 0; top: 32px; z-index: 20; min-width: 180px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+  .sched-menu-list a, .sched-menu-list button { display: block; width: 100%; text-align: left; height: auto; padding: 7px 10px; border: 0; border-radius: 7px; background: none; font-size: 13px; font-weight: 400; color: var(--ink); text-decoration: none; cursor: pointer; }
+  .sched-menu-list a:hover, .sched-menu-list button:hover:not(:disabled) { background: var(--surface); }
+  .sched-menu-list .delete-btn { color: var(--bad); }
+  .sched-ended { margin-top: 18px; }
+  .sched-ended summary { cursor: pointer; margin-bottom: 12px; }
+  @media (max-width: 860px) { .sched-cards { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body data-le-page="agent-config">
@@ -5090,52 +5126,93 @@ ${renderMarkdownScript}
     return s.run_at ? 'Once, ' + escapeHtml(fmtScheduleTime(s.run_at)) : 'Every ' + escapeHtml(s.every) + (s.anchor ? '<div class="hint">from ' + escapeHtml(fmtScheduleTime(s.anchor)) + '</div>' : '');
   }
 
+  // How often, in words, as the Schedules page says it: Daily at 09:00,
+  // Weekly on Friday at 10:30, Every 6 hours, Once, Nov 27, 09:00.
+  function scheduleClock(ms) {
+    try { return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: schedulesTimeZone || undefined }); }
+    catch (e) { return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); }
+  }
+  function describeSchedule(t) {
+    var s = t.schedule || {};
+    if (s.run_at) return 'Once, ' + fmtScheduleTime(s.run_at);
+    var m = String(s.every || '').match(/^([0-9]+)([smhd])$/);
+    if (!m) return String(s.every || '');
+    var n = Number(m[1]);
+    var at = t.next_run_at ? Date.parse(t.next_run_at) : (s.anchor ? Date.parse(s.anchor) : 0);
+    var weekday = function (ms) { try { return new Date(ms).toLocaleDateString('en-US', { weekday: 'long', timeZone: schedulesTimeZone || undefined }); } catch (e) { return ''; } };
+    if (m[2] === 'd' && n === 1 && at) return 'Daily at ' + scheduleClock(at);
+    if (m[2] === 'd' && n === 7 && at) return 'Weekly on ' + weekday(at) + ' at ' + scheduleClock(at);
+    if (m[2] === 'd') return 'Every ' + n + ' days' + (at ? ' at ' + scheduleClock(at) : '');
+    var unit = { s: 'second', m: 'minute', h: 'hour' }[m[2]];
+    return n === 1 ? 'Every ' + unit : 'Every ' + n + ' ' + unit + 's';
+  }
+  function scheduleUntil(iso) {
+    var ms = Date.parse(iso) - Date.now();
+    if (!(ms > 0)) return 'any moment';
+    var min = Math.round(ms / 60000);
+    if (min < 60) return 'in ' + min + 'm';
+    var h = Math.floor(min / 60);
+    if (h < 48) return 'in ' + h + 'h ' + (min % 60) + 'm';
+    return 'in ' + Math.round(h / 24) + ' days';
+  }
+  var SCHED_ICON_REPEAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18 2v4h-4"/><path d="M6 22v-4h4"/></svg>';
+  var SCHED_ICON_ONCE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>';
+  var SCHED_ICON_DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
+
+  // A schedule as a card, as on the Schedules page: what it runs, a switch
+  // to pause or resume it, Run now and the rest in its menu; how often, its
+  // state and next run as chips; then its last run and history.
   function renderScheduleRow(t) {
-    var actions = [];
-    if (t.status !== 'running' && t.status !== 'awaiting_approval' && t.status !== 'cancelled') actions.push(['run', 'Run now']);
-    if (t.status === 'scheduled') actions.push(['pause', 'Pause']);
-    if (t.status === 'paused') actions.push(['resume', 'Resume']);
-    if (t.status !== 'cancelled' && t.status !== 'done') actions.push(['cancel', 'Cancel']);
-    if (t.status === 'cancelled' || t.status === 'done') actions.push(['delete', 'Delete']);
+    var ended = t.status === 'cancelled' || t.status === 'done';
+    var on = t.status !== 'paused';
+    var title = t.task_name || (t.workflow && t.workflow.title) || String(t.message || '').split(String.fromCharCode(10))[0] || 'Untitled';
+    var desc = t.workflow ? (t.workflow.description || t.workflow.start_message || '') : t.workflow_missing ? '' : (t.task_name ? t.message : '');
+    var params = t.params ? Object.keys(t.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(t.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
+    var menu = [];
+    if (t.status !== 'running' && t.status !== 'awaiting_approval' && !ended) menu.push('<button type="button" class="schedule-action" data-id="' + escapeHtml(t.task_id) + '" data-action="run">Run now</button>');
+    if (t.workflow) menu.push('<a href="' + escapeHtml(workflowPageHref(currentName, t.workflow.id)) + '">Open its workflow</a>');
+    menu.push(ended
+      ? '<button type="button" class="schedule-action delete-btn" data-id="' + escapeHtml(t.task_id) + '" data-action="delete">Delete</button>'
+      : '<button type="button" class="schedule-action delete-btn" data-id="' + escapeHtml(t.task_id) + '" data-action="cancel">Remove</button>');
+    var state = t.status === 'awaiting_approval' ? '<a href="#" class="sched-chip warn schedule-to-approvals">Waiting for approval</a>'
+      : t.status === 'running' ? '<span class="sched-chip strong">Running now</span>'
+      : t.status === 'done' ? '<span class="sched-chip">Done</span>'
+      : t.status === 'cancelled' ? '<span class="sched-chip">Removed</span>'
+      : t.last_status === 'error' ? '<span class="sched-chip bad">Last run failed</span>' : '';
+    var next = ended ? '' : !on ? 'Paused' : t.next_run_at ? 'Next run ' + scheduleUntil(t.next_run_at) : '';
     var lastOutcome = t.last_status === 'ok' ? (t.last_result || '') : (t.last_error || '');
     var last = t.last_run_at
-      ? '<span class="le-pill ' + (t.last_status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(t.last_status) + '</span> ' +
-        '<span class="hint">' + escapeHtml(fmtScheduleTime(t.last_run_at)) + '</span>' +
-        (lastOutcome ? '<div class="schedule-result workflow-markdown">' + renderMarkdownPreview(lastOutcome) + '</div>' : '')
-      : '<span class="hint">not run yet</span>';
+      ? '<div class="sched-last"><span class="sched-last-k">Last run</span><span class="le-pill ' + (t.last_status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(t.last_status === 'ok' ? 'done' : t.last_status) + '</span> <span class="hint">' + escapeHtml(fmtScheduleTime(t.last_run_at)) + '</span>' +
+          (lastOutcome ? '<div class="schedule-result workflow-markdown">' + renderMarkdownPreview(lastOutcome) + '</div>' : '') + '</div>'
+      : '';
     var history = (t.history || []).slice().reverse().map(function (h) {
       var outcome = h.status === 'ok' ? (h.result || '') : (h.error || '');
       return '<li><span class="le-pill ' + (h.status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(h.status) + '</span> <span class="hint">' + escapeHtml(fmtScheduleTime(h.ran_at)) + '</span>' +
         (outcome ? '<div class="schedule-result workflow-markdown">' + renderMarkdownPreview(outcome) + '</div>' : '') + '</li>';
     }).join('');
-    return '<tr id="schedule-' + escapeHtml(t.task_id) + '">' +
-      '<td style="min-width:180px"><strong>' + escapeHtml(t.task_name || 'Untitled') + '</strong>' +
-        (t.workflow
-          ? '<div><span class="le-pill accent">Workflow</span> <a href="' + escapeHtml(workflowPageHref(currentName, t.workflow.id)) + '" class="schedule-workflow-link" title="Open the workflow">' + escapeHtml(t.workflow.title) + '</a></div>' +
-            '<div class="schedule-result hint">' + escapeHtml(t.workflow.description || t.workflow.start_message) +
-              (t.params ? '<br>' + Object.keys(t.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(t.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '') + '</div>'
-          : t.workflow_missing
-            ? '<div><span class="le-pill bad">Workflow removed</span> <span class="hint">' + escapeHtml(t.workflow_id) + '</span></div>'
-            : '<div class="schedule-result hint">' + escapeHtml(t.message) + '</div>') +
-        // A workflow's schedule follows its Messaging tab (an old tick here
-        // was moved there when the server started).
-        (t.status !== 'cancelled' && t.status !== 'done' && !t.workflow_id
-          ? '<label class="schedule-notify hint" title="Sent through its Messaging Apps tab: Slack, email, Lark or a webhook"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Send result to messaging app</label>'
-          : (t.notify && !t.workflow_id ? '<div><span class="workflow-option-value">Send result to messaging app</span></div>' : '')) + '</td>' +
-      '<td>' + scheduleText(t.schedule) + (t.next_run_at ? '<div class="hint">next ' + escapeHtml(fmtScheduleTime(t.next_run_at)) + '</div>' : '') + '</td>' +
-      '<td><span class="le-pill ' + (SCHEDULE_PILLS[t.status] || 'neutral') + '">' + escapeHtml(SCHEDULE_LABELS[t.status] || t.status) + '</span>' +
-        (t.status === 'awaiting_approval' ? '<div class="hint"><a href="#" class="schedule-to-approvals">Decide in Messaging</a></div>' : '') + '</td>' +
-      '<td style="min-width:200px">' + last + (history ? '<details><summary class="hint">History (' + (t.history || []).length + ')</summary><ul class="schedule-history">' + history + '</ul></details>' : '') + '</td>' +
-      '<td><div style="display:flex;gap:6px;flex-wrap:wrap">' + actions.map(function (a) {
-        return '<button type="button" class="schedule-action' + (a[0] === 'run' ? ' primary' : '') + (a[0] === 'cancel' || a[0] === 'delete' ? ' delete-btn' : '') + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + a[0] + '"' + (t.workflow_id ? ' data-workflow="' + escapeHtml(t.workflow_id) + '"' : '') + '>' + a[1] + '</button>';
-      }).join('') + '</div></td></tr>';
+    return '<div class="sched-card' + (on && !ended ? '' : ' is-off') + '" id="schedule-' + escapeHtml(t.task_id) + '">' +
+      '<div class="sched-card-head"><span class="sched-icon">' + (t.schedule && t.schedule.run_at ? SCHED_ICON_ONCE : SCHED_ICON_REPEAT) + '</span>' +
+        '<span class="sched-card-text"><span class="sched-card-title">' + escapeHtml(title) + '</span>' +
+          (t.workflow_missing ? '<span class="le-pill bad" style="justify-self:start">Its workflow was removed</span>' : desc ? '<span class="sched-card-desc">' + escapeHtml(desc) + '</span>' : '') +
+          (params ? '<span class="hint">' + params + '</span>' : '') + '</span>' +
+        (ended ? '<span></span>' : '<button type="button" class="le-switch schedule-action" role="switch" aria-checked="' + on + '" aria-label="' + (on ? 'Pause ' : 'Resume ') + escapeHtml(title) + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + (on ? 'pause' : 'resume') + '"' + (t.status === 'running' || t.status === 'awaiting_approval' ? ' disabled' : '') + '></button>') +
+        '<details class="sched-menu"><summary aria-label="More">' + SCHED_ICON_DOTS + '</summary><div class="sched-menu-list">' + menu.join('') + '</div></details></div>' +
+      '<div class="sched-chips"><span class="sched-chip strong">' + escapeHtml(describeSchedule(t)) + '</span>' +
+        (t.workflow ? '<a class="sched-chip" href="' + escapeHtml(workflowPageHref(currentName, t.workflow.id)) + '">Workflow: ' + escapeHtml(t.workflow.title) + '</a>' : !t.workflow_id ? '<span class="sched-chip">Message</span>' : '') +
+        // A message's result to chat, switched here; a workflow's follows its Messaging tab.
+        (!ended && !t.workflow_id ? '<label class="sched-chip"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Result to chat</label>' : '') +
+        state + (next ? '<span class="sched-next">' + escapeHtml(next) + '</span>' : '') + '</div>' +
+      last +
+      (history ? '<details class="sched-history"><summary class="hint">History (' + (t.history || []).length + ')</summary><ul class="schedule-history">' + history + '</ul></details>' : '') +
+    '</div>';
   }
 
   function renderSchedulesHtml(tasks) {
     var active = tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; });
-    var list = tasks.length
-      ? '<div class="le-table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Status</th><th>Last run</th><th></th></tr></thead><tbody>' + tasks.map(renderScheduleRow).join('') + '</tbody></table></div>'
-      : '<p class="hint">Nothing scheduled yet. Add one with + Add schedule.</p>';
+    var ended = tasks.filter(function (t) { return t.status === 'cancelled' || t.status === 'done'; });
+    var grid = function (list) { return '<div class="le-grid sched-cards">' + list.map(renderScheduleRow).join('') + (list.length % 2 ? '<div class="sched-card" aria-hidden="true"></div>' : '') + '</div>'; };
+    var list = (active.length ? grid(active) : '<p class="hint">Nothing scheduled yet. Add one with + Add schedule.</p>') +
+      (ended.length ? '<details class="sched-ended"><summary class="hint">Ended (' + ended.length + ')</summary>' + grid(ended) + '</details>' : '');
     return '<div class="sched-top"><p class="muted" style="margin:0">Workflows and messages this agent runs on a timer, like a cron job. A workflow schedule runs the workflow&#39;s instructions as they are at each run. Each run works like an app calling it over HTTP: an approval goes wherever the Messaging Apps tab sends it, and with nowhere set, a call that needs approval is denied. The agent can also schedule its own tasks when asked in Chat (&ldquo;remind me tomorrow at 9&rdquo;); they appear here too.</p><button type="button" class="le-btn-dark" id="scheduleAddBtn">+ Add schedule</button></div>' +
       '<section><h3>Scheduled (' + active.length + ' active)</h3>' + list + '</section>' +
       // + Add schedule opens this, like Create schedule on the Schedules page.
@@ -5198,7 +5275,7 @@ ${renderMarkdownScript}
         var action = btn.dataset.action;
         if ((action === 'cancel' || action === 'delete') && btn.dataset.confirming !== '1') {
           btn.dataset.confirming = '1';
-          btn.textContent = 'Click again to ' + action;
+          btn.textContent = action === 'cancel' ? 'Click again to remove' : 'Click again to delete';
           return;
         }
         btn.disabled = true;
