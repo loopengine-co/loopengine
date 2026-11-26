@@ -53,16 +53,31 @@ export const agentsListPageHtml: string = `<!doctype html>
   .ag-topbar-link:hover { background: var(--surface); }
   .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); }
-  #newAgentForm { padding: 22px 24px; background: var(--bg); display: grid; gap: 12px; }
-  #newAgentForm h2 { font-size: 18px; font-weight: 500; margin: 0; }
-  #newAgentForm label { display: grid; gap: 5px; font-size: 13px; font-weight: 500; max-width: 620px; }
-  #newAgentForm .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  #newAgentForm textarea { min-height: 72px; }
-  #newAgentError, #newAgentResult { margin: 12px 2px 0; }
+  #newAgentResult { margin: 12px 2px 0; }
+  /* New agent, in a dialog like Create schedule. */
+  .ag-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
+  .ag-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
+  .ag-dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100vh - 50px); }
+  .ag-dlg-head { display: flex; align-items: center; gap: 8px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .ag-dlg-head h2 { margin: 0 auto 0 0; font-size: 18px; font-weight: 500; }
+  .ag-dlg-head button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
+  .ag-dlg-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: auto; }
+  .ag-dlg-col { display: grid; align-content: start; }
+  .ag-dlg-col + .ag-dlg-col { border-left: 1px solid var(--line); background: var(--surface); }
+  .ag-field { display: grid; gap: 9px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .ag-field > label, .ag-field-k { font-size: 14px; font-weight: 500; }
+  .ag-field label { display: grid; gap: 9px; }
+  .ag-field .hint { margin: 0; line-height: 1.45; }
+  .ag-field input, .ag-field select { height: 38px; border-radius: 9px; font-size: 13.5px; width: 100%; box-sizing: border-box; }
+  .ag-field textarea { min-height: 110px; border-radius: 9px; font-size: 13.5px; width: 100%; box-sizing: border-box; }
+  .ag-dlg-foot { padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); min-height: 46px; display: flex; align-items: center; }
+  .ag-dlg-foot:not(:has(.error[style*="block"])) { display: none; }
   @media (max-width: 860px) {
     .ag-hero { padding: 24px 18px 20px; }
     .ag-hero .le-mascot { display: none; }
     .ag-cols2 { grid-template-columns: minmax(0, 1fr); }
+    .ag-dlg-body { grid-template-columns: minmax(0, 1fr); }
+    .ag-dlg-col + .ag-dlg-col { border-left: 0; border-top: 1px solid var(--line); }
     .le-search, .ag-topbar-link { display: none; }
   }
 </style>
@@ -81,52 +96,46 @@ ${consoleSidebarHtml}
   </header>
   <div class="le-scroll"><div class="le-page"><div class="ag">
     <div class="ag-hero"><div><h2 class="le-display">Your agents</h2><p class="le-display-sub" id="agSub">Each has its own instructions, tools and permissions. Open one to chat with it, give it workflows, or change how it works.</p></div>${mascotSvg(92)}</div>
-    <div class="le-grid ag-cols1" id="newAgentWrap" hidden>
-    <form id="newAgentForm">
-      <p class="hint" style="margin:0">Not sure what to build? <a href="/interview">Find your first agent</a>: a short interview that suggests one and creates it. Then give it workflows, described in your own words or from an example.</p>
-      <h2>New agent</h2>
-      <label>Name <span class="hint">(what you'll see in the sidebar; you can change it later)</span>
-        <input type="text" name="displayName" placeholder="Weather assistant" maxlength="60" required>
-      </label>
-      <label>ID <span class="hint">(lowercase and hyphens; its folder agents/&lt;id&gt;/ and API address use it, so it can't be changed later)</span>
-        <input type="text" name="name" placeholder="weather-assistant" pattern="[a-z0-9]+(-[a-z0-9]+)*" required>
-      </label>
-      <label>Instructions <span class="hint">(who it is and the rules it always follows)</span>
-        <textarea name="systemPrompt" placeholder="You are ..."></textarea>
-      </label>
-      <label>Model provider
-        <select name="provider">
-          <option value="openai" selected>openai</option>
-          <option value="anthropic">anthropic</option>
-          <option value="gemini">gemini</option>
-          <option value="meta">meta</option>
-          <option value="xai">xai</option>
-          <option value="deepseek">deepseek</option>
-          <option value="kimi">kimi</option>
-          <option value="glm">glm</option>
-        </select>
-      </label>
-      <label id="modelNameLabel">Model name <span class="hint">(choose Other&hellip; to type a model that isn't listed)</span>
-        <input type="text" name="modelName" value="gpt-6-luna" placeholder="model name">
-      </label>
-      <div class="row">
-        <button type="submit" class="le-btn-dark">Create agent</button>
-        <button type="button" id="cancelNewAgentBtn">Cancel</button>
-      </div>
-    </form>
-    </div>
     <div class="le-grid ag-cols2" id="agentUl"><p class="ag-empty">Loading&hellip;</p></div>
-    <p class="error" id="newAgentError" style="display:none"></p>
     <p class="hint" id="newAgentResult" style="display:none"></p>
   </div></div></div>
 </main>
 </div>
+<dialog class="ag-dialog" id="newAgentDialog" aria-labelledby="agDlgTitle">
+  <form id="newAgentForm">
+    <div class="ag-dlg-head"><h2 id="agDlgTitle">New agent</h2><button type="button" id="cancelNewAgentBtn">Cancel</button><button type="submit" class="primary">Create agent</button></div>
+    <div class="ag-dlg-body">
+      <div class="ag-dlg-col">
+        <div class="ag-field"><label for="agDisplayName">Name</label><input type="text" id="agDisplayName" name="displayName" placeholder="Weather assistant" maxlength="60" required><p class="hint">What you'll see in the sidebar. You can change it later.</p></div>
+        <div class="ag-field"><label for="agId">ID</label><input type="text" id="agId" name="name" placeholder="weather-assistant" pattern="[a-z0-9]+(-[a-z0-9]+)*" required><p class="hint">Lowercase and hyphens. Its folder agents/&lt;id&gt;/ and API address use it, so it can't be changed later.</p></div>
+        <div class="ag-field"><label for="agPrompt">Instructions</label><textarea id="agPrompt" name="systemPrompt" placeholder="You are ..."></textarea><p class="hint">Who it is and the rules it always follows. Its workflows say what to do.</p></div>
+      </div>
+      <div class="ag-dlg-col">
+        <div class="ag-field"><label for="agProvider">Model provider</label>
+          <select id="agProvider" name="provider">
+            <option value="openai" selected>openai</option>
+            <option value="anthropic">anthropic</option>
+            <option value="gemini">gemini</option>
+            <option value="meta">meta</option>
+            <option value="xai">xai</option>
+            <option value="deepseek">deepseek</option>
+            <option value="kimi">kimi</option>
+            <option value="glm">glm</option>
+          </select></div>
+        <div class="ag-field" id="modelNameLabel"><label>Model name
+          <input type="text" name="modelName" value="gpt-6-luna" placeholder="model name"></label><p class="hint">Choose Other&hellip; to type a model that isn't listed.</p></div>
+        <div class="ag-field"><span class="ag-field-k">Not sure what to build?</span><p class="hint"><a href="/interview">Find your first agent</a>: a short interview suggests one that fits your work and creates it. Then give it workflows, in your own words or from an example.</p></div>
+      </div>
+    </div>
+    <div class="ag-dlg-foot"><p class="error" id="newAgentError" style="display:none;margin:0"></p></div>
+  </form>
+</dialog>
 ${consoleShellScript}
 <script>
 (function () {
   var agentUl = document.getElementById('agentUl');
   var newAgentBtn = document.getElementById('newAgentBtn');
-  var newAgentWrap = document.getElementById('newAgentWrap');
+  var newAgentDialog = document.getElementById('newAgentDialog');
   var newAgentForm = document.getElementById('newAgentForm');
   var newAgentError = document.getElementById('newAgentError');
   var newAgentResult = document.getElementById('newAgentResult');
@@ -239,9 +248,9 @@ ${consoleShellScript}
   newAgentForm.addEventListener('reset', function () { setTimeout(applyProviderKeys, 0); });
 
   newAgentBtn.addEventListener('click', function () {
-    newAgentBtn.style.display = 'none';
-    newAgentWrap.hidden = false;
     newAgentResult.style.display = 'none';
+    newAgentError.style.display = 'none';
+    if (!newAgentDialog.open) newAgentDialog.showModal();
     newAgentForm.querySelector('input[name="displayName"]').focus();
     // Checks which providers have keys, then loads the chosen provider's
     // models; both when the form opens, not on every visit to this page.
@@ -266,9 +275,9 @@ ${consoleShellScript}
   });
   newAgentForm.addEventListener('reset', function () { idTyped = false; });
 
+  newAgentDialog.addEventListener('click', function (ev) { if (ev.target === newAgentDialog) newAgentDialog.close(); });
   cancelNewAgentBtn.addEventListener('click', function () {
-    newAgentWrap.hidden = true;
-    newAgentBtn.style.display = '';
+    newAgentDialog.close();
     newAgentError.style.display = 'none';
   });
 
@@ -302,8 +311,7 @@ ${consoleShellScript}
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (result) {
         if (!result.ok) throw new Error(result.body.error || 'request failed');
-        newAgentWrap.hidden = true;
-        newAgentBtn.style.display = '';
+        newAgentDialog.close();
         newAgentForm.reset();
         newAgentResult.style.display = 'block';
         if (result.body.registered) {
