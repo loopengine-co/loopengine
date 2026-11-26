@@ -332,7 +332,18 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-version-actions .wf-version-restore { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
   .wf-version-reason { margin: 0; color: var(--ink-muted); }
   .wf-version-text[hidden], .wf-version-diff[hidden] { display: none; }
-  .wf-version-diff { margin: 0; }
+  .wf-version-diff { margin: 0; display: grid; gap: 10px; }
+  .wf-vd { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; line-height: 1.5; }
+  .wf-vd-k { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); padding-top: 2px; }
+  .wf-vd-v { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+  .wf-vd-v .workflow-steps-text { margin: 0; }
+  .wf-vc-summary { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: 13px; }
+  .wf-vc-part { display: grid; gap: 4px; }
+  .wf-vc-part h5 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .wf-vc-body del { color: var(--bad); }
+  .wf-vc-body ins { color: var(--good); text-decoration: none; }
+  .wf-vc-body > div:not([class]) { padding: 1px 6px; font-family: var(--font-sans, inherit); }
+  @media (max-width: 640px) { .wf-vd { grid-template-columns: minmax(0, 1fr); } }
   .wf-version-diff .chg-lines { margin: 0; max-height: 480px; overflow: auto; }
   .chg-same { color: var(--ink-muted); padding: 1px 6px; }
   .chg-gap { color: var(--ink-faint); font-family: var(--font-sans, inherit); font-style: italic; padding: 2px 6px; }
@@ -2909,6 +2920,114 @@ ${renderMarkdownScript}
     return '<div class="chg-lines">' + html + '</div>';
   }
 
+  // A version laid out like the workflow itself: its name, prompt,
+  // inputs, result, model, tools, triggers and success criteria. A
+  // version from when only the brief was numbered has just its prompt
+  // and result format; one with nothing read back shows its text.
+  var PERMISSIONS = { allow: 'runs on its own', ask: 'asks you first', deny: 'never runs' };
+  function versionFull(v) { return Boolean(v.fields && v.fields.title !== undefined); }
+  function versionInputsHtml(params) {
+    var names = Object.keys(params || {});
+    if (!names.length) return '<span class="hint">None: every run is the same</span>';
+    return names.map(function (n) {
+      var spec = params[n] || {};
+      var typed = inputTypeText(spec);
+      return '<div><code>' + escapeHtml(n) + '</code>' + (spec.required ? ' (required)' : '') + (typed ? ' ' + escapeHtml(typed) : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '') + '</div>';
+    }).join('');
+  }
+  function versionModelText(m) { return m ? m.provider + ' ' + m.model : 'The agent' + RSQ + 's model'; }
+  function versionToolHtml(t) {
+    return '<div><code>' + escapeHtml(t.name) + '</code> <span class="wf-cb-decision ' + escapeHtml(t.permission) + '">' + escapeHtml(PERMISSIONS[t.permission] || t.permission) + '</span></div>';
+  }
+  function versionCritText(c) { return c.text + ' (' + critKindText(c) + ')'; }
+  function versionDetailHtml(v) {
+    var f = v.fields;
+    if (!f) return '<div class="workflow-steps-text">' + escapeHtml(v.content) + '</div>';
+    var row = function (k, html) { return '<div class="wf-vd-k">' + k + '</div><div class="wf-vd-v">' + html + '</div>'; };
+    var list = function (items, empty, fn) { return items && items.length ? items.map(fn).join('') : '<span class="hint">' + empty + '</span>'; };
+    var rows = '';
+    if (versionFull(v)) rows += row('Name', '<strong>' + escapeHtml(f.title) + '</strong>' + (f.description ? '<div class="hint">' + escapeHtml(f.description) + '</div>' : ''));
+    rows += row('Prompt', '<div class="workflow-steps-text">' + escapeHtml(f.instructions || '') + '</div>');
+    if (versionFull(v)) rows += row('Inputs', versionInputsHtml(f.parameters));
+    rows += row('Result', (f.output ? '<div class="workflow-steps-text">' + escapeHtml(f.output) + '</div>' : '<span class="hint">No result format set</span>') +
+      (f.outputSchema ? '<details class="wf-schema"><summary>Output schema</summary><pre>' + escapeHtml(JSON.stringify(f.outputSchema, null, 2)) + '</pre></details>' : ''));
+    if (versionFull(v)) rows += row('Model', escapeHtml(versionModelText(f.model)));
+    if (f.tools) rows += row('Tools', list(f.tools, 'None named in its prompt', versionToolHtml));
+    if (f.triggers) rows += row('Triggers', list(f.triggers, 'None: run by hand (Run now) or from an app', function (t) { return '<div>' + escapeHtml(t) + '</div>'; }));
+    if (f.criteria) rows += row('Success criteria', list(f.criteria, 'None', function (c) { return '<div>' + escapeHtml(versionCritText(c)) + '</div>'; }));
+    return '<div class="wf-vd">' + rows + '</div>' + (versionFull(v) ? '' : '<p class="hint" style="margin:6px 0 0">An early version: only its prompt and result format were kept.</p>');
+  }
+
+  // What changed from one version to the next, part by part: a name or
+  // model from and to; the prompt, result format and output schema line
+  // by line; inputs, tools, triggers and success criteria added, removed
+  // or changed. A part the older version didn't record isn't compared.
+  function versionCompareHtml(prev, v) {
+    var a = prev.fields, b = v.fields;
+    var intro = '<p class="hint" style="margin:0">What changed from version ' + prev.number + ' to version ' + v.number + '.</p>';
+    if (!a || !b) return intro + versionDiffHtml(prev.content, v.content);
+    var MINUS = String.fromCharCode(8722), ARROW = ' ' + String.fromCharCode(8594) + ' ';
+    var parts = [];
+    var add = function (label, html, summary) { parts.push({ label: label, html: html, summary: summary }); };
+    var fromTo = function (x, y) { return '<del>' + escapeHtml(x || '(none)') + '</del>' + ARROW + '<ins>' + escapeHtml(y || '(none)') + '</ins>'; };
+    var lines = function (x, y) {
+      var d = versionLineDiff(x || '', y || '');
+      var plus = d.filter(function (l) { return l.t === '+' && l.l.trim(); }).length, minus = d.filter(function (l) { return l.t === '-' && l.l.trim(); }).length;
+      return plus + ' line' + (plus === 1 ? '' : 's') + ' added, ' + minus + ' removed';
+    };
+    var setDiff = function (xs, ys, key, show) {
+      var ka = xs.map(key), kb = ys.map(key);
+      var out = [];
+      ys.forEach(function (y, i) { if (ka.indexOf(kb[i]) === -1) out.push('<div class="chg-ins">+ ' + show(y) + '</div>'); });
+      xs.forEach(function (x, i) { if (kb.indexOf(ka[i]) === -1) out.push('<div class="chg-del">' + MINUS + ' ' + show(x) + '</div>'); });
+      return out;
+    };
+    var full = versionFull(prev) && versionFull(v);
+    if (full && (a.title !== b.title || (a.description || '') !== (b.description || ''))) {
+      add('Name', (a.title !== b.title ? '<div>' + fromTo(a.title, b.title) + '</div>' : '') + ((a.description || '') !== (b.description || '') ? '<div>' + fromTo(a.description, b.description) + '</div>' : ''), a.title !== b.title ? 'renamed' : 'description changed');
+    }
+    if ((a.instructions || '') !== (b.instructions || '')) add('Prompt', versionDiffHtml(a.instructions || '', b.instructions || ''), lines(a.instructions, b.instructions));
+    if (full) {
+      var pa = a.parameters || {}, pb = b.parameters || {};
+      var inputs = [];
+      Object.keys(pb).forEach(function (n) { if (!(n in pa)) inputs.push('<div class="chg-ins">+ <code>' + escapeHtml(n) + '</code>' + (pb[n].required ? ' (required)' : '') + '</div>'); });
+      Object.keys(pa).forEach(function (n) { if (!(n in pb)) inputs.push('<div class="chg-del">' + MINUS + ' <code>' + escapeHtml(n) + '</code></div>'); });
+      Object.keys(pb).forEach(function (n) {
+        if (!(n in pa) || JSON.stringify(pa[n]) === JSON.stringify(pb[n])) return;
+        var said = function (spec) { return [spec.required ? 'required' : 'optional', inputTypeText(spec), spec.description || ''].filter(Boolean).join(', '); };
+        inputs.push('<div><code>' + escapeHtml(n) + '</code>: ' + fromTo(said(pa[n]), said(pb[n])) + '</div>');
+      });
+      if (inputs.length) add('Inputs', inputs.join(''), inputs.length + ' changed');
+    }
+    if ((a.output || '') !== (b.output || '')) add('Result format', versionDiffHtml(a.output || '', b.output || ''), lines(a.output, b.output));
+    if (a.criteria !== undefined && b.criteria !== undefined && JSON.stringify(a.outputSchema || null) !== JSON.stringify(b.outputSchema || null)) {
+      var sa = a.outputSchema ? JSON.stringify(a.outputSchema, null, 2) : '', sb = b.outputSchema ? JSON.stringify(b.outputSchema, null, 2) : '';
+      add('Output schema', versionDiffHtml(sa, sb), !sa ? 'added' : !sb ? 'removed' : lines(sa, sb));
+    }
+    if (full && versionModelText(a.model) !== versionModelText(b.model)) add('Model', fromTo(versionModelText(a.model), versionModelText(b.model)), versionModelText(b.model));
+    if (a.tools && b.tools) {
+      var tools = setDiff(a.tools, b.tools, function (t) { return t.name; }, function (t) { return '<code>' + escapeHtml(t.name) + '</code> ' + escapeHtml(PERMISSIONS[t.permission] || t.permission); });
+      b.tools.forEach(function (t) {
+        var was = a.tools.filter(function (x) { return x.name === t.name; })[0];
+        if (was && was.permission !== t.permission) tools.push('<div><code>' + escapeHtml(t.name) + '</code>: ' + fromTo(PERMISSIONS[was.permission] || was.permission, PERMISSIONS[t.permission] || t.permission) + '</div>');
+      });
+      if (tools.length) add('Tools', tools.join(''), tools.length + ' changed');
+    }
+    if (a.triggers && b.triggers) {
+      var trig = setDiff(a.triggers, b.triggers, function (t) { return t; }, escapeHtml);
+      if (trig.length) add('Triggers', trig.join(''), trig.length + ' changed');
+    }
+    if (a.criteria && b.criteria) {
+      var crit = setDiff(a.criteria, b.criteria, function (c) { return c.kind + '|' + (c.value || '') + '|' + c.text; }, function (c) { return escapeHtml(versionCritText(c)); });
+      if (crit.length) add('Success criteria', crit.join(''), crit.length + ' changed');
+    }
+    var unrecorded = !full ? '<p class="hint" style="margin:0">Version ' + (versionFull(prev) ? v.number : prev.number) + ' kept only its prompt and result format, so only those are compared.</p>' : '';
+    if (!parts.length) return intro + unrecorded + '<p class="hint" style="margin:0">Nothing it holds changed' + (v.reason ? ': ' + escapeHtml(v.reason) : '') + '.</p>';
+    return intro + unrecorded +
+      '<ul class="wf-vc-summary">' + parts.map(function (p) { return '<li><strong>' + p.label + '</strong> <span class="hint">' + escapeHtml(p.summary) + '</span></li>'; }).join('') + '</ul>' +
+      parts.map(function (p) { return '<section class="wf-vc-part"><h5>' + p.label + '</h5><div class="chg-lines wf-vc-body">' + p.html + '</div></section>'; }).join('');
+  }
+
   function renderWorkflowVersions(name, card, box, base, data) {
     var versions = data.versions || [];
     if (!versions.length) { box.innerHTML = '<p class="hint" style="margin:0">No versions yet: the first is numbered when it' + RSQ + 's first run or published.</p>'; return; }
@@ -2936,7 +3055,7 @@ ${renderMarkdownScript}
               (isCurrent ? '' : '<button type="button" class="wf-version-restore">Restore</button>') +
             '</span></div>' +
           (v.reason ? '<p class="wf-version-reason">' + escapeHtml(v.reason) + '</p>' : '') +
-          '<div class="workflow-steps-text wf-version-text" hidden>' + escapeHtml(v.content) + '</div>' +
+          '<div class="wf-version-text" hidden></div>' +
           '<div class="wf-version-diff" hidden></div>' +
           '<span class="hint wf-version-status" role="status"></span>' +
         '</li>';
@@ -2961,11 +3080,15 @@ ${renderMarkdownScript}
           compareBtn.textContent = which === 'compare' ? 'Hide changes' : 'Compare';
         }
       };
-      if (btn.classList.contains('wf-version-view')) { show(text.hidden ? 'view' : null); return; }
+      if (btn.classList.contains('wf-version-view')) {
+        if (!text.innerHTML) text.innerHTML = versionDetailHtml(v);
+        show(text.hidden ? 'view' : null);
+        return;
+      }
       if (btn.classList.contains('wf-version-compare')) {
         if (!diff.hidden) { show(null); return; }
         var prev = previous(v);
-        if (!diff.innerHTML) diff.innerHTML = '<p class="hint" style="margin:0 0 6px">What changed from version ' + prev.number + ' to version ' + v.number + '.</p>' + versionDiffHtml(prev.content, v.content);
+        if (!diff.innerHTML) diff.innerHTML = versionCompareHtml(prev, v);
         show('compare');
         return;
       }

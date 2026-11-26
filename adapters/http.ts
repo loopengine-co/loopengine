@@ -2797,12 +2797,13 @@ async function handleWorkflowDraft(req: IncomingMessage, res: ServerResponse, ag
   }
 }
 
-// A workflow version as the API gives it: its text, and its input and
-// output schemas as JSON (null when the version has none, as older ones
-// don't).
-function workflowVersionView(v: Version): Version & { inputSchema: Record<string, unknown> | null; outputSchema: Record<string, unknown> | null } {
-  const saved = workflowFromContent(v.content)
-  return { ...v, inputSchema: saved.inputSchema ?? null, outputSchema: saved.outputSchema ?? null }
+// A workflow version as the API gives it: its text; its input and output
+// schemas as JSON (null when the version has none, as older ones don't);
+// and what it holds, field by field, for the console to lay out and
+// compare (a part an older version didn't record is left out).
+function workflowVersionView(v: Version): Version & { inputSchema: Record<string, unknown> | null; outputSchema: Record<string, unknown> | null; fields: Omit<ReturnType<typeof workflowFromContent>, 'agent' | 'workflowId' | 'inputSchema'> } {
+  const { agent: _a, workflowId: _w, inputSchema, ...fields } = workflowFromContent(v.content)
+  return { ...v, inputSchema: inputSchema ?? null, outputSchema: fields.outputSchema ?? null, fields }
 }
 
 // A run's trace as one record (web/run-trace.ts): the run read in full
