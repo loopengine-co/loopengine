@@ -178,6 +178,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-cb-line code { font-size: 12px; }
   .wf-cb-indent { padding-left: 14px; }
   .wf-cb-tools { flex: 1 1 260px; min-width: 0; }
+  .wf-cb-named { font-weight: 700; color: var(--ink); }
   .wf-cb-decision { font-size: 11.5px; font-weight: 700; padding: 0 8px; border-radius: 999px; white-space: nowrap; }
   .wf-cb-decision.allow { background: var(--good-soft); color: var(--good); }
   .wf-cb-decision.ask { background: var(--warn-soft); color: var(--warn); }
@@ -1294,7 +1295,7 @@ ${renderMarkdownScript}
   // ---- A workflow in three parts: its contract (what the system holds it
   // to: how it starts, its inputs, lookups, tools, model and result), its
   // brief (what the agent reads) and its evidence (how it's doing). ----
-  var workflowsMeta = { policies: '', agentModel: '', messaging: null };
+  var workflowsMeta = { policies: '', agentModel: '', messaging: null, agentTools: null, limits: null };
   var RSQ = String.fromCharCode(8217);
   var DOT = ' ' + String.fromCharCode(183) + ' ';
 
@@ -1407,8 +1408,21 @@ ${renderMarkdownScript}
       '</div>';
   }
 
+  // Its Contract tab: what every run is held to, as the system enforces
+  // it, apart from what the agent is only asked to do. Held to: the
+  // published version; how it starts; its inputs, checked before it
+  // starts; the tools it can call (every tool the agent has) and their
+  // permissions; its output schema, checked on its result; its model;
+  // where approvals go; its limits; where its result goes. Asked: its
+  // prompt and the shared policies, its result format, and its success
+  // criteria (judged in Evaluation only).
   function workflowContractHtml(w, name, params) {
-    // What starts it, as the contract says it; they're set up in Triggers.
+    var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
+    var hint = function (t) { return '<span class="hint">' + t + '</span>'; };
+
+    var version = ['the published version, <span class="wf-contract-version">' + hint('loading' + String.fromCharCode(8230)) + '</span>' +
+      (w.draft ? ' <span class="le-pill warn">Draft not live</span>' : ''), hint('A draft never runs: its changes, a webhook made in it included, apply once it' + RSQ + 's published. Each run records the version it ran.')];
+
     var trigger = [];
     (w.schedules || []).filter(function (x) { return x.status !== 'cancelled'; }).forEach(function (x) {
       trigger.push('schedule, ' + escapeHtml(x.describe) + (x.status === 'paused' ? ' <span class="le-pill warn">Paused</span>' : ''));
@@ -1418,41 +1432,71 @@ ${renderMarkdownScript}
         (t.waiting ? ' <span class="le-pill ask">Needs its signing secret</span>' : !t.enabled ? ' <span class="le-pill warn">Off</span>' : ''));
       Object.keys(t.mapping || {}).forEach(function (param) { trigger.push('<span class="wf-cb-indent"><code>' + escapeHtml(param) + '</code> ' + ARROW_L + ' <code>' + escapeHtml(t.mapping[param]) + '</code></span>'); });
     });
-    trigger.push('<span class="hint">' + (trigger.length
-      ? 'also by hand (Run now) or from an app (API); set them up in Triggers'
-      : 'it runs when started by hand (Run now) or from an app (API), or set up a schedule or webhook in Triggers') + '</span>');
+    trigger.push('by hand (Run now) or from an app (API)');
+    trigger.push(hint('A run with the same inputs as one still under way is turned away.'));
+
     var names = Object.keys(w.parameters || {});
     var inputs = names.length ? names.map(function (n) {
       var spec = w.parameters[n];
       var typed = inputTypeText(spec);
-      return '<code>' + escapeHtml(n) + '</code>' + (spec.required ? ' (required)' : '') + (typed ? ' ' + escapeHtml(typed) : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '');
-    }) : ['<span class="hint">none: every run is the same</span>'];
+      return '<code>' + escapeHtml(n) + '</code>' + (spec.required ? ' (required)' : ' (optional)') + (typed ? ' ' + escapeHtml(typed) : '') + (spec.description ? ' <span class="hint">' + escapeHtml(spec.description) + '</span>' : '');
+    }) : ['none: every run is the same'];
+    inputs.push(hint('Checked before a run starts: a missing required input, any other input, or a value of the wrong type or outside its limits is refused (an app' + RSQ + 's call gets 400, a webhook 422, a schedule' + RSQ + 's run fails).'));
+
+    // Every tool the agent has, by permission; those its prompt names first.
+    var named = {};
+    (w.tools || []).forEach(function (t) { named[t.name] = true; });
+    var all = workflowsMeta.agentTools || w.tools || [];
     var groups = { allow: [], ask: [], deny: [] };
-    (w.tools || []).forEach(function (t) { (groups[t.decision] || groups.ask).push(t.name); });
+    all.forEach(function (t) { (groups[t.decision] || groups.ask).push(t.name); });
     var tools = [];
     [['allow', 'runs on its own'], ['ask', 'asks you first'], ['deny', 'never runs']].forEach(function (g) {
-      if (!groups[g[0]].length) return;
-      tools.push('<span class="wf-cb-tools">' + groups[g[0]].map(function (n) { return '<code>' + escapeHtml(n) + '</code>'; }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
+      var list = groups[g[0]].slice().sort(function (a, b) { return Number(!named[a]) - Number(!named[b]) || a.localeCompare(b); });
+      if (!list.length) return;
+      tools.push('<span class="wf-cb-tools">' + list.map(function (n) { return named[n] ? '<code class="wf-cb-named" title="Named in its prompt">' + escapeHtml(n) + '</code>' : '<code>' + escapeHtml(n) + '</code>'; }).join(', ') + '</span><span class="wf-cb-decision ' + g[0] + '">' + g[1] + '</span>');
     });
-    if (!tools.length) tools.push('<span class="hint">none named in its instructions</span>');
-    var result = [];
-    if (w.output) result.push(escapeHtml(w.output));
+    if (!all.length) tools.push('none: the agent has no tools');
+    tools.push('built in: asking a person a question, and scheduling ' + hint('(always allowed)'));
+    tools.push(hint('A run can call any of the agent' + RSQ + 's tools, not only those its prompt names (in bold). Permissions are the agent' + RSQ + 's, shared by all its workflows, and are shown here as they apply before a call' + RSQ + 's values are known: a rule on the values can decide a call differently.'));
+
+    var output = [];
     if (w.outputSchema) {
       var props = w.outputSchema.type === 'object' && w.outputSchema.properties ? Object.keys(w.outputSchema.properties) : [];
-      result.push('<span>JSON matching its output schema' + (props.length ? ': ' + props.map(function (n) { return '<code>' + escapeHtml(n) + '</code>'; }).join(', ') : '') + '</span>' +
+      output.push('JSON matching its output schema' + (props.length ? ': ' + props.map(function (n) { return '<code>' + escapeHtml(n) + '</code>'; }).join(', ') : '') +
         '<details class="wf-schema"><summary>Show the schema</summary><pre>' + escapeHtml(JSON.stringify(w.outputSchema, null, 2)) + '</pre></details>');
-    }
-    result.push('returned to whoever starts it <span class="hint">(Run now, or the app' + RSQ + 's API call)</span>');
+      output.push(hint('A result that doesn' + RSQ + 't match goes back to the agent with what' + RSQ + 's wrong, twice at most; then the run fails.'));
+    } else output.push('not checked: no output schema ' + hint('(add one with Edit workflow to hold every result to a shape)'));
+
+    var model = [w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' ' + hint('(the agent' + RSQ + 's model)')];
+
+    var decisions = [(w.delivery && w.delivery.decisions_to === 'callback' ? 'your app (' + escapeHtml(w.delivery.callback_url || '') + ')' : escapeHtml(workflowChatName() || 'the Inbox') + (workflowChatName() ? ', and the Inbox' : '')),
+      hint('A run that needs a decision or an answer waits for it, however long. An app or webhook that sets its own update address can take them instead.')];
+
+    var lim = workflowsMeta.limits;
+    var limits = [lim ? 'at most ' + lim.maxTurns + ' model turns, then the run stops' : 'the agent' + RSQ + 's limit on model turns',
+      lim ? 'its conversation kept under ' + Number(lim.contextBudgetTokens).toLocaleString() + ' tokens ' + hint('(older steps are summarised as it fills)') : '',
+      hint('No limit on time or cost: both are recorded on each run (Activity).')].filter(Boolean);
+
+    var result = ['returned to whoever started it ' + hint('(Run now, or the app' + RSQ + 's API call)')];
     var notified = (w.delivery && w.delivery.result_to_chat) || (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.result_to_chat; });
-    if (notified) result.push(escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'messaging app') + ' report' + (w.delivery && w.delivery.result_to_chat ? '' : ' <span class="hint">(for the schedules and webhooks set to send it)</span>'));
-    if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to the webhook' + RSQ + 's update address');
-    if (w.delivery && w.delivery.callback_url) result.push('run updates posted to ' + escapeHtml(w.delivery.callback_url));
-    var decisions = [(w.delivery && w.delivery.decisions_to === 'callback' ? 'your app' : escapeHtml(workflowChatName() || 'the agent' + RSQ + 's messaging app')) + ' <span class="hint">(see Messaging)</span>'];
-    var model = w.model ? escapeHtml(w.model.provider + ' ' + w.model.model) : escapeHtml(workflowsMeta.agentModel || 'the agent' + RSQ + 's') + ' <span class="hint">(the agent' + RSQ + 's model)</span>';
-    var row = function (k, lines) { return '<div class="wf-cb-k">' + k + '</div><div class="wf-cb-v">' + contractLinesHtml(lines) + '</div>'; };
-    return '<div class="wf-cb">' + row('trigger', trigger) + row('inputs', inputs) + row('tools', tools) + row('result', result) + row('approvals', decisions) + row('model', [model]) + '</div>' +
-      '<p class="hint" style="margin:0">Change the inputs, result and model with Edit, where updates and approvals go in Messaging, and what tools may do in Permissions.</p>';
+    if (notified) result.push('posted to ' + escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'the messaging app') + (w.delivery && w.delivery.result_to_chat ? '' : ' ' + hint('(for the schedules and webhooks set to send it)')) + ', or its error if it fails');
+    if (w.delivery && w.delivery.callback_url) result.push('posted to ' + escapeHtml(w.delivery.callback_url) + ' when it finishes, fails or waits for a decision ' + hint('(signed)'));
+    if ((w.triggers || []).some(function (t) { return t.callback; })) result.push('posted to each webhook' + RSQ + 's update address, for runs it starts');
+
+    var criteria = (w.evals && w.evals.criteria) || [];
+    var asked = [
+      'its prompt and the shared policies ' + hint('(Prompt tab; policies in Settings)'),
+      w.output ? 'its result format: ' + escapeHtml(w.output) : 'no result format',
+      criteria.length ? criteria.length + ' success ' + (criteria.length === 1 ? 'criterion' : 'criteria') + ' ' + hint('(judged when you evaluate it, not on live runs)') : 'no success criteria',
+    ];
+
+    return '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">Held to on every run</h4><span class="hint">enforced by LoopEngine, whatever the agent decides</span></div>' +
+        '<div class="wf-cb">' + row('version', version) + row('starts', trigger) + row('inputs', inputs) + row('tools', tools) + row('output', output) + row('model', model) + row('approvals', decisions) + row('limits', limits) + row('result', result) + '</div></section>' +
+      '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">Asked of the agent</h4><span class="hint">what it reads and follows; not checked</span></div>' +
+        '<div class="wf-cb">' + row('reads', asked) + '</div>' +
+        '<p class="hint" style="margin:0">Change the prompt, inputs, output schema and model with Edit workflow, where approvals and results go in Messaging, the agent' + RSQ + 's tool permissions in Permissions, and success criteria in Evaluation.</p></section>';
   }
+
 
   function workflowBriefHtml(w) {
     var policies = workflowsMeta.policies;
@@ -2160,7 +2204,7 @@ ${renderMarkdownScript}
       if (currentName !== name) return;
       if (!r.ok) { el.innerHTML = '<p class="error">Could not load workflows: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
       var workflows = r.body.workflows || [];
-      workflowsMeta = { policies: r.body.policies || '', agentModel: r.body.agentModel || '', messaging: r.body.messaging || null };
+      workflowsMeta = { policies: r.body.policies || '', agentModel: r.body.agentModel || '', messaging: r.body.messaging || null, agentTools: r.body.agentTools || null, limits: r.body.limits || null };
       fillWorkflowsCard(workflows);
       leShell.setCount('workflows', workflows.length);
       workflowsById = {};
@@ -2847,9 +2891,16 @@ ${renderMarkdownScript}
     fetch(base + '/versions', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
-        if (!data) { if (box) box.innerHTML = '<p class="hint" style="margin:0">This workspace keeps no versions.</p>'; return; }
+        if (!data) {
+          if (box) box.innerHTML = '<p class="hint" style="margin:0">This workspace keeps no versions.</p>';
+          var unkept = card.querySelector('.wf-contract-version');
+          if (unkept) unkept.textContent = 'not numbered: this workspace keeps no versions';
+          return;
+        }
         var versions = data.versions || [];
         var current = versions.filter(function (v) { return v.number === data.current; })[0] || versions[0];
+        var contractVersion = card.querySelector('.wf-contract-version');
+        if (contractVersion) contractVersion.innerHTML = current ? '<strong>v' + current.number + '</strong>' : 'not numbered yet';
         if (meta && current) {
           var draft = workflowsById[card.dataset.workflow] && workflowsById[card.dataset.workflow].draft;
           meta.innerHTML = '<a href="' + workflowPageHref(name, card.dataset.workflow, 'versions') + '">v' + current.number + '</a>' + (draft ? ' <span class="hint">+ draft</span>' : '');

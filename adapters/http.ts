@@ -1749,13 +1749,15 @@ const WORKFLOW_WAIT_MS = Number(process.env.LOOPENGINE_WORKFLOW_WAIT_MS) || 85_0
 // { runId, running: true } if it's still going after WORKFLOW_WAIT_MS.
 // A failed run answers 502 { runId, error }. Wrong or missing params are
 // a 400 before anything runs.
-// An agent's workflows for the console, each with its contract's tools:
-// the agent's tools its instructions name, and the permission
-// each has. Also the workspace's shared policies and the agent's model.
+// An agent's workflows for the console, each with the agent's tools its
+// instructions name and the permission each has. Also the workspace's
+// shared policies, the agent's model, every tool the agent has (a run can
+// call any of them) with its permission, and the limits every run has.
 async function workflowsView(agentName: string): Promise<Record<string, unknown>> {
   const entry = getEntry(agentName)!
   const workflows = await listAgentWorkflows(agentName, agentDir(agentName))
   const toolsOf = await contractTools(agentName)
+  const agentTools = await agentToolPermissions(agentName)
   // Its webhooks for the contract: whose events, which ones, and what
   // fills each input.
   const triggers = await listTriggers(agentName).catch(() => [])
@@ -1787,15 +1789,20 @@ async function workflowsView(agentName: string): Promise<Record<string, unknown>
     policies: readWorkspacePolicies(process.cwd()),
     agentModel: modelLabelOf(entry.config),
     messaging,
+    agentTools,
+    // As core/run-agent.ts applies them to every run of this agent.
+    limits: { maxTurns: entry.config.maxTurns ?? 25, contextBudgetTokens: entry.config.contextBudgetTokens ?? 100_000 },
   }
 }
 
-// A workflow's contract tools: the agent's tools its instructions name,
-// each with the permission it has (allow, ask or deny). Returns a lookup,
-// so one read of the agent's tools serves all its workflows.
-async function contractTools(agentName: string): Promise<(instructions: string) => { name: string; decision: string }[]> {
+// Every tool the agent has (its own, its subagents and its app tools: a
+// workflow's run may call any of them), each with the permission its
+// rules give a call to it (allow, ask or deny), worked out without the
+// call's arguments, so a rule on arguments may decide a real call
+// differently.
+async function agentToolPermissions(agentName: string): Promise<{ name: string; decision: string }[]> {
   const entry = getEntry(agentName)
-  if (!entry) return () => []
+  if (!entry) return []
   let names: string[] = []
   try {
     const all = [...(entry.config.tools ?? (await loadDefaultTools(entry.config))), ...(await loadSubagentAsTools(entry.config)), ...(await loadGatewayToolsFromDir(agentDir(agentName)))]
@@ -1803,10 +1810,16 @@ async function contractTools(agentName: string): Promise<(instructions: string) 
   } catch {}
   const rules = loadRules(entry.config)
   const scope = { tenant: 'default', environment: process.env.LOOPENGINE_ENV ?? 'production', agent: agentName }
+  return names.map((n) => ({ name: n, decision: String(rules.resolve(n, {}, scope)[0]) }))
+}
+
+// The agent's tools a workflow's instructions name, each with its
+// permission: what its versions record. Returns a lookup, so one read of
+// the agent's tools serves all its workflows.
+async function contractTools(agentName: string): Promise<(instructions: string) => { name: string; decision: string }[]> {
+  const tools = await agentToolPermissions(agentName)
   const escape = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return (instructions) => names
-    .filter((n) => new RegExp(`(^|[^A-Za-z0-9_])${escape(n)}($|[^A-Za-z0-9_])`).test(instructions))
-    .map((n) => ({ name: n, decision: String(rules.resolve(n, {}, scope)[0]) }))
+  return (instructions) => tools.filter((t) => new RegExp(`(^|[^A-Za-z0-9_])${escape(t.name)}($|[^A-Za-z0-9_])`).test(instructions))
 }
 
 // A judge for eval results: a model other than the one being tested
