@@ -1,6 +1,8 @@
-// The Inbox's data (web/inbox-page.ts): every workflow run as a case, the
-// ones waiting on a person first, and one case in full: what it was given,
-// what the agent did, what it asks now, and who decided what.
+// The Inbox's data (web/inbox-page.ts): every workflow run as a
+// conversation between the agent and the people it works for, sorted into
+// All, Needs attention, Completed, Failed and Archived, each with what it
+// last said in a line; and one in full: what it was given, what the agent
+// did, what it asks now, and who decided what.
 //
 // Built from what's already kept: workflow runs (core/workflow-runs.ts),
 // open approvals and questions (the checkpoint store, as
@@ -32,7 +34,21 @@ export interface InboxDeps {
   run?(runId: string): Promise<WorkflowRun | undefined>
   /** The run's model calls, oldest first (core/usage.ts). */
   usage?(run: WorkflowRun): UsageRow[]
+  /** An agent's display name. */
+  agentLabel?(agent: string): string
+  /** The cases put away (web/inbox-archive.ts), by id. */
+  archived?(): Record<string, InboxArchived>
 }
+
+/** A case put away: when, and by whom. */
+export interface InboxArchived {
+  at: string
+  by?: string
+}
+
+/** Where a case stands: waiting on a person, still running, or finished
+ * (done or failed). */
+export type InboxState = 'needs' | 'running' | 'completed' | 'failed'
 
 /** One row in the list. */
 export interface InboxItem {
@@ -56,12 +72,41 @@ export interface InboxItem {
   /** What happened, in a few words: "Done automatically", "Approved by
    * ana@…", "Failed". */
   outcome: string
+  state: InboxState
+  /** The agent's display name. */
+  agentLabel: string
+  /** What it last said, in a line: what it asks, its result, or why it
+   * failed. */
+  summary: string
+  archived?: InboxArchived
 }
 
-/** The Inbox's views: what's waiting on a person (however long), and
- * everything from the last RECENT_DAYS days. */
-export type InboxView = 'needs' | 'recent'
+/** The Inbox's views: everything not archived; what waits on a person
+ * (however long); what's completed or failed; what's archived. "recent"
+ * (everything not waiting from the last RECENT_DAYS days) is the older
+ * view, kept for links and apps. */
+export type InboxView = 'all' | 'needs' | 'completed' | 'failed' | 'archived' | 'recent'
+export const INBOX_VIEWS: InboxView[] = ['all', 'needs', 'completed', 'failed', 'archived', 'recent']
 export const RECENT_DAYS = 7
+
+const SUMMARY_MAX = 240
+
+// The last thing the agent said in its own words, from its history.
+function lastAgentText(history: Message[]): string {
+  for (let i = history.length - 1; i > 0; i--) {
+    const m = history[i]!
+    if (m.role !== 'assistant') continue
+    const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : (m.content as { type: string; text?: string }[])
+    const text = blocks.filter((b) => b.type === 'text' && b.text?.trim()).map((b) => b.text!.trim()).join(' ')
+    if (text) return text
+  }
+  return ''
+}
+
+// Markdown left out, for a line of plain text.
+function plain(text: string): string {
+  return text.replace(/```[\s\S]*?```/g, ' ').replace(/\*\*|__|`/g, '').replace(/\*([^*\n]+)\*/g, '$1').replace(/^\s*(#+|>)\s*/gm, '').replace(/\[([^\]]*)\]\(([^)]*)\)/g, '$1')
+}
 
 // A case's outcome in words, from its status and the last decision.
 function outcomeOf(run: WorkflowRun, waiting: boolean): string {
@@ -95,8 +140,10 @@ function questionOf(p: InboxPending): string {
 /** `view`: "needs" (waiting on a person, oldest first, however long),
  * "recent" (the last RECENT_DAYS days, latest first), or "auto" (needs
  * when anything waits, else recent). `open` is the older name for needs. */
-export async function listInbox(deps: InboxDeps, filter: { view?: InboxView | 'auto'; open?: boolean; q?: string; workflow?: string; limit?: number; now?: number } = {}): Promise<{ items: InboxItem[]; open: number; view: InboxView; workflows: { id: string; title: string }[] }> {
+export async function listInbox(deps: InboxDeps, filter: { view?: InboxView | 'auto'; open?: boolean; q?: string; workflow?: string; limit?: number; now?: number } = {}): Promise<{ items: InboxItem[]; open: number; view: InboxView; counts: Record<Exclude<InboxView, 'recent'>, number>; workflows: { id: string; title: string }[] }> {
   const [runs, pending] = await Promise.all([deps.runs(), deps.pending()])
+  const archived = deps.archived?.() ?? {}
+  const label = (agent: string) => deps.agentLabel?.(agent) ?? agent
   const bySession = new Map<string, InboxPending[]>()
   for (const p of pending) bySession.set(p.sessionId, [...(bySession.get(p.sessionId) ?? []), p])
   const runSessions = new Set(runs.map((r) => r.session_id))
@@ -107,36 +154,65 @@ export async function listInbox(deps: InboxDeps, filter: { view?: InboxView | 'a
     const lastBy = decided.at(-1)?.by
     const since = waits.map((p) => p.createdAt).filter((t): t is string => Boolean(t)).sort()[0]
     const lastActivity = [run.started_at, run.finished_at, decided.at(-1)?.at].filter((t): t is string => Boolean(t)).sort().at(-1)!
+    const state: InboxState = waits.length ? 'needs' : run.status === 'error' ? 'failed' : run.status === 'done' ? 'completed' : 'running'
+    const question = waits.find((p) => p.kind === 'question')
+    const summary = question ? questionOf(question)
+      : state === 'failed' ? run.error ?? 'It failed.'
+      : state === 'completed' ? run.result ?? outcomeOf(run, false)
+      : state === 'running' ? 'Working on it…'
+      : `Wants to run ${waits[0]!.tool}.`
     return {
-      id: run.run_id, title: titleOf(run, wfTitle), agent: run.agent, workflowId: run.workflow_id, workflowTitle: wfTitle, status: run.status,
+      id: run.run_id, title: titleOf(run, wfTitle), agent: run.agent, agentLabel: label(run.agent), workflowId: run.workflow_id, workflowTitle: wfTitle, status: run.status, state,
       waiting: [...new Set(waits.map((p) => p.kind))], startedAt: run.started_at, ...(run.finished_at ? { finishedAt: run.finished_at } : {}), ...(lastBy ? { lastBy } : {}),
-      ...(waits.length ? { waitingSince: since ?? run.started_at } : {}), lastActivity, outcome: outcomeOf(run, waits.length > 0),
+      ...(waits.length ? { waitingSince: since ?? run.started_at } : {}), lastActivity: waits.length && since && since > lastActivity ? since : lastActivity, outcome: outcomeOf(run, waits.length > 0),
+      summary: short(plain(summary), SUMMARY_MAX), ...(archived[run.run_id] && !waits.length ? { archived: archived[run.run_id] } : {}),
     }
   })
+  // An approval it waits on reads best in the agent's own words, from
+  // just before it asked ("The content is ready. Please review…").
+  await Promise.all(items.map(async (item, i) => {
+    if (item.state !== 'needs' || item.waiting.includes('question')) return
+    try {
+      const said = lastAgentText(await deps.history(runs[i]!))
+      if (said) item.summary = short(plain(said), SUMMARY_MAX)
+    } catch {}
+  }))
   for (const p of pending) {
     if (runSessions.has(p.sessionId)) continue
     const at = p.createdAt ?? new Date(0).toISOString()
     items.push({
-      id: OUTSIDE + p.pendingId, title: short(p.kind === 'question' ? questionOf(p) : `Approve ${p.tool}`, 120), agent: p.agent, workflowId: '', workflowTitle: 'Chat',
-      status: 'awaiting_approval', waiting: [p.kind], startedAt: at, waitingSince: at, lastActivity: at, outcome: 'Waiting',
+      id: OUTSIDE + p.pendingId, title: short(p.kind === 'question' ? questionOf(p) : `Approve ${p.tool}`, 120), agent: p.agent, agentLabel: label(p.agent), workflowId: '', workflowTitle: 'Chat',
+      status: 'awaiting_approval', state: 'needs', waiting: [p.kind], startedAt: at, waitingSince: at, lastActivity: at, outcome: 'Waiting',
+      summary: short(plain(p.kind === 'question' ? questionOf(p) : `Wants to run ${p.tool}.`), SUMMARY_MAX),
     })
   }
   const open = items.filter((i) => i.waiting.length).length
-  const view: InboxView = filter.open || filter.view === 'needs' ? 'needs' : filter.view === 'recent' ? 'recent' : open ? 'needs' : 'recent'
+  // None asked: Needs attention when anything waits, else All.
+  const view: InboxView = filter.open ? 'needs' : filter.view && filter.view !== 'auto' ? filter.view : open ? 'needs' : 'all'
+  const inView = (i: InboxItem, v: InboxView): boolean =>
+    v === 'needs' ? i.state === 'needs'
+    : v === 'archived' ? Boolean(i.archived)
+    : v === 'recent' ? !i.waiting.length && i.lastActivity >= recentSince
+    : !i.archived && (v === 'all' || (v === 'completed' && i.state === 'completed') || (v === 'failed' && i.state === 'failed'))
   const recentSince = new Date((filter.now ?? Date.now()) - RECENT_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const q = filter.q?.trim().toLowerCase()
   const runParams = new Map(runs.map((r) => [r.run_id, Object.values(r.params ?? {}).join(' ')]))
+  const matches = (i: InboxItem) => (!filter.workflow || i.workflowId === filter.workflow) &&
+    (!q || `${i.title} ${i.agent} ${i.agentLabel} ${i.workflowTitle} ${runParams.get(i.id) ?? ''} ${i.lastBy ?? ''} ${i.outcome} ${i.summary}`.toLowerCase().includes(q))
+  const counts = { all: 0, needs: 0, completed: 0, failed: 0, archived: 0 }
+  for (const i of items.filter(matches)) for (const v of Object.keys(counts) as (keyof typeof counts)[]) if (inView(i, v)) counts[v]++
   const shown = items
-    .filter((i) => (view === 'needs' ? i.waiting.length > 0 : !i.waiting.length && i.lastActivity >= recentSince))
-    .filter((i) => !filter.workflow || i.workflowId === filter.workflow)
-    .filter((i) => !q || `${i.title} ${i.agent} ${i.workflowTitle} ${runParams.get(i.id) ?? ''} ${i.lastBy ?? ''} ${i.outcome}`.toLowerCase().includes(q))
-    // Waiting: the longest-waiting first. Recent: the latest first.
-    .sort((a, b) => (view === 'needs' ? (a.waitingSince ?? '').localeCompare(b.waitingSince ?? '') : b.lastActivity.localeCompare(a.lastActivity)))
+    .filter((i) => inView(i, view) && matches(i))
+    // Needs attention: the longest-waiting first. All: what waits on a
+    // person first, then the latest. The rest: the latest first.
+    .sort((a, b) => view === 'needs' ? (a.waitingSince ?? '').localeCompare(b.waitingSince ?? '')
+      : view === 'all' ? Number(b.state === 'needs') - Number(a.state === 'needs') || b.lastActivity.localeCompare(a.lastActivity)
+      : b.lastActivity.localeCompare(a.lastActivity))
   // Every workflow with a case, whatever the filter, for the workflow picker.
   const workflows = [...new Map(items.filter((i) => i.workflowId).map((i) => [i.workflowId, i.workflowTitle])).entries()]
     .map(([id, title]) => ({ id, title }))
     .sort((a, b) => a.title.localeCompare(b.title))
-  return { items: shown.slice(0, filter.limit ?? 200), open, view, workflows }
+  return { items: shown.slice(0, filter.limit ?? 200), open, view, counts, workflows }
 }
 
 /** A step in a case's timeline. */
@@ -225,6 +301,8 @@ export interface InboxCase {
   id: string
   title: string
   agent: string
+  agentLabel?: string
+  archived?: InboxArchived
   workflowId: string
   workflowTitle: string
   run?: WorkflowRun
@@ -272,5 +350,9 @@ export async function getInboxCase(deps: InboxDeps, id: string): Promise<InboxCa
   }
   const { session_id: _s, message: _m, callbacks: _c, ...shown } = run
   const totals = totalsOf(run, usage)
-  return { id, title: titleOf(run, wfTitle), agent: run.agent, workflowId: run.workflow_id, workflowTitle: wfTitle, run: shown as WorkflowRun, pending: waits, steps, ...(totals ? { totals } : {}) }
+  const archived = waits.length ? undefined : deps.archived?.()[id]
+  return {
+    id, title: titleOf(run, wfTitle), agent: run.agent, agentLabel: deps.agentLabel?.(run.agent) ?? run.agent, ...(archived ? { archived } : {}),
+    workflowId: run.workflow_id, workflowTitle: wfTitle, run: shown as WorkflowRun, pending: waits, steps, ...(totals ? { totals } : {}),
+  }
 }

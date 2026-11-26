@@ -133,7 +133,8 @@ import { inboxPageHtml, renderInboxOnlyPage } from '#web/inbox-page.js'
 import { workflowsOverviewPageHtml } from '#web/workflows-overview-page.js'
 import { homePageHtml } from '#web/home-page.js'
 import { homeOverview, workflowsOverview } from '#web/workflows-overview.js'
-import { getInboxCase, listInbox, type InboxDeps } from '#web/inbox-admin.js'
+import { INBOX_VIEWS, getInboxCase, listInbox, type InboxDeps, type InboxView } from '#web/inbox-admin.js'
+import { readArchived, setArchived } from '#web/inbox-archive.js'
 import { buildRunTrace, type RunTrace } from '#web/run-trace.js'
 import { changeDraft, discardDraft, draftChanges, readDraft, withDraft, type DraftSchedule, type DraftState, type WorkflowDraft } from '#web/workflow-drafts.js'
 import { checkOutputSchema } from '#core/output-schema.js'
@@ -2483,6 +2484,8 @@ const inboxDeps: InboxDeps = {
   workflowTitle: (agent, workflowId) => (workflowId && getEntry(agent) ? readWorkflow(agentDir(agent), workflowId)?.title : undefined),
   run: (runId) => (/^[A-Za-z0-9_-]+$/.test(runId) ? getRunStore().get(runId) : Promise.resolve(undefined)),
   usage: (run) => pricedUsage(sessionUsage(run.agent, run.session_id)),
+  agentLabel: (agent) => getEntry(agent)?.config.displayName ?? agent,
+  archived: () => readArchived(projectDir()),
 }
 
 // A workflow's health over the last `days` days (web/workflow-health.ts):
@@ -5816,6 +5819,19 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html' }).end(page)
       return
     }
+    // Archiving a case, or bringing it back (POST or DELETE
+    // /inbox/cases/:id/archive): anyone who can decide in the Inbox.
+    const archiveMatch = (req.method === 'POST' || req.method === 'DELETE') && pathname.match(/^\/inbox\/cases\/([^/]+)\/archive$/)
+    if (archiveMatch) {
+      const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      if (!canDecide(callerOf(req).role)) return void json(403, { error: 'Your role can see the Inbox but not change it.' })
+      const id = decodeURIComponent(archiveMatch[1])
+      const found = await getInboxCase(inboxDepsFor(req), id)
+      if (!found) return void json(404, { error: 'No such case: it may have been removed.' })
+      if (req.method === 'POST' && found.pending.length) return void json(400, { error: 'It waits on a person: decide first, then archive it.' })
+      setArchived(projectDir(), [id], req.method === 'POST', changedBy(req))
+      return void json(200, { archived: req.method === 'POST' })
+    }
     if (req.method === 'GET' && (pathname === '/inbox/items' || pathname === '/inbox/count' || pathname.startsWith('/inbox/cases/'))) {
       const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
       // A case, or (…/export) its whole record as a file: the case, every
@@ -5858,8 +5874,8 @@ const server = createServer(async (req, res) => {
         return found ? json(200, found) : json(404, { error: 'No such case: it may have been removed.' })
       }
       const q = new URL(req.url ?? '/', 'http://localhost').searchParams
-      const view = q.get('view')
-      const listed = await listInbox(inboxDepsFor(req), { open: q.get('open') === '1', view: view === 'needs' || view === 'recent' ? view : 'auto', q: q.get('q') ?? undefined, workflow: q.get('workflow') ?? undefined })
+      const view = q.get('view') as InboxView | null
+      const listed = await listInbox(inboxDepsFor(req), { open: q.get('open') === '1', view: view && INBOX_VIEWS.includes(view) ? view : 'auto', q: q.get('q') ?? undefined, workflow: q.get('workflow') ?? undefined })
       return pathname === '/inbox/count' ? json(200, { open: listed.open }) : json(200, listed)
     }
     // Jobs are gone: a goal holds workflows and groups. Old links go to Goals.

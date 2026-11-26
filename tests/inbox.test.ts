@@ -66,10 +66,41 @@ describe('the Inbox', () => {
     const recent = await listInbox(deps(runs, waits), { view: 'recent', now })
     expect(recent.items.map((i) => [i.id, i.outcome])).toEqual([['auto', 'Done automatically'], ['old', 'Approved by jane@example.com']])
     expect((await listInbox(deps(runs, waits), { view: 'recent', q: 'jane', now })).items.map((i) => i.id)).toEqual(['old'])
-    // Nothing waits: the Inbox opens on Recent.
-    expect((await listInbox(deps(runs, []), { now })).view).toBe('recent')
+    // Nothing waits: the Inbox opens on All.
+    expect((await listInbox(deps(runs, []), { now })).view).toBe('all')
     // The workflow picker lists every workflow with a case, whatever the view.
     expect(needs.workflows.map((w) => w.id).sort()).toEqual([...new Set(runs.map((r) => r.workflow_id))].sort())
+  })
+
+  it('sorts conversations into All, Needs attention, Completed, Failed and Archived, each with what it last said', async () => {
+    const runs = [
+      run({ run_id: 'done', status: 'done', started_at: '2026-11-23T00:00:00.000Z', finished_at: '2026-11-23T00:01:00.000Z', result: 'Refunded **$84**.' }),
+      run({ run_id: 'failed', status: 'error', started_at: '2026-11-22T00:00:00.000Z', finished_at: '2026-11-22T00:01:00.000Z', error: 'Missing transaction data for `ledger_q4`.' }),
+      run({ run_id: 'put-away', status: 'done', started_at: '2026-11-21T00:00:00.000Z', finished_at: '2026-11-21T00:01:00.000Z', result: 'Done.' }),
+      run({ run_id: 'asks', status: 'awaiting_approval', session_id: 's4', started_at: '2026-11-20T00:00:00.000Z' }),
+    ]
+    const waits = [pending({ pendingId: 'p4', sessionId: 's4', kind: 'approval', tool: 'publish', args: {} })]
+    const d: InboxDeps = {
+      ...deps(runs, waits),
+      history: async () => [{ role: 'user', content: 'go' }, { role: 'assistant', content: 'The content is ready. Please review before publishing.' }],
+      agentLabel: () => 'Content Agent',
+      archived: () => ({ 'put-away': { at: '2026-11-24T00:00:00.000Z', by: 'ana@shop.com' }, asks: { at: '2026-11-24T00:00:00.000Z' } }),
+    }
+    const all = await listInbox(d, { view: 'all' })
+    // What waits on a person first, then the latest; the archived left out.
+    expect(all.items.map((i) => i.id)).toEqual(['asks', 'done', 'failed'])
+    expect(all.counts).toEqual({ all: 3, needs: 1, completed: 1, failed: 1, archived: 1 })
+    expect(all.items.map((i) => [i.state, i.summary])).toEqual([
+      ['needs', 'The content is ready. Please review before publishing.'],
+      ['completed', 'Refunded $84.'],
+      ['failed', 'Missing transaction data for ledger_q4.'],
+    ])
+    expect(all.items[0]).toMatchObject({ agentLabel: 'Content Agent', workflowTitle: 'Handle dispute' })
+    // One waiting on a person is never archived away.
+    expect(all.items[0]).not.toHaveProperty('archived')
+    expect((await listInbox(d, { view: 'failed' })).items.map((i) => i.id)).toEqual(['failed'])
+    expect((await listInbox(d, { view: 'archived' })).items.map((i) => [i.id, i.archived?.by])).toEqual([['put-away', 'ana@shop.com']])
+    expect((await getInboxCase(d, 'put-away'))?.archived).toMatchObject({ by: 'ana@shop.com' })
   })
 
   it('lists a decision outside any run as a case of its own', async () => {
