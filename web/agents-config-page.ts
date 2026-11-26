@@ -2160,7 +2160,7 @@ ${renderMarkdownScript}
           '</header>' +
           workflowDraftBannerHtml(w) +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('feedback', 'Feedback') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('feedback', 'Feedback') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
             panel('activity', workflowActivityHtml(w, runs, name)) +
             panel('evaluation', workflowEvaluationHtml(w)) +
@@ -2187,7 +2187,7 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('feedback', 'Feedback') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('feedback', 'Feedback') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('versions', workflowVersionsHtml()) +
           panel('feedback', workflowFeedbackHtml()) +
