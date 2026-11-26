@@ -164,19 +164,18 @@ export const devUiCss: string = `
   .le-pane-head a.le-pane-new[aria-current="page"] { text-decoration: underline; }
   .le-pane .le-agent-list { max-height: none; }
   .le-goal-item .le-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  /* Workflows: roomier, each with its agent under its name. */
-  .le-wf-list { display: grid; gap: 2px; align-content: start; }
-  .le-wf-list .le-agent-item { padding: 8px 10px; font-size: 13px; align-items: start; }
+  /* Workflows: each with its agent under its name. */
+  .le-wf-list .le-agent-item { align-items: start; }
   .le-wf-list .le-dot { margin-top: 5px; }
   .le-wf-text { display: grid; gap: 1px; min-width: 0; }
   .le-wf-text .le-name, .le-wf-text .le-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 0 1 auto; max-height: 40vh; min-height: 0; }
+  .le-agent-list { list-style: none; margin: 0; padding: 0 8px; overflow-y: auto; flex: 0 1 auto; max-height: 40vh; min-height: 0; display: grid; gap: 2px; align-content: start; }
   /* Find your first agent: one more item under Agents. */
-  .le-sub-link { margin: 2px 8px 0; padding: 5px 8px 5px 26px; flex: none; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
+  .le-sub-link { margin: 2px 8px 0; padding: 8px 10px 8px 28px; flex: none; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--accent-ink); text-decoration: none; }
   .le-sub-link:hover { background: var(--surface-2); }
   .le-sub-link[aria-current="page"] { background: var(--accent-soft); font-weight: 600; }
   /* List items read smaller than their section's head. */
-  .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; font-size: 12.5px; }
+  .le-agent-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; }
   .le-agent-item:hover { background: var(--surface-2); }
   .le-agent-item[aria-current="page"] { background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
   .le-agent-item .le-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -189,7 +188,7 @@ export const devUiCss: string = `
   .le-inbox-only .le-rail-item:not([data-le-section="inbox"]), .le-inbox-only .le-panel { display: none; }
   .le-dot.idle { background: var(--ink-faint); }
   .le-settings-menu { display: grid; gap: 2px; padding: 0 8px; }
-  .le-settings-menu a { padding: 6px 10px; border-radius: 6px; color: var(--ink-muted); text-decoration: none; font-size: 13px; }
+  .le-settings-menu a { padding: 8px 10px; border-radius: 8px; color: var(--ink-muted); text-decoration: none; font-size: 13px; }
   .le-settings-menu a:hover { background: var(--surface-2); color: var(--ink); }
   .le-settings-menu a[aria-current="page"] { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
   .le-who { position: relative; display: grid; place-items: center; padding-top: 8px; }
