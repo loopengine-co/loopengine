@@ -23,43 +23,42 @@ export const inboxPageHtml: string = `<!doctype html>
 <title>Inbox</title>
 <style>${devUiCss}
   .ib { max-width: 980px; display: grid; gap: 16px; }
-  .ib-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .ib-bar select, .ib-bar input { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
-  .ib-bar input { flex: 1; min-width: 160px; }
-  .ib-state { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .ib-state { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 600; background: var(--surface); color: var(--ink-muted); white-space: nowrap; }
   .ib-state.warn { background: var(--warn-soft); color: var(--warn); }
   .ib-state.good { background: var(--good-soft); color: var(--good); }
   .ib-state.bad { background: var(--bad-soft); color: var(--bad); }
   .ib-state.run { background: var(--accent-soft); color: var(--accent-ink); }
   body[data-le-page="inbox"] .le-page { max-width: 1320px; }
   .ib.is-inbox { max-width: none; }
-  .ib-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); }
-  .ib-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; height: auto; padding: 8px 12px; margin-bottom: -1px; font-size: 13.5px; font-weight: 600; color: var(--ink-muted); }
-  .ib-tabs button[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); }
-  .ib-tabs .ib-count { margin-left: 6px; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .ib-topbar { flex-wrap: wrap; row-gap: 8px; }
+  .ib-tabs { flex-wrap: wrap; }
+  .ib-tabs .ib-count { margin-left: 6px; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 6px; background: var(--surface-2); color: var(--ink-muted); }
+  .ib-select { height: 36px; padding: 0 10px; border-radius: 10px; border: 0; background: var(--surface); font-size: 13px; color: var(--ink); max-width: 220px; }
   .ib-tabs button[data-view="needs"] .ib-count.on { background: var(--warn-soft); color: var(--warn); }
-  .ib-split { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
-  .ib-items { display: grid; gap: 8px; align-content: start; max-height: calc(100vh - 230px); overflow: auto; padding: 2px; }
-  .ib-item { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); text-decoration: none; }
-  .ib-item:hover { border-color: var(--ink-faint); }
-  .ib-item.is-selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .ib-item.is-needs { border-left: 3px solid var(--warn); }
-  .ib-item-title { font-weight: 700; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+  /* The list and the open conversation side by side, in one hairline grid. */
+  .ib-split { grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); align-items: stretch; }
+  .ib-items { display: grid; align-content: start; max-height: calc(100vh - 150px); overflow: auto; background: var(--bg); }
+  .ib-item { position: relative; display: grid; gap: 6px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; transition: background .15s; }
+  .ib-item:hover { background: var(--surface); }
+  .ib-item.is-selected { background: var(--surface); }
+  .ib-item.is-selected::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--ink); }
+  .ib-item.is-needs .ib-item-title::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--warn); vertical-align: 1px; }
+  .ib-item-title { font-weight: 600; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
   .ib-item-meta { font-size: 12.5px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ib-item .ib-state { justify-self: start; }
   .ib-item-summary { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   .ib-item-time { font-size: 12px; color: var(--ink-faint); }
   .ib-item-time.late { color: var(--warn); font-weight: 700; }
-  .ib-thread { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: calc(100vh - 230px); }
+  .ib-thread { background: var(--bg); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: calc(100vh - 150px); }
   .ib-thread-empty { padding: 48px 24px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
-  .ib-thread-head { display: grid; gap: 6px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
-  .ib-thread-head h2 { margin: 0; font-size: 17px; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .ib-thread-head { display: grid; gap: 8px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+  .ib-thread-head h2 { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; overflow-wrap: anywhere; }
   .ib-thread-top { display: flex; align-items: flex-start; gap: 10px; }
   .ib-thread-top h2 { flex: 1; min-width: 0; }
   .ib-thread-tools { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
-  .ib-thread-tools a, .ib-thread-tools button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; cursor: pointer; }
+  .ib-thread-tools a, .ib-thread-tools button { height: 30px; padding: 0 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; cursor: pointer; }
   .ib-thread-tools .ib-thread-back { display: none; }
-  .ib-msgs { list-style: none; margin: 0; padding: 16px 18px 20px; display: grid; gap: 12px; overflow: auto; align-content: start; }
+  .ib-msgs { list-style: none; margin: 0; padding: 18px 22px 22px; display: grid; gap: 12px; overflow: auto; align-content: start; }
   .ib-msg { display: grid; gap: 4px; max-width: 86%; min-width: 0; }
   .ib-msg.person { justify-self: end; justify-items: end; }
   .ib-msg.system { justify-self: center; justify-items: center; max-width: 100%; }
@@ -99,8 +98,10 @@ export const inboxPageHtml: string = `<!doctype html>
     .ib-split:not(.has-thread) .ib-thread { display: none; }
     .ib-thread-tools .ib-thread-back { display: inline-flex; }
     .ib-items, .ib-thread { max-height: none; }
+    .ib-split { grid-template-columns: minmax(0, 1fr); }
+    .le-search { min-width: 0; flex: 1; }
   }
-  .ib-empty { padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
+  .ib-empty { margin: 0; padding: 36px 20px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
   .ib-link { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
   .ib-link:hover { text-decoration: underline; }
   .ib-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
@@ -115,7 +116,7 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-card textarea { width: 100%; box-sizing: border-box; min-height: 80px; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
   .ib-card textarea.mono { font-family: var(--font-mono); font-size: 12.5px; min-height: 200px; }
   .ib-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .ib-btn { height: 34px; padding: 0 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); cursor: pointer; }
+  .ib-btn { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; font-weight: 600; border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); cursor: pointer; }
   .ib-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
   .ib-btn.bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
   .ib-btn.opt { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; font-weight: 500; }
@@ -147,13 +148,14 @@ export const inboxPageHtml: string = `<!doctype html>
 <div class="le-app">
 ${consoleSidebarHtml}
 <main class="le-main">
-  <div class="le-head plain">
-    <div class="le-head-row">
-      <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Inbox</h1><p>Your conversations with your agents' workflow runs: what each asks you, what it did, and how it ended.</p></div>
-      </div>
-    </div>
-  </div>
+  <header class="le-topbar ib-topbar">
+    <button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+    <h1 class="le-topbar-title">Inbox</h1>
+    <span class="le-seg ib-tabs" role="tablist" aria-label="Show"></span>
+    <span class="le-topbar-gap"></span>
+    <select id="ibWorkflow" class="ib-select" aria-label="Workflow"><option value="">All workflows</option></select>
+    <label class="le-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="ibSearch" type="search" placeholder="Search conversations" aria-label="Search conversations, inputs or people"></label>
+  </header>
   <div class="le-scroll"><div class="le-page"><div class="ib" id="ibPage"><p class="hint">Loading&hellip;</p></div></div></div>
 </main>
 </div>
@@ -268,21 +270,17 @@ ${renderMarkdownScript}
   function renderInbox() {
     page.classList.add('is-inbox');
     page.innerHTML =
-      '<div class="ib-tabs" role="tablist" aria-label="Show"></div>' +
-      '<div class="ib-bar">' +
-        '<select id="ibWorkflow" aria-label="Workflow"><option value="">All workflows</option></select>' +
-        '<input id="ibSearch" type="search" placeholder="Search conversations, inputs or people" value="' + esc(state.q) + '" aria-label="Search">' +
-      '</div>' +
-      '<div class="ib-split"><div class="ib-items" role="list"><p class="hint">Loading' + ELLIPSIS + '</p></div>' +
+      '<div class="ib-split le-grid"><div class="ib-items" role="list"><p class="hint" style="padding:16px">Loading' + ELLIPSIS + '</p></div>' +
         '<section class="ib-thread" aria-live="polite"><div class="ib-thread-empty">Pick a conversation to see it here.</div></section></div>';
-    page.querySelector('.ib-tabs').addEventListener('click', function (ev) {
+    document.getElementById('ibSearch').value = state.q;
+    document.querySelector('.ib-tabs').addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-view]');
       if (!b) return;
       state.view = b.getAttribute('data-view');
       refreshList();
     });
-    page.querySelector('#ibWorkflow').addEventListener('change', function (ev) { state.workflow = ev.currentTarget.value; refreshList(); });
-    var search = page.querySelector('#ibSearch');
+    document.getElementById('ibWorkflow').addEventListener('change', function (ev) { state.workflow = ev.currentTarget.value; refreshList(); });
+    var search = document.getElementById('ibSearch');
     var timer = null;
     search.addEventListener('input', function () {
       clearTimeout(timer);
@@ -302,12 +300,12 @@ ${renderMarkdownScript}
     (data.workflows || []).forEach(function (w) { workflows[w.id] = w.title; });
     state.view = data.view || state.view || 'all';
     var counts = data.counts || {};
-    page.querySelector('.ib-tabs').innerHTML = VIEWS.map(function (v) {
+    document.querySelector('.ib-tabs').innerHTML = VIEWS.map(function (v) {
       var n = counts[v[0]];
       return '<button type="button" role="tab" data-view="' + v[0] + '" aria-selected="' + (state.view === v[0]) + '">' + v[1] +
         (n ? '<span class="ib-count' + (v[0] === 'needs' ? ' on' : '') + '">' + n + '</span>' : '') + '</button>';
     }).join('');
-    var select = page.querySelector('#ibWorkflow');
+    var select = document.getElementById('ibWorkflow');
     select.innerHTML = '<option value="">All workflows</option>' + Object.keys(workflows).sort(function (a, b) { return workflows[a].localeCompare(workflows[b]); })
       .map(function (id) { return '<option value="' + esc(id) + '"' + (id === state.workflow ? ' selected' : '') + '>' + esc(workflows[id]) + '</option>'; }).join('');
     var box = page.querySelector('.ib-items');
