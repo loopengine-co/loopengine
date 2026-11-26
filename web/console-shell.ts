@@ -81,7 +81,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     </section>
     <section class="le-pane" data-le-pane="workflows">
       <div class="le-pane-head"><a href="/workflows">Workflows</a><a class="le-pane-new" href="/workflows/new">+ New</a></div>
-      <ul class="le-agent-list le-goal-list" id="leWorkflowList"></ul>
+      <ul class="le-agent-list le-goal-list le-wf-list" id="leWorkflowList"></ul>
     </section>
     <section class="le-pane" data-le-pane="settings">
       <div class="le-pane-head"><a href="/config?section=settings">Settings</a></div>
@@ -272,7 +272,7 @@ export const consoleShellScript: string = `<script>
         workflowList.innerHTML = list.length ? list.map(function (w) {
           var on = w.agent === currentAgent && w.id === currentId;
           return '<li><a class="le-agent-item le-goal-item" href="/agents/config?agent=' + enc(w.agent) + '&tab=workflows&workflow=' + enc(w.id) + '" title="' + esc(w.title) + ' (' + esc(w.agentLabel) + DOT_SEP + (w.live ? 'Running' : 'Pending') + ')"' + (on ? ' aria-current="page"' : '') + '>' +
-            '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-name">' + esc(w.title) + '</span></a></li>';
+            '<span class="le-dot ' + (w.live ? 'tint' : 'pending') + '" aria-hidden="true"></span><span class="le-wf-text"><span class="le-name">' + esc(w.title) + '</span><span class="le-meta">' + esc(w.agentLabel) + '</span></span></a></li>';
         }).join('') : '<li class="le-agent-item"><span></span><span class="le-meta">No workflows yet</span><span></span></li>';
       });
   }
