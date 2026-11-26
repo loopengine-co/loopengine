@@ -926,7 +926,6 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-version-cards { list-style: none; margin: 0; padding: 0; display: grid; }
   /* Boxes on their own: square. */
   .wf-cb, .wf-fb-improve, .approvals-nudge, .le-table-wrap, .source, .workflow-steps-text, .wf-run-lines, .wf-cand-list, .tab-panel form.add-source, .tab-panel table { border-radius: 0; }
-  .wf-fb-improve { background: var(--surface); }
   /* Plain buttons, as on the other pages. */
   .wf-evals-bar button, .wf-case-actions button, .wf-crit-bar button, .wf-crit-edit { border-color: var(--line); background: var(--bg); color: var(--ink); }
   .wf-evals-bar button:hover:not(:disabled), .wf-case-actions button:hover:not(:disabled), .wf-crit-bar button:hover:not(:disabled), .wf-crit-edit:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
