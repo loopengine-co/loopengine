@@ -144,6 +144,23 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; color: var(--ink-muted); }
   .gl-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: gl-spin .8s linear infinite; }
   @keyframes gl-spin { to { transform: rotate(360deg); } }
+  /* A new goal, in a dialog like Create schedule. */
+  .gl-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
+  .gl-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
+  .gl-dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100vh - 50px); }
+  .gl-dlg-head { display: flex; align-items: center; gap: 8px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .gl-dlg-head h2 { margin: 0 auto 0 0; font-size: 18px; font-weight: 500; }
+  .gl-dlg-head button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
+  .gl-dlg-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); overflow: auto; }
+  .gl-dlg-col { display: grid; align-content: start; }
+  .gl-dlg-col + .gl-dlg-col { border-left: 1px solid var(--line); background: var(--surface); }
+  .gl-field { display: grid; gap: 10px; padding: 18px 22px; }
+  .gl-field-k { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .gl-dialog textarea { min-height: 110px; background: var(--bg); }
+  .gl-dlg-foot { padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); min-height: 46px; display: flex; align-items: center; }
+  .gl-dlg-foot:has(span:empty) { display: none; }
+  .gl-about { display: grid; gap: 8px; margin-top: 8px; }
+  @media (max-width: 860px) { .gl-dlg-body { grid-template-columns: minmax(0, 1fr); } .gl-dlg-col + .gl-dlg-col { border-left: 0; border-top: 1px solid var(--line); } }
   /* A new goal. */
   .gl-form { padding: 24px 26px; background: var(--bg); display: grid; gap: 12px; }
   .gl-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -233,7 +250,12 @@ ${consoleShellScript}
       if (Array.isArray(r.body.focuses) && r.body.focuses.length) FOCUS = r.body.focuses.map(function (f) { return [f.id, f.label]; }).concat([['other', 'Something else']]);
       var id = selectId || new URLSearchParams(location.search).get('goal');
       state.current = state.goals.filter(function (g) { return g.id === id; })[0] || null;
+      // With goals already, a new one is a dialog over the list; the whole
+      // page is for the first goal, or one handed over from Home.
+      var dialog = state.creating && state.goals.length && !startText && location.pathname !== '/';
+      if (dialog) { state.creating = false; setUrl(''); }
       render();
+      if (dialog) openNewGoal();
     });
   }
 
@@ -308,25 +330,98 @@ ${consoleShellScript}
           '<span class="gl-card-text"><span class="gl-card-title">' + esc(g.goal) + '</span>' + (g.message ? '<span class="gl-card-desc">' + esc(g.message) + '</span>' : '') + '</span><span></span></div>' +
         '<div class="gl-chips">' + chips.join('') + (date ? '<span class="gl-next">Set ' + esc(date) + '</span>' : '') + '</div></a>';
     });
-    var newTile = '<a class="gl-tile" href="/goals?new=1"><b>+ New goal</b><span>Say what your agents should take care of, and get workflows suggested for it.</span></a>';
+    var newTile = '<a class="gl-tile" href="/goals?new=1" data-new-goal><b>+ New goal</b><span>Say what your agents should take care of, and get workflows suggested for it.</span></a>';
     return '<div class="gl-hero"><div class="gl-hero-text"><h2 class="le-display">Your goals</h2><p class="le-display-sub">' +
         state.goals.length + (state.goals.length === 1 ? ' goal' : ' goals') + (running ? ', ' + running + (running === 1 ? ' workflow' : ' workflows') + ' built for them' : '') + '. Open one to see its workflows and suggestions.</p></div>' + mascot + '</div>' +
       '<div class="le-grid gl-cols2">' + (cards.length ? cards.join('') + (q ? fillers(cards.length, 2) : newTile + fillers(cards.length + 1, 2)) : '<p class="gl-empty gl-wide">No goal matches.</p>') + '</div>';
   }
 
+  // The goal box and its examples; and what LoopEngine knows about you.
+  function goalFieldHtml() {
+    return '<label for="glGoal" class="gl-field-k">Your goal</label>' +
+      '<textarea id="glGoal" placeholder="e.g. Help me research AI industry trends and publish a weekly report">' + esc(startText) + '</textarea>' +
+      '<div class="gl-examples"><span class="hint">Or try:</span>' + GOAL_EXAMPLES.map(function (x) { return '<button type="button" class="gl-example" data-example="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>';
+  }
+  function aboutFieldsHtml() {
+    return '<textarea id="glAbout" placeholder="What you do, for whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
+      '<div class="gl-row"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
+      (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '');
+  }
+  function aboutLabel() {
+    return 'About you or your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)');
+  }
+
+  // The first goal, or one handed over from Home: the whole page.
   function newGoalHtml() {
     return '<div class="gl-hero"><div class="gl-hero-text"><h2 class="le-display">What should your agents <span class="soft">take care of?</span></h2><p class="le-display-sub">Big or small: work to hand off, or a result to reach. LoopEngine suggests the workflows it needs.</p></div>' + mascot + '</div>' +
-      '<div class="le-grid gl-cols1"><div class="gl-form">' +
-      '<label for="glGoal" class="hint">Your goal</label>' +
-      '<textarea id="glGoal" placeholder="e.g. Help me research AI industry trends and publish a weekly report">' + esc(startText) + '</textarea>' +
-      '<div class="gl-examples"><span class="hint">Or try:</span>' + GOAL_EXAMPLES.map(function (x) { return '<button type="button" class="gl-example" data-example="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
-      '<details' + (state.about ? '' : ' open') + '><summary class="hint">About you or your business ' + (state.about ? '(saved, used for every goal)' : '(optional, makes suggestions fit you)') + '</summary>' +
-        '<textarea id="glAbout" style="margin-top:8px" placeholder="What you do, for whom, and the tools you use (Gmail, Shopify, Slack' + ELLIPSIS + ')">' + esc(state.about) + '</textarea>' +
-        '<div class="gl-row" style="margin-top:8px"><label class="hint" for="glKind">Kind of business</label><select id="glKind" class="gl-select">' + KINDS.map(function (k) { return '<option value="' + k[0] + '"' + ((state.settings.businessKind || '') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>' +
-        (state.settings.cloud ? '<label class="hint gl-share"><input type="checkbox" id="glShare"' + (state.settings.shareLeverStats ? ' checked' : '') + '> Share anonymous stats about which suggestions you save, build and keep, to improve suggestions for everyone. Never your goals, requests or data.</label>' : '') +
-      '</details>' +
+      '<div class="le-grid gl-cols1"><div class="gl-form">' + goalFieldHtml() +
+      '<details' + (state.about ? '' : ' open') + '><summary class="hint">' + aboutLabel() + '</summary><div class="gl-about">' + aboutFieldsHtml() + '</div></details>' +
       '<div class="gl-row"><button type="button" class="le-btn-dark" id="glSubmit">Suggest workflows</button><span class="hint" id="glSubmitStatus"></span></div>' +
     '</div></div>';
+  }
+
+  // Another goal, in a dialog like Create schedule, over the list or a goal.
+  function openNewGoal() {
+    var old = document.getElementById('glDialog');
+    if (old) old.remove();
+    var dlg = document.createElement('dialog');
+    dlg.className = 'gl-dialog';
+    dlg.id = 'glDialog';
+    dlg.setAttribute('aria-labelledby', 'glDlgTitle');
+    dlg.innerHTML = '<form method="dialog">' +
+      '<div class="gl-dlg-head"><h2 id="glDlgTitle">New goal</h2><button type="button" data-dlg-cancel>Cancel</button><button type="submit" class="primary" id="glSubmit">Suggest workflows</button></div>' +
+      '<div class="gl-dlg-body">' +
+        '<div class="gl-dlg-col"><div class="gl-field">' + goalFieldHtml() + '<p class="hint" style="margin:0">Big or small: work to hand off, or a result to reach. LoopEngine reads your workspace and suggests the workflows it needs, in about a minute.</p></div></div>' +
+        '<div class="gl-dlg-col"><div class="gl-field"><span class="gl-field-k">' + aboutLabel() + '</span>' + aboutFieldsHtml() + '</div></div>' +
+      '</div>' +
+      '<div class="gl-dlg-foot"><span id="glSubmitStatus"></span></div>' +
+    '</form>';
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    dlg.addEventListener('click', function (ev) { if (ev.target === dlg) dlg.close(); });
+    dlg.querySelector('[data-dlg-cancel]').addEventListener('click', function () { dlg.close(); });
+    dlg.querySelector('form').addEventListener('submit', function (ev) { ev.preventDefault(); });
+    wireNewGoal(dlg, function () { dlg.close(); });
+    dlg.showModal();
+    dlg.querySelector('#glGoal').focus();
+  }
+
+  // The new-goal fields, in the page or the dialog: examples fill the box;
+  // Suggest workflows starts the goal and opens it.
+  function wireNewGoal(root, done) {
+    root.querySelectorAll('[data-example]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var box = root.querySelector('#glGoal');
+        box.value = b.dataset.example;
+        box.focus();
+      });
+    });
+    var submit = root.querySelector('#glSubmit');
+    if (submit) submit.addEventListener('click', function () {
+      var goal = root.querySelector('#glGoal').value.trim();
+      startText = '';
+      var aboutBox = root.querySelector('#glAbout');
+      var status = root.querySelector('#glSubmitStatus');
+      if (goal.length < 5) { status.textContent = 'Say what your agents should take care of first.'; return; }
+      submit.disabled = true;
+      status.textContent = 'Starting' + ELLIPSIS;
+      api('POST', '/goals', { goal: goal, about: aboutBox ? aboutBox.value : state.about }).then(function (r) {
+        if (!r.ok) { submit.disabled = false; status.innerHTML = '<span class="error">' + esc(r.body.error || 'Could not start.') + '</span>'; return; }
+        state.about = aboutBox ? aboutBox.value.trim() : state.about;
+        state.startedAt = Date.now();
+        state.creating = false;
+        replaceGoal(r.body.goal);
+        setUrl(r.body.goal.id);
+        reloadSidebar();
+        if (done) done();
+        render();
+      });
+    });
+    if (submit && autoStart && !done) { autoStart = false; submit.click(); }
+    var kind = root.querySelector('#glKind');
+    if (kind) kind.addEventListener('change', function () { saveSettings({ businessKind: kind.value || null }); });
+    var share = root.querySelector('#glShare');
+    if (share) share.addEventListener('change', function () { saveSettings({ shareLeverStats: share.checked }); });
   }
 
   // What a suggestion needs: apps connected or to connect, as chips.
@@ -603,38 +698,9 @@ ${consoleShellScript}
   }
 
   function wire() {
-    page.querySelectorAll('[data-example]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var box = document.getElementById('glGoal');
-        box.value = b.dataset.example;
-        box.focus();
-      });
-    });
-    var submit = document.getElementById('glSubmit');
-    if (submit) submit.addEventListener('click', function () {
-      var goal = document.getElementById('glGoal').value.trim();
-      startText = '';
-      var aboutBox = document.getElementById('glAbout');
-      var status = document.getElementById('glSubmitStatus');
-      if (goal.length < 5) { status.textContent = 'Say what your agents should take care of first.'; return; }
-      this.disabled = true;
-      status.textContent = 'Starting' + ELLIPSIS;
-      api('POST', '/goals', { goal: goal, about: aboutBox ? aboutBox.value : state.about }).then(function (r) {
-        if (!r.ok) { state.error = r.body.error || 'Could not start.'; render(); return; }
-        state.about = aboutBox ? aboutBox.value.trim() : state.about;
-        state.startedAt = Date.now();
-        state.creating = false;
-        replaceGoal(r.body.goal);
-        setUrl(r.body.goal.id);
-        reloadSidebar();
-        render();
-      });
-    });
-    if (submit && autoStart) { autoStart = false; submit.click(); }
-    var kind = document.getElementById('glKind');
-    if (kind) kind.addEventListener('change', function () { saveSettings({ businessKind: kind.value || null }); });
-    var share = document.getElementById('glShare');
-    if (share) share.addEventListener('change', function () { saveSettings({ shareLeverStats: share.checked }); });
+    wireNewGoal(page, null);
+    var tile = page.querySelector('[data-new-goal]');
+    if (tile) tile.addEventListener('click', function (ev) { ev.preventDefault(); openNewGoal(); });
     if (!state.current) return;
     var g = state.current;
     var base = '/goals/' + encodeURIComponent(g.id);
@@ -846,6 +912,14 @@ ${consoleShellScript}
     });
   }
 
+  // + New goal (the top bar's, the sidebar's) opens the dialog over the
+  // page, once there are goals to go back to.
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest && ev.target.closest('#glNewBtn, [data-le-goal-new]');
+    if (!a || !state.goals.length || ev.metaKey || ev.ctrlKey) return;
+    ev.preventDefault();
+    openNewGoal();
+  });
   // Search narrows the list as you type.
   var searchBox = document.getElementById('glSearch');
   if (searchBox) searchBox.addEventListener('input', function () { if (!state.current && !state.creating) render(); });
