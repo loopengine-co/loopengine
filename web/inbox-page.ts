@@ -160,6 +160,10 @@ ${renderMarkdownScript}
   var state = { view: VIEWS.some(function (v) { return v[0] === asked; }) ? asked : '', q: params.get('q') || '', workflow: params.get('workflow') || '', item: params.get('item') || '' };
   var listed = null;
   var openThread = null;
+  // The conversation the address opens on (?item=) is asked for now,
+  // alongside the list, not after it: on a hosted workspace that saves a
+  // round trip of hundreds of milliseconds. Used once.
+  var earlyThread = state.item ? { id: state.item, response: fetch('/inbox/cases/' + encodeURIComponent(state.item), { headers: { accept: 'application/json' } }) } : null;
   var fullAccess = !document.querySelector('.le-app.le-inbox-only');
   var role = 'owner';
   var workflows = {};
@@ -333,7 +337,9 @@ ${renderMarkdownScript}
   function loadThread(id) {
     var box = page.querySelector('.ib-thread');
     if (!openThread || openThread.id !== id) box.innerHTML = '<div class="ib-thread-empty">Loading' + ELLIPSIS + '</div>';
-    return fetch('/inbox/cases/' + encodeURIComponent(id), { headers: { accept: 'application/json' } })
+    var early = earlyThread && earlyThread.id === id ? earlyThread.response : null;
+    earlyThread = null;
+    return (early || fetch('/inbox/cases/' + encodeURIComponent(id), { headers: { accept: 'application/json' } }))
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
       .then(function (c) {
         if (state.item !== id) return;
@@ -574,10 +580,17 @@ ${renderMarkdownScript}
     }, 15000);
   }
 
+  // The list doesn't wait for the person's role: only whether they can
+  // decide depends on it, so a conversation already open is drawn again
+  // if they turn out not to.
+  start();
   (window.leShell && window.leShell.settings ? window.leShell.settings() : fetch('/config/settings').then(function (r) { return r.ok ? r.json() : null; }))
-    .then(function (s) { if (s && s.signIn && s.signIn.role) role = s.signIn.role; })
-    .catch(function () {})
-    .then(start);
+    .then(function (s) {
+      var was = role;
+      if (s && s.signIn && s.signIn.role) role = s.signIn.role;
+      if (role !== was && state.item && openThread) { openThread = null; loadThread(state.item); }
+    })
+    .catch(function () {});
 })();
 </script>
 </body>

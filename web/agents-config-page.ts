@@ -850,6 +850,41 @@ ${consoleSidebarHtml}
 ${consoleShellScript}
 <script>
 (function () {
+  // Every request this page's address already settles (the agent's
+  // config, messaging, pending decisions, schedules and workflows, and on
+  // a workflow's page its versions, health, eval candidates and runs)
+  // starts now, together, instead of each waiting for the one before it:
+  // on a hosted workspace every round trip costs hundreds of
+  // milliseconds, and the chain was four of them deep. The page's own
+  // request for one of these URLs then gets the response already on its
+  // way; each is used once, so a later reload of it fetches fresh.
+  var plainFetch = window.fetch.bind(window);
+  var early = {};
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var agent = q.get('agent');
+    if (location.pathname !== '/agents/config' || !agent) return;
+    var base = '/agents/' + encodeURIComponent(agent);
+    var urls = [base + '/config', base + '/notifier', base + '/pending', base + '/schedules', base + '/workflows'];
+    var wf = q.get('tab') === 'workflows' && q.get('workflow');
+    if (wf) {
+      var b = base + '/workflows/' + encodeURIComponent(wf);
+      urls.push(b + '/versions', b + '/health', b + '/evals/candidates', b + '/runs');
+    }
+    urls.forEach(function (u) { early[u] = plainFetch(u, { headers: { accept: 'application/json' } }); });
+  })();
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : '';
+    var method = String((init && init.method) || 'GET').toUpperCase();
+    if (method === 'GET' && Object.prototype.hasOwnProperty.call(early, url)) {
+      var pending = early[url];
+      delete early[url];
+      return pending.catch(function () { return plainFetch(input, init); });
+    }
+    return plainFetch(input, init);
+  };
+})();
+(function () {
   // The providers whose models take a reasoning effort (web/agent-file-admin.ts).
   var REASONING_PROVIDERS = ${JSON.stringify(REASONING_PROVIDERS)};
   var empty = document.getElementById('empty');
