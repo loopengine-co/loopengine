@@ -84,7 +84,7 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-act summary code { font-size: 12px; }
   .ib-act.failed summary { color: var(--bad); }
   .ib-typing { font-size: 13px; color: var(--ink-muted); font-style: italic; }
-  .ib-fb { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 0; background: var(--bg); }
+  .ib-fb { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
   .ib-fb-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .ib-fb-ask[hidden], .ib-fb-form[hidden], .ib-fb-given[hidden] { display: none; }
   .ib-fb-q { font-size: 14px; font-weight: 600; margin-right: auto; }
