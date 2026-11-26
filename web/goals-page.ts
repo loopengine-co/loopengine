@@ -31,106 +31,90 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
   .gl-btn.danger { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
   .gl-link { background: none; border: 0; padding: 0; color: var(--accent-ink); font-size: 13px; cursor: pointer; font-weight: 500; }
-  .gl-goal-title { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
-  .gl-focus { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-muted); }
-  .gl-focus select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  .gl-section { display: grid; gap: 10px; }
-  .gl-section h3 { margin: 6px 0 0; font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); display: flex; gap: 8px; align-items: center; }
-  .gl-count { font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); letter-spacing: 0; }
-  .gl-wf { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; background: var(--bg); }
-  .gl-wf.built { border-color: var(--good); }
-  .gl-wf-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }
-  .gl-wf-title { font-size: 15px; font-weight: 650; }
-  .gl-agent { font-size: 12.5px; color: var(--ink-muted); }
-  .gl-agent strong { color: var(--ink); font-weight: 600; font-family: var(--font-mono); font-size: 12px; }
-  .gl-new { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); margin-right: 4px; }
-  .gl-why { margin: 0; font-size: 14px; color: var(--ink); }
+  .gl-btn.small { height: 30px; font-size: 13px; padding: 0 12px; }
+  .gl-section { display: grid; gap: 12px; }
+  .gl-section-head { display: grid; gap: 2px; margin-top: 8px; }
+  .gl-section h3 { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); display: flex; gap: 8px; align-items: center; }
+  .gl-count { font-size: 11.5px; font-weight: 600; padding: 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  /* The goal at a glance. */
+  .gl-hero { gap: 16px; padding: 18px 20px; }
+  .gl-hero-meta { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; font-size: 13.5px; color: var(--ink); }
+  .gl-field { display: inline-flex; gap: 8px; align-items: center; }
+  .gl-fact-k { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+  .gl-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .gl-stat { display: grid; gap: 2px; padding: 12px 14px; border-radius: 10px; background: var(--surface); }
+  .gl-stat b { font-size: 22px; font-weight: 700; line-height: 1.1; }
+  .gl-stat span { font-size: 12.5px; color: var(--ink-muted); }
+  .gl-stat.attn { background: var(--warn-soft); }
+  .gl-stat.attn b { color: var(--warn); }
+  @media (max-width: 560px) { .gl-stats { grid-template-columns: minmax(0, 1fr); } }
+  .gl-callout { margin: 0; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; font-size: 14px; line-height: 1.5; color: var(--ink); }
+  .gl-card-title { margin: 0; font-size: 14.5px; font-weight: 650; }
+  .gl-setup { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.5; display: grid; gap: 6px; }
+  .gl-setup-more summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; font-size: 13px; }
+  .gl-setup-more .gl-setup { margin-top: 6px; }
+  .gl-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: gl-spin 0.8s linear infinite; vertical-align: -1px; margin-right: 4px; }
+  @keyframes gl-spin { to { transform: rotate(360deg); } }
+  /* A workflow built for the goal, or a suggestion. */
+  .gl-item { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 16px 18px; display: grid; gap: 12px; }
+  .gl-item.discarded { opacity: .75; }
+  .gl-item-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; align-items: start; }
+  .gl-item-head { display: grid; gap: 6px; justify-items: start; min-width: 0; }
+  .gl-item-title { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.35; }
+  .gl-item-side { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+  .gl-item-why { margin: -4px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-muted); max-width: 75ch; }
+  @media (max-width: 560px) { .gl-item-top { grid-template-columns: minmax(0, 1fr); } .gl-item-side { justify-content: flex-start; } }
+  .gl-kind { font-size: 11px; font-weight: 700; letter-spacing: .03em; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .gl-kind.group { background: var(--accent-soft); color: var(--accent-ink); }
+  .gl-facts { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; font-size: 13px; color: var(--ink); }
+  .gl-facts > span { display: inline-flex; gap: 8px; align-items: center; }
+  .gl-agent-chip { font-weight: 600; }
+  .gl-new { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); margin-left: 4px; }
   .gl-needs { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
-  .gl-need { padding: 1px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); }
+  .gl-need { padding: 2px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
   .gl-need.ok { background: var(--good-soft); color: var(--good); border-color: transparent; }
   .gl-need.missing { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
-  .gl-wf details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
-  .gl-wf details p { margin: 6px 0 0; font-size: 13px; white-space: pre-wrap; background: var(--surface); padding: 8px 10px; border-radius: 6px; }
-  .gl-state { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; }
+  .gl-what summary { cursor: pointer; font-size: 13px; color: var(--accent-ink); font-weight: 600; }
+  .gl-what p { margin: 8px 0 0; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; background: var(--surface); padding: 10px 12px; border-radius: 8px; }
+  .gl-state { font-size: 12px; font-weight: 650; padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+  .gl-state[hidden] { display: none; }
   .gl-state.saved { background: var(--accent-soft); color: var(--accent-ink); }
   .gl-state.built { background: var(--good-soft); color: var(--good); }
-  .gl-job { padding: 0; gap: 0; }
-  .gl-job-head { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; border-radius: 10px; }
-  .gl-job-head:hover { background: var(--surface); }
-  .gl-job-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .gl-caret { width: 7px; height: 7px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; }
-  .gl-job.is-open .gl-caret { transform: rotate(45deg); }
-  .gl-job-detail .gl-job-head { grid-template-columns: minmax(0, 1fr) auto auto; cursor: default; }
-  .gl-job-detail .gl-job-head:hover { background: none; }
-  .gl-job-detail .gl-wf-title { font-size: 17px; }
-  .gl-job-detail .gl-job-body, .gl-job-detail .gl-job-status-line { padding-left: 14px; }
-  .gl-job-link { color: inherit; text-decoration: none; }
-  .gl-define { margin: 0; max-width: 72ch; }
-  .gl-doneby { display: grid; gap: 3px; justify-items: start; font-size: 13px; margin-top: 4px; }
-  .gl-doneby-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-  .gl-doneby-row a { color: var(--ink); font-weight: 600; }
-  .gl-slug { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; }
-  .gl-tag-wf { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
-  .gl-doneby-then { font-size: 12px; color: var(--ink-muted); padding-left: 4px; }
-  .gl-agent-pill { font-size: 11.5px; font-weight: 600; padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
-  .gl-doneby-manage { font-size: 12.5px; color: var(--accent-ink); }
-  .gl-job-link:hover { text-decoration: underline; }
-  .gl-job-main { display: grid; gap: 3px; min-width: 0; }
-  .gl-job-sub { display: flex; gap: 8px; align-items: center; min-width: 0; font-size: 12.5px; color: var(--ink-muted); }
-  .gl-job-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .gl-job-from { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gl-job-from a { color: var(--accent-ink); }
-  .gl-listed { font-size: 12px; font-weight: 600; color: var(--accent-ink); white-space: nowrap; }
-  .gl-job-primary { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-  .gl-push { margin-left: auto; }
-  .gl-job-status { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-  .gl-job-primary .gl-btn { height: 30px; font-size: 13px; padding: 0 12px; }
-  .gl-job-body { display: grid; gap: 10px; padding: 2px 16px 14px 40px; }
-  .gl-job-body[hidden] { display: none; }
-  .gl-job-measure { margin: 0; font-size: 13px; color: var(--ink-muted); }
-  .gl-job-status-line:empty { display: none; }
-  .gl-job-status-line { padding: 0 16px 10px 40px; }
-  @media (max-width: 560px) { .gl-job-head { grid-template-columns: 12px minmax(0, 1fr); } .gl-job-status, .gl-job-primary { grid-column: 2; } .gl-job-body, .gl-job-status-line { padding-left: 16px; } }
-  .gl-job-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
-  .gl-kind { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
-  .gl-kind.group { background: var(--accent-soft); color: var(--accent-ink); }
-  .gl-gsteps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-  .gl-gstep { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
-  .gl-gstep.built { border-color: var(--good-soft); }
-  .gl-gstep-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; }
-  .gl-gstep-n { width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--ink-muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
-  .gl-gstep.built .gl-gstep-n { background: var(--good-soft); color: var(--good); }
-  .gl-gstep-build { margin-left: auto; }
-  .gl-gstep-then { font-size: 12px; color: var(--ink-muted); padding: 6px 0 0 32px; margin-bottom: -4px; }
-  .gl-gstep + .gl-gstep { margin-top: 8px; }
-  .gl-order summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent-ink); }
-  .gl-doer { font-size: 13px; color: var(--ink-muted); }
-  .gl-doer strong { color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+  .gl-state.paused { background: var(--surface-2); color: var(--ink-muted); }
+  /* Its workflows, in the order they run. */
+  .gl-flows { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .gl-flow { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; background: var(--bg); }
+  .gl-flow + .gl-flow { border-top: 1px solid var(--line); }
+  .gl-flow-n { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); color: var(--ink-muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; align-self: start; margin-top: 1px; }
+  .gl-flow.built .gl-flow-n { background: var(--good-soft); color: var(--good); }
+  .gl-flow-main { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+  .gl-flow-title { font-size: 14px; font-weight: 600; color: var(--ink); text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a.gl-flow-title:hover { text-decoration: underline; }
+  .gl-flow-meta { font-size: 12.5px; color: var(--ink-muted); line-height: 1.45; }
+  .gl-flow-actions { display: flex; gap: 12px; align-items: center; }
+  .gl-flow-actions .gl-unlink { color: var(--ink-faint); font-size: 12.5px; }
+  .gl-flow-actions .gl-unlink:hover { color: var(--bad); }
+  #glShowDiscarded { justify-self: start; }
+  .gl-flow-then { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 14px 6px 50px; font-size: 12.5px; color: var(--ink-muted); background: var(--surface); border-top: 1px solid var(--line); }
+  .gl-flow-then .gl-link { font-size: 12px; color: var(--ink-faint); }
+  .gl-paused { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+  .gl-waiting { color: var(--warn); font-weight: 600; }
+  .gl-item-foot { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+  .gl-more { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .gl-danger { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding-top: 14px; border-top: 1px solid var(--line); }
+  .gl-danger .gl-link { color: var(--bad); }
   .gl-link-btn { display: inline-flex; align-items: center; text-decoration: none; }
-  .gl-how { display: grid; gap: 6px; }
-  .gl-how-head { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-muted); }
-  .gl-how-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
-  .gl-how-main { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; min-width: 0; }
-  .gl-how-wf { font-weight: 600; font-size: 13.5px; }
-  .gl-how-agent { font-size: 12.5px; color: var(--ink-muted); }
-  .gl-how-agent strong { color: var(--ink); font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
-  .gl-how-meta { grid-column: 1; font-size: 12.5px; color: var(--ink-muted); }
-  .gl-how-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 10px; align-items: center; }
-  .gl-how-open { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
-  .gl-chain { display: grid; gap: 4px; }
-  .gl-step { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; justify-content: space-between; font-size: 13px; padding: 6px 10px; border-left: 2px solid var(--accent); background: var(--surface); border-radius: 0 6px 6px 0; }
-  .gl-panel { display: grid; gap: 8px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+  .gl-panel { display: grid; gap: 8px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
   .gl-panel[hidden] { display: none; }
   .gl-input { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   .gl-input[hidden] { display: none; }
   .gl-step-inputs { display: grid; gap: 6px; }
-  .gl-how-open:hover { text-decoration: underline; }
-  .gl-waiting { color: var(--warn); font-weight: 600; }
   [data-attn][hidden] { display: none; }
+  .gl-job-status-line:empty { display: none; }
+  .gl-new-btn[hidden], #glAddToggle[hidden] { display: none; }
   .gl-add { display: grid; gap: 8px; }
+  .gl-add-form[hidden] { display: none; }
   .gl-add-form { display: grid; gap: 6px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
-  .gl-add-form[hidden], #glAddToggle[hidden] { display: none; }
-  #glAddToggle { justify-self: start; }
   .gl-notice { display: grid; gap: 4px; padding: 10px 14px; border-radius: 10px; font-size: 13.5px; }
   .gl-notice.good { background: var(--good-soft); }
   .gl-notice.warn { background: var(--warn-soft); }
@@ -141,10 +125,6 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-result-wrap summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
   .gl-again { display: grid; gap: 6px; }
   .gl-again[hidden] { display: none; }
-  .gl-setup { margin: 0; padding-left: 18px; font-size: 13.5px; display: grid; gap: 4px; }
-  .gl-setup-more { margin-top: 4px; font-size: 13px; }
-  .gl-setup-more summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; }
-  .gl-setup-more .gl-setup { margin-top: 4px; }
   .gl-select { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   .gl-examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
   .gl-example { font: inherit; font-size: 12.5px; color: var(--accent-ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
@@ -163,7 +143,6 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-list-meta { grid-column: 1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
   .gl-list-date { grid-row: 1 / span 2; grid-column: 2; font-size: 12px; color: var(--ink-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .gl-new-btn { display: inline-flex; align-items: center; text-decoration: none; }
-  .gl-new-btn[hidden] { display: none; }
   .gl-state.planning { background: var(--warn-soft); color: var(--warn); }
   .gl-state.failed { background: var(--bad-soft); color: var(--bad); }
   @media (max-width: 520px) { .gl-list a { grid-template-columns: minmax(0, 1fr); } .gl-list-date { grid-row: auto; grid-column: 1; } }
@@ -308,75 +287,142 @@ ${consoleShellScript}
     '</div>';
   }
 
-  function needsHtml(w) {
-    if (!w.needs || !w.needs.length) return '';
-    return '<div class="gl-needs">' + w.needs.map(function (n) {
-      return '<span class="gl-need ' + (n.connected ? 'ok' : 'missing') + '">' + esc(n.name) + ' ' + (n.connected ? String.fromCharCode(10003) : 'to connect') + '</span>';
-    }).join('') + (w.humanMinutesPerWeek ? '<span class="gl-need">about ' + esc(w.humanMinutesPerWeek) + ' min/week to review</span>' : '') + '</div>';
+  var DOT = ' ' + String.fromCharCode(183) + ' ';
+  // An agent by the name it was given, when the sidebar knows it.
+  function agentLabel(name) {
+    return window.leShell && window.leShell.displayNameOf ? window.leShell.displayNameOf(name) : name;
+  }
+  function wfHref(agent, id) {
+    return '/agents/config?agent=' + encodeURIComponent(agent) + '&tab=workflows&workflow=' + encodeURIComponent(id);
   }
 
-  function agentHtml(w) {
-    return '<span class="gl-agent">' + ARROW + ' ' + (w.agent.isNew ? '<span class="gl-new">New agent</span>' : '') + '<strong>' + esc(w.agent.name) + '</strong></span>';
+  // What a suggestion needs: apps connected or to connect.
+  function needsHtml(list) {
+    if (!list || !list.length) return '';
+    return '<div class="gl-needs">' + list.map(function (n) {
+      return '<span class="gl-need ' + (n.connected ? 'ok' : 'missing') + '">' + esc(n.name) + (n.connected ? ' ' + String.fromCharCode(10003) : ' ' + String.fromCharCode(183) + ' connect') + '</span>';
+    }).join('') + '</div>';
+  }
+  function agentChip(a) {
+    return '<span class="gl-agent-chip">' + esc(a.isNew ? a.name : agentLabel(a.name)) + (a.isNew ? ' <span class="gl-new">New agent</span>' : '') + '</span>';
+  }
+  // The facts that say what a suggestion or workflow is worth.
+  function factsHtml(w, withAgent) {
+    var facts = [];
+    if (w.measure) facts.push('<span><span class="gl-fact-k">Measured by</span> ' + esc(w.measure) + '</span>');
+    if (w.humanMinutesPerWeek) facts.push('<span><span class="gl-fact-k">Your time</span> about ' + esc(w.humanMinutesPerWeek) + ' min a week</span>');
+    if (withAgent && w.agent) facts.push('<span><span class="gl-fact-k">Runs on</span> ' + agentChip(w.agent) + '</span>');
+    return facts.length ? '<div class="gl-facts">' + facts.join('') + '</div>' : '';
+  }
+  function itemTop(w, side) {
+    var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
+    var kind = group ? 'Group ' + String.fromCharCode(183) + ' ' + group.steps.length + ' workflows that run in order' : 'Workflow';
+    return '<div class="gl-item-top"><div class="gl-item-head"><span class="gl-kind' + (group ? ' group' : '') + '">' + kind + '</span>' +
+      '<h4 class="gl-item-title gl-wf-title">' + esc(w.title) + '</h4></div>' +
+      '<div class="gl-item-side">' + side + '</div></div>' +
+      (w.why ? '<p class="gl-item-why">' + esc(w.why) + '</p>' : '');
+  }
+  function btn(act, label, cls, step) {
+    return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '"' + (step ? ' data-step="' + esc(step) + '"' : '') + '>' + label + '</button>';
   }
 
-  // A suggestion under the goal: one workflow, or a group of workflows
-  // that run in order. One row: its title, which it is, its measure, what
-  // does it, its state and the one action that matters now. Click it for
-  // the rest: why, what it needs, each workflow and their order.
-  function itemHtml(w) {
+  // A group's workflows, in the order they run: a built one with how it's
+  // doing (filled by fillEvidence) and Open; one to build with its agent,
+  // what it needs, what it will do and Build.
+  function stepsHtml(w, steps) {
+    var next = steps.filter(function (st) { return !st.built; })[0];
+    return '<div class="gl-flows">' + steps.map(function (st, i) {
+      var row = st.built
+        ? '<div class="gl-flow built" data-how="' + esc(st.built.agent) + '|' + esc(st.built.workflowId) + '"><span class="gl-flow-n">' + (i + 1) + '</span>' +
+            '<div class="gl-flow-main"><a class="gl-flow-title" data-how-title href="' + wfHref(st.built.agent, st.built.workflowId) + '">' + esc(st.name) + '</a>' +
+            '<span class="gl-flow-meta">' + esc(agentLabel(st.built.agent)) + DOT + '<span data-how-meta>' + ELLIPSIS + '</span></span></div>' +
+            '<div class="gl-flow-actions"><a class="gl-btn plain small gl-link-btn" href="' + wfHref(st.built.agent, st.built.workflowId) + '">Open</a></div></div>'
+        : '<div class="gl-flow"><span class="gl-flow-n">' + (i + 1) + '</span>' +
+            '<div class="gl-flow-main"><span class="gl-flow-title">' + esc(st.name) + '</span>' +
+            '<span class="gl-flow-meta">' + esc(st.request) + '</span>' +
+            '<span class="gl-flow-meta">Runs on ' + agentChip(st.agent) + '</span>' + needsHtml(st.needs) + '</div>' +
+            '<div class="gl-flow-actions">' + (w.state !== 'discarded' ? btn('buildstep', 'Build', st === next ? 'small' : 'plain small', st.id) : '') + '</div></div>';
+      return row + (i < steps.length - 1 ? '<div class="gl-flow-then">then ' + ARROW + ' starts when step ' + (i + 1) + ' finishes, with its result</div>' : '');
+    }).join('') + '</div>';
+  }
+
+  // A built workflow's workflows in the order they run: one that another
+  // starts follows it, with "then".
+  function orderedFlows(w) {
+    var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
+    var after = {};
+    (w.chain || []).forEach(function (st) { after[st.run.agent + '|' + st.run.workflowId] = st.after.agent + '|' + st.after.workflowId; });
+    var keyOf = function (d) { return d.agent + '|' + d.workflowId; };
+    var ordered = flows.filter(function (d) { return !after[keyOf(d)]; });
+    for (var i = 0; i < ordered.length; i++) {
+      flows.forEach(function (d) { if (after[keyOf(d)] === keyOf(ordered[i]) && ordered.indexOf(d) < 0) ordered.splice(i + 1, 0, d); });
+    }
+    flows.forEach(function (d) { if (ordered.indexOf(d) < 0) ordered.push(d); });
+    return ordered;
+  }
+
+  function flowsHtml(w) {
+    var flows = orderedFlows(w);
+    var stepFor = function (d) { return (w.chain || []).filter(function (st) { return st.run.agent === d.agent && st.run.workflowId === d.workflowId; })[0]; };
+    var whenText = function (wh) { return wh.kind === 'always' ? 'when it finishes' : wh.kind === 'contains' ? 'when its result contains ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221) : 'when its result has a line starting ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221); };
+    return '<div class="gl-flows">' + flows.map(function (d, i) {
+      var st = stepFor(d);
+      var then = st ? '<div class="gl-flow-then">then ' + ARROW + ' ' + whenText(st.when) + '<button type="button" class="gl-link" data-chain-remove="' + esc(st.id) + '">Remove this step</button></div>' : '';
+      return then + '<div class="gl-flow built" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '"><span class="gl-flow-n">' + (i + 1) + '</span>' +
+        '<div class="gl-flow-main"><a class="gl-flow-title" data-how-title href="' + wfHref(d.agent, d.workflowId) + '">' + esc(d.title || d.workflowId) + '</a>' +
+        '<span class="gl-flow-meta">' + esc(agentLabel(d.agent)) + DOT + '<span data-how-meta>' + ELLIPSIS + '</span></span></div>' +
+        '<div class="gl-flow-actions">' + (flows.length > 1 ? '<button type="button" class="gl-link gl-unlink" data-unlink="' + esc(d.agent) + '|' + esc(d.workflowId) + '">Remove</button>' : '') +
+          '<a class="gl-btn plain small gl-link-btn" href="' + wfHref(d.agent, d.workflowId) + '">Open</a></div></div>';
+    }).join('') + '</div>';
+  }
+
+  // Add another workflow to a built one, or a step that runs one after another.
+  function manageHtml(w) {
+    var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
+    var opt = function (d, sel) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '"' + (sel ? ' selected' : '') + '>' + esc(d.title || d.workflowId) + '</option>'; };
+    return '<div class="gl-item-foot"><button type="button" class="gl-link" data-act="addwf">+ Add a workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-link" data-act="addstep">+ Run one after another</button>' : '') + '</div>' +
+    '<div class="gl-panel" data-panel="addwf" hidden><label class="hint" for="addwf-' + esc(w.id) + '">A workflow already on one of your agents</label>' +
+      '<div class="gl-row"><select class="gl-select" id="addwf-' + esc(w.id) + '" data-pick-workflow><option value="">Loading' + ELLIPSIS + '</option></select><button type="button" class="gl-btn soft small" data-act="link">Add it</button></div>' +
+      '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for it</button></div></div>' +
+    '<div class="gl-panel" data-panel="addstep" hidden>' +
+      '<div class="gl-row"><span class="hint">After</span><select class="gl-select" data-step-after>' + flows.map(function (d) { return opt(d, false); }).join('') + '</select>' +
+        '<span class="hint">finishes</span><select class="gl-select" data-step-when><option value="always">every time</option><option value="contains">when its result contains</option><option value="line_starts">when its result has a line starting</option></select><input class="gl-input" data-step-text placeholder="e.g. Lead:" hidden></div>' +
+      '<div class="gl-row"><span class="hint">run</span><select class="gl-select" data-step-run>' + flows.map(function (d, i) { return opt(d, i === 1); }).join('') + '</select></div>' +
+      '<div class="gl-step-inputs" data-step-inputs></div>' +
+      '<div class="gl-row"><button type="button" class="gl-btn soft small" data-act="savestep">Save the step</button></div></div>';
+  }
+
+  // A workflow (or group) built for the goal: what it's for, then each of
+  // its workflows once, with how it's going.
+  function builtHtml(w) {
     var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
     var steps = group ? group.steps : [];
     var builtSteps = steps.filter(function (st) { return st.built; }).length;
-    var nextStep = group ? steps.filter(function (st) { return !st.built; })[0] : null;
-    var active = w.state === 'active';
-    var btn = function (act, label, cls, step) { return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '"' + (step ? ' data-step="' + esc(step) + '"' : '') + '>' + label + '</button>'; };
-    var primary = w.state === 'discarded' ? btn('restore', 'Restore', 'plain')
-      : group && nextStep ? btn('buildstep', builtSteps ? 'Build step ' + (builtSteps + 1) : 'Build step 1', '', nextStep.id)
-      : !group && w.state === 'suggested' ? btn('build', 'Build the workflow') : '';
-    var more = w.state === 'suggested' ? btn('discard', 'Discard', 'plain') : '';
-    var pill = active && group && nextStep ? '<span class="gl-state saved">' + builtSteps + ' of ' + steps.length + ' built</span>'
-      : active ? '<span class="gl-state built">Running</span>'
-      : w.state === 'discarded' ? '<span class="gl-state">Discarded</span>' : '';
-    var kind = group ? 'Group ' + String.fromCharCode(183) + ' ' + steps.length + ' workflows in order' : 'Workflow';
-    var sub = w.measure ? 'Measured by ' + w.measure : w.why || '';
-    var open = !!state.openJobs[w.id];
-    return '<div class="gl-wf gl-job' + (open ? ' is-open' : '') + (active ? ' built' : '') + '" data-wf="' + esc(w.id) + '">' +
-      '<div class="gl-job-head" role="button" tabindex="0" aria-expanded="' + open + '"><span class="gl-caret" aria-hidden="true"></span>' +
-        '<div class="gl-job-main"><span class="gl-wf-title">' + esc(w.title) + '</span>' +
-          '<span class="gl-job-sub"><span class="gl-kind' + (group ? ' group' : '') + '">' + kind + '</span>' + (sub ? '<span class="gl-job-line">' + esc(sub) + '</span>' : '') + '</span>' +
-          (!open && active && !group ? doneByHtml(w) : '') + '</div>' +
-        '<span class="gl-job-status">' + pill + '<span class="gl-state planning" data-attn hidden>Needs you</span></span>' +
-        '<span class="gl-job-primary">' + primary + '</span>' +
-      '</div>' +
-      '<div class="gl-job-body"' + (open ? '' : ' hidden') + '>' +
-        (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? ' ' + String.fromCharCode(183) + ' ' + esc(w.added.note) : '') + (w.keepPrivate ? ' ' + String.fromCharCode(183) + ' kept to your workspace' : ' ' + String.fromCharCode(183) + ' its approach may be shared') + '</p>' : '') +
-        (w.why && sub !== w.why ? '<p class="gl-why">' + esc(w.why) + '</p>' : '') +
-        (w.measure && sub.indexOf(w.measure) < 0 ? '<p class="gl-job-measure">Measured by ' + esc(w.measure) + '</p>' : '') +
-        (group ? stepsHtml(w, steps) + (active && (w.doers || []).length > 1 ? '<details class="gl-order"><summary>Change the order</summary>' + howHtml(w) + '</details>' : '')
-          : active ? howHtml(w)
-          : '<div class="gl-row">' + agentHtml(w) + '</div>' + needsHtml(w) + '<details><summary>What the workflow will do</summary><p>' + esc(w.request) + '</p></details>') +
-        (more ? '<div class="gl-row">' + more + '</div>' : '') +
-      '</div>' +
+    var pill = group && builtSteps < steps.length ? '<span class="gl-state saved">' + builtSteps + ' of ' + steps.length + ' built</span>' : '<span class="gl-state" data-card-pill hidden></span>';
+    return '<div class="gl-item built" data-wf="' + esc(w.id) + '">' +
+      itemTop(w, '<span class="gl-state planning" data-attn hidden>Needs you</span>' + pill) +
+      factsHtml(w, false) +
+      (group ? stepsHtml(w, steps) : flowsHtml(w) + manageHtml(w)) +
       '<span class="hint gl-job-status-line" data-wf-status></span>' +
     '</div>';
   }
 
-  // A group's workflows, in the order they run: each built one with how
-  // it's doing (filled by fillEvidence), each to build with its agent,
-  // what it needs and what it will do; then what it passes on.
-  function stepsHtml(w, steps) {
-    return '<ol class="gl-gsteps">' + steps.map(function (st, i) {
-      var head = '<span class="gl-gstep-n">' + (i + 1) + '</span><strong class="gl-gstep-name">' + esc(st.name) + '</strong>';
-      var row = st.built
-        ? '<div class="gl-gstep-head" data-how="' + esc(st.built.agent) + '|' + esc(st.built.workflowId) + '">' + head +
-            '<a class="gl-slug" href="/agents/config?agent=' + encodeURIComponent(st.built.agent) + '&tab=workflows&workflow=' + encodeURIComponent(st.built.workflowId) + '">' + esc(st.built.workflowId) + '</a>' +
-            '<span class="gl-agent-pill">' + esc(st.built.agent) + '</span><span class="hint" data-how-meta>' + ELLIPSIS + '</span></div>'
-        : '<div class="gl-gstep-head">' + head + agentHtml(st) +
-            (w.state !== 'discarded' ? '<button type="button" class="gl-btn soft gl-gstep-build" data-act="buildstep" data-step="' + esc(st.id) + '">Build</button>' : '') + '</div>' +
-          needsHtml(st) + '<details><summary>What it will do</summary><p>' + esc(st.request) + '</p></details>';
-      return '<li class="gl-gstep' + (st.built ? ' built' : '') + '">' + row +
-        (i < steps.length - 1 ? '<div class="gl-gstep-then">then ' + ARROW + ' starts when this one finishes, with its result</div>' : '') + '</li>';
-    }).join('') + '</ol>';
+  // A suggestion: what it is and why, what it's worth, where it runs and
+  // what it needs; Build or Discard.
+  function suggestionHtml(w) {
+    var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
+    var steps = group ? group.steps : [];
+    var discarded = w.state === 'discarded';
+    var actions = discarded ? btn('restore', 'Restore', 'plain small')
+      : (group ? '' : btn('build', 'Build it', 'small')) + btn('discard', 'Discard', 'plain small');
+    return '<div class="gl-item' + (discarded ? ' discarded' : '') + '" data-wf="' + esc(w.id) + '">' +
+      itemTop(w, actions) +
+      (w.added ? '<p class="hint" style="margin:0">You added this: ' + String.fromCharCode(8220) + esc(w.added.idea) + String.fromCharCode(8221) + (w.added.note ? DOT + esc(w.added.note) : '') + '</p>' : '') +
+      factsHtml(w, !group) +
+      (group ? stepsHtml(w, steps)
+        : needsHtml(w.needs) + (w.request ? '<details class="gl-what"><summary>What it will do</summary><p>' + esc(w.request) + '</p></details>' : '')) +
+      '<span class="hint gl-job-status-line" data-wf-status></span>' +
+    '</div>';
   }
 
   // A workflow of the person's own: typed in their words, shaped and judged by
@@ -388,7 +434,6 @@ ${consoleShellScript}
       (n.note ? '<span>' + esc(n.note) + '</span>' : '') +
       (n.alternative ? '<span class="hint">Instead, you could: ' + esc(n.alternative) + '</span>' : '') + '</div>';
     return '<div class="gl-add">' +
-      '<button type="button" class="gl-link" id="glAddToggle"' + (state.addOpen ? ' hidden' : '') + '>+ Add your own workflow</button>' +
       '<div class="gl-add-form"' + (state.addOpen ? '' : ' hidden') + '>' +
         '<label for="glAddIdea"><strong>A workflow you have in mind</strong> <span class="hint">in your own words; LoopEngine shapes it into a workflow (or a group, when it has stages) and says if anything looks off</span></label>' +
         '<textarea id="glAddIdea" rows="2" placeholder="e.g. Thank every new customer by email within a day">' + esc(state.addDraft || '') + '</textarea>' +
@@ -398,71 +443,39 @@ ${consoleShellScript}
       '</div>' + notice + '</div>';
   }
 
-  // On a built workflow's card: what does it, one line per workflow, each
-  // with how it's going (filled by fillEvidence); "then" marks one that
-  // starts after another.
-  function doneByHtml(w) {
-    var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
-    // A chained workflow follows the one that starts it, marked "then".
-    var after = {};
-    (w.chain || []).forEach(function (st) { after[st.run.agent + '|' + st.run.workflowId] = st.after.agent + '|' + st.after.workflowId; });
-    var keyOf = function (d) { return d.agent + '|' + d.workflowId; };
-    var ordered = flows.filter(function (d) { return !after[keyOf(d)]; });
-    for (var i = 0; i < ordered.length; i++) {
-      flows.forEach(function (d) { if (after[keyOf(d)] === keyOf(ordered[i]) && ordered.indexOf(d) < 0) ordered.splice(i + 1, 0, d); });
-    }
-    flows.forEach(function (d) { if (ordered.indexOf(d) < 0) ordered.push(d); });
-    return '<span class="gl-doneby">' + ordered.map(function (d, i) {
-      var then = i > 0 && after[keyOf(d)] === keyOf(ordered[i - 1]);
-      return '<span class="gl-doneby-row" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' +
-        (then ? '<span class="gl-doneby-then">then ' + String.fromCharCode(8594) + '</span>' : '<span class="gl-tag-wf">Workflow</span>') +
-        '<a href="/agents/config?agent=' + encodeURIComponent(d.agent) + '&tab=workflows&workflow=' + encodeURIComponent(d.workflowId) + '" class="gl-slug">' + esc(d.workflowId) + '</a>' +
-        '<span class="gl-agent-pill">' + esc(d.agent) + '</span><span class="hint" data-how-meta>' + ELLIPSIS + '</span></span>';
-    }).join('') + '</span>';
-  }
-
-  function howHtml(w) {
-    var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
-    var titleOf = function (r) { return r.workflowId; };
-    var whenText = function (wh) { return wh.kind === 'always' ? '' : wh.kind === 'contains' ? ', when its result contains ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221) : ', when its result has a line starting ' + String.fromCharCode(8220) + esc(wh.text) + String.fromCharCode(8221); };
-    var chain = (w.chain || []).map(function (st) {
-      var inputs = Object.keys(st.with || {}).map(function (p) { var src = st.with[p]; return esc(p) + ' ' + String.fromCharCode(8592) + ' ' + (src === 'result' ? 'its result' : 'its ' + esc(src.slice(6))); }).join(', ');
-      return '<div class="gl-step" data-step="' + esc(st.id) + '"><span>After <strong>' + esc(titleOf(st.after)) + '</strong>' + whenText(st.when) + ', run <strong>' + esc(titleOf(st.run)) + '</strong>' + (inputs ? ' <span class="hint">(' + inputs + ')</span>' : '') + '</span><button type="button" class="gl-link" data-chain-remove="' + esc(st.id) + '">Remove</button></div>';
-    }).join('');
-    return '<div class="gl-how"><div class="gl-how-head">Workflows</div>' + flows.map(function (d) {
-      return '<div class="gl-how-row" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' +
-        '<div class="gl-how-main"><span class="gl-how-wf gl-slug">' + esc(d.workflowId) + '</span><span class="gl-how-agent">on <strong>' + esc(d.agent) + '</strong></span></div>' +
-        '<span class="gl-how-meta" data-how-meta>' + ELLIPSIS + '</span>' +
-        '<span class="gl-how-actions"><a class="gl-how-open" href="/agents/config?agent=' + encodeURIComponent(d.agent) + '&tab=workflows&workflow=' + encodeURIComponent(d.workflowId) + '">Open</a>' +
-        (flows.length > 1 ? '<button type="button" class="gl-link gl-unlink" data-unlink="' + esc(d.agent) + '|' + esc(d.workflowId) + '">Remove</button>' : '') + '</span></div>';
-    }).join('') +
-    (chain ? '<div class="gl-chain"><div class="gl-how-head">Then</div>' + chain + '</div>' : '') +
-    '<div class="gl-row"><button type="button" class="gl-btn plain" data-act="addwf">Add a workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-btn plain" data-act="addstep">Add a step</button>' : '') + '</div>' +
-    '<div class="gl-panel" data-panel="addwf" hidden><label class="hint" for="addwf-' + esc(w.id) + '">A workflow already on one of your agents</label>' +
-      '<div class="gl-row"><select class="gl-select" id="addwf-' + esc(w.id) + '" data-pick-workflow><option value="">Loading' + ELLIPSIS + '</option></select><button type="button" class="gl-btn soft" data-act="link">Add it</button></div>' +
-      '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for it</button></div></div>' +
-    '<div class="gl-panel" data-panel="addstep" hidden>' +
-      '<div class="gl-row"><span class="hint">After</span><select class="gl-select" data-step-after>' + flows.map(function (d) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '">' + esc(d.workflowId) + '</option>'; }).join('') + '</select>' +
-        '<span class="hint">finishes</span><select class="gl-select" data-step-when><option value="always">every time</option><option value="contains">when its result contains</option><option value="line_starts">when its result has a line starting</option></select><input class="gl-input" data-step-text placeholder="e.g. Lead:" hidden></div>' +
-      '<div class="gl-row"><span class="hint">run</span><select class="gl-select" data-step-run>' + flows.map(function (d, i) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '"' + (i === 1 ? ' selected' : '') + '>' + esc(d.workflowId) + '</option>'; }).join('') + '</select></div>' +
-      '<div class="gl-step-inputs" data-step-inputs></div>' +
-      '<div class="gl-row"><button type="button" class="gl-btn soft" data-act="savestep">Save the step</button></div></div>' +
-    '</div>';
-  }
-
   function startsText(w) {
     var schedules = (w.schedules || []).filter(function (x) { return x.status !== 'cancelled'; });
-    if (schedules.length) return schedules[0].describe.charAt(0).toUpperCase() + schedules[0].describe.slice(1) + (schedules[0].status === 'paused' ? ' (paused)' : '');
+    if (schedules.length) return schedules[0].describe.charAt(0).toUpperCase() + schedules[0].describe.slice(1);
     if (w.webhooks || w.webhooksWaiting) return w.webhooksWaiting && !w.webhooks ? 'Webhook, needs its signing secret' : 'On a webhook';
-    return 'When started by hand or an app';
+    return 'Runs when started';
+  }
+  // live: a schedule or webhook starts it; paused: its schedules are all
+  // paused; manual: it runs when someone starts it.
+  function flowState(w) {
+    var schedules = (w.schedules || []).filter(function (x) { return x.status !== 'cancelled'; });
+    if (w.webhooks || schedules.some(function (x) { return x.status !== 'paused'; })) return 'live';
+    return schedules.length ? 'paused' : 'manual';
+  }
+  // A built card's pill, from its workflows: Running when any is started
+  // by a schedule or webhook, Paused when all are paused, else Ready.
+  function refreshPill(card) {
+    var pill = card && card.querySelector('[data-card-pill]');
+    if (!pill) return;
+    var states = Array.prototype.map.call(card.querySelectorAll('[data-flow-state]'), function (el) { return el.getAttribute('data-flow-state'); });
+    if (!states.length) return;
+    var s = states.indexOf('live') >= 0 ? ['built', 'Running'] : states.every(function (x) { return x === 'paused'; }) ? ['paused', 'Paused'] : ['saved', 'Ready to run'];
+    pill.className = 'gl-state ' + s[0];
+    pill.textContent = s[1];
+    pill.hidden = false;
   }
 
   // Fills each workflow row from its agent's workflow list, and marks the
-  // suggestion when one is waiting for a decision.
+  // card when one is waiting for a decision.
   function fillEvidence() {
     var rows = page.querySelectorAll('[data-how]');
     var agents = {};
     for (var i = 0; i < rows.length; i++) agents[rows[i].getAttribute('data-how').split('|')[0]] = true;
+    var waitingTotal = 0;
     Object.keys(agents).forEach(function (agent) {
       api('GET', '/agents/' + encodeURIComponent(agent) + '/workflows').then(function (r) {
         if (!r.ok) return;
@@ -475,19 +488,26 @@ ${consoleShellScript}
           if (parts[0] !== agent) continue;
           var meta = mine[j].querySelector('[data-how-meta]');
           var w = byId[parts[1]];
-          if (!w) { meta.textContent = 'Its workflow is gone from this agent'; continue; }
+          var card = mine[j].closest('[data-wf]');
+          if (!w) { meta.textContent = 'This workflow is gone from its agent'; continue; }
+          var title = mine[j].querySelector('[data-how-title]');
+          if (title && w.title) title.textContent = w.title;
           var sc = w.scores || { runs: 0, failed: 0 };
           var waiting = (w.recentRuns || []).filter(function (x) { return x.status === 'awaiting_approval'; }).length + (w.schedules || []).filter(function (x) { return x.waiting; }).length;
-          var bits = [startsText(w), sc.runs ? sc.runs + ' run' + (sc.runs === 1 ? '' : 's') + (sc.failed ? ', ' + sc.failed + ' failed' : '') : 'no runs yet'];
+          var st = flowState(w);
+          mine[j].setAttribute('data-flow-state', st);
+          var bits = [startsText(w), sc.runs ? sc.runs + ' run' + (sc.runs === 1 ? '' : 's') + (sc.failed ? ', ' + sc.failed + ' failed' : '') : 'No runs yet'];
           var round = w.evals && w.evals.rounds && w.evals.rounds[0];
-          if (round && round.passRates) bits.push('evals: ' + round.allPassed + ' of ' + round.cases.length + ' passed every check');
-          else if (round && typeof round.average === 'number') bits.push('evals ' + round.average.toFixed(1) + ' / 5');
-          meta.innerHTML = esc(bits.join(' ' + String.fromCharCode(183) + ' ')) + (waiting ? ' <span class="gl-waiting">' + waiting + ' waiting for your decision</span>' : '');
+          if (round && round.passRates) bits.push('evals: ' + round.allPassed + ' of ' + round.cases.length + ' passed');
+          meta.innerHTML = (st === 'paused' ? '<span class="gl-paused">Paused</span> ' : '') + esc(bits.join(DOT)) + (waiting ? ' <span class="gl-waiting">' + waiting + ' waiting for you</span>' : '');
           if (waiting) {
-            var card = mine[j].closest('[data-wf]');
+            waitingTotal += waiting;
             var attn = card && card.querySelector('[data-attn]');
             if (attn) attn.hidden = false;
+            var stat = document.getElementById('glWaiting');
+            if (stat) { stat.textContent = String(waitingTotal); stat.closest('.gl-stat').classList.add('attn'); }
           }
+          refreshPill(card);
         }
       });
     });
@@ -502,32 +522,35 @@ ${consoleShellScript}
     var planning = g.status === 'planning';
     var focus = g.focus || (g.brief && g.brief.focus) || '';
     var secs = state.startedAt ? Math.round((Date.now() - state.startedAt) / 1000) : 0;
-    return '<div class="gl-card">' +
-      '<h2 class="gl-goal-title">' + esc(g.goal) + '</h2>' +
-      (focus ? '<div class="gl-focus"><label for="glFocus">Focus</label> <select id="glFocus"' + (planning ? ' disabled' : '') + '>' + (FOCUS.some(function (f) { return f[0] === focus; }) ? FOCUS : FOCUS.concat([[focus, (g.brief && g.brief.newFocus && g.brief.newFocus.label) || focus]])).map(function (f) { return '<option value="' + esc(f[0]) + '"' + (f[0] === focus ? ' selected' : '') + '>' + esc(f[1]) + '</option>'; }).join('') + '</select>' +
-        (focus.indexOf('x-') === 0 ? '<span class="hint" title="No focus in the playbook fit this goal, so its planner named one and wrote the approaches it needed. They stay in this workspace for next time.">written for your goals</span>' : '') +
-        (g.brief && g.brief.measure ? '<span>' + String.fromCharCode(183) + ' measured by ' + esc(g.brief.measure) + '</span>' : '') + '</div>' : '') +
-      (g.message ? '<p class="gl-why">' + esc(g.message) + '</p>' : '') +
-      (planning ? '<p class="gl-status">Suggesting workflows' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
+    var focusSelect = focus ? '<label class="gl-field"><span class="gl-fact-k">Focus</span><select id="glFocus" class="gl-select"' + (planning ? ' disabled' : '') + '>' + (FOCUS.some(function (f) { return f[0] === focus; }) ? FOCUS : FOCUS.concat([[focus, (g.brief && g.brief.newFocus && g.brief.newFocus.label) || focus]])).map(function (f) { return '<option value="' + esc(f[0]) + '"' + (f[0] === focus ? ' selected' : '') + '>' + esc(f[1]) + '</option>'; }).join('') + '</select></label>' : '';
+    var stat = function (n, label, id) { return '<div class="gl-stat"><b' + (id ? ' id="' + id + '"' : '') + '>' + n + '</b><span>' + label + '</span></div>'; };
+    var setup = g.setup || [];
+    return '<div class="gl-card gl-hero">' +
+      '<div class="gl-hero-meta">' + focusSelect +
+        (g.brief && g.brief.measure ? '<span class="gl-field"><span class="gl-fact-k">Measured by</span> ' + esc(g.brief.measure) + '</span>' : '') +
+        (focus.indexOf('x-') === 0 ? '<span class="hint" title="No focus in the playbook fit this goal, so its planner named one and wrote the approaches it needed. They stay in this workspace for next time.">written for your goals</span>' : '') + '</div>' +
+      '<div class="gl-stats">' + stat(kept.length, kept.length === 1 ? 'workflow built' : 'workflows built') + stat(suggested.length, suggested.length === 1 ? 'suggestion to review' : 'suggestions to review') + stat(0, 'waiting for you', 'glWaiting') + '</div>' +
+      (g.message ? '<p class="gl-callout">' + esc(g.message) + '</p>' : '') +
+      (planning ? '<p class="gl-status"><span class="gl-spinner" aria-hidden="true"></span> Suggesting workflows' + ELLIPSIS + (secs ? ' ' + secs + 's' : '') + ' It reads your workspace first; this takes about a minute.</p>' : '') +
       (g.status === 'failed' ? '<p class="error">' + esc(g.error || 'Planning failed.') + '</p>' : '') +
-      (g.setup && g.setup.length ? '<div><strong style="font-size:13.5px">Before you start</strong><ol class="gl-setup">' + g.setup.slice(0, 4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
-        (g.setup.length > 4 ? '<details class="gl-setup-more"><summary>' + (g.setup.length - 4) + ' more</summary><ol class="gl-setup" start="5">' + g.setup.slice(4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></details>' : '') + '</div>' : '') +
     '</div>' +
+    (setup.length ? '<div class="gl-card gl-setup-card"><h3 class="gl-card-title">Before you start</h3><ol class="gl-setup">' + setup.slice(0, 4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+      (setup.length > 4 ? '<details class="gl-setup-more"><summary>Show ' + (setup.length - 4) + ' more</summary><ol class="gl-setup" start="5">' + setup.slice(4).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></details>' : '') + '</div>' : '') +
     (state.justDiscarded ? '<div class="gl-discarded-note" data-discarded="' + esc(state.justDiscarded.id) + '"><span>Discarded <strong>' + esc(state.justDiscarded.title) + '</strong>. Why?</span>' +
-      REASONS.map(function (r) { return '<button type="button" class="gl-btn plain" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
+      REASONS.map(function (r) { return '<button type="button" class="gl-btn plain small" data-reason="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '<button type="button" class="gl-link" data-undo="1">Undo</button></div>' : '') +
-    '<div class="gl-section"><h3>Suggested <span class="gl-count">' + suggested.length + '</span></h3>' +
-      '<p class="hint gl-define">Workflows that move this goal, and groups of workflows that run in order, one after another.</p>' +
-      (suggested.length ? suggested.map(function (w) { return itemHtml(w); }).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting. Generate more for new ideas.') + '</p>') +
-      '<div class="gl-row"><button type="button" class="gl-btn soft" id="glMore"' + (planning ? ' disabled' : '') + '>Generate more</button><span class="hint">More workflows or groups: nothing already here, built or discarded comes back.</span></div>' +
+    (kept.length ? '<div class="gl-section"><div class="gl-section-head"><h3>Your workflows <span class="gl-count">' + kept.length + '</span></h3><span class="hint">Built for this goal and working on it</span></div>' +
+      kept.map(builtHtml).join('') + '</div>' : '') +
+    '<div class="gl-section"><div class="gl-section-head"><h3>Suggested <span class="gl-count">' + suggested.length + '</span></h3><span class="hint">Workflows that would move this goal. Build the ones you want.</span></div>' +
+      (suggested.length ? suggested.map(suggestionHtml).join('') : '<p class="gl-empty">' + (planning ? 'On their way' + ELLIPSIS : 'No suggestions waiting.') + '</p>') +
+      '<div class="gl-more"><button type="button" class="gl-btn plain" id="glMore"' + (planning ? ' disabled' : '') + '>Suggest more</button>' +
+        '<button type="button" class="gl-btn plain" id="glAddToggle"' + (state.addOpen ? ' hidden' : '') + '>Add your own</button>' +
+        '<span class="hint">New ideas only: nothing already here, built or discarded comes back.</span></div>' +
       addJobHtml(planning) +
     '</div>' +
-    '<div class="gl-section"><h3>Your workflows <span class="gl-count">' + kept.length + '</span></h3>' +
-      (kept.length ? kept.map(function (w) { return itemHtml(w); }).join('') : '<p class="gl-empty">Nothing built yet. Build a suggested workflow, or a group' + String.fromCharCode(8217) + 's workflows one by one.</p>') +
-    '</div>' +
     (discarded.length ? '<div class="gl-section"><button type="button" class="gl-link" id="glShowDiscarded">' + (state.showDiscarded ? 'Hide' : 'Show') + ' discarded (' + discarded.length + ')</button>' +
-      (state.showDiscarded ? discarded.map(function (w) { return itemHtml(w); }).join('') : '') + '</div>' : '') +
-    '<div><button type="button" class="gl-link" id="glDelete" style="color:var(--bad)">Delete this goal</button></div>';
+      (state.showDiscarded ? discarded.map(suggestionHtml).join('') : '') + '</div>' : '') +
+    '<div class="gl-danger"><button type="button" class="gl-link" id="glDelete">Delete this goal</button><span class="hint">The workflows built for it stay on their agents.</span></div>';
   }
 
   function render() {
@@ -536,7 +559,7 @@ ${consoleShellScript}
     var newBtn = document.getElementById('glNewBtn');
     // The list, unless there are no goals yet: then the new-goal form.
     var listing = !state.current && !state.creating && state.goals.length > 0;
-    if (title) title.textContent = state.current ? 'Goal' : listing ? 'Goals' : 'New goal';
+    if (title) title.textContent = state.current ? state.current.goal : listing ? 'Goals' : 'New goal';
     if (lead) lead.style.display = state.current || listing ? 'none' : '';
     if (newBtn) newBtn.hidden = !listing;
     page.innerHTML = (state.current ? goalHtml(state.current) : listing ? listHtml() : newGoalHtml()) + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '');
@@ -698,27 +721,9 @@ ${consoleShellScript}
     box.innerHTML = params.map(function (p) { return '<div class="gl-row"><span class="hint"><code>' + esc(p) + '</code>' + (target.parameters[p].required ? '' : ' (optional)') + ' from</span><select class="gl-select" data-input="' + esc(p) + '">' + choices(p) + '</select></div>'; }).join('');
   }
 
-  function setJobOpen(card, open) {
-    var id = card.getAttribute('data-wf');
-    state.openJobs[id] = open;
-    card.classList.toggle('is-open', open);
-    card.querySelector('.gl-job-head').setAttribute('aria-expanded', String(open));
-    card.querySelector('.gl-job-body').hidden = !open;
-  }
-
   function wireCard(card, base) {
     var id = card.getAttribute('data-wf');
     var status = card.querySelector('[data-wf-status]');
-    var head = card.querySelector('.gl-job-head');
-    head.addEventListener('click', function (ev) {
-      if (card.classList.contains('gl-job-detail') || ev.target.closest('button, a')) return;
-      setJobOpen(card, !card.classList.contains('is-open'));
-    });
-    head.addEventListener('keydown', function (ev) {
-      if (card.classList.contains('gl-job-detail') || ev.target !== head || (ev.key !== 'Enter' && ev.key !== ' ')) return;
-      ev.preventDefault();
-      setJobOpen(card, !card.classList.contains('is-open'));
-    });
     // A suggestion's chain: change the step being written, remove a step or a workflow.
     ['[data-step-run]', '[data-step-after]', '[data-step-when]'].forEach(function (sel) {
       var el = card.querySelector(sel);
