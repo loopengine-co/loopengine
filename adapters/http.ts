@@ -96,7 +96,7 @@ import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { buildWorkflowAudit, type WorkflowAudit } from '#web/workflow-audit.js'
 import { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
-import { EvidenceError, type StandIn, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, checkEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
+import { EvidenceError, type StandIn, feedbackSourceOf, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, checkEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, workflowVersionOf, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
@@ -110,7 +110,9 @@ import { reportRun, usedTool } from '#core/run-events.js'
 import { loopengineVersion } from '#core/version.js'
 import { describeUpgrade, runUpgrade, UpgradeError } from '#web/upgrade-admin.js'
 import { NotifierFileError } from '#core/notifier-file.js'
-import { decidePath, verifyDecisionToken } from '#core/approval-links.js'
+import { decidePath, feedbackPath, verifyDecisionToken, verifyFeedbackToken } from '#core/approval-links.js'
+import { feedbackSummary, suggestImprovements } from '#web/workflow-feedback.js'
+import { feedbackPageHtml } from '#web/feedback-page.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
 import { agentApprovers, agentMessagingIdentities, agentTelegramWebhookInfo, announceToChat, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, hasChatApp, hasNotifier, type TwoWayApp } from '#web/notifier-admin.js'
 import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, parseScheduleInput, type CreateScheduledTaskInput, type Schedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
@@ -1941,6 +1943,40 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   try {
     if (!id && req.method === 'GET') return json(200, await workflowsView(agentName))
     if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
+    // Its Feedback tab: what people said about its results, from anywhere
+    // (web/workflow-feedback.ts), over ?days (30 by default).
+    if (id && action === 'feedback' && req.method === 'GET') {
+      if (!readWorkflow(dir, id)) return json(404, { error: `No workflow ${id}.` })
+      const days = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('days'))
+      const span = days > 0 && days <= 400 ? Math.round(days) : 30
+      return json(200, feedbackSummary(await runsSince(agentName, id, new Date(Date.now() - span * 86_400_000).toISOString()), span))
+    }
+    // Self-Improve: changes to its prompt and new success criteria a model
+    // suggests from that feedback, for a person to review and add to the
+    // draft. Nothing is saved here.
+    if (id && action === 'improve' && req.method === 'POST') {
+      const workflow = readWorkflow(dir, id)
+      if (!workflow) return json(404, { error: `No workflow ${id}.` })
+      const draft = readDraft(projectDir(), agentName, id)
+      const current = withDraft(workflow, draft?.fields)
+      const summary = feedbackSummary(await runsSince(agentName, id, new Date(Date.now() - 90 * 86_400_000).toISOString()), 90)
+      const config = getEntry(agentName)!.config
+      const model = await evalJudge(config)
+      try {
+        const suggestion = await suggestImprovements(model.call, {
+          title: current.title,
+          instructions: current.instructions,
+          ...(current.output ? { output: current.output } : {}),
+          criteria: draft?.criteria ?? readEvals(dir, id).criteria,
+          tools: (config.tools ?? []).map((t) => t.name),
+          items: summary.items,
+        })
+        return json(200, { ...suggestion, model: model.label, from: { instructions: current.instructions, drafted: Boolean(draft?.fields?.instructions !== undefined) } })
+      } catch (err) {
+        if (err instanceof EvidenceError) return json(400, { error: err.message })
+        throw err
+      }
+    }
     if (id && action === 'health' && req.method === 'GET') {
       if (!readWorkflow(dir, id)) return json(404, { error: `No workflow ${id}.` })
       const days = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('days'))
@@ -2422,6 +2458,49 @@ async function startChainedRuns(run: WorkflowRun): Promise<void> {
   }
 }
 
+// A run's feedback link for where it's sent (slack, email, webhook...),
+// against the workspace's public address, or undefined with none known.
+function feedbackLinkFor(run: WorkflowRun, source: string, config?: AgentConfig): string | undefined {
+  const saved = config ? (connectionPublicUrl(config, 'slack') || connectionPublicUrl(config, 'telegram')) : undefined
+  const base = publicBaseUrl(saved)
+  return base ? `${base}${feedbackPath(run.agent, run.run_id, source)}` : undefined
+}
+
+// GET /feedback/<token>: the page to give feedback (?v=good|bad picks the
+// verdict); POST: the feedback, as JSON or a form. Source from the token.
+async function handleFeedbackLink(req: IncomingMessage, res: ServerResponse, token: string): Promise<void> {
+  const html = (status: number, body: string): void => { res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(body) }
+  const json = (status: number, body: unknown): void => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body)) }
+  const wantsJson = req.method === 'POST' && String(req.headers['content-type'] ?? '').includes('application/json')
+  const link = verifyFeedbackToken(token)
+  const run = link && getEntry(link.agent) ? await getRun(link.agent, link.runId) : undefined
+  if (!link || !run) return wantsJson ? json(404, { error: 'This feedback link has expired or is not valid.' }) : html(404, feedbackPageHtml({ state: 'invalid' }))
+  const title = readWorkflow(agentDir(run.agent), run.workflow_id)?.title ?? run.workflow_id
+  if (req.method === 'GET') {
+    const v = new URL(req.url ?? '/', 'http://localhost').searchParams.get('v')
+    return html(200, feedbackPageHtml({ state: 'ask', title, result: run.result ?? '', verdict: v === 'good' || v === 'bad' ? v : undefined, given: run.feedback }))
+  }
+  let body: Record<string, unknown>
+  if (wantsJson) body = await readJsonBody(req)
+  else {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    body = Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString('utf8')))
+    if (typeof body.final === 'string' && body.final === (run.result ?? '')) delete body.final
+  }
+  const source = feedbackSourceOf(link.source) ?? 'link'
+  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : undefined
+  try {
+    const feedback = runFeedbackFrom(run, body, { source, by: name ? `${name} (via ${source} link)` : `someone with the ${source} link` })
+    await getRunStore().update(run.run_id, (r) => r && { ...r, feedback })
+    workflowRunner.recordFeedback(run, feedback)
+    return wantsJson ? json(200, { feedback }) : html(200, feedbackPageHtml({ state: 'thanks', title }))
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return wantsJson ? json(400, { error: message }) : html(400, feedbackPageHtml({ state: 'ask', title, result: run.result ?? '', error: message }))
+  }
+}
+
 async function reportWorkflowRun(run: WorkflowRun): Promise<void> {
   if (run.status === 'running') {
     const entry = getEntry(run.agent)
@@ -2437,7 +2516,10 @@ async function reportWorkflowRun(run: WorkflowRun): Promise<void> {
   const entry = getEntry(run.agent)
   if ((run.result_to_chat ?? run.notify) && entry && event !== 'run.awaiting_approval') {
     const text = run.status === 'done' ? `Workflow ${run.workflow_id} for ${run.agent} ran:\n${run.result ?? ''}` : `Workflow ${run.workflow_id} for ${run.agent} failed: ${run.error ?? 'unknown error'}`
-    announceToNotifier(entry.config, text, { runId: run.run_id, workflowId: run.workflow_id, status: run.status, result: run.result ?? null, error: run.error ?? null }, defaultWebhook)
+    // A finished result asks how it did: links in each app's message, and
+    // the link in a webhook's payload.
+    const feedback = run.status === 'done' ? (channel: string) => feedbackLinkFor(run, channel, entry.config) : undefined
+    announceToNotifier(entry.config, text, { runId: run.run_id, workflowId: run.workflow_id, status: run.status, result: run.result ?? null, error: run.error ?? null }, defaultWebhook, feedback)
   }
   if (run.callback_url) await deliverRunCallback(run, event)
 }
@@ -2445,7 +2527,11 @@ async function reportWorkflowRun(run: WorkflowRun): Promise<void> {
 async function deliverRunCallback(run: WorkflowRun, event: RunCallbackEvent): Promise<void> {
   if (!run.callback_url) return
   const pending = event === 'run.awaiting_approval' ? await runPending(run) : undefined
-  const delivery = await deliverCallback(run.callback_url, event, runCallbackPayload(event, run, pending))
+  const payload = runCallbackPayload(event, run, pending)
+  // A finished run's callback carries where to send feedback on it: a
+  // signed link the app can POST { verdict, note, final } to, with no key.
+  const feedbackUrl = event === 'run.done' ? feedbackLinkFor(run, 'webhook', getEntry(run.agent)?.config) : undefined
+  const delivery = await deliverCallback(run.callback_url, event, feedbackUrl ? { ...payload, feedback_url: feedbackUrl } : payload)
   await getRunStore().update(run.run_id, (r) => r && { ...r, callbacks: [...(r.callbacks ?? []), delivery].slice(-10) })
 }
 
@@ -5486,6 +5572,13 @@ const server = createServer(async (req, res) => {
     return
   }
 
+  // A signed feedback link (core/approval-links.ts), from a messaging app,
+  // an email or a callback: no sign-in, the link is the permission.
+  const feedbackLinkMatch = (req.method === 'GET' || req.method === 'POST') && (req.url ?? '/').split('?')[0].match(/^\/feedback\/([A-Za-z0-9_.-]+)$/)
+  if (feedbackLinkMatch) {
+    await tracked(() => handleFeedbackLink(req, res, feedbackLinkMatch[1]))
+    return
+  }
   const decideMatch = (req.method === 'GET' || req.method === 'POST') && (req.url ?? '/').split('?')[0].match(/^\/decide\/([A-Za-z0-9_.-]+)$/)
   if (decideMatch) {
     try {
@@ -5837,6 +5930,24 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html' }).end(page)
       return
     }
+    // Feedback on a run, from its conversation in the Inbox: anyone who
+    // can decide there (approvers too; not viewers).
+    const inboxFeedbackMatch = req.method === 'POST' && pathname.match(/^\/inbox\/cases\/([A-Za-z0-9_-]+)\/feedback$/)
+    if (inboxFeedbackMatch) {
+      const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      if (!canDecide(callerOf(req).role)) return void json(403, { error: 'Your role can see the Inbox but not give feedback.' })
+      const deps = inboxDepsFor(req)
+      const run = deps.run ? await deps.run(inboxFeedbackMatch[1]) : undefined
+      if (!run) return void json(404, { error: 'No such run: it may have been removed.' })
+      try {
+        const feedback = runFeedbackFrom(run, await readJsonBody(req), { source: 'inbox', by: changedBy(req) })
+        await getRunStore().update(run.run_id, (r) => r && { ...r, feedback })
+        workflowRunner.recordFeedback(run, feedback)
+        return void json(200, { feedback })
+      } catch (err) {
+        return void json(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
+      }
+    }
     // Archiving a case, or bringing it back (POST or DELETE
     // /inbox/cases/:id/archive): anyone who can decide in the Inbox.
     const archiveMatch = (req.method === 'POST' || req.method === 'DELETE') && pathname.match(/^\/inbox\/cases\/([^/]+)\/archive$/)
@@ -5978,9 +6089,14 @@ const server = createServer(async (req, res) => {
       const reply = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
       if (!run) return void reply(404, { error: `no run ${runFeedbackMatch[2]} for ${agentName}` })
       try {
-        const feedback = runFeedbackFrom(run, await readJsonBody(req))
+        // An app says where its feedback came from and who gave it; from
+        // the console, it's the person signed in.
+        const body = await readJsonBody(req)
+        const fromApp = callerOf(req).role === 'api'
+        const by = fromApp && typeof body.by === 'string' && body.by.trim() ? `${body.by.trim()} (${changedBy(req)})` : changedBy(req)
+        const feedback = runFeedbackFrom(run, body, { source: feedbackSourceOf(body.source) ?? (fromApp ? 'api' : 'console'), by })
         const updated = await getRunStore().update(run.run_id, (r) => r && { ...r, feedback })
-        workflowRunner.recordFeedback(run, feedback, changedBy(req))
+        workflowRunner.recordFeedback(run, feedback)
         return void reply(200, updated)
       } catch (err) {
         return void reply(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
@@ -6035,7 +6151,7 @@ const server = createServer(async (req, res) => {
       await handleWorkflowDraft(req, res, decodeURIComponent(draftMatch[1]), draftMatch[2], draftMatch[3], draftMatch[4], draftMatch[5])
       return
     }
-    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions|health|publish))?(?:\/([1-9][0-9]*)\/restore)?$/)
+    const agentWorkflowsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows(?:\/([a-z0-9-]+))?(?:\/(run|runs|preview|messages|versions|health|publish|feedback|improve))?(?:\/([1-9][0-9]*)\/restore)?$/)
     if (agentWorkflowsMatch && (!agentWorkflowsMatch[4] || agentWorkflowsMatch[3] === 'versions')) {
       await handleAgentWorkflows(req, res, decodeURIComponent(agentWorkflowsMatch[1]), agentWorkflowsMatch[2], agentWorkflowsMatch[3], agentWorkflowsMatch[4] ? Number(agentWorkflowsMatch[4]) : undefined)
       return

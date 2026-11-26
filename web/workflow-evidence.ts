@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ModelCall } from '#core/run-agent.js'
-import type { RunFeedback, WorkflowRun } from '#core/workflow-runs.js'
+import { FEEDBACK_SOURCES, type FeedbackSource, type RunFeedback, type WorkflowRun } from '#core/workflow-runs.js'
 import { checkOutput, type JsonSchema } from '#core/output-schema.js'
 import { editAmount } from './goals-admin.js'
 
@@ -70,8 +70,9 @@ export function workflowScores(runs: WorkflowRun[]): WorkflowScores {
 
 /** Feedback on a finished run, from an app or a person: `final`, the text
  * actually used (an edited draft, say), and/or `verdict` good or bad,
- * and a short `note`. */
-export function runFeedbackFrom(run: WorkflowRun, body: Record<string, unknown>): RunFeedback {
+ * and a short `note`; `source`, where it came from, and `by`, who gave
+ * it, when the caller says (see FeedbackSource). */
+export function runFeedbackFrom(run: WorkflowRun, body: Record<string, unknown>, given: { source?: FeedbackSource; by?: string } = {}): RunFeedback {
   if (run.status !== 'done') throw new EvidenceError('Only a run that finished with a result can get feedback.')
   const verdict = body.verdict === 'good' || body.verdict === 'bad' ? body.verdict : undefined
   if (body.verdict !== undefined && body.verdict !== null && !verdict) throw new EvidenceError('verdict must be "good" or "bad".')
@@ -82,8 +83,16 @@ export function runFeedbackFrom(run: WorkflowRun, body: Record<string, unknown>)
     ...(verdict ? { verdict } : {}),
     ...(final !== undefined ? { final, edit: editAmount(run.result ?? '', final) } : {}),
     ...(note ? { note } : {}),
+    ...(given.source ? { source: given.source } : {}),
+    ...(given.by ? { by: given.by.slice(0, 120) } : {}),
     at: new Date().toISOString(),
   }
+}
+
+/** A source an app names for its feedback, or undefined for none or one
+ * not known. */
+export function feedbackSourceOf(value: unknown): FeedbackSource | undefined {
+  return typeof value === 'string' && (FEEDBACK_SOURCES as string[]).includes(value) ? (value as FeedbackSource) : undefined
 }
 
 // ---------- eval cases ----------

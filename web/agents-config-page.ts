@@ -255,6 +255,42 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .chg-note { color: var(--ink-muted); font-family: inherit; font-weight: 400; }
   .chg details summary { cursor: pointer; color: var(--accent-ink); font-family: var(--font-sans, inherit); font-size: 12px; margin-top: 2px; }
   .wf-page-meta-item[hidden] { display: none; }
+  .wf-fb { display: grid; gap: 26px; }
+  .wf-fb-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .wf-fb-stat { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
+  .wf-fb-stat b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .wf-fb-stat span { font-size: 12.5px; color: var(--ink-muted); }
+  .wf-fb-stat.good b { color: var(--good); }
+  .wf-fb-stat.bad b { color: var(--bad); }
+  .wf-fb-sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
+  .wf-fb-src { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 500; }
+  .wf-fb-improve { display: grid; gap: 12px; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--line); background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 55%, var(--bg)), var(--bg)); }
+  .wf-fb-improve h3 { margin: 0; font-size: 17px; font-weight: 600; }
+  .wf-fb-improve p { margin: 0; font-size: 13.5px; color: var(--ink-muted); }
+  .wf-fb-improve-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .wf-fb-sugg { display: grid; gap: 14px; }
+  .wf-fb-sugg[hidden] { display: none; }
+  .wf-fb-sugg h4 { margin: 0; font-size: 12px; color: var(--ink-faint); font-family: var(--font-mono); font-weight: 500; }
+  .wf-fb-changes { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .wf-fb-changes li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 13.5px; }
+  .wf-fb-changes li span { font-size: 12.5px; color: var(--ink-muted); }
+  .wf-fb-crits { display: grid; gap: 6px; }
+  .wf-fb-crits label { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; }
+  .wf-fb-open { margin: 0; padding-left: 18px; font-size: 13px; color: var(--warn); }
+  .wf-fb-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .wf-fb-item { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font-size: 13.5px; }
+  .wf-fb-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .wf-fb-item-head .hint { margin-left: auto; }
+  .wf-fb-note { margin: 0; overflow-wrap: anywhere; }
+  .wf-fb-item details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
+  .wf-fb-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 6px; }
+  .wf-fb-pair pre { margin: 0; max-height: 220px; overflow: auto; font-size: 12.5px; white-space: pre-wrap; }
+  .wf-fb-ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .wf-fb-way { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; font-size: 13px; }
+  .wf-fb-way b { font-size: 13.5px; }
+  .wf-fb-way span { color: var(--ink-muted); }
+  .wf-fb-way pre { margin: 4px 0 0; font-size: 11.5px; }
+  @media (max-width: 760px) { .wf-fb-stats, .wf-fb-ways, .wf-fb-pair { grid-template-columns: minmax(0, 1fr); } }
   .wf-sub-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
   .wf-act-main[hidden], .wf-trace[hidden] { display: none; }
   .wf-act-main > .wf-section + .wf-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
@@ -2129,7 +2165,7 @@ ${renderMarkdownScript}
           '</header>' +
           workflowDraftBannerHtml(w) +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('feedback', 'Feedback') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
             panel('activity', workflowActivityHtml(w, runs, name)) +
             panel('evaluation', workflowEvaluationHtml(w)) +
@@ -2137,6 +2173,7 @@ ${renderMarkdownScript}
             panel('messages', workflowMessagesHtml(w, name)) +
             panel('contract', workflowContractHtml(w, name, params)) +
             panel('versions', workflowVersionsHtml()) +
+            panel('feedback', workflowFeedbackHtml()) +
             '<div class="hint workflow-result"></div>' +
             '<div class="wf-row-foot"><span class="hint">ID <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks</span><button type="button" class="wf-remove workflow-forget" title="Its schedules and webhooks go; its instructions stay as a skill for Chat">Remove</button></div>' +
           '</div>' +
@@ -2155,9 +2192,10 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('feedback', 'Feedback') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('versions', workflowVersionsHtml()) +
+          panel('feedback', workflowFeedbackHtml()) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('messages', workflowMessagesHtml(w, name)) +
           panel('brief', workflowBriefHtml(w)) +
@@ -2926,6 +2964,139 @@ ${renderMarkdownScript}
   // View shows it in full, Compare what changed from the version before
   // it, and Restore makes it the workflow's draft, to review and publish
   // as the next version. Filled by loadWorkflowVersions.
+  // The Feedback tab: what people said about this workflow's results,
+  // from the Inbox, a messaging app's links, an email or another platform
+  // (each piece says where), and Self-Improve: changes to its prompt and
+  // new success criteria suggested from that feedback, to review and add
+  // to its draft. Filled by loadWorkflowFeedback.
+  function workflowFeedbackHtml() {
+    return '<div class="wf-fb"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>';
+  }
+
+  var FB_SOURCES = { inbox: 'Inbox', console: 'Console', slack: 'Slack', telegram: 'Telegram', lark: 'Lark', email: 'Email', webhook: 'Your app (callback)', link: 'Link', api: 'API', unknown: 'Earlier' };
+
+  function feedbackItemHtml(i, name) {
+    var verdict = i.verdict === 'good' ? '<span class="le-pill good">Good</span>' : i.verdict === 'bad' ? '<span class="le-pill bad">Needs work</span>' : '';
+    var edit = i.edit === 'heavy' ? '<span class="le-pill warn">Changed a lot</span>' : i.edit === 'light' ? '<span class="le-pill neutral">Changed a little</span>' : i.edit === 'none' ? '<span class="le-pill neutral">Used as is</span>' : '';
+    var when = new Date(i.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return '<li class="wf-fb-item"><div class="wf-fb-item-head">' + verdict + edit +
+        '<span class="wf-fb-src">' + escapeHtml(FB_SOURCES[i.source || 'unknown'] || i.source) + '</span>' +
+        (i.by ? '<span class="hint" style="margin-left:0">' + escapeHtml(i.by) + '</span>' : '') +
+        '<span class="hint">' + escapeHtml(when) + (i.workflowVersion ? DOT + 'v' + i.workflowVersion : '') + DOT + '<a href="#" class="wf-link wf-fb-trace" data-run="' + escapeHtml(i.runId) + '">trace</a></span></div>' +
+      (i.note ? '<p class="wf-fb-note">' + String.fromCharCode(8220) + escapeHtml(i.note) + String.fromCharCode(8221) + '</p>' : '') +
+      (i.inputs ? '<span class="hint">' + escapeHtml(i.inputs) + '</span>' : '') +
+      '<details><summary>' + (i.final ? 'Its result, and what was used instead' : 'Its result') + '</summary><div class="wf-fb-pair"' + (i.final ? '' : ' style="grid-template-columns:minmax(0,1fr)"') + '>' +
+        '<pre>' + escapeHtml(i.result || '(none)') + '</pre>' + (i.final ? '<pre>' + escapeHtml(i.final) + '</pre>' : '') + '</div></details></li>';
+  }
+
+  function loadWorkflowFeedback(name, card, base) {
+    var box = card.querySelector('.wf-fb');
+    if (!box) return;
+    var id = card.dataset.workflow;
+    fetchJsonRetryOnce(base + '/feedback').then(function (r) {
+      if (!r.ok) { box.innerHTML = '<p class="error">Could not load its feedback: ' + escapeHtml(r.body.error || 'unknown error') + '</p>'; return; }
+      var f = r.body;
+      var w = workflowsById[id] || {};
+      var toChat = (w.delivery && w.delivery.result_to_chat) || (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; });
+      var srcs = Object.keys(f.sources || {}).map(function (k) { return '<span class="wf-fb-src">' + escapeHtml(FB_SOURCES[k] || k) + ' ' + f.sources[k] + '</span>'; }).join('');
+      var stat = function (cls, n, label) { return '<div class="wf-fb-stat ' + cls + '"><b>' + n + '</b><span>' + label + '</span></div>'; };
+      box.innerHTML =
+        '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">What people said</h4><span class="hint">Last ' + f.days + ' days</span></div>' +
+          '<div class="wf-fb-stats">' + stat('', f.total + '<span class="hint" style="font-size:13px;font-weight:400"> of ' + f.runs + '</span>', 'runs got feedback') + stat('good', f.good, 'Good') + stat('bad', f.bad, 'Needs work') + stat('', f.edited, 'Changed before use') + '</div>' +
+          (srcs ? '<div class="wf-fb-sources">From ' + srcs + '</div>' : '') + '</section>' +
+        '<section class="wf-fb-improve"><h3>Improve this workflow</h3>' +
+          '<p>Reads the results people marked <b>needs work</b>, changed, or commented on, and suggests changes to the prompt and new success criteria. Nothing changes until you add them to the draft and publish it.</p>' +
+          '<div class="wf-fb-improve-bar"><button type="button" class="le-btn-dark wf-fb-go"' + (f.actionable ? '' : ' disabled') + '>Suggest improvements</button>' +
+            '<span class="hint">' + (f.actionable ? f.actionable + ' piece' + (f.actionable === 1 ? '' : 's') + ' of feedback to learn from' : 'Nothing to learn from yet: mark a result as needs work, change it, or add a note.') + '</span></div>' +
+          '<div class="wf-fb-sugg" hidden></div></section>' +
+        '<section class="wf-section"><h4 class="wf-sub">Feedback</h4>' +
+          (f.items.length ? '<ul class="wf-fb-list">' + f.items.map(function (i) { return feedbackItemHtml(i, name); }).join('') + '</ul>' : '<p class="hint" style="margin:0">None yet.</p>') + '</section>' +
+        '<section class="wf-section"><h4 class="wf-sub">Where feedback comes from</h4><div class="wf-fb-ways">' +
+          '<div class="wf-fb-way"><b>Inbox</b><span>Under each finished run' + RSQ + 's conversation: Good or Needs work, a note, and the result as it should have been.</span></div>' +
+          '<div class="wf-fb-way"><b>Messaging apps</b><span>' + (toChat ? 'Each result posted to chat ends with Good and Needs work links.' : 'Turn on ' + String.fromCharCode(8220) + 'result to chat' + String.fromCharCode(8221) + ' in Messaging, and each result posted ends with Good and Needs work links.') + '</span></div>' +
+          '<div class="wf-fb-way"><b>Other platforms</b><span>Each finished run' + RSQ + 's callback has a <code>feedback_url</code> to post to.</span>' +
+            '<span data-advanced>Or with an API key:</span><pre data-advanced>POST /agents/' + escapeHtml(name) + '/runs/&lt;runId&gt;/feedback' + String.fromCharCode(10) + '{ "verdict": "bad", "note": "...", "final": "...", "source": "api", "by": "jane@acme.com" }</pre></div>' +
+        '</div></section>';
+      var trace = function (ev) {
+        var a = ev.target.closest('.wf-fb-trace');
+        if (!a) return;
+        ev.preventDefault();
+        showWorkflowTab(card, 'activity');
+        openRunTrace(name, card, a.getAttribute('data-run'));
+      };
+      box.addEventListener('click', trace);
+      var go = box.querySelector('.wf-fb-go');
+      if (go) go.addEventListener('click', function () { suggestImprovements(name, card, base, box); });
+    });
+  }
+
+  // Self-Improve: ask for suggestions, show them (each change and why, the
+  // prompt's diff, new criteria to tick, questions only a person can
+  // answer), and add what's chosen to the draft.
+  function suggestImprovements(name, card, base, box) {
+    var go = box.querySelector('.wf-fb-go');
+    var panel = box.querySelector('.wf-fb-sugg');
+    go.disabled = true;
+    go.textContent = 'Reading the feedback' + String.fromCharCode(8230);
+    panel.hidden = false;
+    panel.innerHTML = '<p class="hint" style="margin:0">This takes a minute: the model reads each result and what people said about it.</p>';
+    fetchJsonRetryOnce(base + '/improve', { method: 'POST' }).then(function (r) {
+      go.disabled = false;
+      go.textContent = 'Suggest again';
+      if (!r.ok) { panel.innerHTML = '<p class="error">' + escapeHtml(r.body.error || 'Could not suggest improvements') + '</p>'; return; }
+      var sg = r.body;
+      var changed = sg.instructions !== sg.from.instructions;
+      if (!changed && !sg.criteria.length) {
+        panel.innerHTML = '<p style="margin:0"><span class="le-pill good">No changes needed</span> ' + escapeHtml(sg.summary || 'The feedback doesn' + RSQ + 't call for changes to the prompt.') + '</p>';
+        return;
+      }
+      panel.innerHTML =
+        (sg.summary ? '<p style="margin:0;color:var(--ink)">' + escapeHtml(sg.summary) + '</p>' : '') +
+        (sg.changes.length ? '<h4>// Suggested changes</h4><ul class="wf-fb-changes">' + sg.changes.map(function (c) { return '<li><strong>' + escapeHtml(c.what) + '</strong>' + (c.why ? '<span>' + escapeHtml(c.why) + '</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
+        (changed ? '<h4>// The prompt, changed' + (sg.from.drafted ? ' (from its draft)' : '') + '</h4>' + versionDiffHtml(sg.from.instructions, sg.instructions) +
+          '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px"><input type="checkbox" class="wf-fb-take-prompt" checked> Add these prompt changes</label>' : '') +
+        (sg.criteria.length ? '<h4>// New success criteria</h4><div class="wf-fb-crits">' + sg.criteria.map(function (c, i) { return '<label><input type="checkbox" data-crit="' + i + '" checked> <span>' + escapeHtml(c.text) + ' <span class="hint">(' + escapeHtml(critKindText(c)) + ')</span></span></label>'; }).join('') + '</div>' : '') +
+        (sg.open.length ? '<h4>// Only you can answer</h4><ul class="wf-fb-open">' + sg.open.map(function (q) { return '<li>' + escapeHtml(q) + '</li>'; }).join('') + '</ul>' : '') +
+        '<div class="wf-fb-improve-bar"><button type="button" class="le-btn-dark wf-fb-add">Add to draft</button><span class="hint wf-fb-add-status">Then review and publish it, and Evaluate to check it does better.</span></div>' +
+        '<p class="hint" style="margin:0">Suggested by ' + escapeHtml(sg.model) + ' from ' + sg.basedOn + ' piece' + (sg.basedOn === 1 ? '' : 's') + ' of feedback.</p>';
+      panel.querySelector('.wf-fb-add').addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var status = panel.querySelector('.wf-fb-add-status');
+        var takePrompt = changed && panel.querySelector('.wf-fb-take-prompt') && panel.querySelector('.wf-fb-take-prompt').checked;
+        var picked = sg.criteria.filter(function (c, i) { var b = panel.querySelector('[data-crit="' + i + '"]'); return b && b.checked; });
+        if (!takePrompt && !picked.length) { status.textContent = 'Tick at least one change to add.'; return; }
+        btn.disabled = true;
+        status.textContent = 'Adding' + String.fromCharCode(8230);
+        var id = card.dataset.workflow;
+        var w = withDraftFields(workflowsById[id]);
+        // The whole editor form, as the workflow stands in its draft, with
+        // the prompt changed: the draft keeps everything else as it is.
+        var steps = [];
+        if (takePrompt) steps.push(function () {
+          return fetchJsonRetryOnce(base + '/draft', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+            title: w.title, description: w.description, instructions: sg.instructions, parameters: w.parameters || {},
+            output: w.output || '', outputSchema: w.outputSchema ? JSON.stringify(w.outputSchema, null, 2) : '', model: w.model || null,
+          }) });
+        });
+        if (picked.length) steps.push(function () {
+          return fetchJsonRetryOnce(base + '/draft').then(function (d) {
+            var now = d.ok && d.body.draft && d.body.draft.criteria ? d.body.draft.criteria : ((w.evals && w.evals.criteria) || []);
+            var list = now.map(function (c) { return { text: c.text, kind: c.kind, value: c.value }; }).concat(picked.map(function (c) { return { text: c.text, kind: c.kind, value: c.value }; }));
+            return fetchJsonRetryOnce(base + '/draft/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) });
+          });
+        });
+        steps.reduce(function (p, step) {
+          return p.then(function (prev) { if (prev && !prev.ok) return prev; return step(); });
+        }, Promise.resolve(null)).then(function (last) {
+          if (last && !last.ok) { btn.disabled = false; status.textContent = last.body.error || 'Could not add them'; return; }
+          btn.textContent = 'Added to the draft';
+          status.innerHTML = 'Review and publish the draft (at the top) to make it live, then run Evaluate to check it does better.';
+          refreshDraft(name, card);
+        });
+      });
+    });
+  }
+
   function workflowVersionsHtml() {
     return '<div class="wf-versions"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>';
   }
@@ -3237,6 +3408,7 @@ ${renderMarkdownScript}
     loadWorkflowHealth(card, base);
     loadCandidates(name, card, base);
     loadWorkflowRuns(name, card, base);
+    loadWorkflowFeedback(name, card, base);
     if (openTraces[id] && card.querySelector('.wf-trace')) openRunTrace(name, card, openTraces[id].run);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
     // Opens the workflow's page on its Triggers tab.

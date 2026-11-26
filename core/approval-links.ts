@@ -80,3 +80,41 @@ export type DecideLinkMaker = (pendingId: string, kind: DecisionKind) => string 
 export function decideLinkMaker(baseUrl: string | undefined): DecideLinkMaker {
   return (pendingId, kind) => (baseUrl ? baseUrl.replace(/\/+$/, '') + decidePath(pendingId, kind) : undefined)
 }
+
+// ---- Feedback links ----
+// The same kind of signed link, for feedback on a finished run: who has it
+// can say whether the result was good, add a note and give the text they
+// actually used, without signing in. It names the run, its agent and
+// where the link was sent (slack, email, webhook...), recorded as the
+// feedback's source. A run doesn't go away the way a decision does, so a
+// link can be used again; each use replaces the run's feedback (every
+// one is kept in the audit log). Valid 30 days.
+
+const FEEDBACK_LINK_TTL_MS = 30 * 24 * 3_600_000
+
+export function createFeedbackToken(agent: string, runId: string, source: string, nowMs = Date.now()): string {
+  const body = Buffer.from(JSON.stringify({ f: runId, a: agent, s: source, exp: nowMs + FEEDBACK_LINK_TTL_MS })).toString('base64url')
+  return `${body}.${sign(body)}`
+}
+
+/** The run, agent and source a feedback token names, or null for a
+ * malformed, tampered or expired one. */
+export function verifyFeedbackToken(token: string, nowMs = Date.now()): { runId: string; agent: string; source: string } | null {
+  const [body, signature] = token.split('.')
+  if (!body || !signature) return null
+  const expected = Buffer.from(sign(body))
+  const actual = Buffer.from(signature)
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as { f?: unknown; a?: unknown; s?: unknown; exp?: unknown }
+    if (typeof payload.f !== 'string' || typeof payload.a !== 'string' || typeof payload.s !== 'string' || typeof payload.exp !== 'number') return null
+    if (nowMs > payload.exp) return null
+    return { runId: payload.f, agent: payload.a, source: payload.s }
+  } catch {
+    return null
+  }
+}
+
+export function feedbackPath(agent: string, runId: string, source: string): string {
+  return `/feedback/${createFeedbackToken(agent, runId, source)}`
+}

@@ -80,6 +80,19 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-act summary code { font-size: 12px; }
   .ib-act.failed summary { color: var(--bad); }
   .ib-typing { font-size: 13px; color: var(--ink-muted); font-style: italic; }
+  .ib-fb { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .ib-fb-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .ib-fb-ask[hidden], .ib-fb-form[hidden], .ib-fb-given[hidden] { display: none; }
+  .ib-fb-q { font-size: 14px; font-weight: 600; margin-right: auto; }
+  .ib-fb-pick { display: inline-flex; gap: 6px; }
+  .ib-fb-pick button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; font-weight: 600; background: var(--bg); }
+  .ib-fb-pick button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  .ib-fb-form { display: grid; gap: 8px; }
+  .ib-fb-form textarea { width: 100%; box-sizing: border-box; min-height: 64px; font-size: 13.5px; border-radius: 9px; }
+  .ib-fb-form textarea.ib-fb-final { min-height: 140px; margin-top: 6px; }
+  .ib-fb-form details summary { cursor: pointer; font-size: 13px; color: var(--ink-muted); }
+  .ib-fb-given { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; }
+  .ib-fb-given .ib-fb-change { margin-left: auto; height: 28px; padding: 0 10px; font-size: 12.5px; }
   @media (max-width: 860px) {
     .ib-split { grid-template-columns: minmax(0, 1fr); }
     .ib-split.has-thread .ib-items { display: none; }
@@ -412,8 +425,67 @@ ${renderMarkdownScript}
       if (run.status === 'done' && !(run.output === undefined && lastText && lastText === String(run.result || '').trim())) out.push(msgHtml('agent', agent, run.finished_at, run.output !== undefined
         ? '<pre class="ib-pre">' + esc(JSON.stringify(run.output, null, 2)) + '</pre>'
         : '<div class="ib-md">' + renderMarkdownPreview(run.result || 'Done.') + '</div>'));
+      if (run.status === 'done') out.push(feedbackHtml(run));
     }
     return out.join('');
+  }
+
+  // How a finished run did, in a person's words: Good or Needs work, a
+  // note, and the result as it should have been. It feeds the workflow's
+  // Feedback tab and Self-Improve. Shown as given once given, to change.
+  function feedbackHtml(run) {
+    var f = run.feedback;
+    if (!canDecide()) return f ? '<li class="ib-fb"><span class="hint">Feedback: ' + esc(f.verdict === 'good' ? 'Good' : f.verdict === 'bad' ? 'Needs work' : 'given') + (f.note ? DOT + esc(f.note) : '') + '</span></li>' : '';
+    var given = f ? '<div class="ib-fb-given"><span class="ib-state ' + (f.verdict === 'bad' ? 'bad' : 'good') + '">' + (f.verdict === 'bad' ? 'Needs work' : f.verdict === 'good' ? 'Good' : 'Feedback given') + '</span>' +
+        (f.note ? '<span>' + String.fromCharCode(8220) + esc(f.note) + String.fromCharCode(8221) + '</span>' : '') +
+        '<span class="hint">' + esc((f.by ? f.by + DOT : '') + ago(f.at)) + '</span><button type="button" class="ib-fb-change">Change</button></div>' : '';
+    return '<li class="ib-fb" data-run="' + esc(run.run_id) + '">' + given +
+      '<div class="ib-fb-ask"' + (f ? ' hidden' : '') + '><span class="ib-fb-q">How did it do?</span>' +
+        '<span class="ib-fb-pick"><button type="button" data-verdict="good"' + (f && f.verdict === 'good' ? ' aria-pressed="true"' : '') + '>' + String.fromCodePoint(128077) + ' Good</button>' +
+        '<button type="button" data-verdict="bad"' + (f && f.verdict === 'bad' ? ' aria-pressed="true"' : '') + '>' + String.fromCodePoint(128078) + ' Needs work</button></span></div>' +
+      '<form class="ib-fb-form" hidden>' +
+        '<textarea name="note" maxlength="1000" placeholder="What should change? (optional) e.g. give the tracking number, keep it shorter">' + esc(f && f.note ? f.note : '') + '</textarea>' +
+        '<details><summary>Fix the result yourself (optional)</summary><textarea name="final" class="ib-fb-final">' + esc(f && f.final != null ? f.final : (run.result || '')) + '</textarea><span class="hint">Change it to what you' + String.fromCharCode(8217) + 'd actually send. The workflow learns from the difference.</span></details>' +
+        '<div class="ib-actions"><button type="submit" class="ib-btn">Send feedback</button><button type="button" class="ib-btn plain ib-fb-cancel">Cancel</button><span class="hint ib-fb-result" role="status"></span></div>' +
+      '</form></li>';
+  }
+
+  function wireFeedback(c) {
+    var box = page.querySelector('.ib-thread .ib-fb[data-run]');
+    if (!box) return;
+    var run = c.run;
+    var verdict = run.feedback && run.feedback.verdict;
+    var ask = box.querySelector('.ib-fb-ask');
+    var form = box.querySelector('.ib-fb-form');
+    var change = box.querySelector('.ib-fb-change');
+    if (change) change.addEventListener('click', function () { box.querySelector('.ib-fb-given').hidden = true; ask.hidden = false; form.hidden = false; });
+    ask.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-verdict]');
+      if (!b) return;
+      verdict = b.getAttribute('data-verdict');
+      var all = ask.querySelectorAll('[data-verdict]');
+      for (var i = 0; i < all.length; i++) all[i].setAttribute('aria-pressed', String(all[i] === b));
+      form.hidden = false;
+      form.querySelector('textarea[name="note"]').focus();
+    });
+    form.querySelector('.ib-fb-cancel').addEventListener('click', function () { form.hidden = true; });
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var result = form.querySelector('.ib-fb-result');
+      if (!verdict) { result.textContent = 'Choose Good or Needs work first.'; return; }
+      var body = { verdict: verdict };
+      var note = form.querySelector('textarea[name="note"]').value.trim();
+      if (note) body.note = note;
+      var final = form.querySelector('textarea[name="final"]').value;
+      if (final !== (run.result || '')) body.final = final;
+      var send = form.querySelector('[type="submit"]');
+      send.disabled = true;
+      result.textContent = 'Sending' + ELLIPSIS;
+      fetch('/inbox/cases/' + encodeURIComponent(run.run_id) + '/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'Could not send it'); return b; }); })
+        .then(function () { openThread = null; loadThread(c.id); })
+        .catch(function (err) { send.disabled = false; result.textContent = err.message; });
+    });
   }
 
   function renderThread(c) {
@@ -447,6 +519,7 @@ ${renderMarkdownScript}
         .catch(function (err) { archive.disabled = false; archive.textContent = err.message; });
     });
     wireCase(c);
+    wireFeedback(c);
   }
 
   function valueHtml(v) {

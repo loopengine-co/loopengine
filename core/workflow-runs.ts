@@ -129,12 +129,23 @@ export interface RunDecision {
   reason?: string
 }
 
+/** Where feedback came from: the console's Inbox or a run's page, a
+ * signed link (from a messaging app, an email or a callback), or an app
+ * through the API. */
+export type FeedbackSource = 'inbox' | 'console' | 'slack' | 'telegram' | 'lark' | 'email' | 'webhook' | 'link' | 'api'
+export const FEEDBACK_SOURCES: FeedbackSource[] = ['inbox', 'console', 'slack', 'telegram', 'lark', 'email', 'webhook', 'link', 'api']
+
 export interface RunFeedback {
   verdict?: 'good' | 'bad'
   /** How far the text actually used is from the result. */
   edit?: 'none' | 'light' | 'heavy'
   final?: string
   note?: string
+  /** Where it came from. */
+  source?: FeedbackSource
+  /** Who gave it: the person signed in, a name given with a link, or
+   * what an app says of its user. */
+  by?: string
   at: string
 }
 
@@ -697,7 +708,8 @@ export class WorkflowRunner {
   /** Records feedback given on a run's result in the audit events (the
    * run itself carries the latest). */
   recordFeedback(run: WorkflowRun, feedback: RunFeedback, by?: string): void {
-    const { at, ...data } = feedback
+    const { at, by: _by, ...data } = feedback
+    by = by ?? feedback.by
     recordEvent({ at, agent: run.agent, workflow_id: run.workflow_id, run_id: run.run_id, kind: 'feedback', ...(by ? { by } : {}), data })
   }
 

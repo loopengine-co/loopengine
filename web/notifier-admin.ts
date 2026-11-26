@@ -314,7 +314,14 @@ function activeNotifierTargets(config: AgentConfig, defaultWebhook?: DefaultWebh
  * regardless of which events they subscribed to. A webhook gets a signed
  * `run_finish` payload with `data` merged in; the apps get `text`.
  * Returns whether any notifier took it. */
-export function announceToNotifier(config: AgentConfig, text: string, data: Record<string, unknown>, defaultWebhook?: DefaultWebhook): boolean {
+/** `feedback`, for a finished run: its signed feedback link for each
+ * channel (slack, telegram, lark, webhook), added to each app's message as
+ * Good / Needs work links and to a webhook's payload as feedback_url. */
+export function announceToNotifier(config: AgentConfig, text: string, data: Record<string, unknown>, defaultWebhook?: DefaultWebhook, feedback?: (channel: string) => string | undefined): boolean {
+  const ask = (channel: string): string => {
+    const url = feedback?.(channel)
+    return url ? `${text}\n\nHow did it do? Good: ${url}?v=good  ·  Needs work: ${url}?v=bad` : text
+  }
   let targets: HttpNotifierConfig[]
   try {
     targets = activeNotifierTargets(config, defaultWebhook)
@@ -325,19 +332,19 @@ export function announceToNotifier(config: AgentConfig, text: string, data: Reco
   for (const target of targets) {
     switch (target.channel) {
       case 'webhook':
-        postLifecycleWebhook(target.config.webhookUrl, target.config.webhookSecret, 'run_finish', { agent: config.name, text, ...data })
+        postLifecycleWebhook(target.config.webhookUrl, target.config.webhookSecret, 'run_finish', { agent: config.name, text, ...data, ...(feedback?.('webhook') ? { feedback_url: feedback('webhook') } : {}) })
         sent = true
         break
       case 'slack':
-        new SlackNotifier({ botToken: target.config.botToken, channelId: target.config.channelId }).postMessage(text)
+        new SlackNotifier({ botToken: target.config.botToken, channelId: target.config.channelId }).postMessage(ask('slack'))
         sent = true
         break
       case 'lark':
-        new LarkNotifier({ appId: target.config.appId, appSecret: target.config.appSecret, chatId: target.config.chatId }).postMessage(text)
+        new LarkNotifier({ appId: target.config.appId, appSecret: target.config.appSecret, chatId: target.config.chatId }).postMessage(ask('lark'))
         sent = true
         break
       case 'telegram':
-        new TelegramNotifier({ botToken: target.config.botToken, chatId: target.config.chatId }).postMessage(text)
+        new TelegramNotifier({ botToken: target.config.botToken, chatId: target.config.chatId }).postMessage(ask('telegram'))
         sent = true
         break
     }
