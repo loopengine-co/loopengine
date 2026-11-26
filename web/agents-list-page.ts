@@ -19,7 +19,10 @@ export const agentsListPageHtml: string = `<!doctype html>
   #agentUl li { display: contents; }
   .agent-card { display: grid; gap: 10px; align-content: start; }
   .agent-card .name { font-weight: 600; font-size: 15px; }
-  .agent-card .prompt { font-size: 13px; color: var(--ink-muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .agent-card .prompt { font-size: 12.5px; color: var(--ink-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .agent-card .does { font-size: 13px; color: var(--ink); line-height: 1.45; }
+  .agent-card .does a { color: var(--accent-ink); text-decoration: none; }
+  .agent-card .does .hint { font-size: 12.5px; }
   .agent-card .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
   .agent-card .links a { font-size: 12.5px; font-weight: 500; text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; color: var(--ink); }
   .agent-card .links a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -106,6 +109,34 @@ ${consoleShellScript}
   var newAgentResult = document.getElementById('newAgentResult');
   var cancelNewAgentBtn = document.getElementById('cancelNewAgentBtn');
 
+  var agentNames = [];
+  // An id as a name, for an agent without one: customer-service is
+  // Customer service.
+  function readableName(id) {
+    var words = String(id).split('-').join(' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
+  // What each agent does, from its workflows: on each card, the first
+  // few by name, each opening its page.
+  function fillWorkflows() {
+    return fetch('/workflows/overview', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var by = {};
+        ((d && d.workflows) || []).forEach(function (w) { (by[w.agent] = by[w.agent] || []).push(w); });
+        agentNames.forEach(function (name) {
+          var box = document.querySelector('[data-agent-does="' + CSS.escape(name) + '"]');
+          if (!box || !d) return;
+          var list = by[name] || [];
+          var link = function (w) { return '<a href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows&workflow=' + encodeURIComponent(w.id) + '">' + escapeHtml(w.title) + '</a>'; };
+          box.innerHTML = list.length
+            ? '<strong>' + list.length + (list.length === 1 ? ' workflow' : ' workflows') + ':</strong> ' + list.slice(0, 3).map(link).join(', ') + (list.length > 3 ? ' <span class="hint">and ' + (list.length - 3) + ' more</span>' : '')
+            : '<span class="hint">No workflows yet. <a href="/workflows/new?agent=' + encodeURIComponent(name) + '">Give it one</a></span>';
+        });
+      })
+      .catch(function () {});
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -120,6 +151,7 @@ ${consoleShellScript}
       .then(function (data) {
         var agents = data.agents || [];
         agentUl.textContent = '';
+        agentNames = agents.map(function (a) { return a.name; });
         if (!agents.length) {
           empty.style.display = 'block';
           return;
@@ -131,15 +163,17 @@ ${consoleShellScript}
           var qs = '?agent=' + encodeURIComponent(agent.name);
           li.innerHTML =
             '<div class="le-card agent-card">' +
-            '<div class="name">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? ' <span class="hint" style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span>' : '') + '</div>' +
+            '<div class="name">' + escapeHtml(agent.displayName || readableName(agent.name)) + ' <span class="hint" data-advanced style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span></div>' +
+            '<div class="does" data-agent-does="' + escapeHtml(agent.name) + '"></div>' +
             '<div class="prompt">' + escapeHtml(agent.systemPrompt) + '</div>' +
             '<div class="links">' +
             '<a class="primary" href="/playground' + qs + '">Chat</a>' +
-            '<a href="/agents/config' + qs + '">Configure</a>' +
+            '<a href="/agents/config' + qs + '">Open</a>' +
             '</div></div>';
           agentUl.appendChild(li);
         }
       })
+      .then(fillWorkflows)
       .catch(function (err) {
         empty.textContent = 'Could not load agents: ' + err.message;
         empty.style.display = 'block';

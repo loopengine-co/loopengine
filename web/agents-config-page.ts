@@ -1008,8 +1008,9 @@ ${renderMarkdownScript}
       var inner = '<span class="le-card-label"><span>' + label + '</span>' + (tab ? '<span aria-hidden="true">&rarr;</span>' : '') + '</span>' +
         '<span class="le-card-value">' + value + '</span>' +
         '<span class="le-card-detail">' + detailText + '</span>';
+      var adv = ['tools', 'schedules', 'env'].indexOf(tab) !== -1 ? ' data-advanced' : '';
       return tab
-        ? '<a class="le-card" data-tab="' + tab + '" href="' + leShell.tabHref(cfg.name, tab) + '">' + inner + '</a>'
+        ? '<a class="le-card" data-tab="' + tab + '" href="' + leShell.tabHref(cfg.name, tab) + '"' + adv + '>' + inner + '</a>'
         : '<div class="le-card">' + inner + '</div>';
     }
     return '<div class="le-cards" style="margin-bottom:28px">' +
@@ -1396,7 +1397,7 @@ ${renderMarkdownScript}
     var schedules = workflowScheduleItemsHtml(w, name);
     var hasHooks = Boolean(w.webhooks || w.webhooksWaiting || w.webhooksOff);
     var way = function (key, title, what, body) {
-      return '<section class="wf-way wf-way-' + key + '"><h4>' + title + '</h4><p class="wf-way-what">' + what + '</p>' + body + '</section>';
+      return '<section class="wf-way wf-way-' + key + '"' + (key === 'api' ? ' data-advanced' : '') + '><h4>' + title + '</h4><p class="wf-way-what">' + what + '</p>' + body + '</section>';
     };
     return '<div class="wf-ways">' +
       way('run', 'Run now', 'Starts a run right away, from here. Follow it in Activity.', workflowRunBarHtml(w, params)) +
@@ -2024,6 +2025,10 @@ ${renderMarkdownScript}
     return parts.length ? '<div class="wf-run-evidence">' + parts.join('') + '</div>' : '';
   }
 
+  // A workflow's tabs for Advanced view only: for whoever builds and
+  // audits it, not the operator who runs it.
+  var WORKFLOW_ADVANCED_TABS = ['evaluation', 'contract', 'versions'];
+
   function renderWorkflowsHtml(name, workflows) {
     if (workflowPageId) {
       var page = workflows.filter(function (x) { return x.id === workflowPageId; });
@@ -2062,10 +2067,10 @@ ${renderMarkdownScript}
           runEvidenceHtml(w, r) + '</li>';
       }).join('');
       var last = workflowLastRun(w);
-      var tab = workflowTabs[w.id] || 'brief';
+      var tab = workflowTabs[w.id] || 'activity';
       var open = openWorkflowId === w.id;
       var panel = function (key, html) { return '<div class="wf-panel" data-panel="' + key + '"' + (tab === key ? '' : ' hidden') + '>' + html + '</div>'; };
-      var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '" aria-selected="' + (tab === key) + '">' + label + '</button>'; };
+      var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '"' + (WORKFLOW_ADVANCED_TABS.indexOf(key) !== -1 ? ' data-advanced' : '') + ' aria-selected="' + (tab === key) + '">' + label + '</button>'; };
       if (workflowPageId) {
         var agentLabel = currentCfg && currentCfg.displayName ? currentCfg.displayName : name;
         document.title = w.title + ' ' + String.fromCharCode(183) + ' ' + agentLabel;
@@ -2087,7 +2092,7 @@ ${renderMarkdownScript}
           '</header>' +
           workflowDraftBannerHtml(w) +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Prompt') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
             panel('brief', workflowBriefHtml(w)) +
             panel('activity', workflowActivityHtml(w, runs, name)) +
             panel('evaluation', workflowEvaluationHtml(w)) +
@@ -2113,7 +2118,7 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('brief', 'Prompt') + tabBtn('activity', 'Activity') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + '</div>' +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
           panel('contract', workflowContractHtml(w, name, params)) +
           panel('versions', workflowVersionsHtml()) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
@@ -3486,8 +3491,8 @@ ${renderMarkdownScript}
     // saved records all use it).
     var nameSection =
       '<h3>Name <button type="button" class="edit-btn" id="editDisplayNameBtn">Edit</button></h3>' +
-      '<p class="ov-name"><span id="displayNameDisplay">' + escapeHtml(cfg.displayName || cfg.name) + '</span>' +
-        ' <span class="muted">&middot; id <code>' + escapeHtml(cfg.name) + '</code></span></p>' +
+      '<p class="ov-name"><span id="displayNameDisplay">' + escapeHtml(cfg.displayName || leShell.displayNameOf(cfg.name)) + '</span>' +
+        ' <span class="muted" data-advanced>&middot; id <code>' + escapeHtml(cfg.name) + '</code></span></p>' +
       editDialogHtml('<h3>Edit name</h3>', '<p>The name shown in the sidebar and at the top of its pages. Its id, <code>' + escapeHtml(cfg.name) + '</code>, stays the same: its API address and saved runs use it.</p>',
         '<form class="add-source" id="displayNameForm" style="display:none">' +
           '<label>Name<input type="text" name="displayName" maxlength="60" placeholder="' + escapeHtml(cfg.name) + '" value="' + escapeHtml(cfg.displayName || '') + '"></label>' +
@@ -3556,8 +3561,8 @@ ${renderMarkdownScript}
     return renderOverviewCards(cfg) +
       '<section>' + nameSection + '</section>' +
       '<section>' + systemPromptSection + '</section>' +
-      '<section>' + modelSection + '</section>' +
-      '<section><h3>Limits <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
+      '<section data-advanced>' + modelSection + '</section>' +
+      '<section data-advanced><h3>Limits <button type="button" class="edit-btn" id="editLimitsBtn">Edit</button></h3>' +
         '<dl class="kv kv-wide" id="limitsDisplay">' +
           '<dt>Model turns per run</dt><dd>' + escapeHtml(cfg.maxTurns) + ' <span class="hint">then the run stops</span></dd>' +
           '<dt>Conversation size</dt><dd>' + escapeHtml(Number(cfg.contextBudgetTokens).toLocaleString()) + ' tokens <span class="hint">older steps are summarised beyond this</span></dd>' +
@@ -4277,7 +4282,7 @@ ${renderMarkdownScript}
   }
 
   function renderConnectionsHtml(n) {
-    return (n.canSave === false ? '<p class="error" style="margin:0 0 12px">Saving needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server, because this stores a secret. Add <code>LOOPENGINE_ADMIN_AUTH=user:pass</code> to <code>.env</code> and restart.</p>' : '') +
+    return (n.canSave === false ? leShell.adminNote('Saving needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server, because this stores a secret. Add <code>LOOPENGINE_ADMIN_AUTH=user:pass</code> to <code>.env</code> and restart.') : '') +
       '<div class="msg-conns">' + (n.channels || ['slack', 'telegram', 'lark', 'email', 'webhook']).map(function (c) { return renderConnectionSection(n, c); }).join('') + '</div>';
   }
 
@@ -4335,7 +4340,7 @@ ${renderMarkdownScript}
         ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>' + title + ' ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<p class="hint">No approvers yet. Until you add someone, anyone can use the buttons, and deciding by reply is off.</p>') +
       (n.canSave === false
-        ? '<p class="hint">Changing approvers needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server.</p>'
+        ? leShell.adminNote('Changing approvers needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server.')
         : '<p style="margin:10px 0 0"><button type="button" class="approvers-load">' + (app === 'telegram' ? 'Add people who messaged the bot' : 'Add people from the channel') + '</button></p>' +
           (app === 'telegram' ? '<p class="hint" style="margin:6px 0 0">Telegram can&#39;t list a chat&#39;s members, so people show up here once they&#39;ve written to the bot (a private message to it is enough), or add someone by their numeric user id:</p>' +
             '<span style="display:flex;gap:6px;max-width:560px;margin-top:6px"><input class="approver-manual-id" placeholder="User id, like 123456789" style="flex:1;min-width:0"><input class="approver-manual-name" placeholder="Name" style="flex:1;min-width:0"><button type="button" class="approver-manual-add">Add</button></span>' : '') +
@@ -5812,7 +5817,7 @@ ${renderMarkdownScript}
           '</span></label>';
       }).join('') + '</div>' +
       '<div class="app-pick-bar"><button type="button" class="app-pick-save" data-ability="' + escapeHtml(ability) + '"' + (chosen && !p.busy && agentApps.canChange ? '' : ' disabled') + '>' + (p.installed ? 'Save' : 'Add with ' + chosen + ' tool' + (chosen === 1 ? '' : 's')) + '</button>' +
-        (agentApps.canChange ? '' : '<span class="error">Changing an agent' + String.fromCharCode(8217) + 's tools needs LOOPENGINE_ADMIN_AUTH set.</span>') +
+        (agentApps.canChange ? '' : leShell.adminNote('Changing an agent' + String.fromCharCode(8217) + 's tools needs <code>LOOPENGINE_ADMIN_AUTH</code> set.')) +
         (p.message ? '<span class="' + (p.messageBad ? 'error' : 'hint') + '">' + escapeHtml(p.message) + '</span>' : '') + '</div>' +
       '</div>';
   }

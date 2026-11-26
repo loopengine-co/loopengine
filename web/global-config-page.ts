@@ -191,7 +191,7 @@ ${consoleShellScript}
         (data.canSave ? '<td>' + keyCell + '</td>' : '') + '</tr>';
     }).join('');
     // Without the admin sign-in, keys can't be saved here: said once.
-    var keysNote = data.canSave ? '' : '<p class="hint" style="margin:0 0 8px">To add keys here, set <code>LOOPENGINE_ADMIN_AUTH</code> first. Or put each key in the project' + String.fromCharCode(8217) + 's <code>.env</code> under the name shown.</p>';
+    var keysNote = data.canSave ? '' : leShell.adminNote('To add keys here, set <code>LOOPENGINE_ADMIN_AUTH</code> first. Or put each key in the project' + String.fromCharCode(8217) + 's <code>.env</code> under the name shown.');
 
     var agentRows = data.agents.length
       ? data.agents.map(function (a) {
@@ -699,7 +699,7 @@ ${consoleShellScript}
     apps.apps.forEach(function (a) { if (categories.indexOf(a.category) === -1) categories.push(a.category); });
     var shown = apps.apps.filter(function (a) { return appCategory === 'All' || a.category === appCategory; });
     el.innerHTML =
-      (apps.canConnect ? '' : '<p class="error">Connecting an app saves its key on this server, so it needs LOOPENGINE_ADMIN_AUTH set first.</p>') +
+      (apps.canConnect ? '' : leShell.adminNote('Connecting an app saves its key on this server, so it needs <code>LOOPENGINE_ADMIN_AUTH</code> set first.')) +
       (signInNote ? '<p class="' + (signInNote.bad ? 'error' : 'hint') + '">' + escapeHtml(signInNote.text) + '</p>' : '') +
       '<section><h3>Connected</h3>' + (apps.connected.length
         ? '<div class="app-list">' + apps.connected.map(function (c) {
@@ -1025,23 +1025,23 @@ ${consoleShellScript}
         (si.dashboardUrl ? ' &middot; <a href="' + escapeHtml(si.dashboardUrl) + '">Dashboard</a>' : '')
       : si.mode === 'basic'
         ? 'Basic Auth (<code>LOOPENGINE_ADMIN_AUTH</code>)'
-        : '<span class="error">None: anyone who can reach this server can use it. Set <code>LOOPENGINE_ADMIN_AUTH</code>.</span>';
+        : '<span class="error">None: anyone who can reach this workspace can use it.</span><span class="hint" data-advanced> Set <code>LOOPENGINE_ADMIN_AUTH</code>.</span>';
     var rows = [
       ['Admin sign-in', signIn],
       ['LoopEngine version', '<code>' + escapeHtml(d.version) + '</code>'],
-      ['Environment name', '<code>' + escapeHtml(d.environment) + '</code> <span class="hint">(LOOPENGINE_ENV)</span>'],
-      ['Public address', d.publicUrl ? '<code>' + escapeHtml(d.publicUrl) + '</code>' : '<span class="hint">Not set (LOOPENGINE_PUBLIC_URL); links in notifications use the address saved with each notifier</span>'],
-      ['Scheduled tasks', d.scheduler === 'off' ? 'Off on this server (LOOPENGINE_SCHEDULER=off)' : 'Run by this server'],
+      ['Environment name', '<code>' + escapeHtml(d.environment) + '</code> <span class="hint">(LOOPENGINE_ENV)</span>', true],
+      ['Public address', d.publicUrl ? '<code>' + escapeHtml(d.publicUrl) + '</code>' : '<span class="hint">Not set (LOOPENGINE_PUBLIC_URL); links in notifications use the address saved with each notifier</span>', true],
+      ['Scheduled tasks', d.scheduler === 'off' ? 'Off on this server (LOOPENGINE_SCHEDULER=off)' : 'Run by this server', true],
       // With a time zone to choose, it has its own section below.
       d.timeZone ? null : ['Time zone', '<span class="hint">The server' + String.fromCharCode(8217) + 's own. Update the template below to choose one here.</span>'],
       ['Theme', 'Follows your system'],
     ];
     return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
-      rows.filter(Boolean).map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
+      rows.filter(Boolean).map(function (r) { return '<tr' + (r[2] ? ' data-advanced' : '') + '><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
       '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
-      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
+      '<section data-advanced><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
   }
 
@@ -1083,7 +1083,7 @@ ${consoleShellScript}
             '<button type="submit">Add source</button>' +
             '<div class="error" id="sourceError"></div>' +
           '</form>'
-        : '<p class="hint">Adding a source needs <code>LOOPENGINE_ADMIN_AUTH</code> set, because it stores a token. Or edit <code>ability-sources.yml</code> and <code>.env</code>.</p>');
+        : leShell.adminNote('Adding a source needs <code>LOOPENGINE_ADMIN_AUTH</code> set, because it stores a token. Or edit <code>ability-sources.yml</code> and <code>.env</code>.'));
     var form = document.getElementById('sourceForm');
     if (!form) return;
     var TOKEN_HINTS = {
@@ -1150,7 +1150,7 @@ ${consoleShellScript}
     var intro = '<p>Schedules and templates use this for times of day: &ldquo;daily at 09:00&rdquo; runs at 9:00 here, and daily and weekly schedules keep that time when the clocks change. ' +
       (t.chosen ? '' : 'Not chosen yet, so it' + String.fromCharCode(8217) + 's the server' + String.fromCharCode(8217) + 's (<code>' + escapeHtml(t.server) + '</code>).') + '</p>';
     if (!t.canSave) {
-      box.innerHTML = intro + '<p>In use: <code>' + escapeHtml(t.timeZone) + '</code></p><p class="hint">Set LOOPENGINE_ADMIN_AUTH to change it here, or put <code>LOOPENGINE_TIME_ZONE</code> in .env.</p>';
+      box.innerHTML = intro + '<p>In use: <code>' + escapeHtml(t.timeZone) + '</code></p>' + leShell.adminNote('Set <code>LOOPENGINE_ADMIN_AUTH</code> to change it here, or put <code>LOOPENGINE_TIME_ZONE</code> in .env.');
       return;
     }
     var browserZone = '';
@@ -1200,7 +1200,7 @@ ${consoleShellScript}
     if (!box) return;
     var intro = '<p style="margin:0 0 10px">Rules every workflow follows, written once: your refund window, delivery promises, tone, who signs messages. Each run reads them above its own instructions, and a workflow' + String.fromCharCode(8217) + 's own instructions win where they say more.</p>';
     if (!p.canSave) {
-      box.innerHTML = intro + (p.policies ? '<pre class="hint" style="white-space:pre-wrap;margin:0">' + escapeHtml(p.policies) + '</pre>' : '<p class="hint">None yet.</p>') + '<p class="hint">Set LOOPENGINE_ADMIN_AUTH to change them here, or edit policies.md in the project.</p>';
+      box.innerHTML = intro + (p.policies ? '<pre class="hint" style="white-space:pre-wrap;margin:0">' + escapeHtml(p.policies) + '</pre>' : '<p class="hint">None yet.</p>') + leShell.adminNote('Set <code>LOOPENGINE_ADMIN_AUTH</code> to change them here, or edit <code>policies.md</code> in the project.');
       return;
     }
     box.innerHTML = intro +
@@ -1318,7 +1318,7 @@ ${consoleShellScript}
       if (u.unavailableReason) {
         box.innerHTML = headline + '<p class="hint">' + escapeHtml(u.unavailableReason) + '</p>';
       } else if (!u.canUpgrade) {
-        box.innerHTML = headline + '<p class="hint">Set LOOPENGINE_ADMIN_AUTH to upgrade from here, or run <code>npx create-loopengine@latest upgrade</code>.</p>';
+        box.innerHTML = headline + leShell.adminNote('Set <code>LOOPENGINE_ADMIN_AUTH</code> to upgrade from here, or run <code>npx create-loopengine@latest upgrade</code>.');
       } else {
         box.innerHTML = headline +
           '<p class="hint">' + UPGRADE_NOTE + (u.restartsItself ? '' : ' This server has nothing to restart it, so restart it yourself afterwards.') + '</p>' +
