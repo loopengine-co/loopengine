@@ -257,7 +257,9 @@ ${renderMarkdownScript}
     var late = waited > 3 * 86400000;
     return '<a class="ib-item' + (i.id === state.item ? ' is-selected' : '') + (i.state === 'needs' ? ' is-needs' : '') + '" href="/inbox?item=' + encodeURIComponent(i.id) + '" data-item="' + esc(i.id) + '">' +
       '<span class="ib-item-title">' + esc(i.title) + '</span>' +
-      '<span class="ib-item-meta">' + esc(i.agentLabel || i.agent) + DOT + esc(i.workflowTitle) + '</span>' +
+      // The workflow, unless the title already says it ("Daily digest", or
+      // "Refund check: A-1043").
+      '<span class="ib-item-meta">' + esc(i.agentLabel || i.agent) + (i.workflowTitle && String(i.title || '').indexOf(i.workflowTitle) !== 0 ? DOT + esc(i.workflowTitle) : '') + '</span>' +
       stateHtml(i) +
       (i.summary ? '<p class="ib-item-summary">' + esc(i.summary) + '</p>' : '') +
       '<span class="ib-item-time' + (late ? ' late' : '') + '" title="' + esc(when(i.lastActivity)) + '">' + esc(i.state === 'needs' ? (late ? waitedFor(waited) : ago(i.waitingSince || i.lastActivity)) : ago(i.lastActivity)) + '</span>' +
