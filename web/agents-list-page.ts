@@ -7,6 +7,7 @@
 // why the look is a shared import rather than a third copy of the same CSS.
 import { devUiCss } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
 export const agentsListPageHtml: string = `<!doctype html>
 <html lang="en">
@@ -14,52 +15,74 @@ export const agentsListPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Agents</title>
-<style>${devUiCss}
-  #agentUl { list-style: none; margin: 0; padding: 0; }
-  #agentUl li { display: contents; }
-  .agent-card { display: grid; gap: 10px; align-content: start; }
-  .agent-card .name { font-weight: 600; font-size: 15px; }
-  .agent-card .prompt { font-size: 12.5px; color: var(--ink-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .agent-card .does { font-size: 13px; color: var(--ink); line-height: 1.45; }
-  .agent-card .does a { color: var(--accent-ink); text-decoration: none; }
-  .agent-card .does .hint { font-size: 12.5px; }
-  .agent-card .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
-  .agent-card .links a { font-size: 12.5px; font-weight: 500; text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; color: var(--ink); }
-  .agent-card .links a.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
-  #empty { color: var(--ink-muted); }
-  .hint { font-size: 12px; color: var(--ink-muted); }
+<style>${devUiCss}${MASCOT_CSS}
+  .ag { max-width: 1120px; display: grid; gap: 0; }
+  .ag-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 32px 28px; border: 1px solid var(--line); border-bottom: 0; }
+  .ag-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }
+  .ag-cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ag-cols1 { grid-template-columns: minmax(0, 1fr); }
+  .ag-cols1[hidden] { display: none; }
+  .ag-card { display: grid; gap: 14px; align-content: start; padding: 20px 22px; background: var(--bg); }
+  .ag-filler { background: var(--bg); }
+  .ag-card-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+  .ag-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
+  .ag-icon svg { width: 16px; height: 16px; }
+  .ag-icon.live { color: var(--good); }
+  .ag-card-text { display: grid; gap: 3px; min-width: 0; }
+  .ag-card-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; color: var(--ink); text-decoration: none; }
+  a.ag-card-title:hover { text-decoration: underline; }
+  .ag-id { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint); font-weight: 400; margin-left: 6px; }
+  .ag-card-desc { font-size: 13px; line-height: 1.5; color: var(--ink-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .ag-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .ag-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .ag-chip.strong { background: var(--surface); border-color: transparent; color: var(--ink); font-weight: 500; }
+  .ag-chip.good { background: var(--good-soft); border-color: transparent; color: var(--good); font-weight: 600; }
+  .ag-chip.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); font-weight: 600; }
+  a.ag-chip:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .ag-actions { display: flex; gap: 8px; align-items: center; }
+  .ag-actions a { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--ink); background: var(--bg); }
+  .ag-actions a:hover { background: var(--surface); }
+  .ag-actions a.dark { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  .ag-actions a.dark:hover { opacity: .88; }
+  .ag-tile { display: grid; gap: 6px; align-content: start; padding: 22px; background: var(--bg); text-decoration: none; color: inherit; transition: background .15s; }
+  .ag-tile:hover { background: var(--surface); }
+  .ag-tile b { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .ag-tile span { font-size: 13px; color: var(--ink-muted); line-height: 1.45; }
+  .ag-empty { padding: 40px 32px; text-align: center; color: var(--ink-muted); font-size: 14px; background: var(--bg); grid-column: 1 / -1; margin: 0; }
+  .ag-topbar-link { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); font-size: 13.5px; font-weight: 500; color: var(--ink); text-decoration: none; }
+  .ag-topbar-link:hover { background: var(--surface); }
+  .hint { font-size: 12.5px; color: var(--ink-muted); }
   .error { font-size: 13px; color: var(--bad); }
-  #newAgentForm {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 16px;
-    display: grid;
-    gap: 12px;
-    max-width: 560px;
-  }
-  #newAgentForm h2 { font-size: 15px; margin: 0; }
-  #newAgentForm label { display: grid; gap: 4px; font-size: 13px; }
+  #newAgentForm { padding: 22px 24px; background: var(--bg); display: grid; gap: 12px; }
+  #newAgentForm h2 { font-size: 18px; font-weight: 500; margin: 0; }
+  #newAgentForm label { display: grid; gap: 5px; font-size: 13px; font-weight: 500; max-width: 620px; }
   #newAgentForm .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  #newAgentForm details summary { cursor: pointer; color: var(--ink-muted); font-size: 13px; }
-  #newAgentForm details[open] { display: grid; gap: 10px; }
   #newAgentForm textarea { min-height: 72px; }
+  #newAgentError, #newAgentResult { margin: 12px 2px 0; }
+  @media (max-width: 860px) {
+    .ag-hero { padding: 24px 18px 20px; }
+    .ag-hero .le-mascot { display: none; }
+    .ag-cols2 { grid-template-columns: minmax(0, 1fr); }
+    .le-search, .ag-topbar-link { display: none; }
+  }
 </style>
 </head>
 <body data-le-page="agents">
 <div class="le-app">
 ${consoleSidebarHtml}
 <main class="le-main">
-  <div class="le-head plain">
-    <div class="le-head-row">
-      <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Agents</h1><p>Each agent has its own instructions, tools and permissions. Open one to chat with it, give it workflows, or change how it works.</p></div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/interview" style="padding:6px 12px;border:1px solid var(--line);border-radius:6px;text-decoration:none;color:var(--ink);font-size:13px">Find your first agent</a>
-      <button type="button" id="newAgentBtn" class="primary">New agent</button></div>
-    </div>
-  </div>
-  <div class="le-scroll"><div class="le-page">
-    <form id="newAgentForm" style="display:none">
+  <header class="le-topbar">
+    <button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+    <h1 class="le-topbar-title">Agents</h1>
+    <span class="le-topbar-gap"></span>
+    <label class="le-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="agSearch" placeholder="Search agents" aria-label="Search agents"></label>
+    <a class="ag-topbar-link" href="/interview">Find your first agent</a>
+    <button type="button" id="newAgentBtn" class="le-btn-dark">+ New agent</button>
+  </header>
+  <div class="le-scroll"><div class="le-page"><div class="ag">
+    <div class="ag-hero"><div><h2 class="le-display">Your agents</h2><p class="le-display-sub" id="agSub">Each has its own instructions, tools and permissions. Open one to chat with it, give it workflows, or change how it works.</p></div>${mascotSvg(92)}</div>
+    <div class="le-grid ag-cols1" id="newAgentWrap" hidden>
+    <form id="newAgentForm">
       <p class="hint" style="margin:0">Not sure what to build? <a href="/interview">Find your first agent</a>: a short interview that suggests one and creates it. Then give it workflows, described in your own words or from an example.</p>
       <h2>New agent</h2>
       <label>Name <span class="hint">(what you'll see in the sidebar; you can change it later)</span>
@@ -87,49 +110,32 @@ ${consoleSidebarHtml}
         <input type="text" name="modelName" value="gpt-6-luna" placeholder="model name">
       </label>
       <div class="row">
-        <button type="submit">Create agent</button>
+        <button type="submit" class="le-btn-dark">Create agent</button>
         <button type="button" id="cancelNewAgentBtn">Cancel</button>
       </div>
     </form>
+    </div>
+    <div class="le-grid ag-cols2" id="agentUl"><p class="ag-empty">Loading&hellip;</p></div>
     <p class="error" id="newAgentError" style="display:none"></p>
     <p class="hint" id="newAgentResult" style="display:none"></p>
-    <ul id="agentUl" class="le-cards"></ul>
-    <p id="empty" style="display:none">No agents yet. Create one above, or add a folder under agents/.</p>
-  </div></div>
+  </div></div></div>
 </main>
 </div>
 ${consoleShellScript}
 <script>
 (function () {
   var agentUl = document.getElementById('agentUl');
-  var empty = document.getElementById('empty');
   var newAgentBtn = document.getElementById('newAgentBtn');
+  var newAgentWrap = document.getElementById('newAgentWrap');
   var newAgentForm = document.getElementById('newAgentForm');
   var newAgentError = document.getElementById('newAgentError');
   var newAgentResult = document.getElementById('newAgentResult');
   var cancelNewAgentBtn = document.getElementById('cancelNewAgentBtn');
+  var search = document.getElementById('agSearch');
+  var ICON_AGENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/></svg>';
 
-  var agentNames = [];
-  // What each agent does, from its workflows: on each card, the first
-  // few by name, each opening its page.
-  function fillWorkflows() {
-    return fetch('/workflows/overview', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        var by = {};
-        ((d && d.workflows) || []).forEach(function (w) { (by[w.agent] = by[w.agent] || []).push(w); });
-        agentNames.forEach(function (name) {
-          var box = document.querySelector('[data-agent-does="' + CSS.escape(name) + '"]');
-          if (!box || !d) return;
-          var list = by[name] || [];
-          var link = function (w) { return '<a href="/agents/config?agent=' + encodeURIComponent(name) + '&tab=workflows&workflow=' + encodeURIComponent(w.id) + '">' + escapeHtml(w.title) + '</a>'; };
-          box.innerHTML = list.length
-            ? '<strong>' + list.length + (list.length === 1 ? ' workflow' : ' workflows') + ':</strong> ' + list.slice(0, 3).map(link).join(', ') + (list.length > 3 ? ' <span class="hint">and ' + (list.length - 3) + ' more</span>' : '')
-            : '<span class="hint">No workflows yet. <a href="/workflows/new?agent=' + encodeURIComponent(name) + '">Give it one</a></span>';
-        });
-      })
-      .catch(function () {});
-  }
+  var agents = [];
+  var workflowsBy = null;
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -137,40 +143,66 @@ ${consoleShellScript}
     });
   }
 
-  // (Re)loads the list from GET /agents — factored out so a successful
-  // create can refresh it directly instead of duplicating this fetch.
+  // Each agent as a card: its name, its instructions in a line or two,
+  // what it does (its workflows, from /workflows/overview), Chat and Open.
+  function cardHtml(agent) {
+    var qs = '?agent=' + encodeURIComponent(agent.name);
+    var list = workflowsBy ? workflowsBy[agent.name] || [] : null;
+    var live = list ? list.filter(function (w) { return w.live; }).length : 0;
+    var chips = list === null ? '<span class="ag-chip">' + String.fromCharCode(8230) + '</span>'
+      : list.length
+        ? '<span class="ag-chip strong">' + list.length + (list.length === 1 ? ' workflow' : ' workflows') + '</span>' + (live ? '<span class="ag-chip good">' + live + ' running</span>' : '') +
+          list.slice(0, 3).map(function (w) { return '<a class="ag-chip" href="/agents/config' + qs + '&tab=workflows&workflow=' + encodeURIComponent(w.id) + '" title="' + escapeHtml(w.title) + '">' + escapeHtml(w.title) + '</a>'; }).join('') +
+          (list.length > 3 ? '<span class="hint">+' + (list.length - 3) + ' more</span>' : '')
+        : '<a class="ag-chip" href="/workflows/new' + qs + '">No workflows yet: give it one</a>';
+    return '<div class="ag-card">' +
+      '<div class="ag-card-head"><span class="ag-icon' + (live ? ' live' : '') + '">' + ICON_AGENT + '</span>' +
+        '<span class="ag-card-text"><a class="ag-card-title" href="/agents/config' + qs + '">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? '<span class="ag-id">' + escapeHtml(agent.name) + '</span>' : '') + '</a>' +
+          (agent.systemPrompt ? '<span class="ag-card-desc">' + escapeHtml(agent.systemPrompt) + '</span>' : '') + '</span>' +
+        '<span class="ag-actions"><a class="dark" href="/playground' + qs + '">Chat</a><a href="/agents/config' + qs + '">Open</a></span></div>' +
+      '<div class="ag-chips">' + chips + (agent.toSet ? '<a class="ag-chip warn" href="/agents/config' + qs + '&tab=env">' + agent.toSet + (agent.toSet === 1 ? ' setting' : ' settings') + ' to set</a>' : '') + '</div>' +
+    '</div>';
+  }
+
+  function render() {
+    var q = (search.value || '').trim().toLowerCase();
+    var shown = agents.filter(function (a) { return !q || [a.name, a.displayName || '', a.systemPrompt || ''].join(' ').toLowerCase().indexOf(q) !== -1; });
+    var total = workflowsBy ? Object.keys(workflowsBy).reduce(function (n, k) { return n + workflowsBy[k].length; }, 0) : 0;
+    if (agents.length) document.getElementById('agSub').textContent = agents.length + (agents.length === 1 ? ' agent' : ' agents') + (total ? ', ' + total + (total === 1 ? ' workflow' : ' workflows') : '') + '. Open one to chat with it, give it workflows, or change how it works.';
+    var tiles = q ? [] : ['<a class="ag-tile" href="/agents?new=1" data-new-tile><b>+ New agent</b><span>Its own instructions, tools and permissions, for one area of your work.</span></a>',
+      '<a class="ag-tile" href="/interview"><b>Find an agent to build</b><span>A short interview suggests one that fits your work, and creates it.</span></a>'];
+    var cells = shown.map(cardHtml).concat(tiles);
+    agentUl.innerHTML = !agents.length && !q ? tiles.join('')
+      : shown.length || tiles.length ? cells.join('') + (cells.length % 2 ? '<div class="ag-filler" aria-hidden="true"></div>' : '')
+      : '<p class="ag-empty">No agent matches.</p>';
+    var tile = agentUl.querySelector('[data-new-tile]');
+    if (tile) tile.addEventListener('click', function (ev) { ev.preventDefault(); newAgentBtn.click(); });
+  }
+  search.addEventListener('input', render);
+
+  // What each agent does, from its workflows.
+  function fillWorkflows() {
+    return fetch('/workflows/overview', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        workflowsBy = {};
+        ((d && d.workflows) || []).forEach(function (w) { (workflowsBy[w.agent] = workflowsBy[w.agent] || []).push(w); });
+        render();
+      })
+      .catch(function () {});
+  }
+
+  // (Re)loads the list from GET /agents.
   function loadAgents() {
     fetch('/agents')
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        var agents = data.agents || [];
-        agentUl.textContent = '';
-        agentNames = agents.map(function (a) { return a.name; });
-        if (!agents.length) {
-          empty.style.display = 'block';
-          return;
-        }
-        empty.style.display = 'none';
-        for (var i = 0; i < agents.length; i++) {
-          var agent = agents[i];
-          var li = document.createElement('li');
-          var qs = '?agent=' + encodeURIComponent(agent.name);
-          li.innerHTML =
-            '<div class="le-card agent-card">' +
-            '<div class="name">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? ' <span class="hint" style="font-family:var(--font-mono);font-weight:400">' + escapeHtml(agent.name) + '</span>' : '') + '</div>' +
-            '<div class="does" data-agent-does="' + escapeHtml(agent.name) + '"></div>' +
-            '<div class="prompt">' + escapeHtml(agent.systemPrompt) + '</div>' +
-            '<div class="links">' +
-            '<a class="primary" href="/playground' + qs + '">Chat</a>' +
-            '<a href="/agents/config' + qs + '">Open</a>' +
-            '</div></div>';
-          agentUl.appendChild(li);
-        }
+        agents = data.agents || [];
+        render();
       })
       .then(fillWorkflows)
       .catch(function (err) {
-        empty.textContent = 'Could not load agents: ' + err.message;
-        empty.style.display = 'block';
+        agentUl.innerHTML = '<p class="ag-empty">Could not load agents: ' + escapeHtml(err.message) + '</p>';
       });
   }
 
@@ -208,7 +240,7 @@ ${consoleShellScript}
 
   newAgentBtn.addEventListener('click', function () {
     newAgentBtn.style.display = 'none';
-    newAgentForm.style.display = 'grid';
+    newAgentWrap.hidden = false;
     newAgentResult.style.display = 'none';
     newAgentForm.querySelector('input[name="displayName"]').focus();
     // Checks which providers have keys, then loads the chosen provider's
@@ -235,7 +267,7 @@ ${consoleShellScript}
   newAgentForm.addEventListener('reset', function () { idTyped = false; });
 
   cancelNewAgentBtn.addEventListener('click', function () {
-    newAgentForm.style.display = 'none';
+    newAgentWrap.hidden = true;
     newAgentBtn.style.display = '';
     newAgentError.style.display = 'none';
   });
@@ -270,7 +302,7 @@ ${consoleShellScript}
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (result) {
         if (!result.ok) throw new Error(result.body.error || 'request failed');
-        newAgentForm.style.display = 'none';
+        newAgentWrap.hidden = true;
         newAgentBtn.style.display = '';
         newAgentForm.reset();
         newAgentResult.style.display = 'block';
