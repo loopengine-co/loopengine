@@ -107,6 +107,8 @@ const goalsPageTemplate: string = `<!doctype html>
   .gl-flow + .gl-flow { border-top: 1px solid var(--line); }
   .gl-flow-n { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--ink-muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; align-self: start; margin-top: 1px; }
   .gl-flow.built .gl-flow-n { background: var(--good-soft); color: var(--good); }
+  .gl-flow.single .gl-flow-n svg { width: 13px; height: 13px; }
+  .gl-flow-k { font-size: 11.5px; color: var(--ink-faint); }
   .gl-flow-main { display: grid; gap: 4px; min-width: 0; justify-items: start; }
   .gl-flow-title { font-size: 14px; font-weight: 600; color: var(--ink); text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   a.gl-flow-title:hover { text-decoration: underline; }
@@ -441,11 +443,12 @@ ${consoleShellScript}
   function btn(act, label, cls, step) {
     return '<button type="button" class="gl-btn ' + (cls || '') + '" data-act="' + act + '"' + (step ? ' data-step="' + esc(step) + '"' : '') + '>' + label + '</button>';
   }
-  function cardHead(w, icon, iconCls, side) {
+  // kind: what the card is, above its title; empty for none.
+  function cardHead(w, icon, iconCls, side, kindText) {
     var group = w.group && w.group.steps && w.group.steps.length ? w.group : null;
-    var kind = group ? 'Group of ' + group.steps.length + ' workflows that run in order' : 'Workflow';
+    var kind = kindText != null ? kindText : group ? 'Group of ' + group.steps.length + ' workflows that run in order' : 'Workflow';
     return '<div class="gl-card-head"><span class="gl-icon' + (iconCls ? ' ' + iconCls : '') + '">' + icon + '</span>' +
-      '<span class="gl-card-text"><span class="gl-card-kind">' + kind + '</span><span class="gl-card-title gl-wf-title">' + esc(w.title) + '</span>' +
+      '<span class="gl-card-text">' + (kind ? '<span class="gl-card-kind">' + kind + '</span>' : '') + '<span class="gl-card-title gl-wf-title">' + esc(w.title) + '</span>' +
         (w.why ? '<span class="gl-card-desc">' + esc(w.why) + '</span>' : '') + '</span>' +
       '<span class="gl-card-side">' + side + '</span></div>';
   }
@@ -492,8 +495,11 @@ ${consoleShellScript}
     return '<div class="gl-flows">' + flows.map(function (d, i) {
       var st = stepFor(d);
       var then = st ? '<div class="gl-flow-then">then ' + ARROW + ' ' + whenText(st.when) + '<button type="button" class="gl-link" data-chain-remove="' + esc(st.id) + '">Remove this step</button></div>' : '';
-      return then + '<div class="gl-flow built" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '"><span class="gl-flow-n">' + (i + 1) + '</span>' +
-        '<div class="gl-flow-main"><a class="gl-flow-title" data-how-title href="' + wfHref(d.agent, d.workflowId) + '">' + esc(d.title || d.workflowId) + '</a>' +
+      // One workflow: what the suggestion runs as, with the workflow icon;
+      // several: numbered steps in the order they run.
+      var single = flows.length === 1;
+      return then + '<div class="gl-flow built' + (single ? ' single' : '') + '" data-how="' + esc(d.agent) + '|' + esc(d.workflowId) + '"><span class="gl-flow-n">' + (single ? ICON_FLOW : i + 1) + '</span>' +
+        '<div class="gl-flow-main">' + (single ? '<span class="gl-flow-k">Runs as</span>' : '') + '<a class="gl-flow-title" data-how-title href="' + wfHref(d.agent, d.workflowId) + '">' + esc(d.title || d.workflowId) + '</a>' +
         '<span class="gl-flow-meta">' + esc(agentLabel(d.agent)) + DOT + '<span data-how-meta>' + ELLIPSIS + '</span></span></div>' +
         '<div class="gl-flow-actions">' + (flows.length > 1 ? '<button type="button" class="gl-link gl-unlink" data-unlink="' + esc(d.agent) + '|' + esc(d.workflowId) + '">Remove</button>' : '') +
           '<a class="gl-btn plain small gl-link-btn" href="' + wfHref(d.agent, d.workflowId) + '">Open</a></div></div>';
@@ -504,7 +510,7 @@ ${consoleShellScript}
   function manageHtml(w) {
     var flows = (w.doers || []).filter(function (d) { return d.type === 'workflow'; });
     var opt = function (d, sel) { return '<option value="' + esc(d.agent) + '|' + esc(d.workflowId) + '"' + (sel ? ' selected' : '') + '>' + esc(d.title || d.workflowId) + '</option>'; };
-    return '<div class="gl-card-foot"><button type="button" class="gl-link" data-act="addwf">+ Add a workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-link" data-act="addstep">+ Run one after another</button>' : '') + '</div>' +
+    return '<div class="gl-card-foot"><button type="button" class="gl-link" data-act="addwf">+ Add another workflow</button>' + (flows.length > 1 ? '<button type="button" class="gl-link" data-act="addstep">+ Run one after another</button>' : '') + '</div>' +
     '<div class="gl-panel" data-panel="addwf" hidden><label class="hint" for="addwf-' + esc(w.id) + '">A workflow already on one of your agents</label>' +
       '<div class="gl-row"><select class="gl-select" id="addwf-' + esc(w.id) + '" data-pick-workflow><option value="">Loading' + ELLIPSIS + '</option></select><button type="button" class="gl-btn soft small" data-act="link">Add it</button></div>' +
       '<div class="gl-row"><span class="hint">or</span><button type="button" class="gl-link" data-act="another">build a new one for it</button></div></div>' +
@@ -524,7 +530,9 @@ ${consoleShellScript}
     var builtSteps = steps.filter(function (st) { return st.built; }).length;
     var pill = group && builtSteps < steps.length ? '<span class="gl-chip accent">' + builtSteps + ' of ' + steps.length + ' built</span>' : '<span class="gl-chip" data-card-pill hidden></span>';
     return '<div class="gl-cell" data-wf="' + esc(w.id) + '">' +
-      cardHead(w, group ? ICON_GROUP : ICON_FLOW, 'good', '<span class="gl-chip warn" data-attn hidden>Needs you</span>' + pill) +
+      // A part of the goal, with the goal's icon; the workflows doing it,
+      // inside, have the workflow icon.
+      cardHead(w, group ? ICON_GROUP : ICON_GOAL, 'good', '<span class="gl-chip warn" data-attn hidden>Needs you</span>' + pill, group ? null : '') +
       '<div class="gl-chips">' + factChips(w, false) + '</div>' +
       (group ? stepsHtml(w, steps) : flowsHtml(w) + manageHtml(w)) +
       '<span class="hint gl-job-status-line" data-wf-status></span>' +
@@ -623,7 +631,9 @@ ${consoleShellScript}
           var bits = [startsText(w), sc.runs ? sc.runs + ' run' + (sc.runs === 1 ? '' : 's') + (sc.failed ? ', ' + sc.failed + ' failed' : '') : 'No runs yet'];
           var round = w.evals && w.evals.rounds && w.evals.rounds[0];
           if (round && round.passRates) bits.push('evals: ' + round.allPassed + ' of ' + round.cases.length + ' passed');
-          meta.innerHTML = (st === 'paused' ? '<span class="gl-paused">Paused</span> ' : '') + esc(bits.join(DOT)) + (waiting ? ' <span class="gl-waiting">' + waiting + ' waiting for you</span>' : '');
+          // Paused on the row only among several: with one, the card says it.
+          var several = card && card.querySelectorAll('[data-how]').length > 1;
+          meta.innerHTML = (st === 'paused' && several ? '<span class="gl-paused">Paused</span> ' : '') + esc(bits.join(DOT)) + (waiting ? ' <span class="gl-waiting">' + waiting + ' waiting for you</span>' : '');
           if (waiting) {
             waitingTotal += waiting;
             var attn = card && card.querySelector('[data-attn]');
