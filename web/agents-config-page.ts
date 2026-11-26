@@ -314,9 +314,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-run-card:hover { background: var(--surface); }
   .wf-run-card.is-failed { box-shadow: inset 3px 0 0 var(--bad); }
   .wf-run-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-  .wf-run-card-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-  .wf-run-card-actions .wf-run-trace { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
-  .wf-run-card-actions .wf-run-trace:hover { background: var(--surface); color: var(--ink); }
+  .wf-run-card-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .wf-run-card-actions .wf-run-trace, .wf-run-card-actions a.wf-link { display: inline-flex; align-items: center; text-decoration: none; box-sizing: border-box; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .wf-run-card-actions .wf-run-trace:hover, .wf-run-card-actions a.wf-link:hover { background: var(--surface); color: var(--ink); }
   .wf-run-version { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
   .wf-run-card-inputs { color: var(--ink-muted); overflow-wrap: anywhere; }
   .wf-run-card-out { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
