@@ -400,3 +400,20 @@ export async function setWorkspaceTimeZone(value: unknown, options: { moveSchedu
   const moved = options.moveSchedules && timeZone !== before ? await moveScheduledTasksToTimeZone(before, timeZone) : 0
   return { timeZone, moved }
 }
+
+/** Settings → Publishing: whether a workflow's changes must go through
+ * Review and publish. Off (the default), the editor, the success
+ * criteria and Self-Improve also offer Save and publish in one click; on,
+ * every change to what a run does is saved as a draft and published only
+ * after its review. Saved like the time zone (the project's .env). */
+export const REQUIRE_REVIEW_ENV = 'LOOPENGINE_REQUIRE_REVIEW'
+
+export function requireReview(): boolean {
+  return /^(1|true|yes|on)$/i.test(process.env[REQUIRE_REVIEW_ENV]?.trim() ?? '')
+}
+
+export async function setRequireReview(on: boolean): Promise<boolean> {
+  if (on) await setEnvVar(REQUIRE_REVIEW_ENV, '1')
+  else await unsetEnvVar(REQUIRE_REVIEW_ENV)
+  return requireReview()
+}

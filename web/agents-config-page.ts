@@ -1460,7 +1460,7 @@ ${renderMarkdownScript}
               '<button type="button" class="wf-msg-clear-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">Use these instead</button></p>';
           }).join('') + '</div>'
         : '') +
-      '<div class="wf-msg-foot"><span class="hint wf-msg-result" role="status"></span><button type="submit" class="primary">Save to draft</button></div>' +
+      '<div class="wf-msg-foot"><span class="hint wf-msg-result" role="status">Saved straight away: every run from now on follows it.</span><button type="submit" class="primary">Save</button></div>' +
       '</form>';
   }
 
@@ -2005,7 +2005,7 @@ ${renderMarkdownScript}
       '<div class="wf-crit-form" hidden>' +
         '<div class="wf-crit-rows">' + (evals.criteria && evals.criteria.length ? evals.criteria : []).map(critRowHtml).join('') + '</div>' +
         '<div class="wf-crit-bar"><button type="button" class="plain wf-crit-add">+ Add a criterion</button><button type="button" class="plain wf-crit-draft">Suggest from its instructions</button>' +
-          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save to draft</button></div>' +
+          '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save as draft</button><button type="button" class="primary wf-crit-save wf-crit-publish" data-publish-offer hidden>Save and publish</button></div>' +
         '<span class="hint wf-crit-status"></span>' +
       '</div>';
     var latest = {};
@@ -2412,7 +2412,10 @@ ${renderMarkdownScript}
         '</select><input name="modelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + escapeHtml((w.model && w.model.model) || '') + '"></div></div>' +
       '<p class="hint workflow-editor-check" style="margin:0"></p>' +
       '<div class="hint workflow-editor-result"></div>' +
-      '<div class="ed-actions"><span class="hint">Runs keep using the published workflow until you publish.</span><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary">Save draft</button></div></form>';
+      // Save and publish shows once the workspace's Publishing setting is
+      // known not to require review (openWorkflowEditor).
+      '<label class="wp-note-field" hidden>Note <span class="hint">(optional: what changed and why, kept with the version when you publish)</span><input name="publishNote" maxlength="500" placeholder="e.g. Ask for the order number before looking it up"></label>' +
+      '<div class="ed-actions"><span class="hint wp-save-hint">Runs keep using the published workflow until you publish.</span><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary wp-save-draft">Save as draft</button><button type="submit" class="primary wp-save-publish" hidden>Save and publish</button></div></form>';
   }
 
   // Placeholders the instructions use that no parameter declares, and
@@ -2539,6 +2542,31 @@ ${renderMarkdownScript}
     });
   }
 
+  // Whether this workspace requires review before publishing (Settings,
+  // Publishing): then changes are only saved as drafts, published from
+  // Review and publish; otherwise Save and publish does both in one step.
+  function reviewRequired() {
+    return Promise.resolve(window.leShell && leShell.settings ? leShell.settings() : null).then(function (st) { return Boolean(st && st.requireReview); });
+  }
+  // Shows the one-step publish buttons in root unless review is required.
+  function offerPublish(root) {
+    reviewRequired().then(function (required) {
+      if (required) return;
+      var list = root.querySelectorAll('[data-publish-offer]');
+      for (var i = 0; i < list.length; i++) list[i].hidden = false;
+    });
+  }
+  // Publishes the draft just saved. A draft the same as the published
+  // workflow isn't kept (or is discarded here): there was nothing to publish.
+  function publishSavedDraft(wfBase, note) {
+    return fetchJsonRetryOnce(wfBase + '/publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ note: note || '' }) }).then(function (p) {
+      if (!p.ok && p.body.code === 'no_draft') return { ok: true, body: {} };
+      if (!p.ok && p.body.code === 'unchanged') return fetchJsonRetryOnce(wfBase + '/draft', { method: 'DELETE' }).then(function () { return { ok: true, body: {} }; });
+      if (!p.ok) p.body.error = (p.body.error || 'Could not publish') + ' Your changes are saved as a draft.';
+      return p;
+    });
+  }
+
   function openWorkflowEditor(name, card) {
     var published = workflowsById[card.dataset.workflow];
     if (!published) return;
@@ -2595,8 +2623,29 @@ ${renderMarkdownScript}
     // A preview shown goes stale as the instructions change: hide it.
     form.addEventListener('input', function () { previewBox.hidden = true; });
     form.querySelector('.wp-cancel').addEventListener('click', close);
+    // Save and publish, in one step, unless the workspace requires review
+    // before publishing (Settings, Publishing): then a change is saved as a
+    // draft and published from Review and publish.
+    var draftBtn = form.querySelector('.wp-save-draft');
+    var publishBtn = form.querySelector('.wp-save-publish');
+    var publishing = false;
+    draftBtn.addEventListener('click', function () { publishing = false; });
+    publishBtn.addEventListener('click', function () { publishing = true; });
+    reviewRequired().then(function (required) {
+      if (required) {
+        form.querySelector('.wp-save-hint').textContent = 'This workspace requires review: runs keep using the published workflow until the draft is reviewed and published.';
+        return;
+      }
+      publishBtn.hidden = false;
+      draftBtn.classList.remove('primary');
+      form.querySelector('.wp-note-field').hidden = false;
+      form.querySelector('.wp-save-hint').textContent = published.draft
+        ? 'Publishing includes everything in the draft.'
+        : 'Save as draft to publish later; until then runs keep the published version.';
+    });
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
+      if (ev.submitter) publishing = ev.submitter === publishBtn;
       var parameters = {};
       var problem = '';
       var list = rows.querySelectorAll('.workflow-param-row');
@@ -2611,14 +2660,22 @@ ${renderMarkdownScript}
         try { JSON.parse(form.outputSchema.value); } catch (e) { problem = 'The output schema isn' + String.fromCharCode(8217) + 't valid JSON: ' + e.message; }
       }
       if (problem) { result.textContent = problem; return; }
-      result.textContent = 'Saving the draft' + String.fromCharCode(8230);
-      fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/draft', {
-        method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, outputSchema: form.outputSchema.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null }),
-      }).then(function (r) {
-        if (!r.ok) { result.textContent = r.body.error || 'Could not save'; return; }
+      var wfBase = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id);
+      draftBtn.disabled = publishBtn.disabled = true;
+      var done = function (message) {
+        draftBtn.disabled = publishBtn.disabled = false;
+        if (message) { result.textContent = message; return; }
         close();
         loadWorkflowsSection(name);
+      };
+      result.textContent = (publishing ? 'Publishing' : 'Saving the draft') + String.fromCharCode(8230);
+      fetchJsonRetryOnce(wfBase + '/draft', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: form.title.value, description: form.description.value, instructions: form.instructions.value, parameters: parameters, output: form.output.value, outputSchema: form.outputSchema.value, model: form.modelProvider.value && form.modelName.value.trim() ? { provider: form.modelProvider.value, model: form.modelName.value.trim() } : null, note: form.publishNote.value }),
+      }).then(function (r) {
+        if (!r.ok) return done(r.body.error || 'Could not save');
+        if (!publishing) return done();
+        return publishSavedDraft(wfBase, form.publishNote.value).then(function (p) { done(p.ok ? '' : p.body.error); });
       });
     });
     check();
@@ -2867,6 +2924,7 @@ ${renderMarkdownScript}
     var addBox = card.querySelector('.workflow-hooks-add');
     if (!w || !box) return;
     var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/triggers';
+    // A webhook made or changed in a draft before webhooks went live at once.
     var draftBase = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/draft/webhooks';
     var hooksById = {};
     function render(shownUrl, shownId) {
@@ -2910,10 +2968,10 @@ ${renderMarkdownScript}
       for (var i = 0; i < rows.length; i++) {
         (function (row) {
           var id = row.dataset.trigger;
-          // Editing and deleting go in the draft; on/off, the signing secret
-          // and a new URL act now.
+          // A webhook is how the workflow starts, not what it does, so every
+          // change to it is live at once (and in Audit), with no draft.
           row.querySelector('.hook-edit').addEventListener('click', function () {
-            if (hooksById[id]) openHookFormDialog(w, draftBase, function () { render(null, null); refreshDraft(name, card); }, hooksById[id]);
+            if (hooksById[id]) openHookFormDialog(w, base, function () { render(null, null); }, hooksById[id]);
           });
           var undo = row.querySelector('.hook-undo');
           if (undo) undo.addEventListener('click', function () {
@@ -2946,10 +3004,9 @@ ${renderMarkdownScript}
           row.querySelector('.hook-delete').addEventListener('click', function (ev) {
             var btn = ev.currentTarget;
             if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to delete'; return; }
-            fetchJsonRetryOnce(draftBase + '/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
+            fetchJsonRetryOnce(base + '/' + encodeURIComponent(id), { method: 'DELETE' }).then(function (r) {
               if (!r.ok) { alert(r.body.error || 'That didn' + String.fromCharCode(8217) + 't work'); return; }
-              render(null, null);
-              refreshDraft(name, card);
+              loadWorkflowsSection(name);
             });
           });
         })(rows[i]);
@@ -3057,16 +3114,19 @@ ${renderMarkdownScript}
           '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px"><input type="checkbox" class="wf-fb-take-prompt" checked> Add these prompt changes</label>' : '') +
         (sg.criteria.length ? '<h4>// New success criteria</h4><div class="wf-fb-crits">' + sg.criteria.map(function (c, i) { return '<label><input type="checkbox" data-crit="' + i + '" checked> <span>' + escapeHtml(c.text) + ' <span class="hint">(' + escapeHtml(critKindText(c)) + ')</span></span></label>'; }).join('') + '</div>' : '') +
         (sg.open.length ? '<h4>// Only you can answer</h4><ul class="wf-fb-open">' + sg.open.map(function (q) { return '<li>' + escapeHtml(q) + '</li>'; }).join('') + '</ul>' : '') +
-        '<div class="wf-fb-improve-bar"><button type="button" class="le-btn-dark wf-fb-add">Add to draft</button><span class="hint wf-fb-add-status">Then review and publish it, and Evaluate to check it does better.</span></div>' +
+        '<div class="wf-fb-improve-bar"><button type="button" class="wf-fb-add">Add to draft</button><button type="button" class="le-btn-dark wf-fb-add wf-fb-add-publish" data-publish-offer hidden>Add and publish</button><span class="hint wf-fb-add-status">Then Evaluate to check it does better.</span></div>' +
         '<p class="hint" style="margin:0">Suggested by ' + escapeHtml(sg.model) + ' from ' + sg.basedOn + ' piece' + (sg.basedOn === 1 ? '' : 's') + ' of feedback.</p>';
-      panel.querySelector('.wf-fb-add').addEventListener('click', function (ev) {
+      offerPublish(panel);
+      var addButtons = panel.querySelectorAll('.wf-fb-add');
+      for (var ab = 0; ab < addButtons.length; ab++) addButtons[ab].addEventListener('click', function (ev) {
         var btn = ev.currentTarget;
+        var andPublish = btn.classList.contains('wf-fb-add-publish');
         var status = panel.querySelector('.wf-fb-add-status');
         var takePrompt = changed && panel.querySelector('.wf-fb-take-prompt') && panel.querySelector('.wf-fb-take-prompt').checked;
         var picked = sg.criteria.filter(function (c, i) { var b = panel.querySelector('[data-crit="' + i + '"]'); return b && b.checked; });
         if (!takePrompt && !picked.length) { status.textContent = 'Tick at least one change to add.'; return; }
-        btn.disabled = true;
-        status.textContent = 'Adding' + String.fromCharCode(8230);
+        for (var d = 0; d < addButtons.length; d++) addButtons[d].disabled = true;
+        status.textContent = (andPublish ? 'Publishing' : 'Adding') + String.fromCharCode(8230);
         var id = card.dataset.workflow;
         var w = withDraftFields(workflowsById[id]);
         // The whole editor form, as the workflow stands in its draft, with
@@ -3088,7 +3148,16 @@ ${renderMarkdownScript}
         steps.reduce(function (p, step) {
           return p.then(function (prev) { if (prev && !prev.ok) return prev; return step(); });
         }, Promise.resolve(null)).then(function (last) {
-          if (last && !last.ok) { btn.disabled = false; status.textContent = last.body.error || 'Could not add them'; return; }
+          return last && last.ok && andPublish ? publishSavedDraft(base, ('Self-Improve: ' + (sg.summary || 'changes from feedback')).slice(0, 480)) : last;
+        }).then(function (last) {
+          if (last && !last.ok) { for (var e = 0; e < addButtons.length; e++) addButtons[e].disabled = false; status.textContent = last.body.error || 'Could not add them'; return; }
+          for (var h = 0; h < addButtons.length; h++) addButtons[h].hidden = addButtons[h] !== btn;
+          if (andPublish) {
+            btn.textContent = 'Published';
+            status.innerHTML = 'Every run from now on uses it. Run Evaluate to check it does better.';
+            loadWorkflowsSection(name);
+            return;
+          }
           btn.textContent = 'Added to the draft';
           status.innerHTML = 'Review and publish the draft (at the top) to make it live, then run Evaluate to check it does better.';
           refreshDraft(name, card);
@@ -3460,7 +3529,7 @@ ${renderMarkdownScript}
         if (msgForm.msgNoticeOn && msgForm.msgNoticeOn.checked && msgForm.msgNotice.value.trim()) body.chat_notice = msgForm.msgNotice.value.trim();
         if (msgForm.msgResult && msgForm.msgResult.checked) body.result_to_chat = true;
         msgResult.textContent = 'Saving' + String.fromCharCode(8230);
-        fetchJsonRetryOnce(base + '/draft/messages', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+        fetchJsonRetryOnce(base + '/messages', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
           if (!r.ok) { msgResult.textContent = r.body.error || 'Could not save'; return; }
           reloadOnMessages();
         });
@@ -3469,7 +3538,7 @@ ${renderMarkdownScript}
       for (var cb = 0; cb < clearButtons.length; cb++) {
         clearButtons[cb].addEventListener('click', function (ev) {
           var tid = ev.currentTarget.dataset.trigger;
-          fetchJsonRetryOnce(base + '/draft/webhooks/' + encodeURIComponent(tid), {
+          fetchJsonRetryOnce(base + '/triggers/' + encodeURIComponent(tid), {
             method: 'PUT', headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ callback_url: null, decisions: null, chat_notice: null, result_to_chat: false }),
           }).then(function (r) {
@@ -3498,6 +3567,7 @@ ${renderMarkdownScript}
       if (cbtn.classList.contains('wf-crit-edit')) {
         critForm.hidden = false;
         cbtn.hidden = true;
+        offerPublish(critForm);
         if (!rows.children.length) rows.insertAdjacentHTML('beforeend', critRowHtml({ kind: 'judge' }));
         return;
       }
@@ -3518,8 +3588,12 @@ ${renderMarkdownScript}
       var list = Array.prototype.map.call(rows.querySelectorAll('.wf-crit-row'), function (row) {
         return { id: row.dataset.critId || undefined, kind: row.querySelector('[data-crit-kind]').value, text: row.querySelector('[data-crit-text]').value, value: row.querySelector('[data-crit-value]').value };
       }).filter(function (c) { return c.text.trim() || c.value.trim(); });
-      // Saved to the draft: published with the rest of it.
+      // Saved to the draft: published with the rest of it, now with Save
+      // and publish, or later from Review and publish.
+      var andPublish = cbtn.classList.contains('wf-crit-publish');
       fetchJsonRetryOnce(base + '/draft/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) }).then(function (r) {
+        return r.ok && andPublish ? publishSavedDraft(base, 'Changed the success criteria') : r;
+      }).then(function (r) {
         cbtn.disabled = false;
         if (!r.ok) { critStatus.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't save.'; return; }
         workflowTabs[id] = 'evaluation';
@@ -3562,10 +3636,9 @@ ${renderMarkdownScript}
     card.querySelector('.workflow-hooks-btn').addEventListener('click', function () {
       var w = workflowsById[id];
       if (!w) return;
-      // Made in the draft: its URL now, live once the draft is published.
-      openHookFormDialog(w, base + '/draft/webhooks', function (url, triggerId) {
+      // Live at once: its URL now, to set up in the sending app.
+      openHookFormDialog(w, base + '/triggers', function (url, triggerId) {
         loadWorkflowHooks(name, card, { url: url, id: triggerId });
-        refreshDraft(name, card);
       });
     });
     var wf = workflowsById[id];
@@ -3575,8 +3648,7 @@ ${renderMarkdownScript}
       pendingScheduleWorkflow = id;
       switchTab('schedules');
     });
-    // Removing a schedule, or undoing that, is part of the draft; pausing
-    // and resuming act now.
+    // Undoing a removal drafted before schedules went live at once.
     var draftScheduleBtns = card.querySelectorAll('.workflow-schedule-draft');
     for (var dsb = 0; dsb < draftScheduleBtns.length; dsb++) {
       draftScheduleBtns[dsb].addEventListener('click', function (ev) {
@@ -3593,9 +3665,8 @@ ${renderMarkdownScript}
         var action = btn.dataset.action;
         if (action === 'cancel' && btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
         btn.disabled = true;
-        var request = action === 'cancel'
-          ? fetchJsonRetryOnce(base + '/draft/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
-          : fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' });
+        // Schedules are live at once (and in Audit): removing one cancels it.
+        var request = fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' });
         request.then(function () {
           loadWorkflowsSection(name);
           // The Schedules tab's count, and the Overview's tile.
@@ -5045,11 +5116,7 @@ ${renderMarkdownScript}
           return;
         }
         btn.disabled = true;
-        // A workflow's schedule is removed in the workflow's draft.
-        var wfId = btn.dataset.workflow;
-        var request = wfId && (action === 'cancel' || action === 'delete')
-          ? fetchJsonRetryOnce('/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(wfId) + '/draft/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
-          : action === 'delete'
+        var request = action === 'delete'
           ? fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' })
           : fetchJsonRetryOnce('/schedules/' + encodeURIComponent(btn.dataset.id) + '/' + action, { method: 'POST' });
         request.then(function () { setTimeout(function () { loadSchedulesTab(name); }, action === 'run' ? 800 : 0); });
@@ -5126,11 +5193,9 @@ ${renderMarkdownScript}
         if (data.get('everyStart')) schedule.start_at = scheduleFormTime(data.get('everyStart'));
       }
       result.textContent = 'Scheduling' + String.fromCharCode(8230);
-      // A workflow's schedule goes in the workflow's draft: it starts when
-      // the draft is published. A message schedule starts now.
-      var target = runsWorkflow
-        ? '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(data.get('workflow_id')) + '/draft/schedules'
-        : '/agents/' + encodeURIComponent(name) + '/schedules';
+      // Live at once, a workflow's schedule too (it's how the workflow
+      // starts, not what it does), and in Audit.
+      var target = '/agents/' + encodeURIComponent(name) + '/schedules';
       fetchJsonRetryOnce(target, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(Object.assign(
@@ -5139,10 +5204,6 @@ ${renderMarkdownScript}
         )),
       }).then(function (r) {
         if (!r.ok) { result.textContent = r.body.error || 'Could not schedule'; return; }
-        if (runsWorkflow) {
-          result.innerHTML = 'Added to the workflow' + String.fromCharCode(8217) + 's draft: it starts when the draft is published. <a href="' + workflowPageHref(name, data.get('workflow_id')) + '">Review and publish</a>';
-          return;
-        }
         loadSchedulesTab(name);
       });
     });

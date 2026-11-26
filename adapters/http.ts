@@ -192,7 +192,7 @@ import {
   ActauthRuleExistsError,
   ActauthRuleNotFoundError,
 } from '#web/actauth-admin.js'
-import { callCost, describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError } from '#web/global-config.js'
+import { callCost, describeModelProviders, describeGateways, setModelProviderKey, clearModelProviderKey, listProviderModels, ModelKeyError, describeTimeZone, setWorkspaceTimeZone, TimeZoneError, requireReview, setRequireReview } from '#web/global-config.js'
 import { workspaceTimeZone } from '#core/time-zone.js'
 import { scaffoldAgent, AgentNameError, AgentExistsError, AgentModelError, type AgentTemplateOptions } from '#bin/cli.js'
 import { createTrackedApprover, listApprovals, decideApproval, findApproval } from '#web/web-approver.js'
@@ -2045,9 +2045,9 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
       const workflow = readWorkflow(dir, id)
       if (!workflow) return json(404, { error: `No workflow ${id}.` })
       const draft = readDraft(projectDir(), agentName, id)
-      if (!draft) return json(400, { error: 'There is no draft to publish: change the workflow and save a draft first.' })
+      if (!draft) return json(400, { error: 'There is no draft to publish: change the workflow and save a draft first.', code: 'no_draft' })
       const { changes } = await draftStates(agentName, workflow, draft)
-      if (!changes.length) return json(400, { error: 'The draft is the same as the published workflow: there is nothing to publish.' })
+      if (!changes.length) return json(400, { error: 'The draft is the same as the published workflow: there is nothing to publish.', code: 'unchanged' })
       const body = await readJsonBody(req)
       const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
       const previous = await noteWorkflowVersion(agentName, id)
@@ -2804,8 +2804,16 @@ async function handleWorkflowDraft(req: IncomingMessage, res: ServerResponse, ag
     if (!part && req.method === 'PUT') {
       // The editor: the name and description are saved straight away; the
       // rest is drafted, unless it's what's published.
-      const { title, description, ...rest } = workflowEdit(dir, workflowId, await readJsonBody(req))
-      if ((title && title !== workflow.title) || (description && description !== workflow.description)) setWorkflowName(dir, workflowId, { ...(title ? { title } : {}), ...(description ? { description } : {}) })
+      // That's a version of its own, with who made it and why (the note
+      // Save and publish sends, if any).
+      const body = await readJsonBody(req)
+      const { title, description, ...rest } = workflowEdit(dir, workflowId, body)
+      const renamed = Boolean(title && title !== workflow.title)
+      if (renamed || (description && description !== workflow.description)) {
+        setWorkflowName(dir, workflowId, { ...(title ? { title } : {}), ...(description ? { description } : {}) })
+        const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
+        await noteWorkflowVersion(agentName, workflowId, { by: about.by, reason: note || (renamed ? 'Renamed' : 'Changed its description') })
+      }
       const same = !draftChanges({ workflow, criteria: [], delivery: undefined, triggers: [] }, { workflow: withDraft(workflow, rest), criteria: [], delivery: undefined, triggers: [] }).length
       change(({ fields: _f, ...d }) => (same ? d : { ...d, fields: rest }))
       return view()
@@ -6203,6 +6211,8 @@ const server = createServer(async (req, res) => {
           publicUrl: process.env.LOOPENGINE_PUBLIC_URL ?? null,
           scheduler: process.env.LOOPENGINE_SCHEDULER === 'off' ? 'off' : 'on',
           timeZone: workspaceTimeZone(),
+          requireReview: requireReview(),
+          canChangeSettings: secretsProtected,
         }),
       )
       return
@@ -6383,6 +6393,14 @@ const server = createServer(async (req, res) => {
       notePolicies({ by: changedBy(req), reason: 'Edited in Settings' })
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ policies: readWorkspacePolicies(process.cwd()), canSave: secretsProtected }))
       return
+    }
+    // Settings → Publishing (web/global-config.ts): whether a workflow's
+    // changes must go through Review and publish. Saved like the time zone.
+    if (req.method === 'PUT' && pathname === '/config/publishing') {
+      const reply = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+      if (!secretsProtected) return void reply(403, { error: 'Refusing to change settings without LOOPENGINE_ADMIN_AUTH configured: set it first, or put LOOPENGINE_REQUIRE_REVIEW=1 in .env.' })
+      const body = await readJsonBody(req)
+      return void reply(200, { requireReview: await setRequireReview(body.requireReview === true) })
     }
     // Settings → Time zone (web/global-config.ts): what "9:00" means in
     // schedules. Saved like a model key, so refused without auth too.

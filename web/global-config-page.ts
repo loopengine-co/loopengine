@@ -1040,6 +1040,7 @@ ${consoleShellScript}
       rows.filter(Boolean).map(function (r) { return '<tr' + (r[2] ? ' data-advanced' : '') + '><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
+      '<section><h3>Publishing</h3><div class="source" id="publishingBox"></div></section>' +
       '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section data-advanced><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
@@ -1190,6 +1191,46 @@ ${consoleShellScript}
             (r.body.moved ? ' Moved ' + r.body.moved + ' schedule' + (r.body.moved === 1 ? '' : 's') + '.' : '');
         })
         .catch(function (err) { btn.disabled = false; msg.innerHTML = '<span class="error">' + escapeHtml(err.message) + '</span>'; });
+    });
+  }
+
+  // ---- Publishing: whether a change to what a workflow's runs do (its
+  // prompt, inputs, model, result format, success criteria) can be
+  // published in one click from the editor, or must be saved as a draft
+  // and published after its review. Schedules, webhooks and where messages
+  // go change straight away either way. ----
+  function renderPublishing(d) {
+    var box = document.getElementById('publishingBox');
+    if (!box) return;
+    var on = d.requireReview === true;
+    var intro = '<p>Changes to what a workflow does (its prompt, inputs, model, result format and success criteria) become a new version when they' + String.fromCharCode(8217) + 're published. Schedules, webhooks and where messages go change straight away, and are recorded in Audit.</p>';
+    if (!d.canChangeSettings) {
+      box.innerHTML = intro + '<p>' + (on ? 'Review is required before publishing.' : 'Changes can be saved and published in one step.') + '</p>' +
+        leShell.adminNote('Set <code>LOOPENGINE_ADMIN_AUTH</code> to change it here, or put <code>LOOPENGINE_REQUIRE_REVIEW=1</code> in .env.');
+      return;
+    }
+    box.innerHTML = intro +
+      '<label style="display:flex;gap:8px;align-items:flex-start;max-width:560px"><input type="checkbox" id="requireReview"' + (on ? ' checked' : '') + ' style="margin-top:3px">' +
+        '<span><strong>Require review before publishing</strong><br><span class="hint">Every change is saved as a draft first, then published from Review and publish. Off, the editor also offers Save and publish.</span></span></label>' +
+      '<div id="publishingMsg" class="hint" style="margin-top:8px"></div>';
+    var box2 = document.getElementById('requireReview');
+    box2.addEventListener('change', function () {
+      var msg = document.getElementById('publishingMsg');
+      box2.disabled = true;
+      msg.textContent = 'Saving' + String.fromCharCode(8230);
+      fetch('/config/publishing', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requireReview: box2.checked }),
+      })
+        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+        .then(function (r) {
+          box2.disabled = false;
+          if (!r.ok) { box2.checked = !box2.checked; msg.innerHTML = '<span class="error">' + escapeHtml(r.body.error || 'Could not save') + '</span>'; return; }
+          box2.checked = r.body.requireReview === true;
+          msg.textContent = r.body.requireReview ? 'Saved: changes now wait for review.' : 'Saved: changes can be published in one step.';
+        })
+        .catch(function (err) { box2.disabled = false; box2.checked = !box2.checked; msg.innerHTML = '<span class="error">' + escapeHtml(err.message) + '</span>'; });
     });
   }
 
@@ -1417,6 +1458,7 @@ ${consoleShellScript}
       .then(function (d) {
         content.innerHTML = renderSettings(d);
         loadedSections.settings = true;
+        renderPublishing(d);
         loadTimeZone();
         loadPolicies();
         loadAbilitySources();

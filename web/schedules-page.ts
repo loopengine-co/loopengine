@@ -13,9 +13,9 @@
 // + Add schedule opens Create schedule: which workflow, its name, how
 // often (an interval, daily at a time, weekly on a day, or once), whether
 // each result goes to the messaging app, and the workflow's inputs for
-// every run. A schedule is part of its workflow, so it's added to that
-// workflow's draft (POST .../draft/schedules); when that's all the draft
-// holds, it can be published right there.
+// every run. It starts at once (POST /agents/:name/schedules): a schedule
+// is how a workflow starts, not what it does, so it has no draft, and the
+// change is in Audit.
 //
 // Its data is each agent's /agents/:name/schedules. Like the other
 // console pages, its inline script avoids backslashes and template
@@ -175,7 +175,7 @@ ${consoleSidebarHtml}
       </div>
       <div class="sc-dlg-col">
         <div class="sc-field"><span class="sc-field-k">Inputs for every run</span><div class="sc-inputs" id="scInputs"></div></div>
-        <div class="sc-field"><span class="sc-field-k">Before it starts</span><p class="hint">A schedule is part of its workflow, so it goes into the workflow's draft. Publish the draft and it starts running; until then nothing runs.</p></div>
+        <div class="sc-field"><span class="sc-field-k">When it starts</span><p class="hint">Right away: the first run is at the next time you chose. Switch it off on its card to pause it.</p></div>
       </div>
     </div>
     <div class="sc-dlg-foot" id="scFoot"></div>
@@ -531,25 +531,13 @@ ${consoleShellScript}
     var save = document.getElementById('scSave');
     save.disabled = true;
     foot.textContent = 'Saving' + String.fromCharCode(8230);
-    var base = '/agents/' + encodeURIComponent(w.agent) + '/workflows/' + encodeURIComponent(w.id);
-    api('POST', base + '/draft/schedules', body).then(function (r) {
+    // Live at once: a schedule is how a workflow starts, not what it does,
+    // so it needs no draft (and is in Audit).
+    body.workflow_id = w.id;
+    api('POST', '/agents/' + encodeURIComponent(w.agent) + '/schedules', body).then(function (r) {
       if (!r.ok) { save.disabled = false; foot.innerHTML = '<span class="error">' + esc(r.body.error || 'Could not add it') + '</span>'; return; }
-      var only = (r.body.changes || []).length === 1;
-      // On its own in the draft, it can go live now; with other changes,
-      // they're reviewed together on the workflow's page.
-      foot.innerHTML = only
-        ? '<span>Added to ' + esc(w.title) + String.fromCharCode(8217) + 's draft. Publish it to start the schedule.</span><span style="flex:1"></span><button type="button" class="le-btn-dark" id="scPublish">Publish now</button>'
-        : '<span>Added to ' + esc(w.title) + String.fromCharCode(8217) + 's draft, with its other changes.</span><span style="flex:1"></span><a class="le-btn-dark" href="' + wfHref(w.agent, w.id, 'triggers') + '">Review and publish</a>';
-      var pub = document.getElementById('scPublish');
-      if (pub) pub.addEventListener('click', function () {
-        pub.disabled = true;
-        pub.textContent = 'Publishing' + String.fromCharCode(8230);
-        api('POST', base + '/publish', { note: 'Added a schedule' + (name ? ': ' + name : '') }).then(function (p) {
-          if (!p.ok) { pub.disabled = false; pub.textContent = 'Publish now'; foot.insertAdjacentHTML('beforeend', '<span class="error">' + esc(p.body.error || 'Could not publish') + '</span>'); return; }
-          dlg.close();
-          load();
-        });
-      });
+      dlg.close();
+      load();
     });
   });
 
