@@ -398,6 +398,7 @@ export { compressResponses, serveConsoleAsset } from './web/response-compression
 export { workflowsOverviewPageHtml } from './web/workflows-overview-page.js'
 export { homeOverview, workflowsOverview, startsOf, type HomeOverview, type WorkflowsOverview, type WorkflowOverviewRow } from './web/workflows-overview.js'
 export { homePageHtml } from './web/home-page.js'
+export { schedulesPageHtml } from './web/schedules-page.js'
 export { listInbox, getInboxCase, timelineOf, RECENT_DAYS, INBOX_VIEWS, type InboxView, type InboxDeps, type InboxItem, type InboxCase, type InboxPending, type InboxStep, type InboxState, type InboxArchived } from './web/inbox-admin.js'
 export { readArchived, setArchived } from './web/inbox-archive.js'
 export { startTurnTrace, type TurnTrace } from './core/trace.js'
