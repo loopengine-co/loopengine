@@ -36,8 +36,10 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-select { height: 36px; padding: 0 10px; border-radius: 10px; border: 0; background: var(--surface); font-size: 13px; color: var(--ink); max-width: 220px; }
   .ib-tabs button[data-view="needs"] .ib-count.on { background: var(--warn-soft); color: var(--warn); }
   /* The list and the open conversation side by side, in one hairline grid. */
-  .ib-split { grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); align-items: stretch; }
-  .ib-items { display: grid; align-content: start; max-height: calc(100vh - 150px); overflow: auto; background: var(--bg); }
+  /* It fills the window, like an email app: the list and the
+     conversation each scroll on their own, however short either is. */
+  .ib-split { grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; height: calc(100vh - 140px); min-height: 420px; }
+  .ib-items { display: grid; align-content: start; min-height: 0; overflow: auto; background: var(--bg); }
   .ib-item { position: relative; display: grid; gap: 6px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; transition: background .15s; }
   .ib-item:hover { background: var(--surface); }
   .ib-item.is-selected { background: var(--surface); }
@@ -49,7 +51,8 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-item-summary { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   .ib-item-time { font-size: 12px; color: var(--ink-faint); }
   .ib-item-time.late { color: var(--warn); font-weight: 700; }
-  .ib-thread { background: var(--bg); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: calc(100vh - 150px); }
+  .ib-thread { background: var(--bg); min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .ib-thread-empty { align-self: center; }
   .ib-thread-empty { padding: 48px 24px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
   .ib-thread-head { display: grid; gap: 8px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
   .ib-thread-head h2 { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; overflow-wrap: anywhere; }
@@ -58,6 +61,8 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-thread-tools { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
   .ib-thread-tools a, .ib-thread-tools button { height: 30px; padding: 0 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; cursor: pointer; }
   .ib-thread-tools .ib-thread-back { display: none; }
+  /* The back button's place, empty on a wide screen: no gap before the title. */
+  .ib-thread-top > .ib-thread-tools:first-child { display: none; }
   .ib-msgs { list-style: none; margin: 0; padding: 18px 22px 22px; display: grid; gap: 12px; overflow: auto; align-content: start; }
   .ib-msg { display: grid; gap: 4px; max-width: 86%; min-width: 0; }
   .ib-msg.person { justify-self: end; justify-items: end; }
@@ -79,7 +84,7 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-act summary code { font-size: 12px; }
   .ib-act.failed summary { color: var(--bad); }
   .ib-typing { font-size: 13px; color: var(--ink-muted); font-style: italic; }
-  .ib-fb { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .ib-fb { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 0; background: var(--bg); }
   .ib-fb-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .ib-fb-ask[hidden], .ib-fb-form[hidden], .ib-fb-given[hidden] { display: none; }
   .ib-fb-q { font-size: 14px; font-weight: 600; margin-right: auto; }
@@ -97,7 +102,9 @@ export const inboxPageHtml: string = `<!doctype html>
     .ib-split.has-thread .ib-items { display: none; }
     .ib-split:not(.has-thread) .ib-thread { display: none; }
     .ib-thread-tools .ib-thread-back { display: inline-flex; }
-    .ib-items, .ib-thread { max-height: none; }
+    .ib-thread-top > .ib-thread-tools:first-child { display: flex; }
+    .ib-split { height: auto; min-height: 0; }
+    .ib-items, .ib-thread { max-height: none; overflow: visible; }
     .ib-split { grid-template-columns: minmax(0, 1fr); }
     .le-search { min-width: 0; flex: 1; }
   }
@@ -105,7 +112,7 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-link { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
   .ib-link:hover { text-decoration: underline; }
   .ib-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
-  .ib-card { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 14px 16px; display: grid; gap: 10px; }
+  .ib-card { border: 1px solid var(--line); border-radius: 0; background: var(--bg); padding: 14px 16px; display: grid; gap: 10px; }
   .ib-card h3 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
   .ib-card.needs { border-color: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
   .ib-kv { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 6px 14px; font-size: 13.5px; }
