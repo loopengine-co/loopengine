@@ -25,27 +25,27 @@ export const auditPageHtml: string = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Audit</title>
 <style>${devUiCss}
-  .au { max-width: 1080px; display: grid; gap: 14px; }
-  .au-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .au-bar select, .au-bar input { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); max-width: 180px; }
-  .au-bar input[type="search"] { flex: 1; min-width: 160px; max-width: none; }
-  .au-bar [hidden] { display: none; }
-  .au-actions { display: inline-flex; gap: 8px; margin-left: auto; }
-  .au-verify { font-size: 13px; }
-  .au-check { padding: 10px 14px; border-radius: 10px; font-size: 13px; background: var(--good-soft); color: var(--good); }
+  .au { max-width: 1180px; display: grid; gap: 14px; }
+  .au-topbar { flex-wrap: wrap; row-gap: 8px; }
+  .au-tool { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 13.5px; font-weight: 500; color: var(--ink); }
+  .au-tool:hover:not(:disabled) { background: var(--surface); }
+  .au-grid { grid-template-columns: minmax(0, 1fr); }
+  .au-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 14px 20px; background: var(--bg); }
+  .au-bar select { height: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--surface); font-size: 13px; color: var(--ink); max-width: 200px; }
+  .au-check { padding: 12px 16px; border-radius: 10px; font-size: 13px; background: var(--good-soft); color: var(--good); }
   .au-check.bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
   .au-check .hint { display: block; margin-top: 2px; font-weight: 400; }
-  .au-summary { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; background: var(--bg); }
+  .au-summary { border: 1px solid var(--line); padding: 18px 20px; display: grid; gap: 10px; background: var(--bg); }
   .au-summary[hidden], .au-check[hidden] { display: none; }
-  .au-summary h2 { margin: 0; font-size: 15px; }
+  .au-summary h2 { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; }
   .au-summary ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; }
   .au-summary-tools { display: flex; gap: 8px; flex-wrap: wrap; }
-  .au-summary-tools a { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
+  .au-summary-tools a { display: inline-flex; align-items: center; height: 32px; font-size: 13px; font-weight: 600; color: var(--ink); text-decoration: none; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; }
   .au-summary-tools a.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
-  .au-export { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
-  .au-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
-  .au-row, .au-head { display: grid; grid-template-columns: 136px minmax(0, 170px) minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
-  .au-head { border-top: 0; padding-top: 8px; padding-bottom: 8px; background: var(--surface); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .au-list { background: var(--bg); }
+  .au-row, .au-head { display: grid; grid-template-columns: 136px minmax(0, 170px) minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 14px 20px; border-top: 1px solid var(--line); font-size: 13.5px; }
+  .au-row:hover { background: var(--surface); }
+  .au-head { padding-top: 10px; padding-bottom: 10px; background: var(--surface); font-size: 12px; font-weight: 500; color: var(--ink-faint); }
   .au-who { overflow-wrap: anywhere; }
   .au-who.system { color: var(--ink-muted); font-style: italic; }
   .au-res { display: grid; gap: 1px; min-width: 0; }
@@ -73,10 +73,11 @@ export const auditPageHtml: string = `<!doctype html>
   .chg-ins { background: var(--good-soft); color: var(--good); padding: 1px 6px; }
   .chg-note { color: var(--ink-muted); font-family: inherit; font-weight: 400; }
   .chg details summary { cursor: pointer; color: var(--accent-ink); font-family: var(--font-sans, inherit); font-size: 12px; margin-top: 2px; }
-  .au-empty { padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
-  .au-more { justify-self: center; }
+  .au-empty { margin: 0; padding: 40px 20px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
+  .au-more { justify-self: center; height: 34px; padding: 0 14px; border-radius: 9px; }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
   @media (max-width: 720px) {
+    .le-search { display: none; }
     .au-head { display: none; }
     .au-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   }
@@ -86,31 +87,34 @@ export const auditPageHtml: string = `<!doctype html>
 <div class="le-app">
 ${consoleSidebarHtml}
 <main class="le-main">
-  <div class="le-head plain">
-    <div class="le-head-row">
-      <div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-        <div><h1>Audit</h1><p>Who did what, when, and to which resource, across the workspace: workflows created, edited, published and deleted, and every other setting changed. Runs are on each workflow's Activity tab.</p></div>
-      </div>
-    </div>
-  </div>
+  <header class="le-topbar au-topbar">
+    <button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
+    <h1 class="le-topbar-title">Audit</h1>
+    <span class="le-seg" role="tablist" aria-label="Show" id="auKinds">
+      <button type="button" role="tab" data-kind="change" aria-selected="true">Changes</button><button type="button" role="tab" data-kind="decision" aria-selected="false">Approvals</button><button type="button" role="tab" data-kind="answer" aria-selected="false">Answers</button><button type="button" role="tab" data-kind="feedback" aria-selected="false">Feedback</button><button type="button" role="tab" data-kind="all" aria-selected="false">Everything</button>
+    </span>
+    <span class="le-topbar-gap"></span>
+    <label class="le-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="auQ" placeholder="Search the log" aria-label="Search"></label>
+    <button type="button" class="au-tool" id="auVerify">Verify log</button>
+    <a class="le-btn-dark" id="auExport" href="/audit/events.csv" download>Export CSV</a>
+  </header>
   <div class="le-scroll"><div class="le-page"><div class="au">
-    <div class="au-bar">
-      <select id="auAgent" aria-label="Agent"><option value="">All agents</option></select>
-      <select id="auWorkflow" aria-label="Workflow"><option value="">All workflows</option></select>
-      <select id="auBy" aria-label="Person"><option value="">Anyone</option></select>
-      <select id="auKind" aria-label="Kind">
-        <option value="change">Changes to workflows and settings</option><option value="decision">Approvals in runs</option><option value="answer">Answers in runs</option><option value="feedback">Feedback on runs</option><option value="all">Everything</option>
-      </select>
-      <select id="auPeriod" aria-label="Period">
-        <option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="">All time</option>
-      </select>
-      <input type="search" id="auQ" placeholder="Search" aria-label="Search">
-      <span class="au-actions"><button type="button" class="au-verify" id="auVerify">Verify log</button>
-      <a class="au-export" id="auExport" href="/audit/events.csv" download>Export CSV</a></span>
-    </div>
+    <select id="auKind" aria-label="Kind" hidden>
+      <option value="change">Changes to workflows and settings</option><option value="decision">Approvals in runs</option><option value="answer">Answers in runs</option><option value="feedback">Feedback on runs</option><option value="all">Everything</option>
+    </select>
     <div class="au-check" id="auCheck" role="status" hidden></div>
     <section class="au-summary" id="auSummary" hidden></section>
-    <div id="auList"><p class="hint">Loading&hellip;</p></div>
+    <div class="le-grid au-grid">
+      <div class="au-bar">
+        <select id="auAgent" aria-label="Agent"><option value="">All agents</option></select>
+        <select id="auWorkflow" aria-label="Workflow"><option value="">All workflows</option></select>
+        <select id="auBy" aria-label="Person"><option value="">Anyone</option></select>
+        <select id="auPeriod" aria-label="Period">
+          <option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="">All time</option>
+        </select>
+      </div>
+      <div id="auList"><p class="hint" style="padding:16px 20px;margin:0">Loading&hellip;</p></div>
+    </div>
     <button type="button" class="au-more" id="auMore" hidden>Load older</button>
   </div></div></div>
 </main>
@@ -261,7 +265,7 @@ ${consoleShellScript}
     var url = '/audit/events?';
     var extra = append && next != null ? { before: String(next) } : {};
     extra.limit = '100';
-    if (!append) list.innerHTML = '<p class="hint">Loading' + String.fromCharCode(8230) + '</p>';
+    if (!append) list.innerHTML = '<p class="hint" style="padding:16px 20px;margin:0">Loading' + String.fromCharCode(8230) + '</p>';
     more.hidden = true;
     return fetch(url + query(extra), { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
@@ -359,6 +363,21 @@ ${consoleShellScript}
 
   el.q.value = state.q;
   el.kind.value = state.kind;
+  // The kinds, as the top bar's segmented control: each picks the hidden
+  // select's value, so the rest reads it as before.
+  var kinds = document.getElementById('auKinds');
+  function markKind() {
+    var bs = kinds.querySelectorAll('[data-kind]');
+    for (var b = 0; b < bs.length; b++) bs[b].setAttribute('aria-selected', String(bs[b].getAttribute('data-kind') === el.kind.value));
+  }
+  kinds.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-kind]');
+    if (!b || b.getAttribute('data-kind') === el.kind.value) return;
+    el.kind.value = b.getAttribute('data-kind');
+    markKind();
+    el.kind.dispatchEvent(new Event('change'));
+  });
+  markKind();
   el.period.value = state.period;
   function fillFilters(f) {
     filters = f;
