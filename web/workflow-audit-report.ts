@@ -20,7 +20,7 @@ function countsRow(label: string, c: AuditCounts): string {
 
 const STATUS: Record<string, string> = { done: 'Done', error: 'Failed', awaiting_approval: 'Waiting', running: 'Running' }
 
-export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generatedAt: string; by: string; jsonHref: string; caseHref: (runId: string) => string; pageHref: string }): string {
+export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generatedAt: string; by: string; jsonHref: string; traceHref: (runId: string) => string; pageHref: string }): string {
   const w = audit.workflow
   const v = audit.verification
   const c = audit.counts
@@ -33,9 +33,9 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
   const overruled = audit.overruled.map((d) => `<tr>
       <td>${esc(when(d.at))}</td><td>${d.approved ? 'Changed, then approved' : 'Denied'}</td><td><code>${esc(d.tool)}</code></td><td>${esc(d.by ?? '')}</td>
       <td>${d.reason ? `“${esc(d.reason)}”` : ''}${(d.changes ?? []).map((ch) => `<div><code>${esc(ch.field)}</code>: <del>${esc(ch.from)}</del> → <ins>${esc(ch.to)}</ins></div>`).join('')}</td>
-      <td><a href="${esc(options.caseHref(d.runId))}">case</a></td></tr>`).join('')
+      <td><a href="${esc(options.traceHref(d.runId))}">trace</a></td></tr>`).join('')
   const people = audit.people.map((p) => `<tr><td>${esc(p.by)}</td><td>${p.approved}</td><td>${p.changed}</td><td>${p.denied}</td><td>${p.answered}</td></tr>`).join('')
-  const cases = audit.cases.slice(0, 500).map((k) => `<tr><td>${esc(when(k.at))}</td><td>${STATUS[k.status] ?? esc(k.status)}</td><td>${esc(k.inputs)}</td><td>${k.workflowVersion ? `v${k.workflowVersion}` : ''}</td><td>${esc(k.decidedBy.join(', '))}</td><td class="ar-outcome">${esc(k.outcome)}</td><td><a href="${esc(options.caseHref(k.runId))}">open</a></td></tr>`).join('')
+  const cases = audit.cases.slice(0, 500).map((k) => `<tr><td>${esc(when(k.at))}</td><td>${STATUS[k.status] ?? esc(k.status)}</td><td>${esc(k.inputs)}</td><td>${k.workflowVersion ? `v${k.workflowVersion}` : ''}</td><td>${esc(k.decidedBy.join(', '))}</td><td class="ar-outcome">${esc(k.outcome)}</td><td><a href="${esc(options.traceHref(k.runId))}">trace</a></td></tr>`).join('')
   const changes = audit.changes.map((ch) => `<li>${esc(when(ch.at))} · ${esc(ch.label)}${ch.by ? ` · ${esc(ch.by)}` : ''}${(ch.fields ?? []).map((f) => (f.added || f.removed
     ? `<div class="ar-diff"><div class="hint">${esc(f.field)}</div>${(f.removed ?? []).map((l) => `<div class="del">− ${esc(l)}</div>`).join('')}${(f.added ?? []).map((l) => `<div class="ins">+ ${esc(l)}</div>`).join('')}</div>`
     : `<div class="hint">${esc(f.field)}: <del>${esc(f.from)}</del> → <ins>${esc(f.to)}</ins></div>`)).join('')}</li>`).join('')

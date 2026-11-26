@@ -61,10 +61,10 @@ describe('choosing eval cases', () => {
   })
 })
 
-describe('a case page', () => {
-  it('opens for approvers and viewers, who use the Inbox only', () => {
-    expect(inboxOnlyAllows('GET', '/cases/r1')).toBe(true)
-    expect(inboxOnlyAllows('POST', '/cases/r1')).toBe(false)
+describe('runs for approvers and viewers', () => {
+  it('open in the Inbox only: there is no case page', () => {
+    expect(inboxOnlyAllows('GET', '/inbox/cases/r1')).toBe(true)
+    expect(inboxOnlyAllows('GET', '/cases/r1')).toBe(false)
     expect(inboxOnlyAllows('GET', '/audit')).toBe(false)
   })
 })

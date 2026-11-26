@@ -64,7 +64,7 @@ describe('a workflow audit', () => {
   })
 
   it('prints as a report with everything escaped', () => {
-    const html = workflowAuditReportHtml({ ...audit, workflow: { ...audit.workflow, title: '<script>x</script>' } }, { generatedAt: '2026-11-30T00:00:00Z', by: 'evany@shop.com', jsonHref: '/j', caseHref: (id) => `/inbox?case=${id}`, pageHref: '/audit' })
+    const html = workflowAuditReportHtml({ ...audit, workflow: { ...audit.workflow, title: '<script>x</script>' } }, { generatedAt: '2026-11-30T00:00:00Z', by: 'evany@shop.com', jsonHref: '/j', traceHref: (id) => `/agents/config?run=${id}`, pageHref: '/audit' })
     expect(html).toContain('Audit report: &lt;script&gt;x&lt;/script&gt;')
     expect(html).not.toContain('<script>x')
     expect(html).toContain('No delivery photo')

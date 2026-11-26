@@ -5,11 +5,10 @@
 // opens beside it as a thread: what started it, what the agent said and
 // did, what it asked and the answers and decisions people gave, how it
 // ended, and (when it waits) the question to answer or the approval to
-// give, right there. A case is also its own page, /cases/<id> (?back= is where its back link goes): what it
-// was given, what the agent did, what it asks now (answer, approve,
-// approve as changed, deny), who decided what, and Save as eval case
-// (web/inbox-admin.ts behind /inbox/*). An approver or viewer sees only this page; a viewer can't
-// decide. Like the other console pages, its inline script avoids
+// give, right there (web/inbox-admin.ts behind /inbox/*). A run's trace,
+// its record to download and saving it as an eval case are on its
+// workflow's Activity tab. An approver or viewer sees only this page; a
+// viewer can't decide. Like the other console pages, its inline script avoids
 // backslashes and template placeholders, since it lives inside a template
 // literal.
 import { devUiCss } from './dev-ui-styles.js'
@@ -25,18 +24,8 @@ export const inboxPageHtml: string = `<!doctype html>
 <style>${devUiCss}
   .ib { max-width: 980px; display: grid; gap: 16px; }
   .ib-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .ib-filter { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .ib-filter button { border: 0; border-radius: 0; background: var(--bg); padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
-  .ib-filter button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
   .ib-bar select, .ib-bar input { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
   .ib-bar input { flex: 1; min-width: 160px; }
-  .ib-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
-  .ib-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
-  .ib-row:first-child { border-top: 0; }
-  .ib-row:hover { background: var(--surface); }
-  .ib-row-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ib-row-meta { font-size: 12.5px; color: var(--ink-muted); }
-  .ib-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
   .ib-state { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
   .ib-state.warn { background: var(--warn-soft); color: var(--warn); }
   .ib-state.good { background: var(--good-soft); color: var(--good); }
@@ -99,8 +88,6 @@ export const inboxPageHtml: string = `<!doctype html>
     .ib-items, .ib-thread { max-height: none; }
   }
   .ib-empty { padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13.5px; }
-  .ib-back { font-size: 13px; color: var(--accent-ink); text-decoration: none; font-weight: 600; }
-  .ib-case-head h2 { margin: 4px 0 6px; font-size: 20px; letter-spacing: -0.01em; }
   .ib-link { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
   .ib-link:hover { text-decoration: underline; }
   .ib-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
@@ -110,21 +97,6 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-kv { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 6px 14px; font-size: 13.5px; }
   .ib-kv dt { color: var(--ink-muted); font-family: var(--font-mono); font-size: 12.5px; padding-top: 1px; }
   .ib-kv dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .ib-trace-sum { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 13px; padding: 10px 12px; background: var(--surface); border-radius: 10px; }
-  .ib-trace-sum dt { color: var(--ink-muted); }
-  .ib-trace-sum dd { margin: 0; overflow-wrap: anywhere; }
-  .ib-trace-span.event { background: var(--surface); }
-  .ib-trace-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-  .ib-trace-span { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
-  .ib-trace-span.err { border-color: var(--bad); }
-  .ib-trace-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
-  .ib-trace-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-ink); }
-  .ib-trace-span.tool .ib-trace-kind { color: var(--ink-muted); }
-  .ib-trace-meta { font-size: 12.5px; color: var(--ink-muted); }
-  .ib-trace-span details > summary { cursor: pointer; font-size: 13px; color: var(--ink-muted); }
-  .ib-trace-span details .ib-pre { margin-top: 6px; }
-  .ib-trace-tools { display: flex; flex-wrap: wrap; gap: 4px; }
-  .ib-trace-tools code { font-size: 12px; background: var(--surface); padding: 1px 6px; border-radius: 6px; }
   .ib-pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; background: var(--surface); padding: 10px 12px; border-radius: 8px; max-height: 360px; overflow: auto; }
   .ib-question { margin: 0; font-size: 14.5px; }
   .ib-card textarea { width: 100%; box-sizing: border-box; min-height: 80px; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
@@ -134,29 +106,6 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
   .ib-btn.bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
   .ib-btn.opt { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; font-weight: 500; }
-  .ib-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-  .ib-step { display: grid; gap: 4px; padding-left: 14px; border-left: 2px solid var(--line); font-size: 13.5px; }
-  .ib-step.q { border-left-color: var(--warn); }
-  .ib-step-k { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
-  .ib-step-meta { font-weight: 400; color: var(--ink-faint); margin-left: 8px; }
-  .ib-totals { margin: -4px 0 10px; font-size: 12.5px; color: var(--ink-muted); }
-  .ib-export { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-  .ib-export a.ib-btn { text-decoration: none; display: inline-flex; align-items: center; }
-  @media print {
-    .le-sidebar, .ib-back, .ib-export, .ib-actions, .le-head, .le-menu-btn { display: none !important; }
-    .le-app { display: block !important; }
-    .ib-card { break-inside: avoid; }
-    details { display: block; }
-  }
-  .ib-step details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); }
-  .ib-who { font-size: 13px; display: grid; gap: 4px; }
-  .ib-late { color: var(--warn); font-weight: 700; }
-  .ib-older { margin: 0; font-size: 12.5px; }
-  .ib-suggest { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
-  .ib-suggest[hidden] { display: none; }
-  .ib-suggest h4 { margin: 0; font-size: 13px; }
-  .ib-suggest-row { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; font-size: 13px; }
-  .ib-reason { color: var(--ink-muted); margin: 2px 0 0 12px; }
   .ib-change { display: grid; gap: 2px; margin: 2px 0 0 12px; font-size: 12.5px; }
   .ib-change del { color: var(--bad); }
   .ib-change ins { color: var(--good); text-decoration: none; }
@@ -178,7 +127,7 @@ export const inboxPageHtml: string = `<!doctype html>
   .ib-md table { border-collapse: collapse; font-size: 13px; }
   .ib-md th, .ib-md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
   .error { font-size: 13px; color: var(--bad); margin: 0; }
-  @media (max-width: 640px) { .ib-row { grid-template-columns: 12px minmax(0, 1fr); } .ib-row-side { grid-column: 2; align-items: flex-start; flex-direction: row; gap: 8px; } .ib-kv { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .ib-kv { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body data-le-page="inbox">
@@ -211,11 +160,6 @@ ${renderMarkdownScript}
   var state = { view: VIEWS.some(function (v) { return v[0] === asked; }) ? asked : '', q: params.get('q') || '', workflow: params.get('workflow') || '', item: params.get('item') || '' };
   var listed = null;
   var openThread = null;
-  // A case's own page is /cases/<id>; ?back= is where its back link goes.
-  var caseMatch = location.pathname.match(/^[/]cases[/]([^/]+)$/);
-  var caseId = caseMatch ? decodeURIComponent(caseMatch[1]) : '';
-  var back = params.get('back');
-  if (!back || back.charAt(0) !== '/' || back.charAt(1) === '/') back = '/inbox';
   var fullAccess = !document.querySelector('.le-app.le-inbox-only');
   var role = 'owner';
   var workflows = {};
@@ -249,18 +193,9 @@ ${renderMarkdownScript}
     if (h < 48) return 'Waiting ' + h + ' h';
     return 'Waiting ' + Math.floor(h / 24) + ' days';
   }
-  // What happened in a recent case.
-  function outcomeHtml(item) {
-    var o = item.outcome || '';
-    var cls = o === 'Failed' ? 'bad' : o === 'Running' ? 'run' : /^Denied/.test(o) ? 'bad' : /^Changed/.test(o) ? 'warn' : 'good';
-    return '<span class="ib-state ' + cls + '">' + esc(o) + '</span>';
-  }
-  // A case's page, coming back here.
-  function caseHref(id) {
-    return '/cases/' + encodeURIComponent(id) + '?back=' + encodeURIComponent(pageUrl());
-  }
-  function backLabel() {
-    return back.indexOf('/audit') === 0 ? 'Audit' : back.indexOf('/agents') === 0 ? 'Workflow' : 'Inbox';
+  // The run on its workflow's Activity tab, with its trace open.
+  function traceHref(c) {
+    return '/agents/config?agent=' + encodeURIComponent(c.agent) + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId) + '&wtab=activity&run=' + encodeURIComponent(c.id);
   }
 
   function stateHtml(item) {
@@ -484,7 +419,7 @@ ${renderMarkdownScript}
     box.innerHTML =
       '<header class="ib-thread-head"><div class="ib-thread-top"><div class="ib-thread-tools"><button type="button" class="ib-thread-back">' + String.fromCharCode(8592) + ' Inbox</button></div><h2>' + esc(c.title) + '</h2>' +
         '<div class="ib-thread-tools">' + (canArchive ? '<button type="button" data-act="archive">' + (c.archived ? 'Unarchive' : 'Archive') + '</button>' : '') +
-          (fullAccess && run ? '<a href="' + esc(caseHref(c.id)) + '">Full record</a>' : '') + '</div></div>' +
+          (fullAccess && run && c.workflowId ? '<a href="' + esc(traceHref(c)) + '">View trace</a>' : '') + '</div></div>' +
         '<div class="ib-chips">' + status + (c.archived ? '<span class="ib-state">Archived</span>' : '') + '<span>' + caseLinks(c) + '</span></div></header>' +
       '<ol class="ib-msgs" data-id="' + esc(c.id) + '">' + threadMessagesHtml(c) + '</ol>';
     msgs = box.querySelector('.ib-msgs');
@@ -542,34 +477,6 @@ ${renderMarkdownScript}
       '</div>';
   }
 
-  // How long something took, in words: 850 ms, 4.2 s, 3 min, 2 h 5 min.
-  function duration(ms) {
-    if (ms < 1000) return Math.round(ms) + ' ms';
-    if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
-    var min = Math.round(ms / 60000);
-    return min < 60 ? min + ' min' : Math.floor(min / 60) + ' h' + (min % 60 ? ' ' + (min % 60) + ' min' : '');
-  }
-  function count(n) { return Number(n).toLocaleString(); }
-  // Dollars: cents to the cent, smaller amounts to a tenth of a cent.
-  function dollars(n) { return '$' + (n >= 0.1 ? n.toFixed(2) : n >= 0.001 ? n.toFixed(3) : n > 0 ? '<0.001' : '0'); }
-
-  // A step's model call (tokens, time) and the wait after it.
-  function stepMeta(s) {
-    var parts = [];
-    if (s.call) parts.push('model ' + (s.call.durationMs != null ? duration(s.call.durationMs) + ', ' : '') + count(s.call.inputTokens) + ' in ' + String.fromCharCode(183) + ' ' + count(s.call.outputTokens) + ' out tokens' + (s.call.costUsd != null ? ', ' + dollars(s.call.costUsd) : ''));
-    if (s.waitMs != null) parts.push((s.kind === 'question' ? 'answered after ' : 'took ') + duration(s.waitMs));
-    return parts.length ? '<span class="ib-step-meta">' + esc(parts.join(DOT)) + '</span>' : '';
-  }
-
-  function stepHtml(s) {
-    if (s.kind === 'text') return '<li class="ib-step"><span class="ib-step-k">Agent' + stepMeta(s) + '</span><div class="ib-md">' + renderMarkdownPreview(s.text) + '</div></li>';
-    if (s.kind === 'question') return '<li class="ib-step q"><span class="ib-step-k">Asked' + stepMeta(s) + '</span><div class="ib-md">' + renderMarkdownPreview(s.question) + '</div>' +
-      (s.answer != null ? '<span class="ib-step-k">Answer</span><div style="white-space:pre-wrap">' + esc(s.answer) + '</div>' : '<span class="hint">Waiting for an answer</span>') + '</li>';
-    return '<li class="ib-step"><span class="ib-step-k">Used ' + esc(s.tool) + (s.failed ? ' (failed)' : '') + stepMeta(s) + '</span>' +
-      '<details><summary>What it sent' + (s.result != null ? ' and got back' : '') + '</summary><pre class="ib-pre">' + esc(JSON.stringify(s.args, null, 2)) + '</pre>' +
-      (s.result != null ? '<pre class="ib-pre" style="margin-top:6px">' + esc(s.result) + '</pre>' : '') + '</details></li>';
-  }
-
   // What a person changed before approving: each field whose value
   // differs, from what the agent asked for to what ran.
   function changeOf(before, after) {
@@ -581,19 +488,6 @@ ${renderMarkdownScript}
     }).join('');
   }
 
-  function decidedHtml(run) {
-    var rows = [];
-    (run.decisions || []).forEach(function (d) { rows.push({ at: d.at, text: (d.approved ? (d.edited ? 'Approved as changed' : 'Approved') : 'Denied') + ' ' + d.tool, by: d.by, reason: d.reason, change: d.edited ? changeOf(d.before, d.after) : '' }); });
-    (run.answers || []).forEach(function (a) { rows.push({ at: a.at, text: 'Answered: ' + a.answer, by: a.by }); });
-    rows.sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
-    if (!rows.length) return '';
-    return '<div class="ib-card"><h3>Decisions</h3><div class="ib-who">' + rows.map(function (r) {
-      return '<div>' + esc(r.text) + ' <span class="hint">' + (r.by ? 'by ' + esc(r.by) + DOT : '') + esc(when(r.at)) + '</span>' +
-        (r.reason ? '<div class="ib-reason">' + String.fromCharCode(8220) + esc(r.reason) + String.fromCharCode(8221) + '</div>' : '') +
-        (r.change ? '<div class="ib-change">' + r.change + '</div>' : '') + '</div>';
-    }).join('') + '</div></div>';
-  }
-
   // The case's workflow and agent, each opening its page. An approver or
   // viewer can open only the Inbox, so for them they're plain text.
   function caseLinks(c) {
@@ -601,236 +495,6 @@ ${renderMarkdownScript}
     var agentUrl = '/agents/config?agent=' + encodeURIComponent(c.agent);
     var wf = c.workflowId ? '<a class="ib-link" href="' + agentUrl + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId) + '">' + esc(c.workflowTitle) + '</a>' : esc(c.workflowTitle);
     return '<a class="ib-link" href="' + agentUrl + '">' + esc(c.agentLabel || c.agent) + '</a>' + DOT + wf;
-  }
-
-  function totalsHtml(c) {
-    var t = c.totals;
-    if (!t) return '';
-    return '<p class="ib-totals">' + esc([
-      t.calls + (t.calls === 1 ? ' model call' : ' model calls'),
-      count(t.inputTokens) + ' tokens in, ' + count(t.outputTokens) + ' out',
-      'model time ' + duration(t.modelMs),
-      t.costUsd != null ? 'cost ' + dollars(t.costUsd) : '',
-      t.elapsedMs != null ? 'start to finish ' + duration(t.elapsedMs) : '',
-    ].filter(Boolean).join(DOT)) + '</p>';
-  }
-
-  // Keep the case: its whole record as a file, or printed (to paper or
-  // a PDF, from the browser's print dialog).
-  function exportHtml(c) {
-    return '<div class="ib-export"><a class="ib-btn plain" href="/inbox/cases/' + encodeURIComponent(c.id) + '/export" download>Download record</a>' +
-      '<button type="button" class="ib-btn plain" data-act="print">Print or save as PDF</button></div>';
-  }
-
-  function renderCase(c) {
-    var run = c.run;
-    var status = run ? stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: run.status }) : stateHtml({ waiting: c.pending.map(function (p) { return p.kind; }), status: 'awaiting_approval' });
-    page.innerHTML =
-      '<a class="ib-back" href="' + esc(back) + '">' + String.fromCharCode(8592) + ' ' + backLabel() + '</a>' +
-      '<div class="ib-case-head"><h2>' + esc(c.title) + '</h2><div class="ib-chips">' + status + '<span>' + caseLinks(c) + (run ? DOT + 'started ' + esc(when(run.started_at)) + (run.source ? ' by ' + esc(run.source === 'webhook' ? 'a webhook' : run.source === 'schedule' ? 'a schedule' : run.source === 'console' ? 'Run now' : run.source === 'api' ? 'an app' : run.source) : '') : '') + '</span></div></div>' +
-      c.pending.map(pendingHtml).join('') +
-      (run && run.params ? '<div class="ib-card"><h3>Inputs</h3>' + kvHtml(run.params) + '</div>' : '') +
-      (c.steps.length ? '<div class="ib-card"><h3>What the agent did</h3>' + totalsHtml(c) + '<ol class="ib-steps">' + c.steps.map(stepHtml).join('') + '</ol></div>' : '') +
-      (run ? decidedHtml(run) : '') +
-      // With an output schema, the result is its JSON, shown once.
-      (run && run.output !== undefined ? '<div class="ib-card"><h3>Result <span class="hint">(JSON, matches its output schema' + (run.output_retries ? ', after ' + run.output_retries + (run.output_retries === 1 ? ' retry' : ' retries') : '') + ')</span></h3><pre class="ib-pre">' + esc(JSON.stringify(run.output, null, 2)) + '</pre></div>'
-        : run && run.result ? '<div class="ib-card"><h3>Result</h3><div class="ib-md">' + renderMarkdownPreview(run.result) + '</div></div>' : '') +
-      (run && run.status === 'error' && run.output_errors && run.output_errors.length ? '<div class="ib-card"><h3>Didn' + String.fromCharCode(8217) + 't match its output schema</h3><ul class="ib-schema-errors">' + run.output_errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>' : '') +
-      (run && run.error ? '<div class="ib-card"><h3>Failed</h3><p class="error">' + esc(run.error) + '</p></div>' : '') +
-      traceHtml(c) +
-      exportHtml(c) +
-      evalCaseHtml(c);
-    var print = page.querySelector('[data-act="print"]');
-    if (print) print.addEventListener('click', function () { window.print(); });
-    wireEvalCase(c);
-    wireTrace(c);
-    wireCase(c);
-  }
-
-  // The run's trace (owners, admins and editors): the prompt it ran with,
-  // each model call (what was new in its input, and its output) and each
-  // tool call (input, output, time), word for word. Loaded when opened.
-  function traceHtml(c) {
-    if (!fullAccess || !c.run) return '';
-    return '<div class="ib-card ib-trace"><h3>Trace</h3>' +
-      '<p class="hint" style="margin:0">Every step word for word: the prompt the agent ran with, what each model call was given and answered, and what each tool was sent and returned.</p>' +
-      '<div class="ib-actions"><button type="button" class="ib-btn plain" data-act="trace">Show trace</button><span class="hint ib-trace-status" role="status"></span></div>' +
-      '<ol class="ib-trace-list" hidden></ol></div>';
-  }
-  var NL = String.fromCharCode(10);
-  // A traced value as text: a cut one says how much was left out.
-  function traceText(v) {
-    if (v == null) return '';
-    if (typeof v === 'object' && !Array.isArray(v) && v.truncated) return String(v.start) + NL + NL + '(cut: ' + count(v.chars) + ' characters in all)';
-    if (typeof v === 'string') return v;
-    if (Array.isArray(v)) return v.map(blockText).join(NL + NL);
-    return JSON.stringify(v, null, 2);
-  }
-  function blockText(b) {
-    if (b && typeof b === 'object' && 'role' in b) return b.role.toUpperCase() + NL + traceText(b.content);
-    if (!b || typeof b !== 'object') return String(b);
-    if (b.type === 'text') return b.text;
-    if (b.type === 'tool_use') return 'Calls ' + b.name + ' ' + JSON.stringify(b.input, null, 2);
-    if (b.type === 'tool_result') return 'Result for ' + b.tool_use_id + (b.is_error ? ' (error)' : '') + ':' + NL + traceText(b.content);
-    return JSON.stringify(b, null, 2);
-  }
-  function tracePart(label, v, open) {
-    var text = traceText(v);
-    if (!text) return '';
-    return '<details' + (open ? ' open' : '') + '><summary>' + esc(label) + '</summary><pre class="ib-pre">' + esc(text) + '</pre></details>';
-  }
-  // The trace's own fields at the top: which run of which version, the
-  // model, how long, what it cost, and the feedback on it.
-  function traceSummaryHtml(t) {
-    var rows = [
-      ['Execution id', t.execution_id],
-      ['Workflow', t.workflow_id + (t.workflow_version_id ? ' (' + t.workflow_version_id + ')' : '')],
-      ['Model', t.model ? (t.model.provider ? t.model.provider + ' ' : '') + t.model.model : ''],
-      ['Status', t.status],
-      ['Duration', t.duration_ms != null ? duration(t.duration_ms) : ''],
-      ['Cost', (t.cost.usd != null ? dollars(t.cost.usd) + DOT : '') + t.cost.model_calls + (t.cost.model_calls === 1 ? ' model call' : ' model calls') + DOT + count(t.cost.input_tokens) + ' in ' + String.fromCharCode(183) + ' ' + count(t.cost.output_tokens) + ' out tokens'],
-      ['Tool calls', String(t.tool_calls.length)],
-      ['Feedback', t.feedback ? [t.feedback.verdict, t.feedback.edit ? t.feedback.edit + ' edits' : '', t.feedback.note].filter(Boolean).join(DOT) || 'reported' : 'none yet'],
-      ['Error', t.error || ''],
-    ].filter(function (r) { return r[1]; });
-    return '<dl class="ib-trace-sum">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl>';
-  }
-  function traceStepHtml(st, i, steps) {
-    var meta = [];
-    if (st.duration_ms != null) meta.push(duration(st.duration_ms));
-    var head = function (kind, name) {
-      return '<div class="ib-trace-head"><span class="ib-trace-kind">' + kind + '</span>' + (name ? '<strong>' + esc(name) + '</strong>' : '') +
-        '<span class="ib-trace-meta">' + esc(meta.join(DOT)) + '</span></div>';
-    };
-    var err = st.error ? '<p class="error" style="margin:0">' + esc(st.error) + '</p>' : '';
-    if (st.type === 'prompt') {
-      return '<li class="ib-trace-span prompt">' + head(st.resumed ? 'Prompt (resumed)' : 'Prompt', '') +
-        (st.tools.length ? '<div class="ib-trace-tools">' + st.tools.map(function (t) { return '<code>' + esc(t) + '</code>'; }).join('') + '</div>' : '') +
-        (st.prior_messages ? '<span class="ib-trace-meta">After ' + st.prior_messages + ' earlier messages in this conversation</span>' : '') +
-        tracePart('System prompt', st.system, false) +
-        tracePart(st.resumed ? 'Resumed with' : 'Input', st.input, true) + '</li>';
-    }
-    if (st.type === 'model_call') {
-      if (st.input_tokens != null) meta.push(count(st.input_tokens) + ' in ' + String.fromCharCode(183) + ' ' + count(st.output_tokens) + ' out tokens');
-      if (st.messages_sent != null) meta.push(st.messages_sent + (st.messages_sent === 1 ? ' message' : ' messages') + ' sent');
-      if (st.stop_reason) meta.push('stopped: ' + st.stop_reason);
-      var fresh = Array.isArray(st.input) && st.input.length ? st.input : null;
-      var afterPrompt = i > 0 && steps[i - 1].type === 'prompt';
-      return '<li class="ib-trace-span llm' + (st.error ? ' err' : '') + '">' + head('Model call', st.model) + err +
-        (fresh ? tracePart('New input', fresh, false) : '<span class="ib-trace-meta">' + (afterPrompt ? 'Given the prompt above' : 'No new input since the step before') + '</span>') +
-        tracePart('Output', st.output, true) + '</li>';
-    }
-    if (st.type === 'tool_call') {
-      if (st.status) meta.push(st.status);
-      return '<li class="ib-trace-span tool' + (st.error ? ' err' : '') + '">' + head('Tool call', st.name) + err +
-        tracePart('Input', st.input, false) + tracePart('Output', st.output, false) + '</li>';
-    }
-    var who = st.by ? ' by ' + st.by : '';
-    if (st.type === 'decision') {
-      return '<li class="ib-trace-span event">' + head('Decision', (st.approved ? (st.changed ? 'Approved as changed: ' : 'Approved: ') : 'Denied: ') + st.tool) +
-        '<span class="ib-trace-meta">' + esc(when(st.at) + who) + '</span>' + (st.reason ? '<div>' + esc(st.reason) + '</div>' : '') + '</li>';
-    }
-    if (st.type === 'answer') {
-      return '<li class="ib-trace-span event">' + head('Answer', '') + '<span class="ib-trace-meta">' + esc(when(st.at) + who) + '</span>' +
-        tracePart('Question', st.question, false) + '<div>' + esc(st.answer) + '</div></li>';
-    }
-    return '<li class="ib-trace-span event">' + head('Feedback', [st.verdict, st.edit ? st.edit + ' edits' : ''].filter(Boolean).join(', ')) +
-      '<span class="ib-trace-meta">' + esc(when(st.at) + who) + '</span>' + (st.note ? '<div>' + esc(st.note) + '</div>' : '') + '</li>';
-  }
-  function wireTrace(c) {
-    var btn = page.querySelector('[data-act="trace"]');
-    if (!btn) return;
-    var list = page.querySelector('.ib-trace-list');
-    var status = page.querySelector('.ib-trace-status');
-    var loaded = false;
-    btn.addEventListener('click', function () {
-      if (loaded) {
-        list.hidden = !list.hidden;
-        btn.textContent = list.hidden ? 'Show trace' : 'Hide trace';
-        return;
-      }
-      btn.disabled = true;
-      status.textContent = 'Loading' + ELLIPSIS;
-      fetch('/inbox/cases/' + encodeURIComponent(c.id) + '/trace', { headers: { accept: 'application/json' } })
-        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'Could not load the trace'); return b; }); })
-        .then(function (t) {
-          loaded = true;
-          btn.disabled = false;
-          var steps = t.step_events || [];
-          var traced = steps.some(function (x) { return x.type === 'prompt' || x.type === 'model_call'; });
-          status.textContent = traced ? '' : 'No step-by-step trace for this run: it ran before traces were kept.';
-          list.innerHTML = '<li>' + traceSummaryHtml(t) + '</li>' + steps.map(traceStepHtml).join('') +
-            (t.final_output ? '<li class="ib-trace-span">' + '<div class="ib-trace-head"><span class="ib-trace-kind">Final output</span></div>' + tracePart('Output', t.final_output, true) + '</li>' : '') +
-            '<li><a class="ib-link" href="/agents/' + encodeURIComponent(t.agent) + '/runs/' + encodeURIComponent(t.execution_id) + '/trace" download="trace-' + esc(t.execution_id.slice(0, 8)) + '.json">Download trace as JSON</a></li>';
-          list.hidden = false;
-          btn.textContent = 'Hide trace';
-        })
-        .catch(function (err) { btn.disabled = false; status.textContent = err.message; });
-    });
-  }
-
-  // Save this run as one of its workflow's eval cases (owners, admins and
-  // editors): a test it must keep passing. Then the success criteria it
-  // suggests, from what people corrected in it, to add or not.
-  function evalCaseHtml(c) {
-    var run = c.run;
-    if (!fullAccess || !run || !run.workflow_id || run.status !== 'done') return '';
-    return '<div class="ib-card ib-eval"><h3>Eval case</h3>' +
-      '<p class="hint" style="margin:0">Save this run as a test its workflow must keep passing after every change to its brief. Runs where a person denied or changed something, or that went wrong, make the best tests.</p>' +
-      '<div class="ib-actions"><button type="button" class="ib-btn plain" data-act="save-case">Save as eval case</button><span class="hint ib-eval-result" role="status"></span></div>' +
-      '<div class="ib-suggest" hidden></div></div>';
-  }
-  function evalBase(c) {
-    return '/agents/' + encodeURIComponent(c.agent) + '/workflows/' + encodeURIComponent(c.workflowId) + '/evals';
-  }
-  function wireEvalCase(c) {
-    var btn = page.querySelector('[data-act="save-case"]');
-    if (!btn) return;
-    var result = page.querySelector('.ib-eval-result');
-    var suggest = page.querySelector('.ib-suggest');
-    // Already a case: say so.
-    fetch(evalBase(c), { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (ev) {
-        if (ev && (ev.cases || []).some(function (k) { return k.fromRun === c.id; })) { btn.disabled = true; btn.textContent = 'Saved as an eval case'; }
-      }).catch(function () {});
-    btn.addEventListener('click', function () {
-      btn.disabled = true;
-      result.textContent = 'Saving' + ELLIPSIS;
-      fetch(evalBase(c) + '/cases', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runId: c.id }) })
-        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || 'Could not save'); return b; }); })
-        .then(function (b) {
-          btn.textContent = 'Saved as an eval case';
-          result.innerHTML = 'Saved. <a class="ib-link" href="/agents/config?agent=' + encodeURIComponent(c.agent) + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId) + '&wtab=evaluation">See its eval cases</a>';
-          showSuggestions(c, b.suggestions || [], b.criteria || []);
-        })
-        .catch(function (err) { btn.disabled = false; result.textContent = err.message; });
-    });
-  }
-  function showSuggestions(c, suggestions, criteria) {
-    var box = page.querySelector('.ib-suggest');
-    var have = criteria.map(function (k) { return k.text; });
-    var fresh = suggestions.filter(function (s) { return have.indexOf(s.text) === -1; });
-    if (!fresh.length) return;
-    box.hidden = false;
-    box.innerHTML = '<h4>Add to its success criteria?</h4><p class="hint" style="margin:0">From what people corrected in this run. Each becomes a criterion every eval case is judged on.</p>' +
-      fresh.map(function (s, i) { return '<div class="ib-suggest-row"><span>' + esc(s.text) + '</span><button type="button" class="ib-btn plain" data-suggest="' + i + '">Add</button></div>'; }).join('');
-    box.addEventListener('click', function (ev) {
-      var b = ev.target.closest('[data-suggest]');
-      if (!b) return;
-      b.disabled = true;
-      var s = fresh[Number(b.getAttribute('data-suggest'))];
-      fetch(evalBase(c), { headers: { accept: 'application/json' } })
-        .then(function (r) { return r.json(); })
-        .then(function (ev2) {
-          var list = (ev2.criteria || []).map(function (k) { return { text: k.text, kind: k.kind, value: k.value }; });
-          list.push({ text: s.text, kind: s.kind });
-          return fetch(evalBase(c) + '/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) });
-        })
-        .then(function (r) { return r.json().then(function (body) { if (!r.ok) throw new Error(body.error || 'Could not add it'); }); })
-        .then(function () { b.textContent = 'Added'; })
-        .catch(function (err) { b.disabled = false; b.textContent = err.message; });
-    });
   }
 
   function send(card, path, body) {
@@ -844,7 +508,7 @@ ${renderMarkdownScript}
         if (!r.ok) throw new Error(r.body.error || 'That did not work');
         result.textContent = 'Done. The agent is carrying on' + ELLIPSIS;
         if (window.leShell && window.leShell.reloadInboxCount) window.leShell.reloadInboxCount();
-        setTimeout(function () { if (caseId) openCase(); else { openThread = null; if (state.item) loadThread(state.item); refreshList(); } }, 1200);
+        setTimeout(function () { openThread = null; if (state.item) loadThread(state.item); refreshList(); }, 1200);
       })
       .catch(function (err) {
         result.textContent = err.message;
@@ -898,29 +562,12 @@ ${renderMarkdownScript}
     }
   }
 
-  function openCase() {
-    return fetch('/inbox/cases/' + encodeURIComponent(caseId), { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (c) { document.title = c.title + ' ' + String.fromCharCode(183) + ' Case'; renderCase(c); })
-      .catch(function (err) { page.innerHTML = '<a class="ib-back" href="' + esc(back) + '">' + String.fromCharCode(8592) + ' ' + backLabel() + '</a><p class="error">Could not open this case: ' + esc(err.message) + '</p>'; });
-  }
-
   function start() {
-    // A case's page is about that case, wherever it was opened from.
-    if (caseId) {
-      var head = document.querySelector('.le-head h1');
-      var lede = document.querySelector('.le-head p');
-      if (head) head.textContent = 'Case';
-      if (lede) lede.textContent = 'One run in full: what it was given, what the agent did step by step, who decided what, and what came of it.';
-    }
-    if (caseId) openCase();
-    else {
-      renderInbox();
-      refreshList().then(function () { if (state.item && (!openThread || openThread.id !== state.item)) selectItem(state.item); });
-    }
+    renderInbox();
+    refreshList().then(function () { if (state.item && (!openThread || openThread.id !== state.item)) selectItem(state.item); });
     // The list keeps itself current while it's open.
     setInterval(function () {
-      if (document.hidden || caseId) return;
+      if (document.hidden) return;
       if (document.activeElement && document.activeElement.id === 'ibSearch') return;
       refreshList();
     }, 15000);

@@ -271,6 +271,11 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-trace { display: grid; gap: 20px; min-width: 0; }
   .wf-trace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
   .wf-trace-bar a.wf-link { text-decoration: none; }
+  .wf-trace-save-case { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .wf-trace-case { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; }
+  .wf-trace-case[hidden] { display: none; }
+  .wf-trace-suggest { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .wf-trace-suggest li { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
   .wf-xd { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
   .wf-xd-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
   .wf-xd-head h3 { margin: 0; font-size: 16px; }
@@ -1097,9 +1102,9 @@ ${renderMarkdownScript}
   // Activity now, Improve is Evaluation.
   var OLD_TABS = { evidence: 'activity', changes: 'activity', audit: 'activity', improve: 'evaluation' };
   if (workflowPageId && pageParams.get('wtab')) workflowTabs[workflowPageId] = OLD_TABS[pageParams.get('wtab')] || pageParams.get('wtab');
-  // A case's page, with a back link to here.
-  function caseHref(runId) {
-    return '/cases/' + encodeURIComponent(runId) + '?back=' + encodeURIComponent(location.pathname + location.search);
+  // A run's conversation in the Inbox.
+  function inboxHref(runId) {
+    return '/inbox?item=' + encodeURIComponent(runId);
   }
 
   function workflowPageHref(agent, id, tab) {
@@ -1273,17 +1278,6 @@ ${renderMarkdownScript}
     // The workflow's version before and after ("brief" on older changes).
     if (version) rows = '<div class="chg-note">Workflow v' + version.from + ' ' + String.fromCharCode(8594) + ' v' + version.to + '</div>' + rows;
     return '<div class="chg">' + rows + '</div>';
-  }
-
-  function workflowChangesHtml(events) {
-    if (!events.length) return '<p class="hint" style="margin:0">Nothing yet. Edits to this workflow' + RSQ + 's settings, and every approval, answer and feedback in its runs, will be listed here with who and when.</p>';
-    return '<ol class="wf-change-list">' + events.map(function (e) {
-      var when = new Date(e.at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      var kind = e.kind === 'change' ? 'Setting' : e.kind === 'decision' ? 'Decision' : e.kind === 'answer' ? 'Answer' : 'Feedback';
-      return '<li><span class="wf-change-kind ' + escapeHtml(e.kind) + '">' + kind + '</span><span class="wf-change-text">' + changeText(e) + (e.kind === 'change' ? changeDetailsHtml(e.data || {}) : '') + '</span>' +
-        '<span class="hint">' + (e.by ? escapeHtml(e.by) + DOT : '') + escapeHtml(when) +
-        (e.run_id ? DOT + '<a href="' + caseHref(e.run_id) + '">case</a>' : '') + '</span></li>';
-    }).join('') + '</ol>';
   }
 
   // ---- A workflow in three parts: its contract (what the system holds it
@@ -1547,7 +1541,7 @@ ${renderMarkdownScript}
         '<strong>' + escapeHtml(runWhen(r.started_at)) + '</strong>' +
         (version ? '<span class="wf-run-version" title="The workflow version it ran">v' + version + '</span>' : '<span class="hint">before versions</span>') +
         '<span class="hint">' + escapeHtml(RUN_SOURCES[r.source] || r.source || '') + (took ? DOT + escapeHtml(took) : '') + '</span>' +
-        '<span class="wf-run-card-actions"><a class="wf-link" href="' + caseHref(r.run_id) + '">Open case</a><button type="button" class="wf-run-trace" data-run="' + escapeHtml(r.run_id) + '">View trace</button></span>' +
+        '<span class="wf-run-card-actions"><a class="wf-link" href="' + inboxHref(r.run_id) + '">Open in Inbox</a><button type="button" class="wf-run-trace" data-run="' + escapeHtml(r.run_id) + '">View trace</button></span>' +
       '</div>' +
       (values ? '<div class="wf-run-card-inputs">' + escapeHtml(values.length > 200 ? values.slice(0, 200) + String.fromCharCode(8230) : values) + '</div>' : '') +
       (outcome ? '<div class="wf-run-card-out' + (r.status === 'error' ? ' error' : '') + '">' + escapeHtml(outcome.length > 280 ? outcome.slice(0, 280) + String.fromCharCode(8230) : outcome) + '</div>' : '') +
@@ -1599,10 +1593,17 @@ ${renderMarkdownScript}
     if (main) main.hidden = false;
   }
 
-  function traceBarHtml(name, runId) {
+  // Back to the runs; the run's conversation in the Inbox; its record (the
+  // run, every event in it, its trace, and the workflow version and
+  // policies it ran under) or just its trace, as a file; and, for a run
+  // that finished, saving it as an eval case.
+  function traceBarHtml(name, runId, t) {
     return '<div class="wf-trace-bar"><button type="button" class="wf-link wf-trace-back">' + String.fromCharCode(8592) + ' All runs</button>' +
-      '<span style="flex:1"></span><a class="wf-link" href="' + caseHref(runId) + '">Open case</a>' +
-      '<a class="wf-link" href="/agents/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId) + '/trace" download="trace-' + escapeHtml(runId) + '.json">Download JSON</a></div>';
+      '<span style="flex:1"></span><a class="wf-link" href="' + inboxHref(runId) + '">Open in Inbox</a>' +
+      '<a class="wf-link" href="/inbox/cases/' + encodeURIComponent(runId) + '/export" download>Download record</a>' +
+      '<a class="wf-link" href="/agents/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId) + '/trace" download="trace-' + escapeHtml(runId) + '.json">Download trace</a>' +
+      (t && t.status === 'done' ? '<button type="button" class="wf-trace-save-case">Save as eval case</button>' : '') + '</div>' +
+      '<div class="wf-trace-case" hidden></div>';
   }
 
   var STEP_KINDS = {
@@ -1697,7 +1698,7 @@ ${renderMarkdownScript}
         '<span class="wf-tl-bar" aria-hidden="true"><span style="left:' + left.toFixed(2) + '%;width:' + (width ? width.toFixed(2) + '%' : '2px') + '"></span></span>' +
       '</button></li>';
     }).join('');
-    return traceBarHtml(name, t.execution_id) + details +
+    return traceBarHtml(name, t.execution_id, t) + details +
       '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">Execution trace</h4><span class="hint">' + steps.length + ' steps' + DOT + 'click one for its details</span></div>' +
         '<div class="wf-tl-wrap"><ol class="wf-tl">' + rows + '</ol><div class="wf-tl-detail" aria-live="polite"></div></div>' +
       '</section>';
@@ -1763,10 +1764,57 @@ ${renderMarkdownScript}
       '<dl class="wf-xd-grid">' + rows.join('') + '</dl>' + io;
   }
 
+  // Save as eval case, from a trace: the run becomes a test its workflow
+  // must keep passing; then success criteria suggested from what people
+  // corrected in it, each added to the workflow's draft.
+  function wireTraceEvalCase(name, card, box, t) {
+    var btn = box.querySelector('.wf-trace-save-case');
+    if (!btn) return;
+    var id = card.dataset.workflow;
+    var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(id);
+    var panel = box.querySelector('.wf-trace-case');
+    var w = workflowsById[id];
+    var saved = function () { btn.disabled = true; btn.textContent = 'Saved as an eval case'; };
+    if (w && w.evals && (w.evals.cases || []).some(function (k) { return k.fromRun === t.execution_id; })) saved();
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      panel.hidden = false;
+      panel.innerHTML = '<p class="hint" style="margin:0">Saving' + String.fromCharCode(8230) + '</p>';
+      fetchJsonRetryOnce(base + '/evals/cases', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runId: t.execution_id }) }).then(function (r) {
+        if (!r.ok) { btn.disabled = false; panel.innerHTML = '<p class="error">' + escapeHtml(r.body.error || 'Could not save it') + '</p>'; return; }
+        saved();
+        if (w && w.evals) w.evals.cases = (w.evals.cases || []).concat([{ fromRun: t.execution_id }]);
+        var have = (r.body.criteria || []).map(function (k) { return k.text; });
+        var fresh = (r.body.suggestions || []).filter(function (x) { return have.indexOf(x.text) === -1; });
+        panel.innerHTML = '<p style="margin:0"><span class="le-pill good">Saved</span> It' + RSQ + 's one of this workflow' + RSQ + 's eval cases now. <a href="#" class="wf-link wf-trace-evals">See them in Evaluation</a></p>' +
+          (fresh.length ? '<h4 class="wf-sub">Add to its success criteria?</h4><p class="hint" style="margin:0">From what people corrected in this run. Each goes into the draft; publish it to judge every eval case on it.</p>' +
+            '<ul class="wf-trace-suggest">' + fresh.map(function (x, i) { return '<li><span>' + escapeHtml(x.text) + '</span><button type="button" class="wf-link" data-suggest="' + i + '">Add to draft</button></li>'; }).join('') + '</ul>' : '');
+        panel.querySelector('.wf-trace-evals').addEventListener('click', function (ev) { ev.preventDefault(); showWorkflowTab(card, 'evaluation'); });
+        panel.addEventListener('click', function (ev) {
+          var b = ev.target.closest('[data-suggest]');
+          if (!b) return;
+          b.disabled = true;
+          var x = fresh[Number(b.getAttribute('data-suggest'))];
+          // The criteria as drafted, else as published, with this one added.
+          fetchJsonRetryOnce(base + '/draft').then(function (d) {
+            var list = d.ok && d.body.draft && d.body.draft.criteria ? d.body.draft.criteria : ((workflowsById[id] && workflowsById[id].evals && workflowsById[id].evals.criteria) || []);
+            list = list.map(function (k) { return { text: k.text, kind: k.kind, value: k.value }; }).concat([{ text: x.text, kind: x.kind }]);
+            return fetchJsonRetryOnce(base + '/draft/criteria', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criteria: list }) });
+          }).then(function (p) {
+            if (!p.ok) { b.disabled = false; b.textContent = p.body.error || 'Could not add it'; return; }
+            b.textContent = 'Added to the draft';
+            refreshDraft(name, card);
+          });
+        });
+      });
+    });
+  }
+
   function wireTrace(name, card, box, t) {
     var id = card.dataset.workflow;
     box.querySelector('.wf-trace-back').addEventListener('click', function () { closeRunTrace(card); });
     if (!t) return;
+    wireTraceEvalCase(name, card, box, t);
     var steps = traceSteps(t);
     var detailBox = box.querySelector('.wf-tl-detail');
     var buttons = box.querySelectorAll('.wf-tl-step');
@@ -1877,7 +1925,7 @@ ${renderMarkdownScript}
   // cases, each with why (a person denied or changed what it did, a bad
   // result, a question it asked, a failure, or a typical good run).
   var WHY = { denied: ['bad', 'Denied'], changed: ['ask', 'Changed'], bad: ['bad', 'Bad result'], asked: ['ask', 'Asked'], failed: ['bad', 'Failed'], typical: ['good', 'Typical'] };
-  function loadCandidates(card, base) {
+  function loadCandidates(name, card, base) {
     var box = card.querySelector('.wf-candidates');
     if (!box) return;
     fetch(base + '/evals/candidates', { headers: { accept: 'application/json' } })
@@ -1885,15 +1933,24 @@ ${renderMarkdownScript}
       .then(function (data) {
         var list = data.candidates || [];
         if (!list.length) { box.innerHTML = '<p class="hint" style="margin:0">Nothing new to suggest from the last 30 days.</p>'; return; }
-        box.innerHTML = '<p class="hint" style="margin:0 0 6px">Runs from the last 30 days worth adding, best first: where a person denied or changed what it did, a bad result, a question it asked, or a typical good run. Open one to read it in full first.</p><ul class="wf-cand-list">' + list.map(function (c) {
+        box.innerHTML = '<p class="hint" style="margin:0 0 6px">Runs from the last 30 days worth adding, best first: where a person denied or changed what it did, a bad result, a question it asked, or a typical good run. Open one' + RSQ + 's trace to read it in full first.</p><ul class="wf-cand-list">' + list.map(function (c) {
           var why = WHY[c.why] || ['', c.why];
           return '<li><span class="le-pill ' + why[0] + '">' + why[1] + '</span>' +
             '<span class="wf-cand-text"><strong>' + escapeHtml(c.detail) + '</strong><span class="hint">' + escapeHtml(new Date(c.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (c.inputs ? DOT + escapeHtml(c.inputs) : '') + '</span></span>' +
-            '<a class="wf-link" href="' + caseHref(c.runId) + '">Open</a>' +
+            '<a class="wf-link wf-cand-trace" href="' + workflowPageHref(name, card.dataset.workflow, 'activity') + '&run=' + encodeURIComponent(c.runId) + '" data-run="' + escapeHtml(c.runId) + '">Open trace</a>' +
             '<button type="button" class="wf-link wf-save-case" data-run="' + escapeHtml(c.runId) + '">Add as eval case</button></li>';
         }).join('') + '</ul>';
       })
       .catch(function (err) { box.innerHTML = '<p class="error">Could not look through its runs: ' + escapeHtml(err.message) + '</p>'; });
+    // Open trace: the run's trace on the Activity tab, without leaving.
+    box.addEventListener('click', function (ev) {
+      var a = ev.target.closest('.wf-cand-trace');
+      if (!a || !card.querySelector('.wf-trace') || ev.metaKey || ev.ctrlKey) return;
+      ev.preventDefault();
+      showWorkflowTab(card, 'activity');
+      openRunTrace(name, card, a.getAttribute('data-run'));
+      card.scrollIntoView({ block: 'start' });
+    });
   }
 
   // A run's evidence line: its feedback, and saving it as an eval case.
@@ -1941,7 +1998,7 @@ ${renderMarkdownScript}
         var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
         var line = (values ? values + DOT : '') + outcome;
         return '<li class="wf-run-line">' + pill +
-          '<a class="wf-run-link" href="' + caseHref(r.run_id) + '"><span class="wf-run-when">' + escapeHtml(new Date(r.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</span>' +
+          '<a class="wf-run-link" href="' + inboxHref(r.run_id) + '"><span class="wf-run-when">' + escapeHtml(new Date(r.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</span>' +
           '<span class="wf-run-text">' + escapeHtml(line.length > 160 ? line.slice(0, 160) + String.fromCharCode(8230) : line) + '</span></a>' +
           (r.versions && (r.versions.workflow || r.versions.brief) ? '<span class="hint">v' + (r.versions.workflow || r.versions.brief) + '</span>' : '') +
           runEvidenceHtml(w, r) + '</li>';
@@ -2959,7 +3016,7 @@ ${renderMarkdownScript}
     loadWorkflowVersions(name, card, base);
     wireDraftBanner(name, card);
     loadWorkflowHealth(card, base);
-    loadCandidates(card, base);
+    loadCandidates(name, card, base);
     loadWorkflowRuns(name, card, base);
     if (openTraces[id] && card.querySelector('.wf-trace')) openRunTrace(name, card, openTraces[id].run);
     card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });

@@ -5799,23 +5799,11 @@ const server = createServer(async (req, res) => {
       await handleGoals(req, res, pathname)
       return
     }
-    // The Inbox (web/inbox-page.ts): every run as a case, the waiting ones
-    // first; and its data.
-    // A case's own address; links from before it opened /inbox?case=<id>.
+    // The Inbox (web/inbox-page.ts): every run as a conversation, and its
+    // data. An approver or viewer gets it Inbox-only from the start, so the
+    // rest of the sidebar never shows.
     if (req.method === 'GET' && pathname === '/inbox') {
-      const asked = new URL(req.url ?? '/', 'http://localhost').searchParams.get('case')
-      if (asked) {
-        res.writeHead(302, { location: `/cases/${encodeURIComponent(asked)}` }).end()
-        return
-      }
-    }
-    const casePage = req.method === 'GET' && /^\/cases\/[^/]+$/.test(pathname)
-    if (req.method === 'GET' && (pathname === '/inbox' || casePage)) {
-      // An approver or viewer gets it Inbox-only from the start, so the
-      // rest of the sidebar never shows. A case is the same page, opening
-      // on that case.
-      let page = inboxOnly(callerOf(req).role) ? inboxPageHtml.replace('<div class="le-app">', '<div class="le-app le-inbox-only">') : inboxPageHtml
-      if (casePage) page = page.replace('<body data-le-page="inbox">', '<body data-le-page="case">')
+      const page = inboxOnly(callerOf(req).role) ? inboxPageHtml.replace('<div class="le-app">', '<div class="le-app le-inbox-only">') : inboxPageHtml
       res.writeHead(200, { 'content-type': 'text/html' }).end(page)
       return
     }
@@ -6005,7 +5993,7 @@ const server = createServer(async (req, res) => {
         generatedAt: new Date().toISOString(),
         by: changedBy(req),
         jsonHref: `${pathname}?${period}&format=json`,
-        caseHref: (runId) => `/cases/${encodeURIComponent(runId)}`,
+        traceHref: (runId) => `/agents/config?agent=${encodeURIComponent(agentName)}&tab=workflows&workflow=${encodeURIComponent(audit.workflow.id)}&wtab=activity&run=${encodeURIComponent(runId)}`,
         pageHref: `/audit?agent=${encodeURIComponent(agentName)}&workflow=${encodeURIComponent(audit.workflow.id)}`,
       })
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(html)

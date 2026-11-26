@@ -195,7 +195,7 @@ ${consoleShellScript}
     var d = e.data || {};
     var href = '';
     if (r.runId && r.workflowId) href = workflowHref(r.agent, r.workflowId, 'activity') + '&run=' + encodeURIComponent(r.runId);
-    else if (r.runId) href = '/cases/' + encodeURIComponent(r.runId) + '?back=' + encodeURIComponent(location.pathname + location.search);
+    else if (r.runId) href = '/inbox?item=' + encodeURIComponent(r.runId);
     else if (r.workflowId && /deleted$/.test(e.action || '')) href = '';
     else if (r.workflowId) href = workflowHref(r.agent, r.workflowId, /published|restored|edited/.test(e.action || '') ? 'versions' : '');
     else if (r.agent && !/deleted$/.test(e.action || '')) href = '/agents/config?agent=' + encodeURIComponent(r.agent);
