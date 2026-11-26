@@ -176,12 +176,12 @@ export function jobAllowed(config: AgentConfig, app: TwoWayApp, message: { user:
   const approvers = agentApprovers(config, app)
   if (approvers.length) {
     if (approvers.some((a) => a.user === message.user)) return { allowed: true }
-    return { allowed: false, message: `Only approvers can give me jobs here: ${approverList(app, approvers)}.` }
+    return { allowed: false, message: `Only approvers can start runs here: ${approverList(app, approvers)}.` }
   }
   const file = savedConnection(config, app)
   const home = app === 'slack' ? file?.channelId : file?.chatId
   if (!message.direct && home && home === message.conversation) return { allowed: true }
-  return { allowed: false, message: `Jobs by direct message need approvers: in LoopEngine, open this agent's Messaging tab, then ${APP_NAMES[app]} → Approvers, and add yourself.` }
+  return { allowed: false, message: `Runs started by direct message need approvers: in LoopEngine, open this agent's Messaging tab, then ${APP_NAMES[app]} → Approvers, and add yourself.` }
 }
 
 /** Replaces the approver list on the agent's saved connection for `app`,

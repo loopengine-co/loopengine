@@ -92,7 +92,7 @@ export function eventAction(e: AuditEvent, names: EventNames = PLAIN_NAMES): Eve
     const was = Array.isArray(d.changes) ? (d.changes as FieldChange[]).find((c) => c.field === 'title')?.from : undefined
     return names.workflowTitle(agent, id) || str(d.title) || (was && was !== '(none)' ? was : '') || id
   }
-  const run = { type: 'Run', name: e.workflow_id ? workflowName(e.agent, e.workflow_id) : 'One-off job', agent: e.agent, ...(e.workflow_id ? { workflowId: e.workflow_id } : {}), ...(e.run_id ? { runId: e.run_id } : {}) }
+  const run = { type: 'Run', name: e.workflow_id ? workflowName(e.agent, e.workflow_id) : 'One-off run', agent: e.agent, ...(e.workflow_id ? { workflowId: e.workflow_id } : {}), ...(e.run_id ? { runId: e.run_id } : {}) }
   if (e.kind === 'decision') return { action: d.approved ? (d.edited ? 'Tool call approved with changes' : 'Tool call approved') : 'Tool call denied', resource: run }
   if (e.kind === 'answer') return { action: 'Question answered', resource: run }
   if (e.kind === 'feedback') return { action: 'Feedback given', resource: run }
@@ -119,7 +119,7 @@ export function eventAction(e: AuditEvent, names: EventNames = PLAIN_NAMES): Eve
   return { action: label, resource: { type: 'Workspace', name: 'Settings' } }
 }
 
-const CSV_COLUMNS = ['When (UTC)', 'Person', 'Action', 'Resource type', 'Resource', 'Kind', 'Agent', 'Workflow', 'What', 'Detail', 'Case', 'Event', 'Hash']
+const CSV_COLUMNS = ['When (UTC)', 'Person', 'Action', 'Resource type', 'Resource', 'Kind', 'Agent', 'Workflow', 'What', 'Detail', 'Run', 'Event', 'Hash']
 
 function csvCell(value: string): string {
   // A leading = + - @ would run as a formula in a spreadsheet.
@@ -164,7 +164,7 @@ export function caseRow(run: WorkflowRun, workflowTitle: string | undefined, eva
     id: run.run_id,
     agent: run.agent,
     workflowId: run.workflow_id,
-    workflowTitle: workflowTitle ?? (run.workflow_id || 'One-off job'),
+    workflowTitle: workflowTitle ?? (run.workflow_id || 'One-off run'),
     inputs: short(inputs, 160),
     status: run.status,
     startedAt: run.started_at,

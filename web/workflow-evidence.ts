@@ -214,8 +214,8 @@ export function addEvalCase(agentDir: string, workflowId: string, input: { run?:
   // (feedback's `final`, their edit of the result), else the result.
   const reference = (typeof input.reference === 'string' && input.reference.trim() ? input.reference.trim() : (input.run?.feedback?.final?.trim() || input.run?.result?.trim())) ?? ''
   const params = input.run?.params ?? input.params ?? {}
-  if (!reference && !Object.keys(params).length) throw new EvidenceError('A case needs its inputs, a good result, or both.')
-  if (input.run && evals.cases.some((c) => c.fromRun === input.run!.run_id)) throw new EvidenceError('That run is already a case.')
+  if (!reference && !Object.keys(params).length) throw new EvidenceError('An eval case needs its inputs, a good result, or both.')
+  if (input.run && evals.cases.some((c) => c.fromRun === input.run!.run_id)) throw new EvidenceError('That run is already an eval case.')
   const c: EvalCase = { id: randomUUID().slice(0, 8), params, reference: reference.slice(0, 50000), ...(input.run ? { fromRun: input.run.run_id } : {}), createdAt: new Date().toISOString() }
   writeEvals(agentDir, workflowId, { ...evals, cases: [...evals.cases, c] })
   return c
@@ -224,7 +224,7 @@ export function addEvalCase(agentDir: string, workflowId: string, input: { run?:
 export function updateEvalCase(agentDir: string, workflowId: string, caseId: string, reference: unknown): void {
   const evals = readEvals(agentDir, workflowId)
   if (typeof reference !== 'string') throw new EvidenceError('reference must be text; send "" for none.')
-  if (!evals.cases.some((c) => c.id === caseId)) throw new EvidenceError('No such case.')
+  if (!evals.cases.some((c) => c.id === caseId)) throw new EvidenceError('No such eval case.')
   writeEvals(agentDir, workflowId, { ...evals, cases: evals.cases.map((c) => (c.id === caseId ? { ...c, reference: reference.trim().slice(0, 50000) } : c)) })
 }
 

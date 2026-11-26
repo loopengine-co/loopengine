@@ -148,7 +148,7 @@ export async function listInbox(deps: InboxDeps, filter: { view?: InboxView | 'a
   for (const p of pending) bySession.set(p.sessionId, [...(bySession.get(p.sessionId) ?? []), p])
   const runSessions = new Set(runs.map((r) => r.session_id))
   const items: InboxItem[] = runs.map((run) => {
-    const wfTitle = deps.workflowTitle(run.agent, run.workflow_id) ?? (run.workflow_id || 'One-off job')
+    const wfTitle = deps.workflowTitle(run.agent, run.workflow_id) ?? (run.workflow_id || 'One-off run')
     const waits = run.status === 'awaiting_approval' ? (bySession.get(run.session_id) ?? []) : []
     const decided = [...(run.decisions ?? []), ...(run.answers ?? [])].sort((a, b) => a.at.localeCompare(b.at))
     const lastBy = decided.at(-1)?.by
@@ -339,7 +339,7 @@ export async function getInboxCase(deps: InboxDeps, id: string): Promise<InboxCa
   }
   const run = runs.find((r) => r.run_id === id) ?? (deps.run ? await deps.run(id) : undefined)
   if (!run) return undefined
-  const wfTitle = deps.workflowTitle(run.agent, run.workflow_id) ?? (run.workflow_id || 'One-off job')
+  const wfTitle = deps.workflowTitle(run.agent, run.workflow_id) ?? (run.workflow_id || 'One-off run')
   const waits = run.status === 'awaiting_approval' ? pending.filter((p) => p.sessionId === run.session_id).map(full) : []
   const usage = deps.usage?.(run) ?? []
   let steps: InboxStep[] = []

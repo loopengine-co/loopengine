@@ -50,7 +50,7 @@ describe('the Audit page', () => {
     const [decision] = listEvents({ by: 'ana@shop.com' })
     expect(eventText(decision)).toEqual({ what: 'Denied refund', detail: '=Already, "refunded"' })
     const csv = eventsCsv(listEvents({}))
-    expect(csv.split('\r\n')[0]).toBe('When (UTC),Person,Action,Resource type,Resource,Kind,Agent,Workflow,What,Detail,Case,Event,Hash')
+    expect(csv.split('\r\n')[0]).toBe('When (UTC),Person,Action,Resource type,Resource,Kind,Agent,Workflow,What,Detail,Run,Event,Hash')
     expect(csv).toContain(`,ana@shop.com,Tool call denied,Run,refunds,decision,cs,refunds,Denied refund,"'=Already, ""refunded""",r1,2,`)
   })
 

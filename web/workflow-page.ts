@@ -592,7 +592,7 @@ ${consoleShellScript}
           : '') +
         paramsSectionHtml(p) +
         '<h3>What it will use</h3>' +
-        '<p class="hint" style="margin:0">The tools for each step, and where you decide. The agent works out the order for each case from its instructions, below.</p>' +
+        '<p class="hint" style="margin:0">The tools for each step, and where you decide. The agent works out the order for each run from its instructions, below.</p>' +
         '<div class="le-table-wrap"><table class="wf-steps"><thead><tr><th>Step</th><th>Uses</th><th>Checkpoint</th></tr></thead><tbody>' + p.steps.map(stepRow).join('') + '</tbody></table></div>' +
         (p.abilities.length ? '<h3>Abilities it uses</h3><ul class="wf-list">' + p.abilities.map(function (a) { return '<li><code>' + esc(a) + '</code></li>'; }).join('') + '</ul>' + (state.canInstall ? '' : '<p class="hint">Installing abilities needs LOOPENGINE_ADMIN_AUTH set; otherwise they head the checklist.</p>') : '') +
         (p.skills && p.skills.length ? '<h3>Skills it comes with</h3><ul class="wf-list">' + p.skills.map(function (sk) { return '<li><code>' + esc(sk.id) + '</code> <span class="hint">' + esc(sk.description) + '</span></li>'; }).join('') + '</ul><p class="hint" style="margin:0">An agent that already has one keeps its own.</p>' : '') +

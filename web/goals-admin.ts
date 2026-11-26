@@ -731,7 +731,7 @@ export function checkChain(deps: GoalsDeps, job: GoalJob, raw: unknown): ChainSt
 export function editJob(deps: GoalsDeps, id: string, jobId: string, body: { action?: unknown; agent?: unknown; workflowId?: unknown; chain?: unknown }): Goal {
   const goal = getGoal(deps, id)
   const job = findWorkflow(goal, jobId)
-  if (job.kind === 'once') throw new GoalError('This one-off job is from before goals suggested workflows; it can’t take workflows.')
+  if (job.kind === 'once') throw new GoalError('This one-off run is from before goals suggested workflows; it can’t take workflows.')
   if (body.action === 'link') {
     const ref = refFrom(body, 'Adding a workflow')
     const info = deps.workflowInfo?.(ref.agent, ref.workflowId)

@@ -354,10 +354,10 @@ describe('starting jobs from messages', () => {
   it("refuses someone who can't give jobs, and the free plan", async () => {
     const connector = fakeConnector()
     const runTurn = vi.fn()
-    await handleJobMessage(mention, { ...deps(connector, []), runTurn, allowed: () => ({ allowed: false, message: 'Only approvers can give me jobs here.' }) })
+    await handleJobMessage(mention, { ...deps(connector, []), runTurn, allowed: () => ({ allowed: false, message: 'Only approvers can start runs here.' }) })
     await handleJobMessage(mention, { ...deps(connector, []), runTurn, plan: 'free' })
     expect(runTurn).not.toHaveBeenCalled()
-    expect(connector.posts.map((p) => p.text)).toEqual(['Only approvers can give me jobs here.', 'Starting jobs from Slack needs LoopEngine Pro.'])
+    expect(connector.posts.map((p) => p.text)).toEqual(['Only approvers can start runs here.', 'Starting runs from Slack needs LoopEngine Pro.'])
   })
 
   it('says so when the run fails', async () => {
@@ -392,7 +392,7 @@ describe('Telegram settings', () => {
     expect(jobAllowed(config, 'telegram', { user: '42', conversation: '42', direct: true }).allowed).toBe(false)
     setAgentApprovers(config, [{ user: '42', name: 'Ada' }], 'telegram')
     expect(jobAllowed(config, 'telegram', { user: '42', conversation: '42', direct: true }).allowed).toBe(true)
-    expect(jobAllowed(config, 'telegram', { user: '43', conversation: '-100' })).toEqual({ allowed: false, message: 'Only approvers can give me jobs here: Ada.' })
+    expect(jobAllowed(config, 'telegram', { user: '43', conversation: '-100' })).toEqual({ allowed: false, message: 'Only approvers can start runs here: Ada.' })
     expect(clickAllowed(config, 'telegram', '43').allowed).toBe(false)
     // Slack's approvers are its own.
     expect(clickAllowed(config, 'slack', '43').allowed).toBe(true)

@@ -419,8 +419,7 @@ export const consoleShellScript: string = `<script>
     : page === 'config' ? 'settings'
     : page === 'inbox' ? 'inbox'
     : page === 'audit' ? 'audit'
-    // A case, in the section it was opened from.
-    : page === 'case' ? ((params.get('back') || '').indexOf('/audit') === 0 ? 'audit' : (params.get('back') || '').indexOf('/agents') === 0 ? 'workflows' : 'inbox') : '';
+    : '';
   var railItems = document.querySelectorAll('[data-le-section]');
   for (var ri = 0; ri < railItems.length; ri++) {
     if (railItems[ri].getAttribute('data-le-section') === section0) railItems[ri].classList.add('is-current');

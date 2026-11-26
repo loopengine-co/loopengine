@@ -79,7 +79,7 @@ export async function handleJobMessage(message: InboundMessage, deps: JobDeps): 
   const threadTs = message.threadTs ?? message.ts
   const say = (text: string) => connector.postInThread(message.conversation, threadTs, text)
   if (deps.plan === 'free') {
-    await say(`Starting jobs from ${connector.name} needs LoopEngine Pro.`)
+    await say(`Starting runs from ${connector.name} needs LoopEngine Pro.`)
     return
   }
   const gate = deps.allowed(message)

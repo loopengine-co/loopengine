@@ -5829,7 +5829,7 @@ const server = createServer(async (req, res) => {
       if (!canDecide(callerOf(req).role)) return void json(403, { error: 'Your role can see the Inbox but not change it.' })
       const id = decodeURIComponent(archiveMatch[1])
       const found = await getInboxCase(inboxDepsFor(req), id)
-      if (!found) return void json(404, { error: 'No such case: it may have been removed.' })
+      if (!found) return void json(404, { error: 'No such run: it may have been removed.' })
       if (req.method === 'POST' && found.pending.length) return void json(400, { error: 'It waits on a person: decide first, then archive it.' })
       setArchived(projectDir(), [id], req.method === 'POST', changedBy(req))
       return void json(200, { archived: req.method === 'POST' })
@@ -5841,7 +5841,7 @@ const server = createServer(async (req, res) => {
       const exportMatch = pathname.match(/^\/inbox\/cases\/([^/]+)\/export$/)
       if (exportMatch) {
         const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(exportMatch[1]))
-        if (!found) return json(404, { error: 'No such case: it may have been removed.' })
+        if (!found) return json(404, { error: 'No such run: it may have been removed.' })
         const run = found.run
         const workflowVersion = run ? workflowVersionOf(run) : undefined
         const workflow = run && workflowVersion ? getVersion({ agent: run.agent, workflowId: run.workflow_id, kind: 'workflow' }, workflowVersion) : undefined
@@ -5867,13 +5867,13 @@ const server = createServer(async (req, res) => {
       if (traceMatch) {
         if (inboxOnly(callerOf(req).role)) return json(403, { error: 'Only owners, admins and editors can read a trace.' })
         const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(traceMatch[1]))
-        if (!found) return json(404, { error: 'No such case: it may have been removed.' })
+        if (!found) return json(404, { error: 'No such run: it may have been removed.' })
         const trace = found.run ? await traceOfRun(found.run.agent, found.run.run_id) : undefined
-        return trace ? json(200, trace) : json(404, { error: 'This case has no run to trace.' })
+        return trace ? json(200, trace) : json(404, { error: 'This conversation has no run to trace.' })
       }
       if (pathname.startsWith('/inbox/cases/')) {
         const found = await getInboxCase(inboxDepsFor(req), decodeURIComponent(pathname.slice('/inbox/cases/'.length)))
-        return found ? json(200, found) : json(404, { error: 'No such case: it may have been removed.' })
+        return found ? json(200, found) : json(404, { error: 'No such run: it may have been removed.' })
       }
       const q = new URL(req.url ?? '/', 'http://localhost').searchParams
       const view = q.get('view') as InboxView | null

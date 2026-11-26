@@ -469,7 +469,7 @@ ${renderMarkdownScript}
       '<p class="ib-question">The agent wants to run <code>' + esc(p.tool) + '</code> with:</p>' + kvHtml(p.args) +
       (canDecide()
         ? '<textarea class="ib-args mono" hidden>' + esc(JSON.stringify(p.args, null, 2)) + '</textarea>' +
-          '<textarea class="ib-deny-reason" hidden placeholder="Why not? (optional) The agent reads this, and it' + String.fromCharCode(8217) + 's kept with the case."></textarea>' +
+          '<textarea class="ib-deny-reason" hidden placeholder="Why not? (optional) The agent reads this, and it' + String.fromCharCode(8217) + 's kept with the run."></textarea>' +
           '<div class="ib-actions"><button type="button" class="ib-btn" data-act="approve">Approve</button>' +
             '<button type="button" class="ib-btn plain" data-act="change">Change</button>' +
             '<button type="button" class="ib-btn bad" data-act="deny">Deny</button><span class="hint ib-result" role="status"></span></div>'

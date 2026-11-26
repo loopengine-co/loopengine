@@ -1973,7 +1973,7 @@ ${renderMarkdownScript}
     return '<section class="wf-section">' + critSection + '</section>' +
       '<section class="wf-section"><h4 class="wf-sub">Eval cases' + (evals.cases.length ? ' (' + evals.cases.length + ')' : '') + '</h4>' +
         '<p class="hint" style="margin:0">Real runs saved to check every change against.</p>' +
-        (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet: add suggested ones below, or save any run from its case page.</p>') +
+        (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet: add suggested ones below, or save any run from its trace (Activity).</p>') +
         '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
           '<span class="hint">Runs every eval case again with the current instructions and checks each result against the success criteria. Nothing is sent, refunded or submitted.</span></div>' +
         lastLine + '</section>' +
@@ -4114,12 +4114,12 @@ ${renderMarkdownScript}
     var free = n.plan === 'free';
     var on = !free && f.jobs === true;
     var how = app === 'telegram'
-      ? 'A private chat with the bot, or @mentioning it in a group, runs the agent on that message, and it answers with a reply. Replying to its answer carries the job on. In a group the bot only sees mentions when it&#39;s an admin or its privacy mode is off (@BotFather, /setprivacy); replies to its messages always reach it.'
-      : 'A DM to the bot, or @mentioning it in a channel, runs the agent on that message, and it answers in a thread. Replies in the thread carry the job on.';
+      ? 'A private chat with the bot, or @mentioning it in a group, runs the agent on that message, and it answers with a reply. Replying to its answer carries the run on. In a group the bot only sees mentions when it&#39;s an admin or its privacy mode is off (@BotFather, /setprivacy); replies to its messages always reach it.'
+      : 'A DM to the bot, or @mentioning it in a channel, runs the agent on that message, and it answers in a thread. Replies in the thread carry the run on.';
     return '<div class="body-field" style="margin:4px 0 0">' +
       '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="jobs" id="' + app + 'Jobs"' + (on ? ' checked' : '') + (free ? ' disabled' : '') + '> ' +
-      'Start jobs from messages' + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
-      '<p class="hint" style="margin:2px 0 0">' + (free ? 'Starting jobs from ' + CHANNEL_TITLES[app] + ' needs LoopEngine Pro.' : how + ' Only approvers (below) can give it jobs; with none listed, anyone in its ' + (app === 'telegram' ? 'chat' : 'channel') + ' can, but not by direct message. A request it needs approved waits in the same thread.') + '</p></div>';
+      'Start runs from messages' + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
+      '<p class="hint" style="margin:2px 0 0">' + (free ? 'Starting runs from ' + CHANNEL_TITLES[app] + ' needs LoopEngine Pro.' : how + ' Only approvers (below) can start runs; with none listed, anyone in its ' + (app === 'telegram' ? 'chat' : 'channel') + ' can, but not by direct message. A request it needs approved waits in the same thread.') + '</p></div>';
   }
 
   // A secret's state at a glance: a pill by the label, and a placeholder
@@ -4334,7 +4334,7 @@ ${renderMarkdownScript}
     }).join('');
     var where = app === 'telegram' ? 'by replying to it' : 'by replying in its thread';
     return '<section class="approvers-section" data-app="' + app + '" style="max-width:560px;margin-top:18px;padding-top:14px;border-top:1px solid var(--le-line, #e5e7eb)"><h4 style="margin:0 0 6px">Approvers</h4>' +
-      (n.primary !== app ? '<p class="hint" style="margin:0 0 8px">' + title + ' isn&#39;t primary, so requests aren&#39;t sent there until it is. Jobs started there still use this list.</p>' : '') +
+      (n.primary !== app ? '<p class="hint" style="margin:0 0 8px">' + title + ' isn&#39;t primary, so requests aren&#39;t sent there until it is. Runs started there still use this list.</p>' : '') +
       '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request ' + where + ', like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A plain &ldquo;yes&rdquo; runs it; a reply that&#39;s less clear (&ldquo;sure, send it&rdquo;, &ldquo;yes but check the amount&rdquo;) shows exactly what will run with a Confirm button first, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count, and only approvers can give the agent jobs. Anyone can still ask about a request.</p>' +
       (approvers.length
         ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>' + title + ' ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
