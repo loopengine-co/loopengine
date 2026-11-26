@@ -119,7 +119,7 @@ describe('the output elsewhere', () => {
   })
 
   it('is part of the workflow version, and comes back from it', () => {
-    const w = { agent: 'cs', workflowId: 'triage', title: 'Triage', description: '', parameters: {}, tools: [], triggers: [], criteria: [], instructions: 'Triage it.', outputSchema: schema }
+    const w = { agent: 'cs', workflowId: 'triage', title: 'Triage', description: '', parameters: {}, tools: [], criteria: [], instructions: 'Triage it.', outputSchema: schema }
     expect(workflowContent(w)).toContain('## Output schema\n\n```json\n{\n  "type": "object"')
     expect(workflowFromContent(workflowContent(w)).outputSchema).toEqual(schema)
     expect(workflowFromContent(workflowContent({ ...w, outputSchema: undefined })).outputSchema).toBeUndefined()

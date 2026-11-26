@@ -3284,7 +3284,6 @@ ${renderMarkdownScript}
       (f.outputSchema ? '<details class="wf-schema"><summary>Output schema</summary><pre>' + escapeHtml(JSON.stringify(f.outputSchema, null, 2)) + '</pre></details>' : ''));
     if (versionFull(v)) rows += row('Model', escapeHtml(versionModelText(f.model)));
     if (f.tools) rows += row('Tools', list(f.tools, 'None named in its prompt', versionToolHtml));
-    if (f.triggers) rows += row('Triggers', list(f.triggers, 'None: run by hand (Run now) or from an app', function (t) { return '<div>' + escapeHtml(t) + '</div>'; }));
     if (f.criteria) rows += row('Success criteria', list(f.criteria, 'None', function (c) { return '<div>' + escapeHtml(versionCritText(c)) + '</div>'; }));
     return '<div class="wf-vd">' + rows + '</div>' + (versionFull(v) ? '' : '<p class="hint" style="margin:6px 0 0">An early version: only its prompt and result format were kept.</p>');
   }
@@ -3343,10 +3342,6 @@ ${renderMarkdownScript}
         if (was && was.permission !== t.permission) tools.push('<div><code>' + escapeHtml(t.name) + '</code>: ' + fromTo(PERMISSIONS[was.permission] || was.permission, PERMISSIONS[t.permission] || t.permission) + '</div>');
       });
       if (tools.length) add('Tools', tools.join(''), tools.length + ' changed');
-    }
-    if (a.triggers && b.triggers) {
-      var trig = setDiff(a.triggers, b.triggers, function (t) { return t; }, escapeHtml);
-      if (trig.length) add('Triggers', trig.join(''), trig.length + ' changed');
     }
     if (a.criteria && b.criteria) {
       var crit = setDiff(a.criteria, b.criteria, function (c) { return c.kind + '|' + (c.value || '') + '|' + c.text; }, function (c) { return escapeHtml(versionCritText(c)); });

@@ -87,7 +87,7 @@ import { readSkill, writeSkill, deleteSkill, SkillInvalidIdError, SkillNotFoundE
 import { listDeclaredEnvVars, setEnvVar, unsetEnvVar, setAgentEnvVar, unsetAgentEnvVar, EnvVarNameError } from '#web/env-admin.js'
 import { agentDirFor, createAgentEnv } from '#core/agent-env.js'
 import { WorkflowParamsError, readWorkflow, readWorkflows, readWorkspacePolicies, setWorkflowDelivery, setWorkflowFields, setWorkflowName, validateParams, workflowPreviewMessage, workflowRunMessage, writeWorkspacePolicies, type Workflow, type WorkflowFields } from '#core/workflows.js'
-import { listTraceSpans, workflowContent, workflowFromContent, type Version, type WorkflowSnapshot, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
+import { listTraceSpans, workflowContent, workflowFromContent, withoutTriggers, type Version, type WorkflowSnapshot, eventPeople, verifyEventChain, getVersion, listEvents, listVersions, noteVersion, readMeta, recordEvent, runEvents, writeMeta, type AuditEventKind, type EventFilter } from '#core/audit-store.js'
 import { caseRow, eventAction, eventsCsv, type EventNames } from '#web/audit-admin.js'
 import { auditPageFor } from '#web/audit-page.js'
 import { changeOf, describeChanges, keptBody, type FieldChange } from '#web/change-log.js'
@@ -2934,27 +2934,26 @@ async function traceOfRun(agent: string, runId: string): Promise<RunTrace | unde
 async function noteWorkflowVersion(agent: string, workflowId: string, about: { by?: string; reason?: string } = {}): Promise<number | undefined> {
   const snapshot = await workflowSnapshot(agent, workflowId)
   if (!snapshot) return undefined
-  // A version from before tools, triggers and success criteria were part
-  // of it: the next one says so, rather than "changed outside the console".
-  const latest = about.reason ? undefined : listVersions({ agent, workflowId, kind: 'workflow' })[0]
-  const older = latest && !latest.content.includes('\n## Workflow\n')
-  return noteVersion({ agent, workflowId, kind: 'workflow' }, workflowContent(snapshot), older ? { ...about, reason: 'Now also records its tools, triggers and success criteria' } : about)
+  const content = workflowContent(snapshot)
+  const latest = listVersions({ agent, workflowId, kind: 'workflow' })[0]
+  // The latest, but for the schedules and webhooks versions once held:
+  // the same version still.
+  if (latest && latest.content !== content && withoutTriggers(latest.content) === content) return latest.number
+  // A version from before tools and success criteria were part of it: the
+  // next one says so, rather than "changed outside the console".
+  const older = !about.reason && latest && !latest.content.includes('\n## Workflow\n')
+  return noteVersion({ agent, workflowId, kind: 'workflow' }, content, older ? { ...about, reason: 'Now also records its tools and success criteria' } : about)
 }
 
 // Everything a workflow version holds (core/audit-store.ts): the
-// workflow itself, its contract tools and their permissions, the
-// schedules and webhooks that start it, and its success criteria.
+// workflow itself, its contract tools and their permissions, and its
+// success criteria. Not its schedules or webhooks: those change straight
+// away, recorded in the change log.
 async function workflowSnapshot(agent: string, workflowId: string): Promise<WorkflowSnapshot | undefined> {
   const dir = getEntry(agent) ? agentDir(agent) : undefined
   const workflow = dir ? readWorkflow(dir, workflowId) : undefined
   if (!dir || !workflow) return undefined
-  const [toolsOf, tasks, hooks] = await Promise.all([
-    contractTools(agent),
-    workflowTasks(agent, workflowId),
-    listTriggers(agent, workflowId).catch(() => [] as WorkflowTrigger[]),
-  ])
-  // What's live: a webhook made in a draft isn't, until it's published.
-  const triggers = [...tasks.map(scheduleLine), ...hooks.filter((h) => !h.draft).map(hookLine)].sort()
+  const toolsOf = await contractTools(agent)
   return {
     agent,
     workflowId,
@@ -2963,7 +2962,6 @@ async function workflowSnapshot(agent: string, workflowId: string): Promise<Work
     parameters: { ...workflow.parameters } as WorkflowSnapshot['parameters'],
     ...(workflow.model ? { model: workflow.model } : {}),
     tools: toolsOf(workflow.instructions).map((t) => ({ name: t.name, permission: t.decision })),
-    triggers,
     criteria: readEvals(dir, workflowId).criteria.map((c) => ({ text: c.text, kind: c.kind, ...(c.value !== undefined ? { value: c.value } : {}) })),
     instructions: workflow.instructions,
     ...(workflow.output ? { output: workflow.output } : {}),

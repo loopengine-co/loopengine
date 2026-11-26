@@ -586,9 +586,10 @@ export function getVersion(key: { agent: string; workflowId: string; kind: Versi
 
 /** What a workflow version holds, as text people can read and compare
  * line by line: which workflow it is, its name and description, its input
- * schema, model, the tools it uses with each one's permission, its
- * triggers, its success criteria, its output schema, its instructions and
- * its result format. */
+ * schema, model, the tools it uses with each one's permission, its success
+ * criteria, its output schema, its instructions and its result format.
+ * What starts it (schedules, webhooks) and where its messages go aren't
+ * part of it: they change straight away, recorded in the change log. */
 export interface WorkflowSnapshot {
   agent: string
   workflowId: string
@@ -601,8 +602,6 @@ export interface WorkflowSnapshot {
   /** The agent's tools its instructions name, each with its permission
    * (allow, ask or deny): the workflow's contract. */
   tools: { name: string; permission: string }[]
-  /** Each schedule and webhook that starts it, in a line. */
-  triggers: string[]
   criteria: { text: string; kind: string; value?: string }[]
   instructions: string
   output?: string
@@ -627,10 +626,19 @@ export function workflowContent(w: WorkflowSnapshot): string {
     `\n\n## Input schema\n\n${json(inputSchemaOf(w.parameters as Parameters<typeof inputSchemaOf>[0]))}` +
     `\n\n## Model\n\n${w.model ? `${w.model.provider}/${w.model.model}` : "The agent's"}` +
     `\n\n## Tools\n\n${list(w.tools.map((t) => `- ${t.name}: ${t.permission}`))}` +
-    `\n\n## Triggers\n\n${list(w.triggers.map((t) => `- ${line(t)}`))}` +
     `\n\n## Success criteria\n\n${list(criteria)}` +
     `\n\n## Output schema\n\n${w.outputSchema ? json(w.outputSchema) : 'None'}\n`
   return head + INSTRUCTIONS_HEADING + w.instructions + (w.output?.trim() ? RESULT_HEADING + w.output.trim() : '')
+}
+
+/** A version's text without the schedules and webhooks that started the
+ * workflow, which versions held until they became settings that change
+ * straight away: the same workflow with only that dropped is the same
+ * version, not a new one. */
+export function withoutTriggers(content: string): string {
+  const at = content.indexOf(INSTRUCTIONS_HEADING)
+  if (at < 0) return content
+  return content.slice(0, at).replace(/\n\n## Triggers\n\n[\s\S]*?(?=\n\n## )/, '') + content.slice(at)
 }
 
 /** A section's ```json block, parsed. */
@@ -658,8 +666,9 @@ function parametersFromSchema(schema: Record<string, unknown>): WorkflowSnapshot
 
 /** What a version holds. Older versions hold less: one from when only
  * the brief was numbered has just the instructions and result format;
- * one from before tools, triggers and criteria were part of it has no
- * such sections, and none comes back. */
+ * one from before tools and criteria were part of it has no such
+ * sections, and none comes back. The schedules and webhooks older
+ * versions held are left out. */
 export function workflowFromContent(content: string): Partial<WorkflowSnapshot> & { instructions: string } {
   const split = (body: string) => {
     const at = body.lastIndexOf(RESULT_HEADING)
@@ -694,7 +703,6 @@ export function workflowFromContent(content: string): Partial<WorkflowSnapshot> 
     ...(inputSchema ? { inputSchema } : {}),
     ...(model ? { model: { provider: model[1]!, model: model[2]! } } : {}),
     ...(section('Tools') !== undefined ? { tools: lines('Tools').flatMap((l) => { const m = l.match(/^(.+): (\S+)$/); return m ? [{ name: m[1]!, permission: m[2]! }] : [] }) } : {}),
-    ...(section('Triggers') !== undefined ? { triggers: lines('Triggers') } : {}),
     ...(criteria ? { criteria } : {}),
     ...(outputSchema ? { outputSchema } : {}),
     ...split(content.slice(at + INSTRUCTIONS_HEADING.length)),

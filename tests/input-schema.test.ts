@@ -96,7 +96,7 @@ describe('typed inputs saved and versioned', () => {
       note: { description: '', required: false },
       tags: { description: 'Labels', required: false, type: 'array', default: ['a'] },
     }
-    const w = { agent: 'cs', workflowId: 'refund', title: 'Refund', description: '', parameters, tools: [], triggers: [], criteria: [], instructions: 'Refund it.' }
+    const w = { agent: 'cs', workflowId: 'refund', title: 'Refund', description: '', parameters, tools: [], criteria: [], instructions: 'Refund it.' }
     const content = workflowContent(w)
     // One JSON Schema, the one apps get.
     expect(workflowFromContent(content).inputSchema).toEqual(inputSchemaOf(parameters))
