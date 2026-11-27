@@ -223,7 +223,7 @@ export const devUiCss: string = `
   .le-agent-head .le-head-id { font-size: 12px; margin-left: 8px; }
   .le-tabs { display: flex; gap: 2px; width: fit-content; max-width: calc(100% - 40px); margin: 0 20px 14px; padding: 3px; border-radius: 10px; background: var(--surface); overflow-x: auto; scrollbar-width: none; }
   .le-tab { height: 30px; padding: 0 12px; border-radius: 8px; color: var(--ink-muted); white-space: nowrap; display: flex; gap: 6px; align-items: center; text-decoration: none; font-size: 13px; font-weight: 500; }
-  .le-tab:hover { color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+  .le-tab:hover { color: var(--ink); background: var(--surface-2); }
   .le-tab[aria-selected="true"] { color: var(--ink); background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
   .le-count { font-size: 11px; background: var(--surface-2); color: var(--ink-muted); padding: 0 6px; border-radius: 6px; }
   .le-count.warn { background: var(--warn-soft); color: var(--warn); }
@@ -251,7 +251,7 @@ export const devUiCss: string = `
   .le-topbar-gap { flex: 1; }
   .le-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface); }
   .le-seg button, .le-seg a { border: 0; background: none; height: 30px; padding: 0 13px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--ink-muted); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-  .le-seg button:hover:not(:disabled), .le-seg a:hover { background: none; color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+  .le-seg button:hover:not(:disabled), .le-seg a:hover { background: var(--surface-2); color: var(--ink); }
   .le-seg [aria-selected="true"], .le-seg [aria-pressed="true"], .le-seg button[aria-selected="true"]:hover:not(:disabled), .le-seg button[aria-pressed="true"]:hover:not(:disabled), .le-seg a[aria-selected="true"]:hover, .le-seg a[aria-pressed="true"]:hover { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
   .le-btn-dark { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 15px; border-radius: 10px; border: 0; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
   .le-btn-dark:hover:not(:disabled) { background: var(--primary); opacity: .88; }
