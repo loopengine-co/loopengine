@@ -257,9 +257,9 @@ ${consoleShellScript}
       if (Array.isArray(r.body.focuses) && r.body.focuses.length) FOCUS = r.body.focuses.map(function (f) { return [f.id, f.label]; }).concat([['other', 'Something else']]);
       var id = selectId || new URLSearchParams(location.search).get('goal');
       state.current = state.goals.filter(function (g) { return g.id === id; })[0] || null;
-      // With goals already, a new one is a dialog over the list; the whole
-      // page is for the first goal, or one handed over from Home.
-      var dialog = state.creating && state.goals.length && !startText && location.pathname !== '/';
+      // A new goal is a dialog over the list; the whole page is only for
+      // the front page, or a goal handed over from Home.
+      var dialog = state.creating && !startText && location.pathname !== '/';
       if (dialog) { state.creating = false; setUrl(''); }
       render();
       if (dialog) openNewGoal();
@@ -339,8 +339,8 @@ ${consoleShellScript}
     });
     var newTile = '<a class="gl-tile" href="/goals?new=1" data-new-goal><b>+ New goal</b><span>Say what your agents should take care of, and get workflows suggested for it.</span></a>';
     return '<div class="gl-hero"><div class="gl-hero-text"><h2 class="le-display">Your goals</h2><p class="le-display-sub">' +
-        state.goals.length + (state.goals.length === 1 ? ' goal' : ' goals') + (running ? ', ' + running + (running === 1 ? ' workflow' : ' workflows') + ' built for them' : '') + '. Open one to see its workflows and suggestions.</p></div>' + mascot + '</div>' +
-      '<div class="le-grid gl-cols2">' + (cards.length ? cards.join('') + (q ? fillers(cards.length, 2) : newTile + fillers(cards.length + 1, 2)) : '<p class="gl-empty gl-wide">No goal matches.</p>') + '</div>';
+        (state.goals.length ? state.goals.length + (state.goals.length === 1 ? ' goal' : ' goals') : 'No goals yet') + (running ? ', ' + running + (running === 1 ? ' workflow' : ' workflows') + ' built for them' : '') + (state.goals.length ? '. Open one to see its workflows and suggestions.' : '. Set one and LoopEngine suggests the workflows it needs.') + '</p></div>' + mascot + '</div>' +
+      '<div class="le-grid gl-cols2">' + (!state.goals.length ? newTile + fillers(1, 2) : cards.length ? cards.join('') + (q ? fillers(cards.length, 2) : newTile + fillers(cards.length + 1, 2)) : '<p class="gl-empty gl-wide">No goal matches.</p>') + '</div>';
   }
 
   // The goal box and its examples; and what LoopEngine knows about you.
@@ -717,11 +717,11 @@ ${consoleShellScript}
     var title = document.getElementById('glTitle');
     var newBtn = document.getElementById('glNewBtn');
     var search = document.getElementById('glSearchWrap');
-    // The list, unless there are no goals yet: then the new-goal form.
-    var listing = !state.current && !state.creating && state.goals.length > 0;
+    // The list (empty or not), unless a new goal has the whole page.
+    var listing = !state.current && !state.creating;
     if (title) title.innerHTML = state.current ? '<a href="/goals">Goals</a><span aria-hidden="true" style="color:var(--ink-faint);font-weight:400">/</span><span>' + esc(state.current.goal) + '</span>' : listing ? 'Goals' : 'New goal';
     if (newBtn) newBtn.hidden = !listing && !state.current;
-    if (search) search.hidden = !listing;
+    if (search) search.hidden = !listing || !state.goals.length;
     page.innerHTML = (state.current ? goalHtml(state.current) : listing ? listHtml() : newGoalHtml()) + (state.error ? '<p class="error">' + esc(state.error) + '</p>' : '');
     state.error = '';
     wire();
@@ -945,10 +945,10 @@ ${consoleShellScript}
   }
 
   // + New goal (the top bar's, the sidebar's) opens the dialog over the
-  // page, once there are goals to go back to.
+  // page.
   document.addEventListener('click', function (ev) {
     var a = ev.target.closest && ev.target.closest('#glNewBtn, [data-le-goal-new]');
-    if (!a || !state.goals.length || ev.metaKey || ev.ctrlKey) return;
+    if (!a || ev.metaKey || ev.ctrlKey) return;
     ev.preventDefault();
     openNewGoal();
   });

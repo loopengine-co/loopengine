@@ -5916,10 +5916,11 @@ const server = createServer(async (req, res) => {
     // "Find your first agent": the page, and its routes.
     // The Goals page (a browser asking for a page), and its API.
     if (req.method === 'GET' && pathname === '/goals' && String(req.headers.accept ?? '').includes('text/html')) {
-      // The header as the page will show it: one goal, a new goal (asked
-      // for, or no goals yet), or the list.
+      // The header as the page will show it: one goal, a new goal handed
+      // over from Home (it has the whole page), or the list (a plain new
+      // goal is a dialog over it).
       const q = new URL(req.url ?? '/', 'http://localhost').searchParams
-      const view = q.get('goal') ? 'goal' : q.has('new') || !listGoals(goalsDeps).some((g) => !g.standalone) ? 'new' : 'goals'
+      const view = q.get('goal') ? 'goal' : q.has('new') && q.get('text') ? 'new' : 'goals'
       res.writeHead(200, { 'content-type': 'text/html' }).end(goalsPageAs(view))
       return
     }
