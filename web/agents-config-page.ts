@@ -1697,7 +1697,7 @@ ${renderMarkdownScript}
         '<td>' + (v.runs ? (v.questions / v.runs).toFixed(1) : '0') + '</td><td>' + (v.feedback ? healthPct(v.unedited, v.feedback) : String.fromCharCode(8212)) + '</td><td>' + healthTime(v.medianMs) + '</td><td>' + healthCost(v.costPerRunUsd) + '</td></tr>';
     }).join('');
     return alerts + stats + healthChartHtml(h.daily) +
-      '<details class="wf-health-more"><summary>By version of its instructions</summary><div class="wf-health-table"><table><thead><tr><th>Version</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+      '<details class="wf-health-more"><summary>By workflow version</summary><div class="wf-health-table"><table><thead><tr><th>Version</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
   }
 
   // A change's details: each setting from and to, and for long texts the
