@@ -1497,14 +1497,14 @@ ${consoleShellScript}
   }
 
   // History and Run trace can each be hidden; remembered per browser.
-  // Both start hidden on a narrow screen, where they'd stack above and
-  // below the conversation.
+  // Run trace starts hidden; History too on a narrow screen, where it'd
+  // stack above the conversation. (v2: the trace's old default was shown.)
   var chatBody = document.getElementById('chatBody');
   var historyToggle = document.getElementById('historyToggle');
   var traceToggle = document.getElementById('traceToggle');
-  var panes = { history: window.innerWidth > 860, trace: window.innerWidth > 860 };
+  var panes = { history: window.innerWidth > 860, trace: false };
   try {
-    var savedPanes = JSON.parse(localStorage.getItem('loopengine.chatPanes') || 'null');
+    var savedPanes = JSON.parse(localStorage.getItem('loopengine.chatPanes.v2') || 'null');
     if (savedPanes && window.innerWidth > 860) panes = savedPanes;
   } catch (e) {}
   function applyPanes() {
@@ -1512,7 +1512,7 @@ ${consoleShellScript}
     chatBody.classList.toggle('no-trace', !panes.trace);
     historyToggle.setAttribute('aria-pressed', String(panes.history));
     traceToggle.setAttribute('aria-pressed', String(panes.trace));
-    try { localStorage.setItem('loopengine.chatPanes', JSON.stringify(panes)); } catch (e) {}
+    try { localStorage.setItem('loopengine.chatPanes.v2', JSON.stringify(panes)); } catch (e) {}
   }
   historyToggle.addEventListener('click', function () { panes.history = !panes.history; applyPanes(); });
   traceToggle.addEventListener('click', function () { panes.trace = !panes.trace; applyPanes(); });
