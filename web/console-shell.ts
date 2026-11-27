@@ -634,37 +634,35 @@ export const consoleShellScript: string = `<script>
     var tools = d.tools || [];
     var skills = d.skills || [];
     var settings = d.settings || [];
-    var toolRows = tools.map(function (t) {
-      var permission = d.agent
-        ? decisionPill(t.agentDecision) + (t.decision && t.decision !== t.agentDecision ? ' <span class="hint">ships as ' + DECISION_LABELS[t.decision] + '</span>' : '')
-        : decisionPill(t.decision);
-      return '<tr><td><code>' + esc(t.name) + '</code></td><td>' + (t.description ? esc(t.description) : '<span class="hint">No description</span>') + '</td><td>' + permission + '</td></tr>';
-    }).join('');
-    // A one-line summary at the top: how many tools, by permission, and skills.
+    // At the top: how many tools, by permission, skills and settings.
     var counts = {};
     tools.forEach(function (t) {
       var decision = d.agent ? t.agentDecision : t.decision;
       if (decision) counts[decision] = (counts[decision] || 0) + 1;
     });
-    var byDecision = ['allow', 'ask', 'deny'].filter(function (k) { return counts[k]; }).map(function (k) { return counts[k] + ' ' + DECISION_LABELS[k]; });
-    var summary = tools.length + (tools.length === 1 ? ' tool' : ' tools') + (byDecision.length ? ' (' + byDecision.join(', ') + ')' : '') +
-      ' ' + String.fromCharCode(183) + ' ' + skills.length + (skills.length === 1 ? ' skill' : ' skills') +
-      (settings.length ? ' ' + String.fromCharCode(183) + ' ' + settings.length + (settings.length === 1 ? ' setting' : ' settings') : '');
+    var chips = '<span class="ad-chip strong">' + tools.length + (tools.length === 1 ? ' tool' : ' tools') + '</span>' +
+      ['allow', 'ask', 'deny'].filter(function (k) { return counts[k]; }).map(function (k) { return '<span class="ad-chip ' + k + '">' + counts[k] + ' ' + DECISION_LABELS[k] + '</span>'; }).join('') +
+      '<span class="ad-chip">' + skills.length + (skills.length === 1 ? ' skill' : ' skills') + '</span>' +
+      (settings.length ? '<span class="ad-chip">' + settings.length + (settings.length === 1 ? ' setting' : ' settings') + '</span>' : '');
+    var row = function (name, desc, right) {
+      return '<div class="ad-row"><div class="ad-row-head"><code class="ad-name">' + esc(name) + '</code>' + (right || '') + '</div>' +
+        (desc ? '<p class="ad-desc">' + esc(desc) + '</p>' : '') + '</div>';
+    };
+    var toolRows = tools.map(function (t) {
+      var permission = d.agent
+        ? decisionPill(t.agentDecision) + (t.decision && t.decision !== t.agentDecision ? '<span class="ad-ships">ships as ' + DECISION_LABELS[t.decision] + '</span>' : '')
+        : decisionPill(t.decision);
+      return row(t.name, t.description || '', '<span class="ad-perm">' + permission + '</span>');
+    }).join('');
+    var description = String(d.description || '').replace(/^A loopengine ability: */i, '');
     return '<div class="ability-details">' +
-      '<div class="ability-details-head"><span class="ability-details-title">What <code>' + esc(d.name) + '</code>' + (d.version ? ' <span class="hint">' + esc(d.version) + '</span>' : '') + ' can do</span>' +
-        '<span class="ability-details-summary">' + summary + '</span></div>' +
-      (d.description ? '<p style="margin:0 0 6px">' + esc(d.description) + '</p>' : '') +
-      '<h4>Tools (' + tools.length + ')</h4>' +
-      (tools.length
-        ? '<table><thead><tr><th>Tool</th><th>What it does</th><th>' + (d.agent ? 'Permission in ' + esc(d.agent) : 'Permission it ships with') + '</th></tr></thead><tbody>' + toolRows + '</tbody></table>'
-        : '<p class="hint">No tools.</p>') +
-      '<h4>Skills (' + skills.length + ')</h4>' +
-      (skills.length
-        ? '<ul class="ability-skills">' + skills.map(function (s) { return '<li><code>' + esc(s.name) + '</code>' + (s.description ? ' ' + String.fromCharCode(8212) + ' ' + esc(s.description) : '') + '</li>'; }).join('') + '</ul>'
-        : '<p class="hint">No skills.</p>') +
-      (settings.length
-        ? '<h4>Settings it needs (' + settings.length + ')</h4><ul class="ability-skills">' + settings.map(function (s) { return '<li><code>' + esc(s.name) + '</code>' + (s.description ? ' ' + String.fromCharCode(8212) + ' ' + esc(s.description) : '') + '</li>'; }).join('') + '</ul>'
-        : '') +
+      '<div class="ad-head"><div class="ad-title">What <code>' + esc(d.name) + '</code>' + (d.version ? ' <span class="ad-ver">v' + esc(d.version) + '</span>' : '') + ' can do</div>' +
+        '<div class="ad-chips">' + chips + '</div>' +
+        (description ? '<p class="ad-about">' + esc(description.charAt(0).toUpperCase() + description.slice(1)) + '</p>' : '') + '</div>' +
+      '<div class="ad-sec"><div class="ad-k"><span>Tools</span><span>' + (d.agent ? 'Permission in ' + esc(d.agent) : 'Permission it ships with') + '</span></div>' +
+        (tools.length ? '<div class="ad-list">' + toolRows + '</div>' : '<p class="ad-none">No tools.</p>') + '</div>' +
+      (skills.length ? '<div class="ad-sec"><div class="ad-k"><span>Skills</span></div><div class="ad-list">' + skills.map(function (s) { return row(s.name, s.description || ''); }).join('') + '</div></div>' : '') +
+      (settings.length ? '<div class="ad-sec"><div class="ad-k"><span>Settings it needs</span></div><div class="ad-list">' + settings.map(function (s) { return row(s.name, s.description || ''); }).join('') + '</div></div>' : '') +
       '</div>';
   }
 

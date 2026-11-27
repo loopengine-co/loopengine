@@ -121,15 +121,34 @@ export const devUiCss: string = `
   /* An ability's details (leShell.toggleAbilityDetails), on the Abilities
      page and each agent's Apps tab. */
   .ability-details-row > td { padding: 0 10px 14px; border-top: 0; background: transparent; }
-  .ability-details { border: 1px solid var(--accent); border-left-width: 4px; border-radius: var(--radius); background: var(--accent-soft); padding: 12px 16px 14px; }
-  .ability-details-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-  .ability-details-title { font-size: 14px; font-weight: 600; }
-  .ability-details-summary { font-size: 12.5px; color: var(--ink-muted); }
-  .ability-details h4 { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
-  .ability-details table { width: 100%; background: var(--surface); border-radius: var(--radius); }
-  .ability-details-btn.is-open { border-color: var(--accent); color: var(--accent-ink, var(--accent)); }
-  .ability-skills { margin: 0; padding-left: 18px; }
-  .ability-skills li { margin: 3px 0; }
+  .ability-details { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+  .ad-head { display: grid; gap: 10px; padding: 16px 18px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .ad-title { font-size: 14px; font-weight: 600; }
+  .ad-title code { font-size: 13px; background: none; padding: 0; }
+  .ad-ver { font-size: 12px; font-weight: 400; color: var(--ink-faint); font-family: var(--font-mono); }
+  .ad-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ad-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+  .ad-chip.strong { border-color: transparent; background: var(--surface-2); color: var(--ink); font-weight: 500; }
+  .ad-chip.allow { border-color: transparent; background: var(--good-soft); color: var(--good); }
+  .ad-chip.ask { border-color: transparent; background: var(--warn-soft); color: var(--warn); }
+  .ad-chip.deny { border-color: transparent; background: var(--bad-soft); color: var(--bad); }
+  .ad-about { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-muted); }
+  .ad-sec { padding: 14px 18px 16px; }
+  .ad-sec + .ad-sec { border-top: 1px solid var(--line); }
+  .ad-k { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 8px; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+  .ad-list { display: grid; }
+  .ad-row { display: grid; gap: 3px; padding: 10px 0; min-width: 0; }
+  .ad-row + .ad-row { border-top: 1px solid var(--line); }
+  .ad-row:first-child { padding-top: 2px; }
+  .ad-row:last-child { padding-bottom: 0; }
+  .ad-row-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+  .ad-name { font-size: 12.5px; font-weight: 600; background: none; padding: 0; color: var(--ink); overflow-wrap: anywhere; }
+  .ad-perm { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+  .ad-perm .le-pill { margin: 0; }
+  .ad-ships { font-size: 11.5px; color: var(--ink-faint); }
+  .ad-desc { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-muted); max-width: 760px; }
+  .ad-none { margin: 0; font-size: 13px; color: var(--ink-muted); }
+  .ability-details-btn.is-open { background: var(--surface); }
   .le-pill.neutral { background: var(--surface-2); color: var(--ink-muted); }
   .le-pill.accent { background: var(--accent-soft); color: var(--accent-ink); }
 
