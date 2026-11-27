@@ -100,6 +100,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-ov-fact { display: grid; gap: 6px; align-content: start; justify-items: start; padding: 16px 18px; background: var(--bg); min-width: 0; font-size: 13px; }
   .wf-ov-k { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
   .wf-ov-v { overflow-wrap: anywhere; }
+  .wf-ov-quote { padding-left: 10px; border-left: 2px solid var(--line); color: var(--ink); }
+  .wf-ov-k2 { margin-top: 8px; }
   .wf-ov-inputs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .wf-ov-inputs li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
   .wf-ov-inputs .hint { flex-basis: 100%; }
@@ -643,6 +645,64 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ov-name { margin: 0; font-size: 15px; }
   .ov-name code { font-size: 12.5px; }
   dialog.workflow-editor-dialog { width: min(760px, calc(100vw - 24px)); }
+  /* The workflow editor: a head with its buttons, the instructions on the
+     left, inputs and more options on the right. */
+  dialog.wfe-dialog { width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
+  dialog.wfe-dialog[open] { display: flex; }
+  dialog.wfe-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
+  .wfe { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; max-height: calc(100vh - 42px); margin: 0; }
+  .wfe-head { display: flex; align-items: center; gap: 8px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .wfe-title { margin-right: auto; display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .wfe-title h2 { margin: 0; font-size: 18px; font-weight: 500; }
+  .wfe-id { font-size: 12px; color: var(--ink-faint); }
+  .wfe-id code { font-size: 11.5px; }
+  .wfe-head button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; white-space: nowrap; }
+  .wfe-head .wp-save-draft:not(.primary) { background: var(--bg); border-color: var(--line); color: var(--ink); }
+  .wfe-body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); overflow: auto; min-height: 0; }
+  .wfe-main, .wfe-side { display: grid; align-content: start; gap: 18px; padding: 20px 22px; min-width: 0; }
+  .wfe-side { border-left: 1px solid var(--line); background: var(--surface); }
+  .wfe-field { display: grid; gap: 6px; min-width: 0; }
+  .wfe-k { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .wfe-opt { font-size: 11.5px; font-weight: 400; color: var(--ink-faint); margin-left: 4px; }
+  .wfe-hint { font-size: 12px; line-height: 1.45; color: var(--ink-muted); font-weight: 400; }
+  .wfe-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .wfe-row .wp-preview { margin-left: auto; height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; }
+  .wfe input:not([type="checkbox"]), .wfe select, .wfe textarea { width: 100%; box-sizing: border-box; border-radius: 9px; font-size: 13.5px; }
+  .wfe input:not([type="checkbox"]), .wfe select { height: 36px; }
+  .wfe input[name="title"] { height: 40px; font-size: 16px; font-weight: 500; }
+  .wfe #wpInstructions { min-height: 320px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; resize: vertical; }
+  .wfe .wp-sections { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .wfe .wp-sections .wp-section { height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
+  .wfe .wp-preview, .wfe .wp-sections .wp-section { background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
+  .wfe .wp-preview:hover:not(:disabled), .wfe .wp-sections .wp-section:hover:not(:disabled) { background: var(--surface-2); }
+  .wfe .wp-preview-box { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--surface); }
+  .wfe .wp-preview-text { margin: 6px 0 0; white-space: pre-wrap; font-size: 12px; max-height: 260px; overflow: auto; }
+  .wfe .workflow-param-rows { display: grid; gap: 10px; }
+  .wfe .workflow-param-row { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); }
+  .wfe .wp-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .wfe .wp-line .wp-name { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 13px; }
+  .wfe .wp-line .wp-type { flex: 0 0 120px; }
+  .wfe .wp-remove { flex: none; width: 30px; height: 30px; padding: 0; border: 0; background: none; color: var(--ink-faint); font-size: 18px; line-height: 1; border-radius: 8px; }
+  .wfe .wp-remove:hover:not(:disabled) { background: var(--bad-soft); color: var(--bad); }
+  .wfe .wp-line-foot { justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+  .wfe .wp-req { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  .wfe .wp-more summary { cursor: pointer; font-size: 12px; color: var(--ink-muted); }
+  .wfe .wp-more[open] { flex-basis: 100%; }
+  .wfe .wp-limits { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; padding-left: 0; }
+  .wfe .wp-desc { min-width: 0; }
+  .wfe .wp-add { justify-self: start; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; }
+  .wfe-more { border-top: 1px solid var(--line); padding-top: 14px; }
+  .wfe-more > summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
+  .wfe-more > summary .wfe-hint { font-weight: 400; margin-left: 4px; }
+  .wfe-more[open] { display: grid; gap: 16px; }
+  .wfe-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 22px; border-top: 1px solid var(--line); }
+  .wfe-foot .wp-note-field { display: flex; align-items: center; gap: 10px; flex: 1 1 360px; }
+  .wfe-foot .wp-note-field[hidden] { display: none; }
+  .wfe-foot .wp-note-field .wfe-k { white-space: nowrap; font-size: 12.5px; }
+  .wfe-foot .wp-note-field input { height: 32px; }
+  .wfe-foot .wp-save-hint { flex: 1 1 260px; }
+  .wfe-foot .workflow-editor-result:empty { display: none; }
+  @media (max-width: 860px) { .wfe-body { grid-template-columns: minmax(0, 1fr); } .wfe-side { border-left: 0; border-top: 1px solid var(--line); } }
   .ed-body .workflow-param-row input:not([type="checkbox"]) { width: auto; }
   .ed-body .workflow-param-row select.wp-type { width: auto; flex: 0 0 140px; }
   .ed-body .workflow-param-row .wp-limits { padding-left: 176px; }
@@ -2110,8 +2170,10 @@ ${renderMarkdownScript}
             }).join('') + '</ul>'
           : '<span class="wf-ov-v">None: it runs the same way each time.</span>') + '</div>' +
         '<div class="wf-ov-fact"><span class="wf-ov-k">How it runs</span><span class="wf-ov-v">' + workflowStartsSummary(w) + '</span>' + go('triggers', 'Triggers') + '</div>' +
-        '<div class="wf-ov-fact"><span class="wf-ov-k">Its result</span><span class="wf-ov-v">' + (w.output ? escapeHtml(w.output) : 'Any reply; no set format.') + '</span>' +
-          '<span class="hint">' + goesTo.join(', ') + '.</span>' + go('messages', 'Messaging') + '</div>' +
+        '<div class="wf-ov-fact"><span class="wf-ov-k">Result format</span>' + (w.output
+            ? '<span class="hint">The final reply must be:</span><span class="wf-ov-v wf-ov-quote">' + escapeHtml(w.output) + '</span>'
+            : '<span class="wf-ov-v">Not set: the agent replies in its own words.</span>') +
+          '<span class="wf-ov-k wf-ov-k2">Sent to</span><span class="wf-ov-v">' + goesTo.join(', ') + '.</span>' + go('messages', 'Messaging') + '</div>' +
       '</div>' +
       '<details class="wf-section wf-ov-more"><summary>What every run is held to <span class="hint">model, tools, approvals, limits</span></summary>' + workflowContractHtml(w, name, params) + '</details>' +
       workflowBriefHtml(w);
@@ -2961,14 +3023,16 @@ ${renderMarkdownScript}
     // they are when the row is saved.
     var kept = {};
     ['pattern', 'minimum', 'maximum', 'minLength', 'maxLength'].forEach(function (k) { if (spec && spec[k] !== undefined) kept[k] = spec[k]; });
+    var hasLimits = Boolean((spec && spec.enum && spec.enum.length) || dflt);
     return '<div class="workflow-param-row" data-kept="' + escapeHtml(JSON.stringify(kept)) + '">' +
-      '<input class="wp-name" aria-label="Parameter name" placeholder="order_number" value="' + escapeHtml(pname || '') + '">' +
+      '<div class="wp-line"><input class="wp-name" aria-label="Input name" placeholder="order_number" value="' + escapeHtml(pname || '') + '">' +
+        '<select class="wp-type" aria-label="Type">' + INPUT_KINDS.map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === kind ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>' +
+        '<button type="button" class="wp-remove" aria-label="Remove this input" title="Remove">&times;</button></div>' +
       '<input class="wp-desc" aria-label="What it is" placeholder="What it is, e.g. The order to check" value="' + escapeHtml((spec && spec.description) || '') + '">' +
-      '<select class="wp-type" aria-label="Type">' + INPUT_KINDS.map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === kind ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>' +
-      '<label class="http-tool-inline-label"><input type="checkbox" class="wp-required"' + (spec && spec.required ? ' checked' : '') + '> Required</label>' +
-      '<button type="button" class="delete-btn wp-remove">Remove</button>' +
-      '<div class="wp-limits"><input class="wp-enum" aria-label="Allowed values" placeholder="Allowed values, comma-separated (optional)" value="' + escapeHtml(spec && spec.enum ? spec.enum.join(', ') : '') + '">' +
-        '<input class="wp-default" aria-label="Default" placeholder="Default (optional)" value="' + escapeHtml(dflt) + '"></div></div>';
+      '<div class="wp-line wp-line-foot"><label class="wp-req"><input type="checkbox" class="wp-required"' + (spec && spec.required ? ' checked' : '') + '> Required</label>' +
+        '<details class="wp-more"' + (hasLimits ? ' open' : '') + '><summary>Allowed values and default</summary>' +
+        '<div class="wp-limits"><input class="wp-enum" aria-label="Allowed values" placeholder="Allowed values, comma-separated" value="' + escapeHtml(spec && spec.enum ? spec.enum.join(', ') : '') + '">' +
+          '<input class="wp-default" aria-label="Default" placeholder="Default" value="' + escapeHtml(dflt) + '"></div></details></div></div>';
   }
   // A row's input, as saved: its description, whether it's required, and
   // its type, allowed values and default. The server checks them.
@@ -2994,39 +3058,52 @@ ${renderMarkdownScript}
 
   ${WORKFLOW_SECTIONS_SCRIPT}
 
-  function workflowEditorHtml(w) {
+  function workflowEditorHtml(w, heading) {
     var rows = Object.keys(w.parameters || {}).map(function (p) { return workflowParamRowHtml(p, w.parameters[p]); }).join('');
-    return '<form class="add-source workflow-editor-form">' +
-      '<label>Title<input name="title" maxlength="120" value="' + escapeHtml(w.title) + '">' +
-        '<span class="hint">ID: <code>' + escapeHtml(w.id) + '</code>, used by the API, schedules and webhooks; it doesn' + String.fromCharCode(8217) + 't change when you edit.</span></label>' +
-      '<label>Description <span class="hint">(one line on what this workflow does; the agent uses it to recognise the workflow when you ask in Chat)</span>' +
-        '<input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '"></label>' +
-      '<h4 class="wf-editor-part">Prompt <span class="hint">what the agent reads on every run</span></h4>' +
-      '<div class="body-field"><div class="wp-instructions-head"><label for="wpInstructions">Instructions <span class="hint">(everything the agent needs for this job: what to get done, the rules it keeps, and your policies, special cases and examples. It handles each case on its own judgment, so describe the job rather than every step. Read in full on every run; $name puts in a parameter&#39;s value. Chat uses them too.)</span></label>' +
-        '<button type="button" class="wp-preview">Preview</button></div>' +
-        '<div class="wp-preview-box" hidden><div class="hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
-        '<textarea id="wpInstructions" name="instructions" maxlength="30000" rows="12" required>' + escapeHtml(w.instructions) + '</textarea></div>' +
-      '<p class="hint wp-long-note">Each run lists its inputs above the instructions, long ones like an email or a thread in their own blocks, so refer to those by name (the customer' + String.fromCharCode(8217) + 's email, above) instead of writing $name. Short ones, like an order number, can be written as $name.</p>' +
-      '<div class="wp-sections"><span class="hint">Add a section:</span>' +
-        workflowSectionButtonsHtml() + '</div>' +
-      '<h4 class="wf-editor-part">Contract <span class="hint">what the system holds it to</span></h4>' +
-      '<div class="body-field">Parameters <span class="hint">(values a run is given; apps send them as params)</span>' +
-        '<div class="workflow-param-rows">' + rows + '</div>' +
-        '<button type="button" class="wp-add" style="align-self:flex-start">Add parameter</button></div>' +
-      '<label>Result <span class="hint">(optional: what its final reply must be, e.g. The draft only, then a line Flag: reason if a person must act. Empty: a reply in its own words.)</span>' +
-        '<textarea name="output" rows="2" maxlength="2000">' + escapeHtml(w.output || '') + '</textarea></label>' +
-      '<label>Output schema <span class="hint">(optional: a JSON Schema its result must match, for apps and the next workflow in a chain. Each run' + String.fromCharCode(8217) + 's result is checked; one that doesn' + String.fromCharCode(8217) + 't match is sent back to the agent to fix, twice at most, then the run fails.)</span>' +
-        '<textarea name="outputSchema" class="wp-schema" rows="6" spellcheck="false" placeholder="' + escapeHtml('{ "type": "object", "properties": { "summary": { "type": "string" }, "priority": { "enum": ["low", "high"] } }, "required": ["summary", "priority"] }') + '">' + escapeHtml(w.outputSchema ? JSON.stringify(w.outputSchema, null, 2) : '') + '</textarea></label>' +
-      '<div class="body-field">Model <span class="hint">(optional: a model for this workflow only; empty uses the agent' + String.fromCharCode(8217) + 's' + (workflowsMeta.agentModel ? ', ' + escapeHtml(workflowsMeta.agentModel) : '') + ')</span>' +
-        '<div class="wp-model-row"><select name="modelProvider" aria-label="Provider"><option value="">The agent' + String.fromCharCode(8217) + 's model</option>' +
-          ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'].map(function (p) { return '<option value="' + p + '"' + (w.model && w.model.provider === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') +
-        '</select><input name="modelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + escapeHtml((w.model && w.model.model) || '') + '"></div></div>' +
-      '<p class="hint workflow-editor-check" style="margin:0"></p>' +
-      '<div class="hint workflow-editor-result"></div>' +
-      // Save and publish shows once the workspace's Publishing setting is
-      // known not to require review (openWorkflowEditor).
-      '<label class="wp-note-field" hidden>Note <span class="hint">(optional: what changed and why, kept with the version when you publish)</span><input name="publishNote" maxlength="500" placeholder="e.g. Ask for the order number before looking it up"></label>' +
-      '<div class="ed-actions"><span class="hint wp-save-hint">Runs keep using the published workflow until you publish.</span><button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary wp-save-draft">Save as draft</button><button type="submit" class="primary wp-save-publish" hidden>Save and publish</button></div></form>';
+    var RSQ2 = String.fromCharCode(8217);
+    // More options start open only when one of them is set.
+    var moreOpen = Boolean(w.output || w.outputSchema || w.model);
+    return '<form class="workflow-editor-form wfe">' +
+      '<div class="wfe-head"><div class="wfe-title"><h2>' + heading + '</h2><span class="wfe-id">ID <code>' + escapeHtml(w.id) + '</code></span></div>' +
+        '<button type="button" class="wp-cancel">Cancel</button><button type="submit" class="primary wp-save-draft">Save as draft</button><button type="submit" class="primary wp-save-publish" hidden>Save and publish</button></div>' +
+      '<div class="wfe-body">' +
+        '<div class="wfe-main">' +
+          '<label class="wfe-field"><span class="wfe-k">Title</span><input name="title" maxlength="120" value="' + escapeHtml(w.title) + '"></label>' +
+          '<label class="wfe-field"><span class="wfe-k">Description</span><input name="description" maxlength="500" required value="' + escapeHtml(w.description) + '">' +
+            '<span class="wfe-hint">One line on what it does. In Chat, the agent uses it to recognise the workflow.</span></label>' +
+          '<div class="wfe-field wfe-instr"><div class="wfe-row"><label class="wfe-k" for="wpInstructions">Instructions</label><span class="wfe-hint">What the agent is told on every run. Write <code>$name</code> for an input' + RSQ2 + 's value.</span><button type="button" class="wp-preview">Preview</button></div>' +
+            '<div class="wp-preview-box" hidden><div class="wfe-hint">What a run starts with, with sample values (not saved):</div><pre class="wp-preview-text"></pre></div>' +
+            '<textarea id="wpInstructions" name="instructions" maxlength="30000" rows="16" required>' + escapeHtml(w.instructions) + '</textarea>' +
+            '<div class="wp-sections"><span class="wfe-hint">Add a section:</span>' + workflowSectionButtonsHtml() + '</div>' +
+            '<p class="wfe-hint workflow-editor-check" style="margin:0"></p></div>' +
+        '</div>' +
+        '<div class="wfe-side">' +
+          '<div class="wfe-field"><div class="wfe-row"><span class="wfe-k">Inputs</span><span class="wfe-hint">Values each run is given; apps send them as params.</span></div>' +
+            '<div class="workflow-param-rows">' + rows + '</div>' +
+            '<button type="button" class="wp-add">+ Add input</button>' +
+            '<p class="wfe-hint wp-long-note">A long input, like an email or a thread, is listed above the instructions: refer to it by name (the customer' + RSQ2 + 's email, above) rather than writing $name.</p></div>' +
+          '<details class="wfe-more"' + (moreOpen ? ' open' : '') + '><summary>More options <span class="wfe-hint">result format, output schema, model</span></summary>' +
+            '<label class="wfe-field"><span class="wfe-k">Result format <span class="wfe-opt">optional</span></span>' +
+              '<span class="wfe-hint">Most workflows leave this empty, and the agent replies in its own words. Fill it in only when the reply must follow a set shape, e.g. ' + String.fromCharCode(8220) + 'The draft only, then a line Flag: reason if a person must act.' + String.fromCharCode(8221) + '</span>' +
+              '<textarea name="output" rows="2" maxlength="2000">' + escapeHtml(w.output || '') + '</textarea></label>' +
+            '<label class="wfe-field"><span class="wfe-k">Output schema <span class="wfe-opt">optional</span></span>' +
+              '<span class="wfe-hint">A JSON Schema the result must match, for apps and the next workflow in a chain. A result that doesn' + RSQ2 + 't match goes back to the agent to fix, twice at most.</span>' +
+              '<textarea name="outputSchema" class="wp-schema" rows="5" spellcheck="false" placeholder="' + escapeHtml('{ "type": "object", "properties": { "summary": { "type": "string" } }, "required": ["summary"] }') + '">' + escapeHtml(w.outputSchema ? JSON.stringify(w.outputSchema, null, 2) : '') + '</textarea></label>' +
+            '<div class="wfe-field"><span class="wfe-k">Model <span class="wfe-opt">optional</span></span>' +
+              '<span class="wfe-hint">For this workflow only. Empty uses the agent' + RSQ2 + 's' + (workflowsMeta.agentModel ? ', ' + escapeHtml(workflowsMeta.agentModel) : '') + '.</span>' +
+              '<div class="wp-model-row"><select name="modelProvider" aria-label="Provider"><option value="">The agent' + RSQ2 + 's model</option>' +
+                ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'glm', 'xai', 'meta'].map(function (p) { return '<option value="' + p + '"' + (w.model && w.model.provider === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') +
+              '</select><input name="modelName" aria-label="Model name" placeholder="e.g. gpt-6.1-sol" value="' + escapeHtml((w.model && w.model.model) || '') + '"></div></div>' +
+          '</details>' +
+        '</div>' +
+      '</div>' +
+      '<div class="wfe-foot">' +
+        // Save and publish shows once the workspace's Publishing setting is
+        // known not to require review (openWorkflowEditor).
+        '<label class="wp-note-field" hidden><span class="wfe-k">What changed <span class="wfe-opt">optional</span></span><input name="publishNote" maxlength="500" placeholder="e.g. Ask for the order number before looking it up"></label>' +
+        '<span class="wfe-hint wp-save-hint">Runs keep using the published workflow until you publish.</span>' +
+        '<div class="wfe-hint workflow-editor-result" role="status"></div>' +
+      '</div></form>';
   }
 
   // Placeholders the instructions use that no parameter declares, and
@@ -3043,7 +3120,7 @@ ${renderMarkdownScript}
     var notes = [];
     var missing = Object.keys(used).filter(function (n) { return !declared[n]; });
     var unused = Object.keys(declared).filter(function (n) { return !used[n]; });
-    if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't a parameter: add ' + (missing.length > 1 ? 'them' : 'it') + ', or the text stays as written.');
+    if (missing.length) notes.push('Uses ' + missing.map(function (n) { return '$' + n; }).join(', ') + ', which ' + (missing.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't an input: add ' + (missing.length > 1 ? 'them' : 'it') + ' under Inputs, or the text stays as written.');
     if (unused.length) notes.push(unused.join(', ') + ' ' + (unused.length > 1 ? 'aren' : 'isn') + String.fromCharCode(8217) + 't written in the instructions: each run adds ' + (unused.length > 1 ? 'them' : 'it') + ' with the inputs, above the instructions.');
     form.querySelector('.workflow-editor-check').textContent = notes.join(' ');
   }
@@ -3188,9 +3265,9 @@ ${renderMarkdownScript}
     // in the card. Closing it any way (Esc, the backdrop, x, Cancel)
     // discards the edits.
     var dialog = document.createElement('dialog');
-    dialog.innerHTML = editDialogHtml('<h3>' + (published.draft ? 'Edit draft' : 'Edit workflow') + '</h3>', '<p>Its title, what it' + String.fromCharCode(8217) + 's for, what the agent follows (what to do, its rules, policies, special cases and examples) and the values each run is given.</p>', workflowEditorHtml(w));
-    dialog = dialog.firstChild;
-    dialog.classList.add('workflow-editor-dialog');
+    dialog.className = 'workflow-editor-dialog wfe-dialog';
+    dialog.setAttribute('aria-label', published.draft ? 'Edit draft' : 'Edit workflow');
+    dialog.innerHTML = workflowEditorHtml(w, published.draft ? 'Edit draft' : 'Edit workflow');
     document.body.appendChild(dialog);
     var form = dialog.querySelector('form');
     var rows = form.querySelector('.workflow-param-rows');
@@ -3199,10 +3276,10 @@ ${renderMarkdownScript}
     function close() { workflowEditing = false; if (dialog.open) dialog.close(); }
     dialog.addEventListener('close', function () { workflowEditing = false; dialog.remove(); });
     dialog.addEventListener('click', function (ev) { if (ev.target === dialog) close(); });
-    dialog.querySelector('.hd-close').addEventListener('click', close);
     dialog.showModal();
     rows.addEventListener('click', function (ev) {
-      if (ev.target.classList.contains('wp-remove')) { ev.target.closest('.workflow-param-row').remove(); check(); }
+      var remove = ev.target.closest && ev.target.closest('.wp-remove');
+      if (remove) { remove.closest('.workflow-param-row').remove(); check(); }
     });
     form.addEventListener('input', check);
     form.querySelector('.wp-add').addEventListener('click', function () {
@@ -3263,8 +3340,8 @@ ${renderMarkdownScript}
       for (var i = 0; i < list.length; i++) {
         var pname = list[i].querySelector('.wp-name').value.trim();
         if (!pname) continue;
-        if (!/^[a-z_][a-z0-9_]*$/.test(pname)) { problem = 'Parameter "' + pname + '": use lowercase letters, digits and _, starting with a letter, e.g. order_number.'; break; }
-        if (parameters[pname]) { problem = 'Parameter "' + pname + '" is listed twice.'; break; }
+        if (!/^[a-z_][a-z0-9_]*$/.test(pname)) { problem = 'Input "' + pname + '": use lowercase letters, digits and _, starting with a letter, e.g. order_number.'; break; }
+        if (parameters[pname]) { problem = 'Input "' + pname + '" is listed twice.'; break; }
         parameters[pname] = paramFromRow(list[i]);
       }
       if (!problem && form.outputSchema.value.trim()) {
