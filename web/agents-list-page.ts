@@ -65,6 +65,7 @@ export const agentsListPageHtml: string = `<!doctype html>
   .ag-dlg-col { display: grid; align-content: start; }
   .ag-dlg-col + .ag-dlg-col { border-left: 1px solid var(--line); background: var(--surface); }
   .ag-field { display: grid; gap: 9px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .ag-field:last-child { border-bottom: 0; }
   .ag-field > label, .ag-field-k { font-size: 14px; font-weight: 500; }
   .ag-field label { display: grid; gap: 9px; }
   .ag-field .hint { margin: 0; line-height: 1.45; }
