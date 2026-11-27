@@ -229,7 +229,30 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-way-what { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
   .wf-way .hint[hidden], .wf-way [hidden] { display: none; }
   .wf-way .workflow-hooks:empty { display: none; }
-  .wf-way .workflow-hook { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .wf-way .workflow-hook { padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow: hidden; }
+  .hkc { display: grid; }
+  .hkc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 14px 0; }
+  .hkc-title { display: grid; gap: 2px; min-width: 0; }
+  .hkc-title strong { font-size: 14px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .hkc-sub { font-size: 12px; color: var(--ink-muted); }
+  .hkc-sub code { font-size: 11.5px; background: none; padding: 0; color: var(--ink-faint); }
+  .hkc-pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0; }
+  .hkc-rules { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 0; }
+  .hkc-rule { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); font-size: 12px; color: var(--ink-muted); max-width: 100%; overflow-wrap: anywhere; }
+  .hkc-rule code { font-size: 11.5px; background: none; padding: 0; color: var(--ink); }
+  .hkc-setup { margin: 12px 14px 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
+  .hkc-setup-title { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .hkc .hook-steps { margin: 0; padding-left: 20px; gap: 10px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+  .hkc .hook-steps li::marker { color: var(--ink-faint); }
+  .hkc .hook-url { margin: 6px 0 0; background: var(--bg); border: 1px solid var(--line); }
+  .hkc-secret { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .hkc-secret input { flex: 1; min-width: 180px; }
+  .wf-way .hkc .hkc-secret button { padding: 0 14px; font-size: 13px; }
+  .hkc-actions { display: flex; gap: 2px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border-top: 1px solid var(--line); background: var(--surface); }
+  .wf-way .hkc .hkc-actions button { padding: 3px 10px; font-size: 12.5px; background: transparent; border: 0; color: var(--ink-muted); box-shadow: none; }
+  .wf-way .hkc .hkc-actions button:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+  .wf-way .hkc .hkc-actions .hook-delete { margin-left: auto; color: var(--bad); }
+  .wf-way .hkc .hkc-actions .hook-delete:hover:not(:disabled) { background: var(--bad-soft); color: var(--bad); }
   .wf-way button { justify-self: start; }
   .wf-trigger-item { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .wf-trigger-item button, .wf-way .workflow-hook button { padding: 2px 10px; font-size: 12px; }
@@ -3534,11 +3557,11 @@ ${renderMarkdownScript}
     var events = t.filter && t.filter.path === 'type' ? t.filter.values : (t.filter && t.filter.path === 'topic' ? t.filter.values : []);
     var pick = events.length ? ' and choose ' + (events.length === 1 ? 'the event ' : 'the events ') + events.map(function (e) { return '<code>' + escapeHtml(e) + '</code>'; }).join(', ') : '';
     switch (t.verify && t.verify.sender) {
-      case 'stripe': return { where: 'In Stripe, open Developers ' + ARROW + ' Webhooks ' + ARROW + ' Add endpoint. Paste the URL' + pick + '.', secret: 'Stripe then shows a signing secret starting with <code>whsec_</code>. Paste it here:' };
-      case 'github': return { where: 'In GitHub, open the repository' + String.fromCharCode(8217) + 's Settings ' + ARROW + ' Webhooks ' + ARROW + ' Add webhook. Paste the URL, set Content type to <code>application/json</code>, and make up a secret' + pick + '.', secret: 'Paste the same secret you gave GitHub:' };
-      case 'shopify': return { where: 'In Shopify, open Settings ' + ARROW + ' Notifications ' + ARROW + ' Webhooks ' + ARROW + ' Create webhook. Paste the URL' + pick + '.', secret: 'Shopify shows the key its webhooks are signed with under the list of webhooks. Paste it here:' };
-      case 'standard': return { where: 'In the sender' + String.fromCharCode(8217) + 's webhook settings, add an endpoint with the URL' + pick + '.', secret: 'It then shows a signing secret (often starting with <code>whsec_</code>). Paste it here:' };
-      default: return { where: 'In your app' + String.fromCharCode(8217) + 's webhook settings, paste the URL' + pick + '.', secret: 'Paste the secret your app signs requests with:' };
+      case 'stripe': return { where: 'In Stripe, open Developers ' + ARROW + ' Webhooks ' + ARROW + ' Add endpoint. Paste the address' + pick + '.', secret: 'Stripe then shows a signing secret starting with <code>whsec_</code>. Paste it here:' };
+      case 'github': return { where: 'In GitHub, open the repository' + String.fromCharCode(8217) + 's Settings ' + ARROW + ' Webhooks ' + ARROW + ' Add webhook. Paste the address, set Content type to <code>application/json</code>, and make up a secret' + pick + '.', secret: 'Paste the same secret you gave GitHub:' };
+      case 'shopify': return { where: 'In Shopify, open Settings ' + ARROW + ' Notifications ' + ARROW + ' Webhooks ' + ARROW + ' Create webhook. Paste the address' + pick + '.', secret: 'Shopify shows the key its webhooks are signed with under the list of webhooks. Paste it here:' };
+      case 'standard': return { where: 'In the sender' + String.fromCharCode(8217) + 's webhook settings, add an endpoint with the address' + pick + '.', secret: 'It then shows a signing secret (often starting with <code>whsec_</code>). Paste it here:' };
+      default: return { where: 'In your app' + String.fromCharCode(8217) + 's webhook settings, paste the address' + pick + '.', secret: 'Paste the secret your app signs requests with:' };
     }
   }
 
@@ -3555,47 +3578,51 @@ ${renderMarkdownScript}
   function hookRowHtml(t, shownUrl) {
     var state = hookDraftState(t);
     if (state === 'removed') {
-      return '<div class="workflow-hook" data-trigger="' + escapeHtml(t.trigger_id) + '"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline"><s><strong>' + escapeHtml(t.name) + '</strong></s>' +
-        '<span class="le-pill warn">Removed in the draft</span><button type="button" class="hook-undo">Undo</button>' +
+      return '<div class="workflow-hook hkc" data-trigger="' + escapeHtml(t.trigger_id) + '"><div class="hkc-head"><div class="hkc-title"><s><strong>' + escapeHtml(t.name) + '</strong></s></div>' +
+        '<span class="le-pill warn">Removed in the draft</span></div><div class="hkc-actions"><button type="button" class="hook-undo">Undo</button>' +
         '<span hidden><button class="hook-edit"></button><button class="hook-rotate"></button><button class="hook-delete"></button></span></div></div>';
     }
-    var draftPill = state === 'added' ? ' <span class="le-pill warn">Not live until published</span>' : state === 'changed' ? ' <span class="le-pill warn">Changed in the draft</span>' : '';
+    var draftPill = state === 'added' ? '<span class="le-pill warn">Not live until published</span>' : state === 'changed' ? '<span class="le-pill warn">Changed in the draft</span>' : '';
+    var sender = t.verify ? (HOOK_SENDERS[t.verify.sender] || t.verify.sender) : '';
+    // What it does with each request, one chip per rule.
     var rules = [];
+    if (t.filter) rules.push('Only when <code>' + escapeHtml(t.filter.path) + '</code> is ' + t.filter.values.map(function (v) { return '<code>' + escapeHtml(v) + '</code>'; }).join(' or '));
+    if (t.mapping) Object.keys(t.mapping).forEach(function (p) { rules.push('<code>' + escapeHtml(p) + '</code> ' + String.fromCharCode(8592) + ' <code>' + escapeHtml(t.mapping[p]) + '</code>'); });
+    if (t.payload_param) rules.push('Whole payload ' + ARROW + ' <code>' + escapeHtml(t.payload_param) + '</code>');
     if (t.verify) rules.push(t.verify.sender === 'custom'
-      ? 'checks the signature in ' + escapeHtml(t.verify.header || '(header not set yet)') + ' (' + escapeHtml(t.verify.algorithm || 'sha256') + ', ' + escapeHtml(t.verify.encoding || 'hex') + ')'
-      : 'checks the ' + escapeHtml(HOOK_SENDERS[t.verify.sender] || t.verify.sender) + ' signature');
-    if (t.filter) rules.push('only when ' + escapeHtml(t.filter.path) + ' is ' + t.filter.values.map(escapeHtml).join(' or '));
-    if (t.mapping) rules.push(Object.keys(t.mapping).map(function (p) { return escapeHtml(p) + ' ' + String.fromCharCode(8592) + ' ' + escapeHtml(t.mapping[p]); }).join(', '));
-    if (t.payload_param) rules.push('the whole payload goes to ' + escapeHtml(t.payload_param));
-    if (t.chat_notice) rules.push('posts a notice to the messaging app when it starts');
-    if (t.callback_url) rules.push('sends run updates to ' + escapeHtml(t.callback_url));
-    if (t.decisions_to === 'callback') rules.push('approvals and questions go there too, not to the messaging app');
+      ? 'Checks the signature in ' + escapeHtml(t.verify.header || '(header not set yet)') + ' (' + escapeHtml(t.verify.algorithm || 'sha256') + ', ' + escapeHtml(t.verify.encoding || 'hex') + ')'
+      : 'Checks the ' + escapeHtml(sender) + ' signature');
+    if (t.chat_notice) rules.push('Posts a notice when it starts');
+    if (t.callback_url) rules.push('Run updates ' + ARROW + ' ' + escapeHtml(t.callback_url));
+    if (t.decisions_to === 'callback') rules.push('Approvals and questions go there too');
     // Made by the workflow planner without its secret: it turns on once
     // the sender's signing secret is added.
     var needsSecret = t.verify && !t.verify.secret_set;
     var setup = needsSecret ? hookSetupSteps(t) : null;
-    return '<div class="workflow-hook" data-trigger="' + escapeHtml(t.trigger_id) + '">' +
-      '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><strong>' + escapeHtml(t.name) + '</strong>' +
-        '<code class="hint">/hooks/workflows/' + escapeHtml(t.token_hint) + '</code>' + (needsSecret ? ' <span class="le-pill warn">Needs its signing secret</span>' : t.enabled ? '' : ' <span class="le-pill">Off</span>') + draftPill + '</div>' +
-      (rules.length ? '<p class="hint" style="margin:2px 0">' + rules.join(' ' + String.fromCharCode(183) + ' ') + '</p>' : '') +
+    var status = needsSecret ? '<span class="le-pill warn">Waiting for its secret</span>' : t.enabled ? '<span class="le-pill good">On</span>' : '<span class="le-pill">Off</span>';
+    return '<div class="workflow-hook hkc" data-trigger="' + escapeHtml(t.trigger_id) + '">' +
+      '<div class="hkc-head"><div class="hkc-title"><strong>' + escapeHtml(t.name) + '</strong>' +
+          '<span class="hkc-sub">' + (sender ? 'From ' + escapeHtml(sender) + ' ' + String.fromCharCode(183) + ' ' : '') + '<code>/hooks/workflows/' + escapeHtml(t.token_hint) + '</code></span></div>' +
+        '<div class="hkc-pills">' + status + draftPill + '</div></div>' +
+      (rules.length ? '<div class="hkc-rules">' + rules.map(function (r) { return '<span class="hkc-rule">' + r + '</span>'; }).join('') + '</div>' : '') +
       (needsSecret
         // Set up and waiting: the steps that turn it on, in order.
-        ? '<ol class="hook-steps">' +
-            '<li><strong>Copy its URL.</strong> ' + (shownUrl
+        ? '<div class="hkc-setup"><p class="hkc-setup-title">Finish setting it up</p><ol class="hook-steps">' +
+            '<li><strong>Copy its address.</strong> ' + (shownUrl
               ? hookUrlHtml(shownUrl)
-              : '<span class="hint">It was shown once, when it was made. Lost it? <em>New URL</em> below makes another.</span>') + '</li>' +
+              : '<span class="hint">It was shown once, when it was made. Lost it? <em>New address</em> below makes another.</span>') + '</li>' +
             '<li>' + setup.where + '</li>' +
             '<li>' + setup.secret +
-              '<div class="workflow-param-row" style="margin:4px 0">' +
+              '<div class="hkc-secret">' +
                 (t.verify.sender === 'custom' && !t.verify.header ? '<input class="hook-secret-header" placeholder="Signature header, e.g. X-Signature">' : '') +
-                '<input class="hook-secret-input" type="password" autocomplete="off" placeholder="' + escapeHtml(t.verify.sender === 'custom' ? 'The secret your app signs with' : 'The signing secret ' + (HOOK_SENDERS[t.verify.sender] || 'the sender') + ' shows') + '" style="flex:1">' +
+                '<input class="hook-secret-input" type="password" autocomplete="off" placeholder="' + escapeHtml(t.verify.sender === 'custom' ? 'The secret your app signs with' : 'The signing secret ' + (HOOK_SENDERS[t.verify.sender] || 'the sender') + ' shows') + '">' +
                 '<button type="button" class="primary hook-secret-save">Add and turn on</button></div></li>' +
-          '</ol>'
+          '</ol></div>'
         : (shownUrl ? hookUrlHtml(shownUrl) : '')) +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">' +
+      '<div class="hkc-actions">' +
         '<button type="button" class="hook-edit">Edit</button>' +
         (needsSecret ? '' : '<button type="button" class="hook-toggle">' + (t.enabled ? 'Turn off' : 'Turn on') + '</button>') +
-        '<button type="button" class="hook-rotate">New URL</button>' +
+        '<button type="button" class="hook-rotate">New address</button>' +
         '<button type="button" class="delete-btn hook-delete">Delete</button></div></div>';
   }
 
@@ -3872,7 +3899,7 @@ ${renderMarkdownScript}
           });
           row.querySelector('.hook-rotate').addEventListener('click', function (ev) {
             var btn = ev.currentTarget;
-            if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again: the old URL stops working'; return; }
+            if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again: the old address stops working'; return; }
             act(id, '/rotate', { method: 'POST' });
           });
           row.querySelector('.hook-delete').addEventListener('click', function (ev) {
