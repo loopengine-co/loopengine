@@ -3073,7 +3073,7 @@ ${renderMarkdownScript}
         var was = passedAll(pubCases[c.id]), now = passedAll(draftCases[c.id]);
         var values = Object.keys(c.params || {}).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(String(c.params[k]).slice(0, 40)); }).join(DOT);
         var state = was === null && now === null ? ['', 'Added since: evaluate both again'] : was === null ? ['', 'Not in the published test'] : now === null ? ['', 'Not in the draft test']
-          : now && !was ? ['better', 'Fixed'] : was && !now ? ['worse', 'Broken'] : now ? ['', 'Still passes'] : ['miss', 'Still misses'];
+          : now && !was ? ['better', 'Now passes'] : was && !now ? ['worse', 'Now fails'] : now ? ['', 'Passes in both'] : ['miss', 'Fails in both'];
         return '<li class="ev-krow"><a href="#ev-case-' + escapeHtml(c.id) + '" class="ev-krow-name">Case ' + (i + 1) + '</a><span class="hint">' + (values || 'no inputs') + '</span><span class="ev-chip ' + state[0] + '">' + state[1] + '</span></li>';
       }).join('');
       var sameChecks = JSON.stringify((pubRound.criteria || []).map(function (c) { return c.text; })) === JSON.stringify((draftRound.criteria || []).map(function (c) { return c.text; }));
