@@ -252,7 +252,7 @@ export const devUiCss: string = `
   .le-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface); }
   .le-seg button, .le-seg a { border: 0; background: none; height: 30px; padding: 0 13px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--ink-muted); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
   .le-seg button:hover:not(:disabled), .le-seg a:hover { background: none; color: var(--ink); }
-  .le-seg [aria-selected="true"], .le-seg [aria-pressed="true"] { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+  .le-seg [aria-selected="true"], .le-seg [aria-pressed="true"], .le-seg button[aria-selected="true"]:hover:not(:disabled), .le-seg button[aria-pressed="true"]:hover:not(:disabled) { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
   .le-btn-dark { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 15px; border-radius: 10px; border: 0; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
   .le-btn-dark:hover:not(:disabled) { background: var(--primary); opacity: .88; }
   .le-search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 10px; background: var(--surface); color: var(--ink-faint); min-width: 200px; }
