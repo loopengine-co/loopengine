@@ -311,7 +311,8 @@ ${consoleShellScript}
           '<button type="button" class="sc-danger" data-remove="' + esc(t.task_id) + '">Remove</button>' +
         '</div></details></div>' +
       '<div class="sc-chips"><span class="sc-chip strong">' + esc(describe(t)) + '</span>' + what +
-        '<a class="sc-chip" href="/agents/config?agent=' + encodeURIComponent(t.agent) + '" title="Agent">' + GLYPH_AGENT + esc(t.agentLabel) + '</a>' +
+        // The agent's Schedules tab, this schedule marked there.
+        '<a class="sc-chip" href="/agents/config?agent=' + encodeURIComponent(t.agent) + '&tab=schedules#schedule-' + esc(t.task_id) + '" title="The agent' + String.fromCharCode(8217) + 's schedules">' + GLYPH_AGENT + esc(t.agentLabel) + '</a>' +
         (t.notify ? '<span class="sc-chip">Result to chat</span>' : '') + state +
         (next ? '<span class="sc-next">' + esc(next) + '</span>' : '') + '</div>' +
     '</div>';
