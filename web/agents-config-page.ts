@@ -244,9 +244,34 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-cand-text strong { font-weight: 600; overflow-wrap: anywhere; }
   .wf-health { display: grid; gap: 12px; margin-bottom: 8px; }
   .wf-health-alert { padding: 10px 12px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); font-size: 13px; font-weight: 600; }
-  .wf-health-chart { margin: 0; display: grid; gap: 4px; }
-  .wf-health-chart svg { width: 100%; height: 96px; display: block; border-bottom: 1px solid var(--line); }
-  .wf-health-chart figcaption { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-faint); }
+  /* The Summary's chart: runs per day against a scale, done and failed
+     in each bar, a card on hover. */
+  .hc { margin: 0; display: grid; gap: 6px; padding: 16px 0 4px; }
+  .hc-plot { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; height: 150px; }
+  .hc-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: 11px; color: var(--ink-faint); line-height: 1; margin: -5px 0; }
+  .hc-area { position: relative; min-width: 0; }
+  .hc-grid { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+  .hc-grid i { display: block; border-top: 1px dashed var(--line); }
+  .hc-grid i:last-child { border-top: 1px solid var(--line); }
+  .hc-bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 2px; }
+  .hc-col { position: relative; flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; cursor: default; }
+  .hc-col:hover { background: var(--surface); }
+  .hc-bar { width: 100%; min-height: 0; background: var(--accent); opacity: .8; border-radius: 3px 3px 0 0; display: flex; flex-direction: column-reverse; overflow: hidden; }
+  .hc-col:hover .hc-bar { opacity: 1; }
+  .hc-bad { display: block; width: 100%; background: var(--bad); }
+  .hc-col:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 5; white-space: pre; padding: 8px 10px; border-radius: 9px; background: var(--primary); color: var(--on-primary); font-size: 12px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); pointer-events: none; }
+  .hc-col.is-start:hover::after { left: 0; transform: none; }
+  .hc-col.is-end:hover::after { left: auto; right: 0; transform: none; }
+  .hc-x { position: relative; height: 16px; margin-left: 36px; font-size: 11px; color: var(--ink-faint); }
+  .hc-x span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .hc-x span:first-child { transform: none; left: 0 !important; }
+  .hc-x span:last-child { transform: none; left: auto !important; right: 0; }
+  .hc figcaption { display: flex; gap: 14px; align-items: center; margin-left: 36px; font-size: 11.5px; color: var(--ink-faint); }
+  .hc figcaption > span:last-child { margin-left: auto; }
+  .hc-key { display: inline-flex; align-items: center; gap: 5px; }
+  .hc-key i { width: 9px; height: 9px; border-radius: 2px; }
+  .hc-key-ok { background: var(--accent); opacity: .8; }
+  .hc-key-bad { background: var(--bad); }
   .wf-health-table { overflow-x: auto; }
   .wf-health-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .wf-health-table th { text-align: left; font-weight: 600; color: var(--ink-muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -1725,34 +1750,47 @@ ${renderMarkdownScript}
   }
   function healthCost(usd) { return usd == null ? String.fromCharCode(8212) : '$' + (usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3)); }
 
-  // Runs per day as bars, the failed part of each in red.
+  // Runs per day (a bar a week past two months) against a scale, the
+  // failed part of each bar in red; hovering a bar says its day and numbers.
   function healthChartHtml(daily) {
-    // Over two months, a bar a week (from its first day), so the bars
-    // stay wide enough to see.
     var unit = 'day';
     if (daily.length > 60) {
       unit = 'week';
       var weeks = [];
       for (var k = 0; k < daily.length; k += 7) {
         var part = daily.slice(k, k + 7);
-        weeks.push({ date: part[0].date, runs: part.reduce(function (n, d) { return n + d.runs; }, 0), failed: part.reduce(function (n, d) { return n + d.failed; }, 0) });
+        weeks.push({ date: part[0].date, to: part[part.length - 1].date, runs: part.reduce(function (n, d) { return n + d.runs; }, 0), failed: part.reduce(function (n, d) { return n + d.failed; }, 0) });
       }
       daily = weeks;
     }
-    var max = 1;
-    daily.forEach(function (d) { if (d.runs > max) max = d.runs; });
-    var w = 600, h = 96, gap = 2, bw = (w - gap * (daily.length - 1)) / daily.length;
+    var most = 0;
+    daily.forEach(function (d) { if (d.runs > most) most = d.runs; });
+    // A round top for the scale: 1, 2, 5, 10, 20, 50...
+    var top = 1;
+    while (top < most) top = String(top).charAt(0) === '2' ? top * 2.5 : top * 2;
+    var day = function (iso) { return new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }); };
+    var n = daily.length;
     var bars = daily.map(function (d, i) {
-      var x = (i * (bw + gap)).toFixed(1);
-      var all = d.runs / max * (h - 4), bad = d.failed / max * (h - 4);
-      var tip = '<title>' + (unit === 'week' ? 'Week of ' : '') + escapeHtml(d.date) + ': ' + d.runs + ' run' + (d.runs === 1 ? '' : 's') + (d.failed ? ', ' + d.failed + ' failed' : '') + '</title>';
-      return '<g>' + tip + '<rect x="' + x + '" y="0" width="' + bw.toFixed(1) + '" height="' + h + '" fill="transparent"/>' +
-        (d.runs ? '<rect x="' + x + '" y="' + (h - all).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + all.toFixed(1) + '" rx="1.5" fill="var(--accent)" opacity="0.75"/>' : '') +
-        (d.failed ? '<rect x="' + x + '" y="' + (h - bad).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bad.toFixed(1) + '" rx="1.5" fill="var(--bad)"/>' : '') + '</g>';
+      var when = unit === 'week' ? day(d.date) + ' ' + String.fromCharCode(8211) + ' ' + day(d.to) : new Date(d.date + 'T00:00:00Z').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+      var tip = when + '&#10;' + (d.runs ? d.runs + (d.runs === 1 ? ' run' : ' runs') + '&#10;' + (d.runs - d.failed) + ' done' + DOT + d.failed + ' failed' : 'No runs');
+      var side = i > n * 0.75 ? ' is-end' : i < n * 0.25 ? ' is-start' : '';
+      return '<div class="hc-col' + side + (d.runs ? '' : ' is-empty') + '" data-tip="' + tip + '">' +
+        '<div class="hc-bar" style="height:' + (d.runs / top * 100).toFixed(1) + '%">' +
+          (d.failed ? '<span class="hc-bad" style="height:' + (d.failed / d.runs * 100).toFixed(1) + '%"></span>' : '') + '</div></div>';
     }).join('');
-    var first = daily[0] ? daily[0].date.slice(5) : '', last = daily.length ? daily[daily.length - 1].date.slice(5) : '';
-    return '<figure class="wf-health-chart"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="Runs per day, failed in red">' + bars + '</svg>' +
-      '<figcaption><span>' + escapeHtml(first) + '</span><span class="hint">Runs per ' + unit + DOT + 'failed in red' + DOT + 'most ' + max + '</span><span>' + escapeHtml(last) + '</span></figcaption></figure>';
+    // About six dates along the bottom, where their bars are.
+    var ticks = [];
+    var count = Math.min(6, n);
+    for (var t = 0; t < count; t++) {
+      var idx = count === 1 ? 0 : Math.round(t * (n - 1) / (count - 1));
+      ticks.push('<span style="left:' + ((idx + 0.5) / n * 100).toFixed(2) + '%">' + escapeHtml(day(daily[idx].date)) + '</span>');
+    }
+    return '<figure class="hc">' +
+      '<div class="hc-plot"><div class="hc-y"><span>' + top + '</span><span>' + (top % 2 ? (top / 2).toFixed(1) : top / 2) + '</span><span>0</span></div>' +
+        '<div class="hc-area"><div class="hc-grid"><i></i><i></i><i></i></div><div class="hc-bars">' + bars + '</div></div></div>' +
+      '<div class="hc-x">' + ticks.join('') + '</div>' +
+      '<figcaption><span class="hc-key"><i class="hc-key-ok"></i>Done</span><span class="hc-key"><i class="hc-key-bad"></i>Failed</span><span>Runs per ' + unit + '</span></figcaption>' +
+    '</figure>';
   }
 
   function workflowHealthHtml(h) {
