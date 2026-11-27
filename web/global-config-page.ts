@@ -169,6 +169,24 @@ export const globalConfigPageHtml: string = `<!doctype html>
   .cf-or { font-size: 12.5px; color: var(--ink-muted); }
   .cf-own-form { margin-top: 12px; }
   #abilityInstallStatus:empty { display: none; }
+  /* Models: provider cards, and each agent's model. */
+  .md-card .cf-card-head { align-items: center; }
+  .md-card .cf-card-text { flex: 1; }
+  .md-card.is-needed { background: var(--bad-soft); }
+  .md-ico svg, .md-ico img { width: 18px; height: 18px; }
+  .md-ico .le-provider-icon { width: 18px; height: 18px; }
+  .md-agent .cf-card-text { flex: 1; }
+  .md-agent .cf-sub code { font-size: 11.5px; background: none; padding: 0; }
+  .cf-sub code { font-size: 11.5px; }
+  .cf-chip.bad { background: var(--bad-soft); border-color: transparent; color: var(--bad); font-weight: 500; }
+  .md-card.is-needed .cf-chip.bad { background: var(--bg); }
+  .cf-card form.key-form { display: flex; gap: 6px; flex-wrap: nowrap; }
+  .cf-card form.key-form input[type=password] { flex: 1; width: auto; min-width: 0; height: 32px; border-radius: 8px; }
+  .cf-card form.key-form button { height: 32px; padding: 0 12px; border-radius: 8px; flex: none; }
+  .cf-card .key-msg:empty { display: none; }
+  .md-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--ink-faint); }
+  .md-card .cf-foot:empty { display: none; }
+  .cf-link { font-size: 12.5px; color: var(--accent-ink); font-weight: 500; }
   @media (max-width: 1000px) { .cf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cf-filler { display: none; } }
   @media (max-width: 640px) { .cf-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>
@@ -229,39 +247,67 @@ ${consoleShellScript}
     return '<span class="provider-name">' + (PROVIDER_ICONS[provider] || '') + '<span>' + escapeHtml(PROVIDER_NAMES[provider] || provider) + '</span></span>';
   }
 
+  // The Models page: a card per provider (its key, and who uses it), then
+  // the model each agent uses. A key form opens inside its card.
+  var lastModels = null;
+  var openKey = {};
   function renderModels(data) {
-    var providerRows = data.providers.map(function (p) {
+    lastModels = data;
+    var usedBy = {};
+    data.agents.forEach(function (a) { (usedBy[a.provider] = usedBy[a.provider] || []).push(a.agent); });
+    // Ones agents need but have no key first, then ones with a key.
+    var rank = function (p) { return !p.configured && usedBy[p.provider] ? 0 : p.configured ? 1 : 2; };
+    var providers = data.providers.slice().sort(function (a, b) { return rank(a) - rank(b); });
+    var cards = providers.map(function (p) {
+      var users = usedBy[p.provider] || [];
+      var needed = !p.configured && users.length;
+      var chip = p.configured ? '<span class="cf-chip good">Key set</span>' : needed ? '<span class="cf-chip bad">Needed</span>' : '<span class="cf-chip">No key</span>';
+      var who = users.length
+        ? 'Used by ' + users.slice(0, 3).map(escapeHtml).join(', ') + (users.length > 3 ? ' and ' + (users.length - 3) + ' more' : '') + (needed ? ': add its key so they can run.' : '.')
+        : p.configured ? 'Ready for any agent to use.' : 'Add a key to use its models.';
+      var open = openKey[p.provider];
       // Write-only: the field is always empty; the server never sends a
       // key back, only whether one is set.
-      var keyCell = data.canSave
+      var form = data.canSave && open
         ? '<form class="key-form" data-provider="' + escapeHtml(p.provider) + '">' +
             '<input type="password" name="key" autocomplete="off" spellcheck="false" placeholder="' + (p.configured ? 'Paste a new key to replace it' : 'Paste API key') + '" aria-label="' + escapeHtml(p.provider) + ' API key">' +
-            '<button type="submit">Save</button>' +
-            (p.configured ? '<button type="button" class="delete-btn" data-remove-key="' + escapeHtml(p.provider) + '">Remove</button>' : '') +
-          '</form><div class="key-msg" data-key-msg="' + escapeHtml(p.provider) + '"></div>'
+            '<button type="submit" class="primary">Save</button><button type="button" data-key-close="' + escapeHtml(p.provider) + '">Cancel</button></form>' +
+          '<p class="md-note">Saved on this server as <code>' + escapeHtml(p.envVar) + '</code>, and never shown again.</p>'
         : '';
-      return '<tr><td>' + providerName(p.provider) + '</td>' +
-        '<td>' + badge(p.configured, 'Key set', 'No key') + '</td>' +
-        '<td><code>' + escapeHtml(p.envVar) + '</code></td>' +
-        (data.canSave ? '<td>' + keyCell + '</td>' : '') + '</tr>';
-    }).join('');
+      var actions = !data.canSave ? '<span class="cf-sub">Set <code>' + escapeHtml(p.envVar) + '</code> in .env</span>'
+        : open ? ''
+        : '<button type="button" class="' + (needed ? 'primary' : '') + '" data-key-open="' + escapeHtml(p.provider) + '">' + (p.configured ? 'Replace key' : 'Add key') + '</button>' +
+          (p.configured ? '<button type="button" class="delete-btn" data-remove-key="' + escapeHtml(p.provider) + '">Remove</button>' : '');
+      return '<div class="cf-card md-card' + (needed ? ' is-needed' : '') + '">' +
+        '<div class="cf-card-head"><span class="cf-ico md-ico">' + (PROVIDER_ICONS[p.provider] || '') + '</span>' +
+          '<div class="cf-card-text"><strong>' + escapeHtml(PROVIDER_NAMES[p.provider] || p.provider) + '</strong></div>' + chip + '</div>' +
+        '<p class="cf-desc">' + who + '</p>' + form +
+        '<div class="cf-foot">' + actions + '</div>' +
+        '<div class="key-msg" data-key-msg="' + escapeHtml(p.provider) + '"></div></div>';
+    });
     // Without the admin sign-in, keys can't be saved here: said once.
-    var keysNote = data.canSave ? '' : leShell.adminNote('To add keys here, set <code>LOOPENGINE_ADMIN_AUTH</code> first. Or put each key in the project' + String.fromCharCode(8217) + 's <code>.env</code> under the name shown.');
-
-    var agentRows = data.agents.length
-      ? data.agents.map(function (a) {
-          return '<tr><td><a href="/agents/config?agent=' + encodeURIComponent(a.agent) + '">' + escapeHtml(a.agent) + '</a></td>' +
-            '<td>' + providerName(a.provider) + '</td>' +
-            '<td><code>' + escapeHtml(a.model) + '</code></td></tr>';
-        }).join('')
-      : '<tr><td colspan="3"><p class="hint">No agents with a resolved model config (a custom createModelCall has nothing to report here).</p></td></tr>';
-
-    return '<section><h3>Providers</h3>' + keysNote +
-        '<table><thead><tr><th>Provider</th><th>Status</th><th>Key name in .env</th>' + (data.canSave ? '<th>API key</th>' : '') + '</tr></thead><tbody>' + providerRows + '</tbody></table>' +
-      '</section>' +
-      '<section><h3>Which model each agent uses</h3>' +
-        '<table><thead><tr><th>Agent</th><th>Provider</th><th>Model</th></tr></thead><tbody>' + agentRows + '</tbody></table>' +
-      '</section>';
+    var keysNote = data.canSave ? '' : leShell.adminNote('To add keys here, set <code>LOOPENGINE_ADMIN_AUTH</code> first. Or put each key in the project' + String.fromCharCode(8217) + 's <code>.env</code> under the name on its card.');
+    var configured = {};
+    data.providers.forEach(function (p) { configured[p.provider] = p.configured; });
+    var agentCards = data.agents.map(function (a) {
+      var missing = configured[a.provider] === false;
+      return '<div class="cf-card md-agent">' +
+        '<div class="cf-card-head"><span class="cf-ico md-ico">' + (PROVIDER_ICONS[a.provider] || '') + '</span>' +
+          '<div class="cf-card-text"><strong>' + escapeHtml(leShell.displayNameOf ? leShell.displayNameOf(a.agent) : a.agent) + '</strong><span class="cf-sub"><code>' + escapeHtml(a.model) + '</code> &middot; ' + escapeHtml(PROVIDER_NAMES[a.provider] || a.provider) + '</span></div>' +
+          (missing ? '<span class="cf-chip bad">No key</span>' : '') + '</div>' +
+        '<div class="cf-foot"><a class="cf-link" href="/agents/config?agent=' + encodeURIComponent(a.agent) + '">Change model</a></div></div>';
+    });
+    var cols = function (list, n) {
+      var fill = list.length % n ? n - (list.length % n) : 0;
+      return list.join('') + new Array(fill + 1).join('<div class="cf-card cf-filler" aria-hidden="true"></div>');
+    };
+    var keyed = data.providers.filter(function (p) { return p.configured; }).length;
+    return keysNote +
+      '<section class="cf-sec">' + cfHead('Providers', keyed ? keyed + ' of ' + data.providers.length + ' have a key. Agents can use any provider with one.' : 'Add a key for at least one provider, so your agents can run.') +
+        '<div class="le-grid cf-grid">' + cols(cards, 3) + '</div></section>' +
+      '<section class="cf-sec">' + cfHead('Which model each agent uses', 'Change it on the agent' + String.fromCharCode(8217) + 's Overview.') +
+        (agentCards.length ? '<div class="le-grid cf-grid md-agents">' + cols(agentCards, 3) + '</div>'
+          : '<div class="cf-empty">No agents with a model set here (an agent with its own model code has nothing to report).</div>') + '</section>';
   }
 
   function keyMessage(provider, text, bad) {
@@ -295,16 +341,26 @@ ${consoleShellScript}
     if (!key) { keyMessage(form.getAttribute('data-provider'), 'Paste a key first.', true); return; }
     // Cleared at once, so the key doesn't sit in the page while saving.
     input.value = '';
+    delete openKey[form.getAttribute('data-provider')];
     sendKey(form.getAttribute('data-provider'), 'PUT', { key: key });
   });
 
   document.getElementById('modelsContent').addEventListener('click', function (ev) {
+    var opener = ev.target.closest('[data-key-open], [data-key-close]');
+    if (opener) {
+      var which = opener.getAttribute('data-key-open') || opener.getAttribute('data-key-close');
+      if (opener.hasAttribute('data-key-open')) openKey[which] = true; else delete openKey[which];
+      document.getElementById('modelsContent').innerHTML = renderModels(lastModels);
+      var field = document.querySelector('form.key-form[data-provider="' + which + '"] input');
+      if (field) field.focus();
+      return;
+    }
     var btn = ev.target.closest('[data-remove-key]');
     if (!btn) return;
     var provider = btn.getAttribute('data-remove-key');
     if (btn.getAttribute('data-armed') !== '1') {
       btn.setAttribute('data-armed', '1');
-      btn.textContent = 'Remove ' + provider + ' key?';
+      btn.textContent = 'Click again to remove';
       return;
     }
     sendKey(provider, 'DELETE');
