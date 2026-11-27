@@ -296,33 +296,38 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-vs-row .wf-evals-run.plain, .ev-vs-row .wf-evals-run.plain:hover:not(:disabled) { background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
   .ev-steps .wf-evals-run:disabled { opacity: .45; }
   .ev-shown { margin-left: auto; }
-  .ev-cmp { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .ev-cmp-col, .ev-cmp > .ev-result, .ev-cmp > div:empty { display: grid; gap: 6px; align-content: start; padding: 10px 12px; min-width: 0; }
-  .ev-cmp > * + * { border-left: 1px solid var(--line); }
-  .ev-cmp-col.is-draft, .ev-cmp > .ev-result:nth-child(2) { background: var(--surface); }
-  .ev-cmp-k { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; font-size: 12.5px; color: var(--ink); }
-  .ev-cmp .wf-case-fails { margin: 0; }
-  .ev-cmp .wf-case-standins { margin: 0; }
-  details .ev-cmp { margin-top: 8px; }
-  .ev-change { font-size: 12px; color: var(--ink-muted); }
-  .ev-change.better { color: var(--good); font-weight: 600; }
-  .ev-change.worse { color: var(--bad); font-weight: 600; }
-  .ev-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  .ev-table th, .ev-table td { padding: 8px 12px; text-align: left; border-top: 1px solid var(--line); font-weight: 400; }
-  .ev-table thead th { border-top: 0; background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--ink); }
-  .ev-table tbody th[scope="row"] { color: var(--ink); }
-  .ev-table td { width: 140px; white-space: nowrap; }
-  .ev-table td:last-child { width: 90px; }
-  .ev-table .ev-group-k { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); background: var(--bg); padding-top: 12px; }
-  .ev-delta { font-weight: 600; color: var(--ink-muted); }
-  .ev-delta.better, .ev-yes { color: var(--good); }
-  .ev-delta.worse, .ev-no { color: var(--bad); }
-  .ev-yes, .ev-no { font-weight: 600; }
-  .ev-verdict { margin: 0; font-size: 13px; color: var(--ink); font-weight: 600; }
-  .ev-verdict.better { color: var(--good); }
-  .ev-verdict.worse { color: var(--bad); }
-  .ev-verdict .hint { font-weight: 400; }
-  @media (max-width: 760px) { .ev-cmp { grid-template-columns: minmax(0, 1fr); } .ev-cmp > * + * { border-left: 0; border-top: 1px solid var(--line); } }
+  .ev-compare { display: grid; gap: 10px; }
+  .ev-sum { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); align-items: center; gap: 6px 22px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; }
+  .ev-sum-side { display: grid; gap: 2px; }
+  .ev-sum-k { font-size: 12px; color: var(--ink-muted); font-weight: 600; }
+  .ev-sum-side.is-draft .ev-sum-k { color: var(--warn); }
+  .ev-sum-n { font-size: 26px; letter-spacing: -0.02em; color: var(--ink); line-height: 1.1; }
+  .ev-sum-n small { font-size: 13px; letter-spacing: 0; color: var(--ink-muted); }
+  .ev-sum-arrow { font-size: 20px; color: var(--ink-faint); }
+  .ev-sum-verdict { margin: 0; justify-self: end; text-align: right; display: grid; gap: 2px; font-size: 14px; font-weight: 600; color: var(--ink); }
+  .ev-sum-verdict.better { color: var(--good); }
+  .ev-sum-verdict.worse { color: var(--bad); }
+  .ev-sum-verdict .hint { font-weight: 400; }
+  .ev-cmp-head { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px 70px; gap: 12px; padding: 6px 12px 0; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+  .ev-cmp-head-cases { grid-template-columns: minmax(0, 1fr); padding-top: 10px; }
+  .ev-crows, .ev-krows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .ev-crow { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px 70px; gap: 12px; align-items: center; padding: 10px 12px; font-size: 13px; }
+  .ev-crow + .ev-crow, .ev-krow + .ev-krow { border-top: 1px solid var(--line); }
+  .ev-crow-name { color: var(--ink); }
+  .ev-crow-side { display: flex; align-items: center; gap: 8px; }
+  .ev-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .ev-bar span { display: block; height: 100%; border-radius: 999px; background: var(--ink-faint); }
+  .ev-crow-side.is-draft .ev-bar span { background: var(--accent); }
+  .ev-bar-n { font-size: 12px; color: var(--ink-muted); min-width: 28px; text-align: right; }
+  .ev-krow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; }
+  .ev-krow-name { font-weight: 600; color: var(--ink); text-decoration: none; }
+  .ev-krow-name:hover { text-decoration: underline; }
+  .ev-krow .ev-chip { margin-left: auto; }
+  .ev-chip { display: inline-flex; align-items: center; justify-self: start; height: 22px; padding: 0 9px; border-radius: 999px; background: var(--surface-2); font-size: 12px; font-weight: 600; color: var(--ink-muted); white-space: nowrap; }
+  .ev-chip.better { background: var(--good-soft); color: var(--good); }
+  .ev-chip.worse { background: var(--bad-soft); color: var(--bad); }
+  .ev-chip.miss { background: var(--warn-soft); color: var(--warn); }
+  @media (max-width: 760px) { .ev-sum { grid-template-columns: auto auto auto; } .ev-sum-verdict { grid-column: 1 / -1; justify-self: start; text-align: left; } .ev-cmp-head { display: none; } .ev-crow { grid-template-columns: minmax(0, 1fr) auto; } .ev-crow-side { grid-column: 1 / -1; } }
   .ev-step .wf-evals-bar { margin-top: 4px; }
   .ev-step .wf-evals-run.primary, .ev-step .wf-evals-run.primary:hover:not(:disabled) { height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--primary); border: 1px solid var(--primary); color: var(--on-primary); }
   .ev-step .wf-evals-run:disabled { opacity: .45; }
@@ -2928,7 +2933,7 @@ ${renderMarkdownScript}
     // One round's outcome for a case: its pill, what it missed and why,
     // and the calls the test didn't make.
     var outcome = function (last, names) {
-      if (!last) return { pill: '<span class="ev-none">Not in this round</span>', body: '' };
+      if (!last) return { pill: '<span class="ev-none">Not tested yet</span>', body: '' };
       var fails = last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
       var pill = last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' criteria missed</span>' : '<span class="le-pill good">Passed all ' + last.checks.length + '</span>')
         : typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>';
@@ -2955,16 +2960,11 @@ ${renderMarkdownScript}
       var goodResult = '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '" placeholder="Optional: what a good result says, to compare against">' + escapeHtml(c.reference || '') + '</textarea>' +
         '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>';
       if (comparing) {
-        var pub = pubCases[c.id], dr = draftCases[c.id];
-        var p = outcome(pub, pubNames), d = outcome(dr, draftNames);
-        var was = passedAll(pub), now = passedAll(dr);
-        // How the draft did against the published version on this case.
-        var change = was === null || now === null ? '' : now && !was ? '<span class="ev-change better">Fixed by the draft</span>' : was && !now ? '<span class="ev-change worse">Broken by the draft</span>' : '<span class="ev-change">Same</span>';
-        return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '">' + head(change) +
-          '<div class="ev-cmp"><div class="ev-cmp-col"><div class="ev-cmp-k">' + escapeHtml(pubLabel) + ' ' + p.pill + '</div>' + p.body + '</div>' +
-            '<div class="ev-cmp-col is-draft"><div class="ev-cmp-k"><span class="le-pill warn">Draft</span> ' + d.pill + '</div>' + d.body + '</div></div>' +
-          '<details><summary>Good result' + (c.reference ? '' : ' (none)') + ' and both results</summary>' + goodResult +
-            '<div class="ev-cmp">' + (resultBlock(pubLabel, pub) || '<div></div>') + (resultBlock('Draft', dr) || '<div></div>') + '</div>' +
+        // The draft's outcome; how it compares is in the table above.
+        var dr = draftCases[c.id];
+        var d = outcome(dr, draftNames);
+        return '<li class="wf-case" id="ev-case-' + escapeHtml(c.id) + '" data-case="' + escapeHtml(c.id) + '">' + head(d.pill) + d.body +
+          '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (dr && dr.result ? ' and the draft' + RSQ + 's result' : '') + '</summary>' + goodResult + resultBlock('The draft' + RSQ + 's result', dr) +
           '</details></li>';
       }
       var last = latest[c.id];
@@ -2989,17 +2989,6 @@ ${renderMarkdownScript}
       return '<button type="button" class="' + (primary ? 'primary ' : 'plain ') + 'wf-evals-run"' + (forDraft ? ' data-draft="1"' : '') + (!nCases || running ? ' disabled' : '') + (nCases ? '' : ' title="Add an eval case first"') + '>' +
         (mine ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : label) + '</button>';
     };
-    // Draft against published, in a line: the cases each passed in full,
-    // and whether they were checked the same way.
-    var verdict = function () {
-      if (!comparing) return '';
-      var count = function (r) { return r.cases.filter(passedAll).length; };
-      var a = count(pubRound), b = count(draftRound), diff = b - a;
-      var sameChecks = JSON.stringify((pubRound.criteria || []).map(function (c) { return c.id; })) === JSON.stringify((draftRound.criteria || []).map(function (c) { return c.id; }));
-      return '<p class="ev-verdict ' + (diff > 0 ? 'better' : diff < 0 ? 'worse' : '') + '">' +
-        (diff > 0 ? 'The draft passes ' + diff + ' more ' + (diff === 1 ? 'case' : 'cases') : diff < 0 ? 'The draft passes ' + (-diff) + ' fewer ' + (-diff === 1 ? 'case' : 'cases') : 'Both pass the same number of cases') +
-        ' (' + b + ' vs ' + a + ').' + (sameChecks ? '' : ' <span class="hint">The draft changes the success criteria, so the two were checked differently.</span>') + '</p>';
-    };
     var step = function (n, title, value, hint, extra) {
       return '<div class="ev-step"><div class="ev-step-k"><span class="ev-step-n">' + n + '</span>' + title + '</div><div class="ev-step-v">' + value + '</div><p class="hint">' + hint + '</p>' + (extra || '') + '</div>';
     };
@@ -3014,7 +3003,6 @@ ${renderMarkdownScript}
             '<div class="ev-vs-row"><span class="ev-vs-k">Published<span class="ev-pub-v"></span></span><span class="ev-vs-v">' + (pubRound ? resultOf(pubRound) : '<span class="ev-none">Not run yet</span>') + '</span>' + runBtn(false, 'Evaluate', false) + '</div>' +
             '<div class="ev-vs-row is-draft"><span class="ev-vs-k"><span class="le-pill warn">Draft</span></span><span class="ev-vs-v">' + (draftRound ? resultOf(draftRound) : '<span class="ev-none">' + (draftRounds.length ? 'Changed since its test' : 'Not tested yet') + '</span>') + '</span>' + runBtn(true, 'Evaluate draft', true) + '</div>' +
           '</div>' +
-          verdict() +
           '<p class="hint">Test the draft on the same cases before you publish it. Nothing is sent, refunded or submitted.</p>' + details(draftRound || pubRound) + '</div>';
     // The three steps, in order, with where each stands; Evaluate in the third.
     var steps = '<div class="ev-steps' + (w.draft ? ' has-draft' : '') + '">' +
@@ -3025,43 +3013,65 @@ ${renderMarkdownScript}
       evaluate +
       '</div>';
     // Which round the cases below show.
-    var shown = comparing ? '<span class="hint ev-shown">' + escapeHtml(pubLabel) + ' beside the draft</span>' : round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
-    // Draft against published over every case: each criterion's pass rate,
-    // all of them together, and each case's change.
+    var shown = comparing ? '<span class="hint ev-shown">Results from the draft</span>' : round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
+    // Draft against published over every case: in a line, then each
+    // criterion's pass rate as two bars, then what happened to each case.
     var compareTable = '';
     if (comparing) {
-      var rateRow = function (label, a, b, total) {
-        var d = b - a;
-        return '<tr><th scope="row">' + label + '</th><td>' + a + ' of ' + total + '</td><td>' + b + ' of ' + total + '</td>' +
-          '<td class="ev-delta ' + (d > 0 ? 'better' : d < 0 ? 'worse' : '') + '">' + (d > 0 ? '+' + d : d < 0 ? String(d) : String.fromCharCode(8212)) + '</td></tr>';
-      };
       var total = evals.cases.length;
       var allOf = function (r) { return evals.cases.filter(function (c) { return passedAll(byCase(r)[c.id]); }).length; };
+      var pubAll = allOf(pubRound), draftAll = allOf(draftRound);
+      var fixed = 0, broken = 0;
+      evals.cases.forEach(function (c) {
+        var was = passedAll(pubCases[c.id]), now = passedAll(draftCases[c.id]);
+        if (now && was === false) fixed++;
+        if (was && now === false) broken++;
+      });
+      var plural = function (n, one) { return n + ' ' + one + (n === 1 ? '' : 's'); };
+      // Cases neither round tested (added since) can't be compared.
+      var untested = evals.cases.filter(function (c) { return passedAll(pubCases[c.id]) === null || passedAll(draftCases[c.id]) === null; }).length;
+      var verdictText = untested === total ? 'Your cases changed since these tests: evaluate both again to compare.'
+        : fixed || broken
+        ? 'The draft ' + [fixed ? 'fixes ' + plural(fixed, 'case') : '', broken ? 'breaks ' + plural(broken, 'case') : ''].filter(Boolean).join(' and ') + (fixed && !broken ? ' and breaks none.' : '.')
+        : draftAll === total ? 'Both pass every case.' : draftAll === 0 ? 'Both miss every case.' : 'The draft passes and misses the same cases.';
+      var tone = broken ? 'worse' : fixed ? 'better' : '';
+      var bar = function (passed, of) { return '<span class="ev-bar"><span style="width:' + (of ? Math.round(passed / of * 100) : 0) + '%"></span></span><span class="ev-bar-n">' + passed + '/' + of + '</span>'; };
       // Criteria matched by their words: a draft's may have new ids.
       var rates = function (r) {
         var m = {};
-        (r.passRates || []).forEach(function (x) { var name = namesOf(r)[x.criterionId] || x.criterionId; m[name] = x; });
+        (r.passRates || []).forEach(function (x) { m[namesOf(r)[x.criterionId] || x.criterionId] = x; });
         return m;
       };
-      var pr = rates(pubRound), dr = rates(draftRound);
-      var names = Object.keys(pr).concat(Object.keys(dr).filter(function (n) { return !pr[n]; }));
+      var pr = rates(pubRound), drr = rates(draftRound);
+      var names = Object.keys(pr).concat(Object.keys(drr).filter(function (n) { return !pr[n]; }));
       var critRows = names.map(function (n) {
-        var a = pr[n], b = dr[n];
-        if (a && b) return rateRow(escapeHtml(n), a.passed, b.passed, Math.max(a.total, b.total));
-        return '<tr><th scope="row">' + escapeHtml(n) + '</th><td>' + (a ? a.passed + ' of ' + a.total : '<span class="ev-none">Not checked</span>') + '</td><td>' + (b ? b.passed + ' of ' + b.total : '<span class="ev-none">Not checked</span>') + '</td><td class="ev-delta">' + (a ? 'Removed' : 'New') + '</td></tr>';
+        var x = pr[n], y = drr[n];
+        var chip = !x ? '<span class="ev-chip">New</span>' : !y ? '<span class="ev-chip">Removed</span>'
+          : y.passed > x.passed ? '<span class="ev-chip better">+' + (y.passed - x.passed) + '</span>' : y.passed < x.passed ? '<span class="ev-chip worse">' + (y.passed - x.passed) + '</span>' : '<span class="ev-chip">Same</span>';
+        return '<li class="ev-crow"><span class="ev-crow-name">' + escapeHtml(n) + '</span>' +
+          '<span class="ev-crow-side">' + (x ? bar(x.passed, x.total) : '<span class="ev-none">Not checked</span>') + '</span>' +
+          '<span class="ev-crow-side is-draft">' + (y ? bar(y.passed, y.total) : '<span class="ev-none">Not checked</span>') + '</span>' + chip + '</li>';
       }).join('');
       var caseRows = evals.cases.map(function (c, i) {
         var was = passedAll(pubCases[c.id]), now = passedAll(draftCases[c.id]);
-        var mark = function (v) { return v === null ? '<span class="ev-none">' + String.fromCharCode(8212) + '</span>' : v ? '<span class="ev-yes">Passed</span>' : '<span class="ev-no">Missed</span>'; };
-        return '<tr><th scope="row">Case ' + (i + 1) + '</th><td>' + mark(was) + '</td><td>' + mark(now) + '</td>' +
-          '<td class="ev-delta ' + (now && was === false ? 'better' : was && now === false ? 'worse' : '') + '">' + (was === null || now === null ? '' : now && !was ? 'Fixed' : was && !now ? 'Broken' : 'Same') + '</td></tr>';
+        var values = Object.keys(c.params || {}).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(String(c.params[k]).slice(0, 40)); }).join(DOT);
+        var state = was === null && now === null ? ['', 'Added since: evaluate both again'] : was === null ? ['', 'Not in the published test'] : now === null ? ['', 'Not in the draft test']
+          : now && !was ? ['better', 'Fixed'] : was && !now ? ['worse', 'Broken'] : now ? ['', 'Still passes'] : ['miss', 'Still misses'];
+        return '<li class="ev-krow"><a href="#ev-case-' + escapeHtml(c.id) + '" class="ev-krow-name">Case ' + (i + 1) + '</a><span class="hint">' + (values || 'no inputs') + '</span><span class="ev-chip ' + state[0] + '">' + state[1] + '</span></li>';
       }).join('');
+      var sameChecks = JSON.stringify((pubRound.criteria || []).map(function (c) { return c.text; })) === JSON.stringify((draftRound.criteria || []).map(function (c) { return c.text; }));
       compareTable = '<section class="wf-section ev-compare"><h4 class="wf-sub">Draft against ' + escapeHtml(pubLabel) + '</h4>' +
-        '<table class="ev-table"><thead><tr><th></th><th scope="col">' + escapeHtml(pubLabel) + '</th><th scope="col">Draft</th><th scope="col">Change</th></tr></thead>' +
-          '<tbody>' + rateRow('<strong>Passed every check</strong>', allOf(pubRound), allOf(draftRound), total) + '</tbody>' +
-          '<tbody class="ev-group"><tr><th colspan="4" class="ev-group-k">By success criterion</th></tr>' + critRows + '</tbody>' +
-          '<tbody class="ev-group"><tr><th colspan="4" class="ev-group-k">By case</th></tr>' + caseRows + '</tbody>' +
-        '</table></section>';
+        '<div class="ev-sum">' +
+          '<div class="ev-sum-side"><span class="ev-sum-k">' + escapeHtml(pubLabel) + '</span><span class="ev-sum-n">' + pubAll + '<small> of ' + total + ' passed</small></span></div>' +
+          '<span class="ev-sum-arrow" aria-hidden="true">' + String.fromCharCode(8594) + '</span>' +
+          '<div class="ev-sum-side is-draft"><span class="ev-sum-k">Draft</span><span class="ev-sum-n">' + draftAll + '<small> of ' + total + ' passed</small></span></div>' +
+          '<p class="ev-sum-verdict ' + tone + '">' + verdictText + (sameChecks ? '' : '<span class="hint">The draft changes the success criteria, so the two were checked differently.</span>') + '</p>' +
+        '</div>' +
+        '<div class="ev-cmp-head"><span>By success criterion</span><span>' + escapeHtml(pubLabel) + '</span><span>Draft</span><span></span></div>' +
+        '<ul class="ev-crows">' + critRows + '</ul>' +
+        '<div class="ev-cmp-head ev-cmp-head-cases"><span>By case</span></div>' +
+        '<ul class="ev-krows">' + caseRows + '</ul>' +
+      '</section>';
     }
     return steps + compareTable +
       '<section class="wf-section ev-cases"><div class="wf-sub-row"><h4 class="wf-sub">Eval cases' + (nCases ? ' <span class="ev-count">' + nCases + '</span>' : '') + '</h4>' + shown + '</div>' +
