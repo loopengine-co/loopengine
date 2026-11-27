@@ -42,8 +42,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .sc-icon svg { width: 16px; height: 16px; }
   .sc-card-text { display: grid; gap: 2px; min-width: 0; }
   .sc-card-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
-  button.sc-card-title, button.sc-card-title:hover:not(:disabled) { justify-self: start; height: auto; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; }
-  button.sc-card-title:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+  a.sc-card-title { justify-self: start; color: var(--ink); text-decoration: none; }
+  a.sc-card-title:hover { text-decoration: underline; text-underline-offset: 3px; }
   .sc-menu-list .sc-danger { color: var(--bad); }
   .sc-card-desc { font-size: 13px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .sc-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -291,7 +291,8 @@ ${consoleShellScript}
     // A message's title is its first line, unless it has a name.
     var desc = wf ? (wf.description && wf.description !== wf.title ? wf.description : wf.start_message) || '' : t.workflow_id ? '' : t.task_name ? t.message : lines.slice(1).join(' ').trim();
     // What it runs: a workflow (linked) or a message the agent receives.
-    var what = wf ? '<a class="sc-chip" href="' + wfHref(t.agent, t.workflow_id, 'overview') + '" title="Workflow">' + GLYPH_FLOW + esc(wf.title) + '</a>'
+    // A workflow's chip only when the title isn't already its name.
+    var what = wf ? (title === wf.title ? '' : '<a class="sc-chip" href="' + wfHref(t.agent, t.workflow_id, 'overview') + '" title="Workflow">' + GLYPH_FLOW + esc(wf.title) + '</a>')
       : t.workflow_id ? '<span class="sc-chip bad">Its workflow was removed</span>'
       : '<span class="sc-chip" title="Sends the agent a message each time">' + GLYPH_MESSAGE + 'Message</span>';
     var state = t.status === 'awaiting_approval' || t.pending ? '<a class="sc-chip warn" href="/inbox?view=needs">Waiting for you</a>'
@@ -300,7 +301,10 @@ ${consoleShellScript}
     var next = !on ? 'Paused' : t.next_run_at ? 'Next run ' + untilText(t.next_run_at) : '';
     return '<div class="sc-card' + (on ? '' : ' is-off') + '" data-task="' + esc(t.task_id) + '">' +
       '<div class="sc-card-head"><span class="sc-icon">' + (t.schedule && t.schedule.run_at ? ICON_ONCE : ICON_REPEAT) + '</span>' +
-        '<span class="sc-card-text"><button type="button" class="sc-card-title" data-edit="' + esc(t.task_id) + '" title="Edit">' + esc(title) + '</button>' + (desc ? '<span class="sc-card-desc">' + esc(desc) + '</span>' : '') + '</span>' +
+        '<span class="sc-card-text">' + (wf
+          // A workflow's title opens its runs; Edit is in the menu.
+          ? '<a class="sc-card-title" href="' + wfHref(t.agent, t.workflow_id, 'activity') + '" title="See its runs">' + esc(title) + '</a>'
+          : '<span class="sc-card-title">' + esc(title) + '</span>') + (desc ? '<span class="sc-card-desc">' + esc(desc) + '</span>' : '') + '</span>' +
         '<button type="button" class="le-switch" role="switch" aria-checked="' + on + '" aria-label="' + (on ? 'Pause ' : 'Resume ') + esc(title) + '" data-toggle="' + esc(t.task_id) + '"' + (t.status === 'running' ? ' disabled' : '') + '></button>' +
         '<details class="sc-menu"><summary aria-label="More">' + ICON_DOTS + '</summary><div class="sc-menu-list">' +
           '<button type="button" data-edit="' + esc(t.task_id) + '">Edit</button>' +
