@@ -1308,31 +1308,32 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .msg-approvers p { margin: 0; }
   @media (max-width: 760px) { .msg-form { grid-template-columns: minmax(0, 1fr); } .msg-col + .msg-col { border-left: 0; border-top: 1px solid var(--line); } }
 
-  /* A run's trace, in the new style: the same layout (its details, then
-     its steps beside the one picked), with plain buttons, square cells
-     sharing their lines, labels in normal case, and the picked step
-     marked like the Inbox's open conversation. */
-  .wf-trace-bar a.wf-link, .wf-trace-save-case { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; }
+  /* A run, calm: plain buttons on top; its details as labels and values
+     with no lines between them; its steps on one line through their dots,
+     the picked one tinted; that step's details in one soft panel. */
+  .wf-trace-bar a.wf-link, .wf-trace-save-case { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 13px; font-weight: 500; text-decoration: none; }
   .wf-trace-bar a.wf-link:hover, .wf-trace-save-case:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
   .wf-trace-bar { gap: 8px; }
-  .wf-trace-case { border-radius: 0; }
-  .wf-xd { border-radius: 0; background: var(--bg); padding: 20px 22px; display: grid; gap: 16px; }
-  .wf-xd-head h3 { font-size: 22px; font-weight: 400; letter-spacing: -0.02em; }
-  .wf-xd .wf-sub { margin: 0; }
-  .wf-xd-grid { gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
-  .wf-xd-item { padding: 12px 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); gap: 4px; }
-  .wf-xd-item dt, .wf-xd-k { font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink-muted); }
-  .wf-xd-item dd { font-size: 15px; }
-  .wf-xd-error { border-radius: 0; }
-  .wf-tv-pre { border-radius: 0; }
+  .wf-xd { padding: 22px 0 0; border: 0; background: none; display: grid; gap: 16px; }
+  .wf-xd-head { display: grid; gap: 6px; }
+  .wf-xd-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .wf-xd-head h3 { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; }
+  .wf-xd-sub { font-size: 13px; color: var(--ink-muted); }
+  .wf-xd-sub a { color: var(--accent-ink); font-weight: 500; text-decoration: none; }
+  .wf-xd-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px 20px; }
+  .wf-xd-item dt, .wf-xd-k { font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink-faint); }
+  .wf-xd-item dd { font-size: 13.5px; }
+  .wf-xd-error { padding: 4px 0 4px 12px; border-radius: 0; border-left: 3px solid var(--bad); background: none; }
+  .wf-tv-pre { border: 0; border-radius: 8px; background: var(--surface); }
   .wf-tv-pre.is-text { font-family: inherit; font-size: 13.5px; line-height: 1.55; }
-  .wf-tl { border: 1px solid var(--line); background: var(--bg); padding: 6px 0; }
+  .wf-tl-detail .wf-tv-pre { background: var(--bg); }
+  .wf-tl { border: 0; background: none; padding: 0; }
   /* The line through the dots: centred on them (a step's dot sits 14px
      in, 12px wide). */
   .wf-tl::before { left: 19px; width: 2px; top: 20px; bottom: 20px; }
-  .wf-tl-step { border: 0; border-radius: 0; padding: 10px 16px 10px 14px; }
+  .wf-tl-step { border: 0; border-radius: 10px; padding: 10px 14px 10px 14px; }
   .wf-tl-step:hover { background: var(--surface); }
-  .wf-tl-step[aria-pressed="true"] { background: var(--surface); border-color: transparent; box-shadow: none; }
+  .wf-tl-step[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; box-shadow: none; }
   .wf-tl-step[aria-pressed="true"] .wf-tl-title { color: var(--ink); }
   .wf-tl-step.k-model[aria-pressed="true"] .wf-tl-dot { background: var(--accent); }
   .wf-tl-step.k-tool[aria-pressed="true"] .wf-tl-dot { background: var(--good); }
@@ -1340,7 +1341,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-tl-step.k-prompt[aria-pressed="true"] .wf-tl-dot { background: var(--ink-faint); }
   .wf-tl-kind { font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
   .wf-tl-time { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; gap: 1px; }
-  .wf-tl-detail { border-radius: 0; background: var(--bg); padding: 18px 20px; }
+  .wf-tl-detail { border: 0; border-radius: 12px; background: var(--surface); padding: 16px 18px; }
+  .wf-tl-when { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
 
   /* With no workflows yet, the empty state's Build a workflow is the one. */
   .tab-panel[data-tab-panel="workflows"]:has(.wf-empty-state) .wf-tab-head .wf-new-btn { display: none; }
@@ -2489,21 +2491,25 @@ ${renderMarkdownScript}
     var tokensOut = cost.output_tokens || sum('output_tokens');
     var item = function (k, v) { return '<div class="wf-xd-item"><dt>' + k + '</dt><dd>' + v + '</dd></div>'; };
     var params = Object.keys((t.input && t.input.params) || {});
-    var details = '<section class="wf-section wf-xd">' +
-      '<div class="wf-xd-head">' + runPillHtml(t.status) + '<h3>Run <code>' + escapeHtml(String(t.execution_id).slice(0, 8)) + '</code></h3>' +
-        (t.workflow_version ? '<span class="wf-run-version">v' + t.workflow_version + '</span>' : '') + '</div>' +
-      '<h4 class="wf-sub">Execution details</h4>' +
+    // When it ran, then which version, how it started and how long it
+    // took; below, the rest of what's known about it (nothing shown as a
+    // dash).
+    var when = new Date(t.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    var sub = [
+      t.workflow_version ? '<a href="#" class="wf-xd-version" data-version="' + t.workflow_version + '">Version ' + t.workflow_version + '</a>' : 'From before versions',
+      escapeHtml(RUN_SOURCES[t.source] || t.source || ''),
+      t.finished_at ? 'took ' + escapeHtml(traceMs(t.duration_ms)) : 'still running',
+    ].filter(Boolean);
+    var details = '<section class="wf-xd">' +
+      '<div class="wf-xd-head"><div class="wf-xd-title">' + runPillHtml(t.status) + '<h3>' + escapeHtml(when) + '</h3></div>' +
+        '<div class="wf-xd-sub">' + sub.join(DOT) + '</div></div>' +
       '<dl class="wf-xd-grid">' +
-        item('Status', escapeHtml((RUN_PILLS[t.status] || [0, t.status])[1])) +
-        item('Started by', escapeHtml(RUN_SOURCES[t.source] || t.source || String.fromCharCode(8212))) +
-        item('Workflow version', t.workflow_version ? '<a href="#" class="wf-xd-version" data-version="' + t.workflow_version + '">v' + t.workflow_version + '</a>' : '<span class="hint">before versions</span>') +
-        item('Started', escapeHtml(new Date(t.started_at).toLocaleString())) +
-        item('Finished', t.finished_at ? escapeHtml(new Date(t.finished_at).toLocaleString()) : '<span class="hint">not yet</span>') +
-        item('Duration', escapeHtml(traceMs(t.duration_ms))) +
-        item('Model', t.model ? escapeHtml((t.model.provider ? t.model.provider + ' ' : '') + t.model.model) : String.fromCharCode(8212)) +
+        (t.model ? item('Model', escapeHtml((t.model.provider ? t.model.provider + ' ' : '') + t.model.model)) : '') +
         item('Steps', String(steps.length - (t.finished_at ? 2 : 1)) + ' <span class="hint">' + calls.length + ' model, ' + (t.tool_calls || []).length + ' tool</span>') +
-        item('Tokens', traceTokens(tokensIn) + ' in' + DOT + traceTokens(tokensOut) + ' out') +
-        item('Cost', escapeHtml(healthCost(cost.usd))) +
+        (tokensIn || tokensOut ? item('Tokens', traceTokens(tokensIn) + ' in' + DOT + traceTokens(tokensOut) + ' out') : '') +
+        (cost.usd != null ? item('Cost', escapeHtml(healthCost(cost.usd))) : '') +
+        item('Started', escapeHtml(new Date(t.started_at).toLocaleTimeString())) +
+        (t.finished_at ? item('Finished', escapeHtml(new Date(t.finished_at).toLocaleTimeString())) : '') +
         item('Execution ID', '<code>' + escapeHtml(t.execution_id) + '</code>') +
       '</dl>' +
       (t.error ? '<div class="wf-xd-error" role="alert"><strong>Error</strong> ' + escapeHtml(t.error) + '</div>' : '') +
@@ -2535,7 +2541,7 @@ ${renderMarkdownScript}
       '</button></li>';
     }).join('');
     return traceBarHtml(name, t.execution_id, t) + details +
-      '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">Execution trace</h4><span class="hint">' + steps.length + ' steps' + DOT + 'click one for its details</span></div>' +
+      '<section class="wf-section wf-xt"><div class="wf-sub-row"><h4 class="wf-sub">Execution trace</h4><span class="hint">' + steps.length + ' steps' + DOT + 'click one for its details</span></div>' +
         '<div class="wf-tl-wrap"><ol class="wf-tl">' + rows + '</ol><div class="wf-tl-detail" aria-live="polite"></div></div>' +
       '</section>';
   }
@@ -2584,9 +2590,10 @@ ${renderMarkdownScript}
     if (s.type === 'decision') { row('Tool', '<code>' + escapeHtml(s.tool) + '</code>'); row('Decision', s.approved ? (s.changed ? 'Approved as changed' : 'Approved') : 'Denied'); }
     if (s.by) row('By', escapeHtml(s.by));
     if (s.type === 'start') row('Started by', escapeHtml(RUN_SOURCES[t.source] || t.source || ''));
-    row('At', escapeHtml(new Date(s.at).toLocaleTimeString()) + ' <span class="hint">+' + escapeHtml(traceMs(Date.parse(s.at) - start)) + '</span>');
-    if (s.duration_ms != null || s.type === 'model_call' || s.type === 'tool_call') row('Duration', escapeHtml(traceMs(s.duration_ms)));
-    if (s.type === 'end') row('Total', escapeHtml(traceMs(t.duration_ms)));
+    // When, as a line: the time, how far into the run, how long it took.
+    var whenLine = [escapeHtml(new Date(s.at).toLocaleTimeString()), '+' + escapeHtml(traceMs(Date.parse(s.at) - start)) + ' into the run'];
+    if (s.duration_ms != null) whenLine.push('took ' + escapeHtml(traceMs(s.duration_ms)));
+    if (s.type === 'end') whenLine.push(escapeHtml(traceMs(t.duration_ms)) + ' in all');
     var io = '';
     if (s.type === 'start') io = block('Input', s.input && Object.keys(s.input.params || {}).length ? s.input.params : null) + block('Message', s.input && s.input.message);
     else if (s.type === 'prompt') io = block('Input', s.input) + (s.system ? '<details class="wf-tv-block"><summary>System prompt</summary><pre class="wf-tv-pre">' + escapeHtml(s.system) + '</pre></details>' : '');
@@ -2595,9 +2602,10 @@ ${renderMarkdownScript}
     else if (s.type === 'answer') io = block('Question', s.question) + block('Answer', s.answer);
     else if (s.type === 'feedback') io = block('Note', s.note);
     else if (s.type === 'end') io = block('Output', s.output);
-    return '<div class="wf-tl-detail-head"><span class="wf-tl-kind">' + kind[0] + '</span><strong>' + escapeHtml(stepTitle(s, t)) + '</strong></div>' +
+    return '<div class="wf-tl-detail-head"><span class="wf-tl-kind">' + kind[0] + '</span><strong>' + escapeHtml(stepTitle(s, t)) + '</strong>' +
+        '<p class="wf-tl-when">' + whenLine.join(DOT) + '</p></div>' +
       (s.error ? '<div class="wf-xd-error" role="alert"><strong>Error</strong> ' + escapeHtml(s.error) + '</div>' : '') +
-      '<dl class="wf-xd-grid">' + rows.join('') + '</dl>' + io;
+      (rows.length ? '<dl class="wf-xd-grid">' + rows.join('') + '</dl>' : '') + io;
   }
 
   // Save as eval case, from a trace: the run becomes a test its workflow
