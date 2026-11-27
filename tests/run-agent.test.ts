@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -377,6 +377,39 @@ describe('runAgent', () => {
     expect(results[0].content).toMatch(/already|first message/)
     expect(results[0].content).not.toContain('Summarize files')
     expect(events.some((e) => e.type === 'skill:loaded')).toBe(false)
+  })
+
+  it("leaves other workflows out of a workflow's run, and says an app's guide comes with its tools' results", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'loopengine-skill-index-'))
+    try {
+      const skill = (name: string, front: string) => {
+        mkdirSync(join(dir, 'skills', name), { recursive: true })
+        writeFileSync(join(dir, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: About ${name}\n${front}---\n\nBody of ${name}, using shop_find and shop_list.\n`)
+      }
+      skill('daily-digest', 'workflow: true\n')
+      skill('weekly-digest', 'workflow: true\n')
+      skill('shop', '')
+      skill('style', '')
+      writeFileSync(join(dir, '.loopengine-abilities.json'), JSON.stringify({ shop: { tools: ['shop_find', 'shop_list'], skills: ['shop'] } }))
+      const promptFor = async (options: { runningSkill?: string }) => {
+        const config = baseConfig({ skillsDirs: [join(dir, 'skills')] })
+        setAgentDir(config, dir)
+        const modelCall: ModelCall = vi.fn(async () => textResponse('done'))
+        await runAgent(config, modelCall, 'go', [], options)
+        return (modelCall as ReturnType<typeof vi.fn>).mock.calls[0][1] as string
+      }
+      const run = await promptFor({ runningSkill: 'daily-digest' })
+      expect(run).not.toContain('- daily-digest:')
+      expect(run).not.toContain('- weekly-digest:')
+      expect(run).toContain('- style: About style\n')
+      expect(run).toContain('- shop: About shop (comes with the first result of shop_find, shop_list: no need to open it first)')
+      expect(run).toContain('When you know which tool to call, call it.')
+      const chat = await promptFor({})
+      expect(chat).toContain('- daily-digest:')
+      expect(chat).toContain('- weekly-digest:')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it("leaves the scheduling tools out of a workflow's run, and keeps them in chat", async () => {

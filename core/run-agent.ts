@@ -694,7 +694,10 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // comment. loopengine used to default lower (200), which left barely
   // enough room for a handful of skills before truncating the index.
   const skillGarden = new SkillGarden({ dirs: [...skillsDirs, systemSkillsDir], indexBudgetTokens: config.skillIndexBudgetTokens ?? 2000 })
-  const skillIndex = skillGarden.buildIndex().included.filter((s) => s.name !== options.runningSkill)
+  // A workflow run leaves out its own skill and every other workflow's:
+  // it follows its instructions, and running another workflow from
+  // inside it isn't something it should do.
+  const skillIndex = skillGarden.buildIndex().included.filter((s) => s.name !== options.runningSkill && !(options.runningSkill && skillGarden.frontmatterOf(s.name)?.workflow === true))
   // Abilities' skills, attached to their tools' first results (see
   // ability-skills.ts).
   const skillText = (name: string): string | undefined => {
@@ -817,8 +820,16 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     })
   }
 
+  // An ability's skill that comes with its tools' first result says so,
+  // so the model doesn't open it before calling a tool it already knows.
+  const attachedTo = new Map<string, string[]>()
+  for (const [tool, names] of toolSkills.attach) for (const name of names) attachedTo.set(name, [...(attachedTo.get(name) ?? []), tool])
+  const skillLine = (s: { name: string; description: string }): string => {
+    const tools = attachedTo.get(s.name)
+    return `- ${s.name}: ${s.description}${tools ? ` (comes with the first result of ${toolsInWords(tools)}: no need to open it first)` : ''}`
+  }
   const systemPrompt = skillIndex.length
-    ? `${config.systemPrompt}\n\nAvailable skills:\n${skillIndex.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`
+    ? `${config.systemPrompt}\n\nAvailable skills:\n${skillIndex.map(skillLine).join('\n')}\n\nA skill is background to read when you're unsure how to do something. When you know which tool to call, call it.`
     : config.systemPrompt
 
   // Nothing else in this loop bounds a model stuck re-requesting the same
@@ -1521,4 +1532,12 @@ export function recordedCalls(history: Message[]): RecordedCall[] {
     }
   }
   return calls.filter((c) => c.result)
+}
+
+/** Tools named for a skill's line: a few by name, or a shared prefix
+ * ("any firecrawl_ tool") for many. */
+function toolsInWords(tools: string[]): string {
+  if (tools.length <= 3) return tools.join(', ')
+  const prefix = tools[0].includes('_') ? tools[0].slice(0, tools[0].indexOf('_') + 1) : ''
+  return prefix && tools.every((t) => t.startsWith(prefix)) ? `any ${prefix} tool` : `${tools.slice(0, 3).join(', ')} and ${tools.length - 3} more`
 }

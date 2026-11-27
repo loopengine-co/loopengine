@@ -55,6 +55,12 @@ export class SkillGarden {
     return buildBudgetedIndex(entries, { maxTokens: this.indexBudgetTokens })
   }
 
+  /** A discovered skill's front matter, without reading its body again;
+   * undefined for one buildIndex() didn't find. */
+  frontmatterOf(name: string): SkillFrontmatter | undefined {
+    return this.indexed.get(name)?.frontmatter
+  }
+
   /** Full body, read only now — call after buildIndex() has discovered
    * the skill. */
   load(name: string): LoadedSkill {
