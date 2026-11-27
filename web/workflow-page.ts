@@ -1,12 +1,12 @@
 // What /workflows/new was, the "Build a workflow" page, is now the New
 // workflow dialog on the Workflows page (web/new-workflow-dialog.ts), and
 // its examples the Workflows page's Examples view. The console's server
-// forwards /workflows/new there itself; this page does the same for a
-// project server from an older template, which still serves it: to
-// /workflows?new=1 with the same address (an agent, a description, a
-// goal's suggestion), or to the examples for #examples.
+// no longer has /workflows/new. A project server from an older template
+// still serves this page there (its adapter imports it, so it stays):
+// it forwards to /workflows?new=1 with the same address (an agent, a
+// description, a goal's suggestion), or to the examples for #examples.
 
-/** @deprecated /workflows/new forwards to the New workflow dialog. */
+/** @deprecated For a project server from an older template, which serves it at /workflows/new. */
 export const workflowPageHtml: string = `<!doctype html>
 <html lang="en">
 <head>

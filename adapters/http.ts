@@ -6025,14 +6025,6 @@ const server = createServer(async (req, res) => {
       await handleInterviews(req, res, pathname)
       return
     }
-    // "Describe a workflow" is the New workflow dialog on the Workflows
-    // page now: /workflows/new forwards there, with what it was given (an
-    // agent, a description, a goal's suggestion).
-    if (req.method === 'GET' && pathname === '/workflows/new') {
-      const query = (req.url ?? '').split('?')[1]
-      res.writeHead(302, { location: '/workflows?new=1' + (query ? '&' + query : '') }).end()
-      return
-    }
     // Success criteria for a plan that came without them (a ready-made
     // example): drafted from its brief and the tools its steps use, by
     // a model from another provider than the agent's.

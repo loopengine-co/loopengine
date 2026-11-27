@@ -136,9 +136,7 @@ ${newWorkflowDialogScript}
   // ---- Examples: ready-to-adapt workflows (GET /workflows); opening one
   // fills in the New workflow dialog, to change to fit and build. ----
   var params = new URLSearchParams(location.search);
-  // An older link to the examples (/workflows/new#examples) arrives with #examples.
-  var toExamples = location.hash === '#examples';
-  var view = params.get('view') === 'examples' || toExamples ? 'examples' : 'list';
+  var view = params.get('view') === 'examples' ? 'examples' : 'list';
   var examples = null;
   var exCategory = '';
   var exShown = 30;
@@ -247,9 +245,9 @@ ${newWorkflowDialogScript}
     window.leNewWorkflow.open({});
   });
   if (view === 'examples') setView('examples');
-  // /workflows?new=1 (what /workflows/new forwards to): the dialog, filled
-  // in from the address, and a goal's suggestion built at once.
-  if (params.get('new') === '1' && !toExamples) {
+  // /workflows?new=1: the dialog, filled in from the address (an agent, a
+  // description, a goal's suggestion), and a goal's built at once.
+  if (params.get('new') === '1') {
     window.leNewWorkflow.open({
       agent: params.get('agent') || '', description: params.get('description') || '',
       goal: params.get('goal') || '', goalJob: params.get('goalJob') || params.get('goalWorkflow') || '', goalStep: params.get('goalStep') || '',
