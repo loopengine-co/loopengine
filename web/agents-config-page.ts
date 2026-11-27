@@ -85,6 +85,29 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-page > :not(.wf-page-head), .wf-page-hero { max-width: 1076px; }
   .wf-page-crumb-row .wf-row-actions .le-btn-dark:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
   .wf-page-hero { display: grid; gap: 12px; padding: 32px 22px 26px; border: 1px solid var(--line); }
+  /* Under the title: the start of its instructions. */
+  .wf-page-instr { display: grid; gap: 6px; justify-items: start; max-width: 760px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--surface); }
+  .wf-page-instr p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .wf-page-instr .wf-link { font-size: 12.5px; }
+  .on-overview .wf-page-instr { display: none; }
+  /* The Workflow tab: its instructions, then the facts about it. */
+  .wf-ov-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; }
+  .wf-ov-head .wf-sub { margin: 0; }
+  .wf-ov-edit { margin-left: auto; height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; }
+  .wf-ov-text { white-space: pre-wrap; overflow-wrap: anywhere; padding: 18px 20px; border: 1px solid var(--line); background: var(--bg); font-size: 14px; line-height: 1.65; }
+  mark.wf-var { background: var(--accent-soft); color: var(--accent-ink); padding: 0 3px; border-radius: 4px; font-family: var(--font-mono); font-size: 12.5px; }
+  .wf-ov-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 22px 0; }
+  .wf-ov-fact { display: grid; gap: 6px; align-content: start; justify-items: start; padding: 16px 18px; background: var(--bg); min-width: 0; font-size: 13px; }
+  .wf-ov-k { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+  .wf-ov-v { overflow-wrap: anywhere; }
+  .wf-ov-inputs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .wf-ov-inputs li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+  .wf-ov-inputs .hint { flex-basis: 100%; }
+  .wf-ov-more { border: 1px solid var(--line); padding: 0 18px; margin: 0 0 18px; background: var(--bg); }
+  .wf-ov-more > summary { cursor: pointer; padding: 14px 0; font-size: 14px; font-weight: 500; }
+  .wf-ov-more > summary .hint { font-weight: 400; margin-left: 6px; }
+  .wf-ov-more[open] { padding-bottom: 14px; }
+  @media (max-width: 860px) { .wf-ov-facts { grid-template-columns: minmax(0, 1fr); } }
   .wf-page-hero h1 { margin: 0; font-size: 36px; font-weight: 400; letter-spacing: -0.03em; line-height: 1.15; overflow-wrap: anywhere; }
   .wf-page-desc { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-muted); max-width: 80ch; }
   .wf-page-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; margin-top: 4px; }
@@ -1582,7 +1605,7 @@ ${renderMarkdownScript}
   var workflowPageId = pageParams.get('tab') === 'workflows' && pageParams.get('workflow') || null;
   // Older tab names still open their tab: Evidence, Changes and Audit are
   // Activity now, Improve is Evaluation.
-  var OLD_TABS = { evidence: 'activity', changes: 'activity', audit: 'activity', improve: 'evaluation' };
+  var OLD_TABS = { evidence: 'activity', changes: 'activity', audit: 'activity', improve: 'evaluation', brief: 'overview', contract: 'overview' };
   if (workflowPageId && pageParams.get('wtab')) workflowTabs[workflowPageId] = OLD_TABS[pageParams.get('wtab')] || pageParams.get('wtab');
   // A run's conversation in the Inbox.
   function inboxHref(runId) {
@@ -1662,6 +1685,9 @@ ${renderMarkdownScript}
 
   function showWorkflowTab(card, key) {
     workflowTabs[card.dataset.workflow] = key;
+    // The start of its instructions under the title, unless they're
+    // shown in full right below it.
+    card.classList.toggle('on-overview', key === 'overview');
     // Run now's boxes grow with what's typed or pasted, up to their
     // max-height, then scroll.
     var growBoxes = card.querySelectorAll('.workflow-params textarea');
@@ -1954,7 +1980,7 @@ ${renderMarkdownScript}
       '</div>';
   }
 
-  // Its Contract tab: what every run is held to, as the system enforces
+  // What every run is held to (on the Workflow tab), as the system enforces
   // it, apart from what the agent is only asked to do. Held to: the
   // published version; how it starts; its inputs, checked before it
   // starts; the tools it can call (every tool the agent has) and their
@@ -2031,7 +2057,7 @@ ${renderMarkdownScript}
 
     var criteria = (w.evals && w.evals.criteria) || [];
     var asked = [
-      'its prompt and the shared policies ' + hint('(Prompt tab; policies in Settings)'),
+      'its instructions and the shared policies ' + hint('(above; policies in Settings)'),
       w.output ? 'its result format: ' + escapeHtml(w.output) : 'no result format',
       criteria.length ? criteria.length + ' success ' + (criteria.length === 1 ? 'criterion' : 'criteria') + ' ' + hint('(judged when you evaluate it, not on live runs)') : 'no success criteria',
     ];
@@ -2044,10 +2070,58 @@ ${renderMarkdownScript}
   }
 
 
+  // Its instructions as text, each $input marked (no regular expression:
+  // this script can't hold a backslash).
+  function instructionsHtml(text) {
+    var out = '';
+    var s = String(text || '');
+    var isStart = function (c) { return (c >= 'a' && c <= 'z') || c === '_'; };
+    var isPart = function (c) { return isStart(c) || (c >= '0' && c <= '9'); };
+    for (var i = 0; i < s.length; i++) {
+      if (s.charAt(i) === '$' && isStart(s.charAt(i + 1))) {
+        var j = i + 1;
+        while (j < s.length && isPart(s.charAt(j))) j++;
+        out += '<mark class="wf-var">' + escapeHtml(s.slice(i, j)) + '</mark>';
+        i = j - 1;
+      } else out += escapeHtml(s.charAt(i));
+    }
+    return out;
+  }
+
+  // The Workflow tab, first: what it is. Its instructions in full (what
+  // the agent is told on every run), its inputs, how it starts, its
+  // result and where that goes, what every run is held to, and the
+  // shared policies it reads.
+  function workflowOverviewHtml(w, name, params) {
+    var inputs = Object.keys(w.parameters || {});
+    var head = function (title, extra) { return '<div class="wf-ov-head"><h4 class="wf-sub">' + title + '</h4>' + (extra || '') + '</div>'; };
+    var go = function (tab, label) { return '<button type="button" class="wf-link" data-goto-tab="' + tab + '">' + label + ' ' + String.fromCharCode(8594) + '</button>'; };
+    var notified = (w.delivery && w.delivery.result_to_chat) || (w.schedules || []).some(function (x) { return x.notify && x.status !== 'cancelled'; }) || (w.triggers || []).some(function (t) { return t.result_to_chat; });
+    var goesTo = ['Returned to whoever started it'];
+    if (notified) goesTo.push('posted to ' + escapeHtml(workflowsMeta.messaging ? (APP_NAMES[workflowsMeta.messaging] || workflowsMeta.messaging) : 'the messaging app'));
+    if (w.delivery && w.delivery.callback_url) goesTo.push('sent to ' + escapeHtml(w.delivery.callback_url));
+    return '<section class="wf-section wf-ov-instr">' + head('Instructions', '<span class="hint">What the agent is told on every run</span><button type="button" class="wf-ov-edit">Edit</button>') +
+        '<div class="wf-ov-text">' + instructionsHtml(w.instructions) + '</div></section>' +
+      '<div class="le-grid wf-ov-facts">' +
+        '<div class="wf-ov-fact"><span class="wf-ov-k">Inputs</span>' + (inputs.length
+          ? '<ul class="wf-ov-inputs">' + inputs.map(function (k) {
+              var p = w.parameters[k] || {};
+              return '<li><code>' + escapeHtml(k) + '</code>' + (p.required ? '<span class="le-pill neutral">required</span>' : '') + (p.description ? '<span class="hint">' + escapeHtml(p.description) + '</span>' : '') + '</li>';
+            }).join('') + '</ul>'
+          : '<span class="wf-ov-v">None: it runs the same way each time.</span>') + '</div>' +
+        '<div class="wf-ov-fact"><span class="wf-ov-k">How it runs</span><span class="wf-ov-v">' + workflowStartsSummary(w) + '</span>' + go('triggers', 'Triggers') + '</div>' +
+        '<div class="wf-ov-fact"><span class="wf-ov-k">Its result</span><span class="wf-ov-v">' + (w.output ? escapeHtml(w.output) : 'Any reply; no set format.') + '</span>' +
+          '<span class="hint">' + goesTo.join(', ') + '.</span>' + go('messages', 'Messaging') + '</div>' +
+      '</div>' +
+      '<details class="wf-section wf-ov-more"><summary>What every run is held to <span class="hint">model, tools, approvals, limits</span></summary>' + workflowContractHtml(w, name, params) + '</details>' +
+      workflowBriefHtml(w);
+  }
+
+  // The shared policies every workflow reads, and the message it was
+  // first asked for in.
   function workflowBriefHtml(w) {
     var policies = workflowsMeta.policies;
-    return '<div class="workflow-steps-text">' + escapeHtml(w.instructions) + '</div>' +
-      (policies
+    return (policies
         ? '<details class="wf-original"><summary>Shared policies, read by every workflow</summary><div class="workflow-steps-text">' + escapeHtml(policies) + '</div><p class="hint" style="margin:6px 0 0">Change them in <a href="/config?section=settings">Settings</a>.</p></details>'
         : '<p class="hint" style="margin:0">No shared policies yet. Rules every workflow should follow, like your refund window or who signs messages, go in <a href="/config?section=settings">Settings</a>, so you write them once.</p>') +
       (w.originalRequest ? '<details class="wf-original"><summary>Original message</summary><div class="workflow-steps-text">' + escapeHtml(w.originalRequest) + '</div></details>' : '');
@@ -2673,14 +2747,15 @@ ${renderMarkdownScript}
           runEvidenceHtml(w, r) + '</li>';
       }).join('');
       var last = workflowLastRun(w);
-      var tab = workflowTabs[w.id] || 'activity';
+      // What it is first; a link to one of its runs opens on Activity.
+      var tab = workflowTabs[w.id] || (workflowPageId && pageParams.get('run') ? 'activity' : 'overview');
       var open = openWorkflowId === w.id;
       var panel = function (key, html) { return '<div class="wf-panel" data-panel="' + key + '"' + (tab === key ? '' : ' hidden') + '>' + html + '</div>'; };
       var tabBtn = function (key, label) { return '<button type="button" role="tab" class="wf-tab" data-tab="' + key + '" aria-selected="' + (tab === key) + '">' + label + '</button>'; };
       if (workflowPageId) {
         var agentLabel = currentCfg && currentCfg.displayName ? currentCfg.displayName : name;
         document.title = w.title + ' ' + String.fromCharCode(183) + ' ' + agentLabel;
-        return '<article class="workflow-card wf-page is-open" data-workflow="' + escapeHtml(w.id) + '">' +
+        return '<article class="workflow-card wf-page is-open' + (tab === 'overview' ? ' on-overview' : '') + '" data-workflow="' + escapeHtml(w.id) + '">' +
           '<header class="wf-page-head">' +
             // A top bar like the other pages': where you are, and Edit.
             '<div class="wf-page-crumb-row"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>' +
@@ -2688,6 +2763,8 @@ ${renderMarkdownScript}
               '<span class="wf-row-actions"><button type="button" class="workflow-edit le-btn-dark">Edit workflow</button></span></div>' +
             '<div class="wf-page-hero"><h1>' + escapeHtml(w.title) + '</h1>' +
             (w.description && w.description !== w.title ? '<p class="wf-page-desc">' + escapeHtml(w.description) + '</p>' : '') +
+            // What it does, in its own words: the start of its instructions.
+            (w.instructions ? '<div class="wf-page-instr"><p>' + escapeHtml(w.instructions) + '</p><button type="button" class="wf-link" data-goto-tab="overview">Read its instructions</button></div>' : '') +
             '<div class="wf-page-meta">' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Agent</span><a href="/agents/config?agent=' + encodeURIComponent(name) + '">' + escapeHtml(agentLabel) + '</a></span>' +
               '<span class="wf-page-meta-item"><span class="wf-page-meta-k">Starts</span><span class="wf-page-starts">' + workflowStartsSummary(w) + '</span></span>' +
@@ -2699,13 +2776,12 @@ ${renderMarkdownScript}
           '</header>' +
           workflowDraftBannerHtml(w) +
           '<div class="wf-row-body wf-page-body">' +
-            '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('feedback', 'Feedback') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
-            panel('brief', workflowBriefHtml(w)) +
+            '<div class="wf-tabs" role="tablist">' + tabBtn('overview', 'Workflow') + tabBtn('activity', 'Activity') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('feedback', 'Feedback') + tabBtn('evaluation', 'Evaluation') + tabBtn('versions', 'Versions') + '</div>' +
+            panel('overview', workflowOverviewHtml(w, name, params)) +
             panel('activity', workflowActivityHtml(w, runs, name)) +
             panel('evaluation', workflowEvaluationHtml(w)) +
             panel('triggers', workflowTriggersHtml(w, name, params)) +
             panel('messages', workflowMessagesHtml(w, name)) +
-            panel('contract', workflowContractHtml(w, name, params)) +
             panel('versions', workflowVersionsHtml()) +
             panel('feedback', workflowFeedbackHtml()) +
             '<div class="hint workflow-result"></div>' +
@@ -2728,13 +2804,12 @@ ${renderMarkdownScript}
         '<div class="wf-row-body"' + (open ? '' : ' hidden') + '>' +
           // What it does, in full, once it's open (the row shows just its name).
           (w.description && w.description !== w.title ? '<p class="wf-desc">' + escapeHtml(w.description) + '</p>' : '') +
-          '<div class="wf-tabs" role="tablist">' + tabBtn('activity', 'Activity') + tabBtn('brief', 'Prompt') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('feedback', 'Feedback') + tabBtn('evaluation', 'Evaluation') + tabBtn('contract', 'Contract') + tabBtn('versions', 'Versions') + '</div>' +
-          panel('contract', workflowContractHtml(w, name, params)) +
+          '<div class="wf-tabs" role="tablist">' + tabBtn('overview', 'Workflow') + tabBtn('activity', 'Activity') + tabBtn('triggers', 'Triggers') + tabBtn('messages', 'Messaging') + tabBtn('feedback', 'Feedback') + tabBtn('evaluation', 'Evaluation') + tabBtn('versions', 'Versions') + '</div>' +
+          panel('overview', workflowOverviewHtml(w, name, params)) +
           panel('versions', workflowVersionsHtml()) +
           panel('feedback', workflowFeedbackHtml()) +
           panel('triggers', workflowTriggersHtml(w, name, params)) +
           panel('messages', workflowMessagesHtml(w, name)) +
-          panel('brief', workflowBriefHtml(w)) +
           panel('activity', workflowActivityHtml(w, runs, name)) +
           panel('evaluation', workflowEvaluationHtml(w)) +
           '<div class="hint workflow-result"></div>' +
@@ -4010,7 +4085,15 @@ ${renderMarkdownScript}
     loadWorkflowRuns(name, card, base);
     loadWorkflowFeedback(name, card, base);
     if (openTraces[id] && card.querySelector('.wf-trace')) openRunTrace(name, card, openTraces[id].run);
-    card.querySelector('.workflow-edit').addEventListener('click', function () { openWorkflowEditor(name, card); });
+    card.querySelectorAll('.workflow-edit, .wf-ov-edit').forEach(function (b) { b.addEventListener('click', function () { openWorkflowEditor(name, card); }); });
+    // Links between its tabs (Read its instructions, Triggers, Messaging).
+    card.addEventListener('click', function (ev) {
+      var go = ev.target.closest && ev.target.closest('[data-goto-tab]');
+      if (!go) return;
+      showWorkflowTab(card, go.dataset.gotoTab);
+      var tabs = card.querySelector('.wf-tabs');
+      if (go.dataset.gotoTab === 'overview' && tabs) tabs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     // Opens the workflow's page on its Triggers tab.
     var triggersBtn = card.querySelector('.workflow-triggers-open');
     if (triggersBtn) triggersBtn.addEventListener('click', function () { location.href = workflowPageHref(name, id, 'triggers'); });
