@@ -1249,7 +1249,7 @@ ${newWorkflowDialogScript}
     var wf = q.get('tab') === 'workflows' && q.get('workflow');
     if (wf) {
       var b = base + '/workflows/' + encodeURIComponent(wf);
-      urls.push(b + '/versions', b + '/health', b + '/evals/candidates', b + '/runs');
+      urls.push(b + '/versions', b + '/health?days=30', b + '/evals/candidates', b + '/runs');
     }
     urls.forEach(function (u) { early[u] = plainFetch(u, { headers: { accept: 'application/json' } }); });
   })();
@@ -1640,15 +1640,34 @@ ${renderMarkdownScript}
     for (var j = 0; j < panels.length; j++) panels[j].hidden = panels[j].dataset.panel !== key;
   }
 
-  // The Health panel: the last 30 days of runs, as totals, day by day and
-  // per workflow version, and any alert (a rate that just got worse).
+  // The Summary: its runs over a time range (7 days to a year), as
+  // totals, day by day and per workflow version, and any alert (a rate
+  // that just got worse). The range picked stays for this page's visit.
+  var HEALTH_RANGES = [[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']];
+  var healthDays = 30;
   function loadWorkflowHealth(card, base) {
     var box = card.querySelector('.wf-health');
     if (!box) return;
-    fetch(base + '/health', { headers: { accept: 'application/json' } })
+    var head = '<div class="wf-runs-head"><h4 class="wf-sub">Summary</h4><div class="le-seg wf-range" role="group" aria-label="Time range">' +
+      HEALTH_RANGES.map(function (r) { return '<button type="button" data-health-days="' + r[0] + '" aria-pressed="' + (r[0] === healthDays) + '">' + r[1] + '</button>'; }).join('') + '</div></div>';
+    if (!box.querySelector('.wf-range')) box.innerHTML = head + '<div class="wf-health-body"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>';
+    else box.querySelectorAll('[data-health-days]').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.dataset.healthDays) === healthDays)); });
+    if (!box.dataset.rangeWired) {
+      box.dataset.rangeWired = '1';
+      box.addEventListener('click', function (ev) {
+        var b = ev.target.closest && ev.target.closest('[data-health-days]');
+        if (!b || Number(b.dataset.healthDays) === healthDays) return;
+        healthDays = Number(b.dataset.healthDays);
+        loadWorkflowHealth(card, base);
+      });
+    }
+    var body = box.querySelector('.wf-health-body');
+    var days = healthDays;
+    body.style.opacity = '0.5';
+    fetch(base + '/health?days=' + days, { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (h) { box.innerHTML = '<div class="wf-sub-row"><h4 class="wf-sub">Execution history</h4><span class="hint">Last ' + h.days + ' days</span></div>' + workflowHealthHtml(h); })
-      .catch(function (err) { box.innerHTML = '<h4 class="wf-sub">Execution history</h4><p class="error">Could not load it: ' + escapeHtml(err.message) + '</p>'; });
+      .then(function (h) { if (days !== healthDays) return; body.style.opacity = ''; body.innerHTML = workflowHealthHtml(h); })
+      .catch(function (err) { body.style.opacity = ''; body.innerHTML = '<p class="error">Could not load it: ' + escapeHtml(err.message) + '</p>'; });
   }
 
   function healthPct(part, whole) { return whole ? Math.round(100 * part / whole) + '%' : String.fromCharCode(8212); }
@@ -1662,25 +1681,37 @@ ${renderMarkdownScript}
 
   // Runs per day as bars, the failed part of each in red.
   function healthChartHtml(daily) {
+    // Over two months, a bar a week (from its first day), so the bars
+    // stay wide enough to see.
+    var unit = 'day';
+    if (daily.length > 60) {
+      unit = 'week';
+      var weeks = [];
+      for (var k = 0; k < daily.length; k += 7) {
+        var part = daily.slice(k, k + 7);
+        weeks.push({ date: part[0].date, runs: part.reduce(function (n, d) { return n + d.runs; }, 0), failed: part.reduce(function (n, d) { return n + d.failed; }, 0) });
+      }
+      daily = weeks;
+    }
     var max = 1;
     daily.forEach(function (d) { if (d.runs > max) max = d.runs; });
     var w = 600, h = 96, gap = 2, bw = (w - gap * (daily.length - 1)) / daily.length;
     var bars = daily.map(function (d, i) {
       var x = (i * (bw + gap)).toFixed(1);
       var all = d.runs / max * (h - 4), bad = d.failed / max * (h - 4);
-      var tip = '<title>' + escapeHtml(d.date) + ': ' + d.runs + ' run' + (d.runs === 1 ? '' : 's') + (d.failed ? ', ' + d.failed + ' failed' : '') + '</title>';
+      var tip = '<title>' + (unit === 'week' ? 'Week of ' : '') + escapeHtml(d.date) + ': ' + d.runs + ' run' + (d.runs === 1 ? '' : 's') + (d.failed ? ', ' + d.failed + ' failed' : '') + '</title>';
       return '<g>' + tip + '<rect x="' + x + '" y="0" width="' + bw.toFixed(1) + '" height="' + h + '" fill="transparent"/>' +
         (d.runs ? '<rect x="' + x + '" y="' + (h - all).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + all.toFixed(1) + '" rx="1.5" fill="var(--accent)" opacity="0.75"/>' : '') +
         (d.failed ? '<rect x="' + x + '" y="' + (h - bad).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bad.toFixed(1) + '" rx="1.5" fill="var(--bad)"/>' : '') + '</g>';
     }).join('');
     var first = daily[0] ? daily[0].date.slice(5) : '', last = daily.length ? daily[daily.length - 1].date.slice(5) : '';
     return '<figure class="wf-health-chart"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="Runs per day, failed in red">' + bars + '</svg>' +
-      '<figcaption><span>' + escapeHtml(first) + '</span><span class="hint">Runs per day' + DOT + 'failed in red' + DOT + 'most ' + max + '</span><span>' + escapeHtml(last) + '</span></figcaption></figure>';
+      '<figcaption><span>' + escapeHtml(first) + '</span><span class="hint">Runs per ' + unit + DOT + 'failed in red' + DOT + 'most ' + max + '</span><span>' + escapeHtml(last) + '</span></figcaption></figure>';
   }
 
   function workflowHealthHtml(h) {
     var t = h.total;
-    if (!t.runs) return '<p class="hint" style="margin:0">No runs in the last ' + h.days + ' days.</p>';
+    if (!t.runs) return '<div class="ab-empty">No runs in the last ' + (h.days >= 365 ? 'year' : h.days + ' days') + '.</div>';
     var decided = t.approved + t.denied;
     var alerts = (h.alerts || []).map(function (a) { return '<div class="wf-health-alert" role="alert">' + escapeHtml(a.text) + '</div>'; }).join('');
     var stat = function (label, value, detail) { return '<div class="wf-score"><span class="wf-score-k">' + label + '</span><strong class="wf-score-v">' + value + '</strong>' + (detail ? '<span class="hint">' + detail + '</span>' : '') + '</div>'; };
