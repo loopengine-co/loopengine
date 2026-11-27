@@ -310,6 +310,36 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-act-main > .wf-section + .wf-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
   /* Runs, as rows sharing their lines. */
   .wf-run-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); }
+  /* Runs: a filter and links in the heading, then a row per run. */
+  .wf-runs-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
+  .wf-runs-head .wf-sub { margin: 0; }
+  .wf-run-filter button { gap: 6px; }
+  .wf-run-filter-n { font-size: 11.5px; color: var(--ink-faint); }
+  .wf-runs-links { display: inline-flex; gap: 14px; margin-left: auto; }
+  .wf-runs-links a { font-size: 12.5px; font-weight: 500; color: var(--ink-muted); text-decoration: none; }
+  .wf-runs-links a:hover { color: var(--ink); text-decoration: underline; }
+  .wf-run-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); }
+  .wf-run-rows > li[hidden] { display: none; }
+  .wf-run-rows > li + li { border-top: 1px solid var(--line); }
+  .wf-run-row { display: flex; align-items: center; gap: 14px; width: 100%; height: auto; padding: 12px 16px; border: 0; border-radius: 0; background: var(--bg); text-align: left; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
+  .wf-run-row:hover:not(:disabled) { background: var(--surface); }
+  .wf-run-ico { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--ink-muted); }
+  .wf-run-ico svg { width: 13px; height: 13px; }
+  .is-done .wf-run-ico { background: var(--good-soft); color: var(--good); }
+  .is-error .wf-run-ico { background: var(--bad-soft); color: var(--bad); }
+  .is-awaiting_approval .wf-run-ico { background: var(--warn-soft); color: var(--warn); }
+  .wf-run-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .wf-run-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .wf-run-top strong { font-weight: 600; white-space: nowrap; }
+  .wf-run-meta { font-size: 12px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wf-run-out { color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .is-error .wf-run-out { color: var(--bad); }
+  .is-awaiting_approval .wf-run-out { color: var(--warn); }
+  .wf-run-row .wf-run-evidence { display: flex; gap: 10px; flex-wrap: wrap; }
+  .wf-run-in { flex: none; max-width: 220px; font-size: 12px; color: var(--ink-muted); background: var(--surface); border-radius: 7px; padding: 3px 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wf-run-go { flex: none; font-size: 20px; line-height: 1; color: var(--ink-faint); }
+  .wf-run-row:hover .wf-run-go { color: var(--ink); }
+  @media (max-width: 700px) { .wf-run-in { display: none; } }
   .wf-run-card { display: grid; gap: 6px; padding: 14px 18px; border: 0; border-radius: 0; background: var(--bg); min-width: 0; font-size: 13px; }
   .wf-run-card + .wf-run-card { border-top: 1px solid var(--line); }
   .wf-run-card:hover { background: var(--surface); }
@@ -1946,8 +1976,11 @@ ${renderMarkdownScript}
     var auditHref = '/audit?agent=' + encodeURIComponent(name) + '&workflow=' + encodeURIComponent(w.id);
     return '<div class="wf-act-main">' +
         '<section class="wf-section wf-health">' + loading + '</section>' +
-        '<section class="wf-section"><div class="wf-sub-row"><h4 class="wf-sub">Runs</h4><span class="hint wf-runs-count"></span></div><div class="wf-runs">' + loading + '</div></section>' +
-        '<section class="wf-section"><div class="wf-audit-tools"><a href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report">Open the report</a><a href="' + auditHref + '">Who changed it, in Audit ' + String.fromCharCode(8594) + '</a></div></section>' +
+        '<section class="wf-section"><div class="wf-runs-head"><h4 class="wf-sub">Runs <span class="hint wf-runs-count"></span></h4>' +
+          '<div class="le-seg wf-run-filter" role="group" aria-label="Show runs" hidden></div>' +
+          '<span class="wf-runs-links"><a href="/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(w.id) + '/audit/report" title="A report of its runs, versions and changes, to share or print">Report</a>' +
+          '<a href="' + auditHref + '" title="Who changed this workflow, and when, in Audit">Change history</a></span></div>' +
+          '<div class="wf-runs">' + loading + '</div></section>' +
       '</div>' +
       '<div class="wf-trace" hidden></div>';
   }
@@ -1965,19 +1998,28 @@ ${renderMarkdownScript}
     return r.versions ? (r.versions.workflow || r.versions.brief || null) : null;
   }
 
-  // Its runs, newest first (the latest 50), each a card.
+  // Its runs, newest first (the latest 50): a filter by how they ended,
+  // then a row per run that opens it (its result and trace).
   function loadWorkflowRuns(name, card, base) {
     var box = card.querySelector('.wf-runs');
     if (!box) return;
     var w = workflowsById[card.dataset.workflow];
+    var filter = card.querySelector('.wf-run-filter');
     fetch(base + '/runs', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
       .then(function (data) {
         var runs = data.runs || [];
         var count = card.querySelector('.wf-runs-count');
-        if (count) count.textContent = runs.length >= 50 ? 'Latest 50' : runs.length ? runs.length + ' run' + (runs.length === 1 ? '' : 's') : '';
-        box.innerHTML = runs.length ? '<ol class="wf-run-cards">' + runs.map(function (r) { return runCardHtml(w, r); }).join('') + '</ol>'
-          : '<p class="hint" style="margin:0">No runs yet. Start one from Triggers (Run now), an app, a schedule or a webhook.</p>';
+        if (count) count.textContent = runs.length >= 50 ? 'latest 50' : '';
+        var n = function (s) { return runs.filter(function (r) { return s === 'all' || r.status === s; }).length; };
+        if (filter) {
+          filter.innerHTML = runs.length ? [['all', 'All'], ['done', 'Done'], ['error', 'Failed'], ['awaiting_approval', 'Waiting']].filter(function (f) { return f[0] === 'all' || n(f[0]); }).map(function (f) {
+            return '<button type="button" data-run-filter="' + f[0] + '" aria-pressed="' + (f[0] === 'all') + '">' + f[1] + ' <span class="wf-run-filter-n">' + n(f[0]) + '</span></button>';
+          }).join('') : '';
+          filter.hidden = !runs.length;
+        }
+        box.innerHTML = runs.length ? '<ol class="wf-run-rows">' + runs.map(function (r) { return runCardHtml(w, r); }).join('') + '</ol>'
+          : '<div class="ab-empty">No runs yet. Start one from Triggers (Run now), an app, a schedule or a webhook.</div>';
       })
       .catch(function (err) { box.innerHTML = '<p class="error">Could not load its runs: ' + escapeHtml(err.message) + '</p>'; });
     box.addEventListener('click', function (ev) {
@@ -1985,24 +2027,39 @@ ${renderMarkdownScript}
       if (!b) return;
       openRunTrace(name, card, b.getAttribute('data-run'));
     });
+    if (filter) filter.addEventListener('click', function (ev) {
+      var f = ev.target.closest('[data-run-filter]');
+      if (!f) return;
+      filter.querySelectorAll('[data-run-filter]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === f)); });
+      box.querySelectorAll('.wf-run-row').forEach(function (row) { row.parentNode.hidden = f.dataset.runFilter !== 'all' && row.dataset.status !== f.dataset.runFilter; });
+    });
   }
 
+  var RUN_ICONS = {
+    done: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    awaiting_approval: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v5l3 2"/></svg>',
+    running: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+  };
+  // A run as a row: how it ended, when and how it started, a line of its
+  // result (or error), its inputs and version. The whole row opens it.
   function runCardHtml(w, r) {
     var version = runVersionOf(r);
     var values = r.params ? Object.keys(r.params).map(function (k) { return k + ': ' + r.params[k]; }).join(DOT) : '';
-    var outcome = r.status === 'error' ? (r.error || '') : (r.result || '');
+    var outcome = r.status === 'error' ? (r.error || 'Failed') : r.status === 'awaiting_approval' ? 'Waiting for your approval' : r.status === 'running' ? 'Running' + String.fromCharCode(8230) : (r.result || '');
     var took = r.finished_at ? healthTime(Date.parse(r.finished_at) - Date.parse(r.started_at)) : '';
-    return '<li class="wf-run-card' + (r.status === 'error' ? ' is-failed' : '') + '">' +
-      '<div class="wf-run-card-head">' + runPillHtml(r.status) +
-        '<strong>' + escapeHtml(runWhen(r.started_at)) + '</strong>' +
-        (version ? '<span class="wf-run-version" title="The workflow version it ran">v' + version + '</span>' : '<span class="hint">before versions</span>') +
-        '<span class="hint">' + escapeHtml(RUN_SOURCES[r.source] || r.source || '') + (took ? DOT + escapeHtml(took) : '') + '</span>' +
-        '<span class="wf-run-card-actions"><a class="wf-link" href="' + inboxHref(r.run_id) + '">Open in Inbox</a><button type="button" class="wf-run-trace" data-run="' + escapeHtml(r.run_id) + '">View trace</button></span>' +
-      '</div>' +
-      (values ? '<div class="wf-run-card-inputs">' + escapeHtml(values.length > 200 ? values.slice(0, 200) + String.fromCharCode(8230) : values) + '</div>' : '') +
-      (outcome ? '<div class="wf-run-card-out' + (r.status === 'error' ? ' error' : '') + '">' + escapeHtml(outcome.length > 280 ? outcome.slice(0, 280) + String.fromCharCode(8230) : outcome) + '</div>' : '') +
-      runEvidenceHtml(w || {}, r) +
-    '</li>';
+    var label = (RUN_PILLS[r.status] || ['', r.status])[1];
+    return '<li><button type="button" class="wf-run-row wf-run-trace is-' + escapeHtml(r.status) + '" data-run="' + escapeHtml(r.run_id) + '" data-status="' + escapeHtml(r.status) + '">' +
+      '<span class="wf-run-ico" title="' + escapeHtml(label) + '">' + (RUN_ICONS[r.status] || '') + '</span>' +
+      '<span class="wf-run-main">' +
+        '<span class="wf-run-top"><strong>' + escapeHtml(runWhen(r.started_at)) + '</strong>' +
+          '<span class="wf-run-meta">' + escapeHtml(RUN_SOURCES[r.source] || r.source || '') + (took ? DOT + escapeHtml(took) : '') + (version ? DOT + 'v' + version : '') + '</span></span>' +
+        (outcome ? '<span class="wf-run-out">' + escapeHtml(outcome.split(String.fromCharCode(10)).join(' ').slice(0, 240)) + '</span>' : '') +
+        runEvidenceHtml(w || {}, r) +
+      '</span>' +
+      (values ? '<span class="wf-run-in" title="' + escapeHtml(values) + '">' + escapeHtml(values.length > 40 ? values.slice(0, 40) + String.fromCharCode(8230) : values) + '</span>' : '') +
+      '<span class="wf-run-go" aria-hidden="true">' + String.fromCharCode(8250) + '</span>' +
+    '</button></li>';
   }
 
   // The run whose trace is open on each workflow's page, and its step, so
