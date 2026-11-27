@@ -999,15 +999,58 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .msg-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .msg-card-foot button { flex: none; height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
   @media (max-width: 860px) { .msg-cards { grid-template-columns: minmax(0, 1fr); } }
-  .msg-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
+  .msg-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
   .msg-dialog[open] { display: flex; flex-direction: column; }
   .msg-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
   .msg-dialog .sched-dlg-head { flex: none; }
   .msg-dialog .sched-dlg-head h2 { display: inline-flex; align-items: center; gap: 10px; }
-  .msg-dlg-body { overflow: auto; padding: 18px 22px 22px; }
-  .msg-dlg-body > p.hint { margin: 0 0 14px; }
-  .tab-panel .msg-dlg-body form.add-source { border: 0; background: none; box-shadow: none; padding: 0; margin: 0; max-width: none !important; }
-  .msg-dlg-body .approvers-section { max-width: none !important; }
+  .msg-dlg-body { overflow: auto; }
+  .msg-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin: 0; }
+  .msg-col { display: grid; align-content: start; min-width: 0; }
+  .msg-col + .msg-col { border-left: 1px solid var(--line); background: var(--surface); }
+  .msg-sec { display: grid; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); min-width: 0; }
+  .msg-col .msg-sec:last-child { border-bottom: 0; }
+  .msg-sec-k { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .msg-field { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+  .msg-field-k { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--ink); }
+  .msg-field-k .le-pill { margin: 0; }
+  .msg-field-hint { display: block; font-size: 12px; line-height: 1.45; color: var(--ink-muted); font-weight: 400; }
+  .msg-dialog input:not([type="checkbox"]):not([type="radio"]), .msg-dialog select { height: 36px; border-radius: 9px; width: 100%; box-sizing: border-box; font-size: 13px; }
+  .msg-dialog button:not(.primary) { height: 36px; border-radius: 9px; font-size: 13px; white-space: nowrap; }
+  .msg-dialog .sched-dlg-head button { height: 34px; }
+  .msg-inline { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .msg-inline > input, .msg-inline > select { flex: 1; min-width: 0; }
+  .msg-inline-start { flex-wrap: wrap; }
+  .msg-or .msg-field-hint { flex: none; }
+  .msg-or input { height: 32px !important; }
+  .msg-check { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 13px; cursor: pointer; }
+  .msg-check input { margin: 2px 0 0; }
+  .msg-check-k { display: flex; align-items: center; gap: 8px; font-weight: 500; color: var(--ink); }
+  .msg-events { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; }
+  .msg-events label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+  .msg-more summary, .msg-adv > summary, .msg-steps summary { cursor: pointer; font-size: 13px; color: var(--ink-muted); }
+  .msg-more[open] { display: grid; gap: 8px; }
+  .msg-adv > summary { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .msg-adv:not([open]) { gap: 0; }
+  .msg-fine { display: grid; gap: 8px; font-size: 12px; line-height: 1.5; color: var(--ink-muted); }
+  .msg-fine p { margin: 0; }
+  .msg-fine p:empty { display: none; }
+  .msg-steps { padding: 12px 14px; border-radius: 10px; background: var(--surface); }
+  .msg-steps[open] { display: grid; gap: 8px; }
+  .msg-steps summary { color: var(--ink); font-weight: 500; }
+  .msg-steps ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; line-height: 1.45; color: var(--ink-muted); }
+  .msg-steps textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 11px; border-radius: 9px; background: var(--bg); }
+  .msg-steps button { justify-self: start; }
+  .msg-dlg-foot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); }
+  .msg-dlg-foot:has(.notifier-result:empty):not(:has(button)) { display: none; }
+  .msg-approvers { padding: 18px 22px; border-top: 1px solid var(--line); }
+  .msg-approvers > summary { display: grid; gap: 4px; cursor: pointer; list-style: none; }
+  .msg-approvers > summary::-webkit-details-marker { display: none; }
+  .msg-approvers > summary .msg-sec-k::after { content: " +"; color: var(--ink-faint); }
+  .msg-approvers[open] > summary .msg-sec-k::after { content: ""; }
+  .msg-approvers[open] { display: grid; gap: 10px; }
+  .msg-approvers p { margin: 0; }
+  @media (max-width: 760px) { .msg-form { grid-template-columns: minmax(0, 1fr); } .msg-col + .msg-col { border-left: 0; border-top: 1px solid var(--line); } }
 
   /* A run's trace, in the new style: the same layout (its details, then
      its steps beside the one picked), with plain buttons, square cells
@@ -4556,20 +4599,25 @@ ${renderMarkdownScript}
     return '<strong>Nowhere yet.</strong> Set up an app below; the first messaging app you save becomes primary.' + fallback + rule;
   }
 
+  // The setup dialog's pieces. A field: its name, the control and at most
+  // one short line of help.
+  function msgField(label, control, hint) {
+    return '<label class="msg-field"><span class="msg-field-k">' + label + '</span>' + control + (hint ? '<span class="msg-field-hint">' + hint + '</span>' : '') + '</label>';
+  }
+  // A switch-like checkbox row: what it does, and one line on it.
+  function msgCheck(attrs, title, hint) {
+    return '<label class="msg-check"><input type="checkbox"' + attrs + '><span><span class="msg-check-k">' + title + '</span>' + (hint ? '<span class="msg-field-hint">' + hint + '</span>' : '') + '</span></label>';
+  }
+
   // Slack and Telegram: whether replies to a request are answered. On
   // unless turned off; locked on LoopEngine Cloud's free plan.
   function renderConversationsField(n, f, app) {
     var free = n.plan === 'free';
     var on = !free && f.conversations !== false;
-    var where = app === 'telegram' ? 'Answer replies to a request' : 'Answer replies in a request&#39;s thread';
-    return '<div class="body-field" style="margin:4px 0 0">' +
-      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="conversations" id="' + app + 'Conversations"' + (on ? ' checked' : '') + (free ? ' disabled' : '') + '> ' +
-      where + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
-      '<p class="hint" style="margin:2px 0 0">' + (free
-        ? 'Talking a request through in ' + CHANNEL_TITLES[app] + ' needs LoopEngine Pro. Approve and Deny buttons work on every plan.'
-        : (app === 'telegram'
-          ? 'People can reply to a request to ask the agent about it, and it answers there. Approvers (below) can also decide it that way.'
-          : 'People can ask the agent about a request in its thread, and it answers there. Approvers (below) can also decide it there.')) + '</p></div>';
+    return msgCheck(' name="conversations" id="' + app + 'Conversations"' + (on ? ' checked' : '') + (free ? ' disabled' : ''),
+      'Answer replies' + (free ? ' <span class="le-pill accent">Pro</span>' : ''),
+      free ? 'Needs LoopEngine Pro. Approve and Deny buttons work on every plan.'
+        : app === 'telegram' ? 'People reply to a request to ask about it; approvers can decide that way.' : 'People ask about a request in its thread; approvers can decide there.');
   }
 
   // Slack and Telegram: whether a DM to the bot, or a mention of it,
@@ -4577,113 +4625,124 @@ ${renderMarkdownScript}
   function renderJobsField(n, f, app) {
     var free = n.plan === 'free';
     var on = !free && f.jobs === true;
-    var how = app === 'telegram'
-      ? 'A private chat with the bot, or @mentioning it in a group, runs the agent on that message, and it answers with a reply. Replying to its answer carries the run on. In a group the bot only sees mentions when it&#39;s an admin or its privacy mode is off (@BotFather, /setprivacy); replies to its messages always reach it.'
-      : 'A DM to the bot, or @mentioning it in a channel, runs the agent on that message, and it answers in a thread. Replies in the thread carry the run on.';
-    return '<div class="body-field" style="margin:4px 0 0">' +
-      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="jobs" id="' + app + 'Jobs"' + (on ? ' checked' : '') + (free ? ' disabled' : '') + '> ' +
-      'Start runs from messages' + (free ? ' <span class="le-pill accent">Pro</span>' : '') + '</label>' +
-      '<p class="hint" style="margin:2px 0 0">' + (free ? 'Starting runs from ' + CHANNEL_TITLES[app] + ' needs LoopEngine Pro.' : how + ' Only approvers (below) can start runs; with none listed, anyone in its ' + (app === 'telegram' ? 'chat' : 'channel') + ' can, but not by direct message. A request it needs approved waits in the same thread.') + '</p></div>';
+    return msgCheck(' name="jobs" id="' + app + 'Jobs"' + (on ? ' checked' : '') + (free ? ' disabled' : ''),
+      'Start runs from messages' + (free ? ' <span class="le-pill accent">Pro</span>' : ''),
+      free ? 'Needs LoopEngine Pro.' : 'A direct message or @mention runs the agent on it. Once approvers are listed, only they can.');
   }
 
-  // A secret's state at a glance: a pill by the label, and a placeholder
-  // saying whether typing replaces a saved one. Its value is never shown.
+  // A secret's state at a glance: a pill by the field's name, and a
+  // placeholder saying whether typing replaces a saved one. Its value is
+  // never shown.
   function secretPill(isSet) {
-    return isSet ? '<span class="le-pill good">Saved</span>' : '<span class="le-pill warn">Not set</span>';
-  }
-  // The field's name and its pill on one line (form labels stack their
-  // children, which would stretch the pill across the row).
-  function secretHead(name, isSet) {
-    return '<span style="display:flex;align-items:center;gap:8px">' + name + secretPill(isSet) + '</span>';
+    return isSet ? '<span class="le-pill good">Saved</span>' : '';
   }
   function secretPlaceholder(isSet, missing) {
     return isSet ? 'Saved ' + String.fromCharCode(8212) + ' type a new one only to replace it' : missing;
   }
   var SECRET_HINTS = {
-    slack: 'xoxb-' + String.fromCharCode(8230) + ' from OAuth & Permissions',
+    slack: 'xoxb-' + String.fromCharCode(8230),
     webhook: 'A long random string, or Generate',
-    telegram: 'The token @BotFather gave you, like 123456:ABC' + String.fromCharCode(8230),
-    lark: 'App Secret from the Lark developer console',
-    email: 'An API key from your email provider'
+    telegram: '123456:ABC' + String.fromCharCode(8230),
+    lark: 'App Secret',
+    email: 'API key'
   };
-  function secretField(n, channel, label) {
+  function secretField(n, channel, label, hint) {
     var isSet = n.secretsSet && n.secretsSet[channel];
-    return '<label>' + secretHead(label, isSet) + '<span class="hint">(stored in this agent&#39;s env as ' + escapeHtml(n.secretVars[channel]) + ')</span>' +
-      '<span style="display:flex;gap:6px"><input type="password" name="secret" autocomplete="off" style="flex:1;min-width:0" placeholder="' + escapeHtml(secretPlaceholder(isSet, SECRET_HINTS[channel] || '')) + '">' +
-      (channel === 'webhook' ? '<button type="button" class="notifier-generate">Generate</button>' : '') + '</span></label>';
+    return msgField(label + secretPill(isSet),
+      '<span class="msg-inline"><input type="password" name="secret" autocomplete="off" placeholder="' + escapeHtml(secretPlaceholder(isSet, SECRET_HINTS[channel] || '')) + '">' +
+      (channel === 'webhook' ? '<button type="button" class="notifier-generate">Generate</button>' : '') + '</span>', hint);
+  }
+  // First-time steps, folded away once the app is set up.
+  function msgSteps(open, title, items, extra) {
+    return '<details class="msg-steps"' + (open ? ' open' : '') + '><summary>' + title + '</summary><ol>' +
+      items.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ol>' + (extra || '') + '</details>';
   }
 
-  // The settings only this app has.
+  // The settings only this app has: what to fill in to connect it
+  // (connect), what it can do (options) and the fine print (advanced).
   function renderChannelFields(n, channel, f) {
+    var input = function (name, placeholder, value, type) {
+      return '<input' + (type ? ' type="' + type + '"' : '') + ' name="' + name + '" placeholder="' + placeholder + '" value="' + escapeHtml(value || '') + '">';
+    };
     if (channel === 'webhook') {
-      return '<label>Webhook URL<input type="url" name="url" placeholder="https://your-app.example.com/hooks/loopengine" value="' + escapeHtml(f.url || '') + '"></label>' + secretField(n, 'webhook', 'Signing secret') +
-        '<p class="hint" style="margin:0">Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can simply forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>';
+      return {
+        connect: msgField('Webhook URL', input('url', 'https://your-app.example.com/hooks/loopengine', f.url, 'url'), 'Each request is POSTed here.') +
+          secretField(n, 'webhook', 'Signing secret', 'Your app checks it to know a request is real.'),
+        options: '',
+        advanced: '<p>Your app checks the <code>X-Actauth-Signature</code> header (HMAC-SHA256 of the body with the signing secret). Each payload carries a <code>decideUrl</code> it can forward to a person, or it can decide itself by sending <code>{"decision":"approve"}</code> or <code>{"decision":"deny"}</code> to <code>resolveUrl</code>.</p>'
+      };
     }
     if (channel === 'telegram') {
-      return '<details class="slack-step"' + (n.secretsSet && n.secretsSet.telegram ? '' : ' open') + '><summary>Create the Telegram bot (once)</summary>' +
-          '<ol class="hint" style="margin:6px 0;padding-left:18px">' +
-            '<li>Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, send /newbot and follow the steps. Paste the token it gives you below.</li>' +
-            '<li>Add the bot to the group or channel that should get requests (as an admin, for a channel), or start a chat with it yourself.</li>' +
-            '<li>Find the chat id: send a message there, then open https://api.telegram.org/bot&lt;token&gt;/getUpdates and copy <code>chat.id</code>. A public channel can use @its-name instead.</li>' +
-          '</ol></details>' +
-        secretField(n, 'telegram', 'Bot token') +
-        '<label>Chat ID <span class="hint">(a group or channel id like -1001234567890, or @channelname)</span><input name="chatId" placeholder="-1001234567890" value="' + escapeHtml(f.chatId || '') + '"></label>' +
-        '<div class="body-field" style="margin:0">Replies and buttons' +
-          '<p class="hint" style="margin:2px 0 6px">' + (n.telegram && n.telegram.webhookSet
-            ? 'Telegram sends the bot&#39;s messages and button clicks to this server, so requests have Approve and Deny buttons and replies reach the agent.'
-            : 'Each message links to a page where the person approves, denies or answers. Connect the bot to this server (save the bot token first) to add Approve and Deny buttons and let people reply.') + '</p>' +
-          '<span style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" id="telegramWebhookSet"' + (n.secretsSet && n.secretsSet.telegram ? '' : ' disabled') + '>' + (n.telegram && n.telegram.webhookSet ? 'Connect again' : 'Connect the bot') + '</button>' +
-          (n.telegram && n.telegram.webhookSet ? '<button type="button" id="telegramWebhookCheck">Check connection</button>' : '') + '</span>' +
-          '<div class="hint" id="telegramWebhookResult"></div></div>' +
-        renderConversationsField(n, f, 'telegram') +
-        renderJobsField(n, f, 'telegram');
+      var hooked = n.telegram && n.telegram.webhookSet;
+      var tokenSet = n.secretsSet && n.secretsSet.telegram;
+      return {
+        connect: msgSteps(!tokenSet, 'First time? Create the bot', [
+            'Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, send /newbot and copy the token it gives you.',
+            'Add the bot to the group or channel for requests, or start a chat with it.',
+            'Send a message there, open api.telegram.org/bot&lt;token&gt;/getUpdates and copy <code>chat.id</code>.'
+          ]) +
+          secretField(n, 'telegram', 'Bot token', 'From @BotFather.') +
+          msgField('Chat ID', input('chatId', '-1001234567890 or @channelname', f.chatId), '') +
+          '<div class="msg-field"><span class="msg-field-k">Buttons and replies' + (hooked ? '<span class="le-pill good">On</span>' : '') + '</span>' +
+            '<span class="msg-field-hint">' + (hooked ? 'Requests have Approve and Deny buttons, and replies reach the agent.' : 'Connect the bot (after saving its token) to add Approve and Deny buttons.') + '</span>' +
+            '<span class="msg-inline msg-inline-start"><button type="button" id="telegramWebhookSet"' + (tokenSet ? '' : ' disabled') + '>' + (hooked ? 'Connect again' : 'Connect the bot') + '</button>' +
+            (hooked ? '<button type="button" id="telegramWebhookCheck">Check</button>' : '') + '</span>' +
+            '<span class="msg-field-hint" id="telegramWebhookResult"></span></div>',
+        options: renderConversationsField(n, f, 'telegram') + renderJobsField(n, f, 'telegram'),
+        advanced: '<p>In a group the bot only sees mentions when it&#39;s an admin or its privacy mode is off (@BotFather, /setprivacy); replies to its own messages always reach it.</p>'
+      };
     }
     if (channel === 'slack') {
-      return '<details class="slack-step"' + (n.secretsSet && n.secretsSet.slack ? '' : ' open') + '><summary>Create the Slack app (once)</summary>' +
-          '<ol class="hint" style="margin:6px 0;padding-left:18px">' +
-            '<li>Open <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noopener">Slack apps</a> &rarr; Create New App &rarr; From a manifest, and pick your workspace.</li>' +
-            '<li>Paste the manifest below, create the app, then Install to Workspace.</li>' +
-            '<li>Copy the <strong>Bot User OAuth Token</strong> (starts with xoxb-) from OAuth &amp; Permissions into the field below.</li>' +
-          '</ol>' +
-          '<textarea id="slackManifest" readonly rows="8" style="font-family:var(--font-mono);font-size:11.5px"></textarea>' +
-          '<button type="button" id="slackManifestCopy" style="margin-top:6px">Copy manifest</button>' +
-        '</details>' +
-        secretField(n, 'slack', 'Bot token') +
-        '<label>Channel <span class="hint">(invite the bot to a private channel first: /invite @its-name)</span>' +
-          '<span style="display:flex;gap:6px"><select id="slackChannelSelect" style="flex:1;min-width:0"><option value="">' + (f.channelId ? 'Saved: ' + escapeHtml(f.channelId) : 'Load channels to pick one') + '</option></select>' +
-          '<button type="button" id="slackLoadChannels">Load channels</button></span></label>' +
-        '<label>Channel ID <span class="hint">(filled in when you pick a channel)</span><input name="channelId" placeholder="C0123ABC456" value="' + escapeHtml(f.channelId || '') + '"></label>' +
-        '<label>' + secretHead('Signing secret', n.slack && n.slack.signingSecretSet) + '<span class="hint">(from Basic Information ' + String.fromCharCode(8594) + ' App Credentials; ' +
-          (n.slack && n.slack.signingSecretSet ? 'buttons and replies in Slack are on' : 'needed for buttons and replies in Slack; without it, messages only carry the approval link') + ')</span>' +
-          '<input type="password" name="signingSecret" autocomplete="off" placeholder="' + escapeHtml(secretPlaceholder(n.slack && n.slack.signingSecretSet, 'Paste the Signing Secret')) + '"></label>' +
-        '<p class="hint" style="margin:0">Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p>' +
-        renderConversationsField(n, f, 'slack') +
-        renderJobsField(n, f, 'slack') +
-        '<p class="hint" style="margin:0" id="slackEventsNote"></p>';
+      var tokenSaved = n.secretsSet && n.secretsSet.slack;
+      var signing = n.slack && n.slack.signingSecretSet;
+      return {
+        connect: msgSteps(!tokenSaved, 'First time? Create the Slack app', [
+            'Open <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noopener">Slack apps</a>, choose Create New App, then From a manifest.',
+            'Paste the manifest (Copy manifest below), create the app and Install to Workspace.',
+            'Copy the Bot User OAuth Token (xoxb-) into Bot token below.'
+          ], '<textarea id="slackManifest" readonly rows="6" hidden></textarea><button type="button" id="slackManifestCopy">Copy manifest</button>') +
+          secretField(n, 'slack', 'Bot token', 'From OAuth &amp; Permissions.') +
+          '<div class="msg-field"><span class="msg-field-k">Channel</span>' +
+            '<span class="msg-inline"><select id="slackChannelSelect"><option value="">' + (f.channelId ? 'Saved: ' + escapeHtml(f.channelId) : 'Load channels to pick one') + '</option></select>' +
+            '<button type="button" id="slackLoadChannels">Load channels</button></span>' +
+            '<span class="msg-inline msg-or"><span class="msg-field-hint">or its ID</span>' + input('channelId', 'C0123ABC456', f.channelId) + '</span>' +
+            '<span class="msg-field-hint">For a private channel, /invite the bot there first.</span></div>' +
+          msgField('Signing secret' + secretPill(signing),
+            '<input type="password" name="signingSecret" autocomplete="off" placeholder="' + escapeHtml(secretPlaceholder(signing, 'From Basic Information')) + '">',
+            'Turns on buttons and replies in Slack. Without it, messages carry a link to decide.'),
+        options: renderConversationsField(n, f, 'slack') + renderJobsField(n, f, 'slack'),
+        advanced: '<p>Buttons send their clicks to <code id="slackInteractivityUrl"></code> (the manifest already points there).</p><p id="slackEventsNote"></p>'
+      };
     }
     if (channel === 'lark') {
-      return '<label>App ID<input name="appId" value="' + escapeHtml(f.appId || '') + '"></label><label>Chat ID<input name="chatId" value="' + escapeHtml(f.chatId || '') + '"></label>' + secretField(n, 'lark', 'App secret');
+      return {
+        connect: msgField('App ID', input('appId', 'cli_' + String.fromCharCode(8230), f.appId), '') +
+          msgField('Chat ID', input('chatId', 'oc_' + String.fromCharCode(8230), f.chatId), '') +
+          secretField(n, 'lark', 'App secret', 'From the Lark developer console.'),
+        options: '',
+        advanced: ''
+      };
     }
-    return '<label>Email addresses <span class="hint">(who gets the requests; separate several with commas)</span><input name="emailTo" placeholder="ops@example.com, lead@example.com" value="' + escapeHtml(f.to || '') + '"></label>' +
-      '<label>Sent by <span class="hint">(your email provider must allow sending from this address)</span><input name="emailFrom" placeholder="LoopEngine &lt;approvals@example.com&gt;" value="' + escapeHtml(f.from || '') + '"></label>' +
-      '<label>Email provider<select name="emailProvider">' +
-        [['resend', 'Resend'], ['sendgrid', 'SendGrid'], ['postmark', 'Postmark']].map(function (p) { return '<option value="' + p[0] + '"' + (f.provider === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
-      '</select></label>' +
-      secretField(n, 'email', 'API key') +
-      '<p class="hint" style="margin:0">Each email links to a page where the person approves, denies, edits or answers, with no login. The link address below must be one they can open.</p>';
+    return {
+      connect: msgField('Send to', input('emailTo', 'ops@example.com, lead@example.com', f.to), 'Separate several addresses with commas.') +
+        msgField('Sent from', input('emailFrom', 'LoopEngine &lt;approvals@example.com&gt;', f.from), 'Your email provider must allow this address.') +
+        msgField('Email provider', '<select name="emailProvider">' +
+          [['resend', 'Resend'], ['sendgrid', 'SendGrid'], ['postmark', 'Postmark']].map(function (p) { return '<option value="' + p[0] + '"' + (f.provider === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
+          '</select>', '') +
+        secretField(n, 'email', 'API key', ''),
+      options: '',
+      advanced: ''
+    };
   }
 
-  // A messaging app's form says whether it's the primary one, or offers
+  // A messaging app's dialog says whether it's the primary one, or offers
   // to make it primary on Save (ticked already when none is). The webhook
   // has neither: it always sends.
   function renderPrimaryField(n, channel, saved, isPrimary) {
-    if (channel === 'webhook') return '';
-    if (isPrimary) return '<p class="hint" style="margin:0"><span class="le-pill accent">Primary</span> This is the primary messaging app. To switch, tick &ldquo;Make this the primary messaging app&rdquo; in another app&#39;s section and save it.</p>';
-    return '<div class="body-field" style="margin:0">' +
-      '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="makePrimary"' + (n.primary ? '' : ' checked') + '> Make this the primary messaging app</label>' +
-      '<p class="hint" style="margin:2px 0 0">' + (n.primary
-        ? 'Only the primary messaging app sends; now that&#39;s ' + escapeHtml(CHANNEL_TITLES[n.primary] || n.primary) + '. ' + (saved ? 'Send test works either way.' : 'Leave this off to save ' + escapeHtml(CHANNEL_TITLES[channel] || channel) + ' for later.')
-        : 'No messaging app is primary yet, so saving this one makes it primary.') + '</p></div>';
+    if (channel === 'webhook') return '<p class="msg-field-hint" style="margin:0">A webhook always sends once saved, alongside the primary messaging app.</p>';
+    if (isPrimary) return '<p class="msg-field-hint" style="margin:0"><span class="le-pill accent">Primary</span> Requests are sent here. To switch, make another app primary.</p>';
+    return msgCheck(' name="makePrimary"' + (n.primary ? '' : ' checked'), 'Make this the primary app',
+      n.primary ? 'Only the primary app sends; now that&#39;s ' + escapeHtml(CHANNEL_TITLES[n.primary] || n.primary) + '.' : 'No app is primary yet, so this one will be.');
   }
 
   // Which bot each saved app connects as (@username on Telegram, the bot
@@ -4704,7 +4763,6 @@ ${renderMarkdownScript}
     }).catch(function () { /* the tab works without the names */ });
   }
 
-  // One app's section: its status in the summary, then its own form.
   // One app: its card in the grid (part 'card'), or its settings dialog.
   function renderConnectionSection(n, channel, part) {
     var saved = connectionFor(n, channel);
@@ -4716,7 +4774,7 @@ ${renderMarkdownScript}
     pills += saved ? (secretSet ? '<span class="sched-chip">Saved</span>' : '<span class="sched-chip warn">Secret not set</span>') : '<span class="sched-chip">Not set up</span>';
     var events = f.events || [];
     function eventBox(e) {
-      return '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
+      return '<label><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
     }
     var locked = n.canSave === false;
     // Every dialog starts closed; loadApprovalsSection reopens the one
@@ -4731,27 +4789,37 @@ ${renderMarkdownScript}
           '<button type="button" class="msg-open" data-channel="' + channel + '">' + (saved ? 'Settings' : 'Set up') + '</button></div>' +
       '</div>';
     }
-    return '<dialog class="msg-dialog" data-channel="' + channel + '" aria-label="' + escapeHtml(CHANNEL_TITLES[channel] || channel) + '">' +
-      '<div class="sched-dlg-head"><h2>' + (CHANNEL_ICONS[channel] || '') + escapeHtml(CHANNEL_TITLES[channel] || channel) + '</h2><button type="button" class="msg-close">Close</button></div>' +
-      '<div class="msg-dlg-body"><p class="hint">' + escapeHtml(CHANNEL_BLURBS[channel] || '') + '</p>' +
-      '<form class="add-source notifier-form" data-channel="' + channel + '">' +
-        renderChannelFields(n, channel, f) +
-        '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
-          '<input type="url" name="publicUrl" class="notifier-public-url" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
-        '<div class="body-field">Send' +
-          '<div style="display:flex;gap:14px;flex-wrap:wrap">' + NOTIFIER_EVENTS.slice(0, 2).map(eventBox).join('') + '</div>' +
-          '<details' + (events.indexOf('run_finish') !== -1 || events.indexOf('run_start') !== -1 ? ' open' : '') + '><summary>More events</summary>' +
-          '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">' + NOTIFIER_EVENTS.slice(2).map(eventBox).join('') + '</div>' +
-          '<p class="hint" style="margin:4px 0 0">Run finished tells your app the agent&#39;s final reply once a decision lets it finish.</p></details></div>' +
-        renderPrimaryField(n, channel, saved, isPrimary) +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="submit"' + (locked ? ' disabled' : '') + '>' + (saved ? 'Save' : 'Save ' + escapeHtml(CHANNEL_TITLES[channel] || channel)) + '</button>' +
-          (saved ? '<button type="button" class="notifier-test">Send test</button>' : '') +
-          (saved ? '<button type="button" class="delete-btn notifier-remove"' + (locked ? ' disabled' : '') + '>Remove</button>' : '') + '</div>' +
-        (isWebhook ? '<p class="hint" style="margin:0">A webhook always sends once saved, alongside the primary messaging app.</p>' : '') +
-        '<div class="hint notifier-result"></div>' +
+    var fields = renderChannelFields(n, channel, f);
+    var title = escapeHtml(CHANNEL_TITLES[channel] || channel);
+    var moreEvents = events.indexOf('run_finish') !== -1 || events.indexOf('run_start') !== -1;
+    var approvers = channel === 'slack' || channel === 'telegram' ? renderApproversHtml(n, channel) : '';
+    return '<dialog class="msg-dialog" data-channel="' + channel + '" aria-label="' + title + '">' +
+      '<div class="sched-dlg-head"><h2>' + (CHANNEL_ICONS[channel] || '') + title + '</h2>' +
+        '<button type="button" class="msg-close">' + (saved ? 'Close' : 'Cancel') + '</button>' +
+        '<button type="submit" class="primary" form="msgForm-' + channel + '"' + (locked ? ' disabled' : '') + '>Save</button></div>' +
+      '<div class="msg-dlg-body">' +
+      '<form class="notifier-form msg-form" id="msgForm-' + channel + '" data-channel="' + channel + '">' +
+        '<div class="msg-col">' +
+          '<div class="msg-sec"><span class="msg-sec-k">Connect</span>' + fields.connect + '</div>' +
+        '</div>' +
+        '<div class="msg-col">' +
+          '<div class="msg-sec"><span class="msg-sec-k">Send</span>' +
+            '<div class="msg-events">' + NOTIFIER_EVENTS.slice(0, moreEvents ? 4 : 2).map(eventBox).join('') + '</div>' +
+            (moreEvents ? '' : '<details class="msg-more"><summary>More events</summary><div class="msg-events">' + NOTIFIER_EVENTS.slice(2).map(eventBox).join('') + '</div>' +
+              '<span class="msg-field-hint">Run finished tells your app the agent&#39;s final reply.</span></details>') +
+            renderPrimaryField(n, channel, saved, isPrimary) + '</div>' +
+          (fields.options ? '<div class="msg-sec">' + fields.options + '</div>' : '') +
+          '<details class="msg-sec msg-adv"><summary>Advanced</summary>' +
+            msgField('Link address', '<input type="url" name="publicUrl" class="notifier-public-url" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '>',
+              'Messages link here so people can decide without logging in; use an address they can reach.') +
+            '<div class="msg-fine">' + fields.advanced + '<p>The secret is stored in this agent&#39;s env as <code>' + escapeHtml(n.secretVars[channel]) + '</code>.</p></div>' +
+          '</details>' +
+        '</div>' +
+        '<div class="msg-dlg-foot"><span class="notifier-result"></span>' +
+          (saved ? '<span class="msg-inline msg-inline-start"><button type="button" class="notifier-test">Send test</button>' +
+            '<button type="button" class="delete-btn notifier-remove"' + (locked ? ' disabled' : '') + '>Remove</button></span>' : '') + '</div>' +
       '</form>' +
-      // Who can decide and give jobs here: part of this app's settings.
-      (channel === 'slack' || channel === 'telegram' ? renderApproversHtml(n, channel) : '') +
+      approvers +
       '</div></dialog>';
   }
 
@@ -4809,19 +4877,19 @@ ${renderMarkdownScript}
         '<td><button type="button" class="delete-btn approver-remove" data-user="' + escapeHtml(a.user) + '"' + (n.canSave === false ? ' disabled' : '') + '>Remove</button></td></tr>';
     }).join('');
     var where = app === 'telegram' ? 'by replying to it' : 'by replying in its thread';
-    return '<section class="approvers-section" data-app="' + app + '" style="max-width:560px;margin-top:18px;padding-top:14px;border-top:1px solid var(--le-line, #e5e7eb)"><h4 style="margin:0 0 6px">Approvers</h4>' +
-      (n.primary !== app ? '<p class="hint" style="margin:0 0 8px">' + title + ' isn&#39;t primary, so requests aren&#39;t sent there until it is. Runs started there still use this list.</p>' : '') +
-      '<p class="muted" style="margin:0 0 10px">People who can approve, deny, change or answer a request ' + where + ', like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. A plain &ldquo;yes&rdquo; runs it; a reply that&#39;s less clear (&ldquo;sure, send it&rdquo;, &ldquo;yes but check the amount&rdquo;) shows exactly what will run with a Confirm button first, and a change is shown to approve first. Once anyone is listed, only approvers&#39; button clicks count, and only approvers can give the agent jobs. Anyone can still ask about a request.</p>' +
+    return '<details class="approvers-section msg-approvers" data-app="' + app + '"><summary><span class="msg-sec-k">Approvers' + (approvers.length ? ' (' + approvers.length + ')' : '') + '</span>' +
+        '<span class="msg-field-hint">People who can decide a request ' + where + ', like &ldquo;yes, go ahead&rdquo; or &ldquo;make it $40&rdquo;. Once anyone is listed, only they can use the buttons and start runs.</span></summary>' +
+      (n.primary !== app ? '<p class="msg-field-hint">' + title + ' isn&#39;t primary, so requests aren&#39;t sent there until it is.</p>' : '') +
       (approvers.length
-        ? '<div class="le-table-wrap" style="max-width:560px"><table><thead><tr><th>Name</th><th>' + title + ' ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
-        : '<p class="hint">No approvers yet. Until you add someone, anyone can use the buttons, and deciding by reply is off.</p>') +
+        ? '<div class="le-table-wrap"><table><thead><tr><th>Name</th><th>' + title + ' ID</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<p class="msg-field-hint">No approvers yet: anyone can use the buttons, and deciding by reply is off.</p>') +
       (n.canSave === false
         ? leShell.adminNote('Changing approvers needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server.')
         : '<p style="margin:10px 0 0"><button type="button" class="approvers-load">' + (app === 'telegram' ? 'Add people who messaged the bot' : 'Add people from the channel') + '</button></p>' +
-          (app === 'telegram' ? '<p class="hint" style="margin:6px 0 0">Telegram can&#39;t list a chat&#39;s members, so people show up here once they&#39;ve written to the bot (a private message to it is enough), or add someone by their numeric user id:</p>' +
-            '<span style="display:flex;gap:6px;max-width:560px;margin-top:6px"><input class="approver-manual-id" placeholder="User id, like 123456789" style="flex:1;min-width:0"><input class="approver-manual-name" placeholder="Name" style="flex:1;min-width:0"><button type="button" class="approver-manual-add">Add</button></span>' : '') +
+          (app === 'telegram' ? '<p class="msg-field-hint" style="margin:8px 0 6px">People show up once they&#39;ve written to the bot. Or add someone by their user id:</p>' +
+            '<span class="msg-inline"><input class="approver-manual-id" placeholder="User id, like 123456789"><input class="approver-manual-name" placeholder="Name"><button type="button" class="approver-manual-add">Add</button></span>' : '') +
           '<div class="approvers-picker"></div>') +
-      '<div class="hint approvers-result"></div></section>';
+      '<div class="msg-field-hint approvers-result"></div></details>';
   }
 
   function wireApproversHandlers(name, n) {
@@ -5168,6 +5236,8 @@ ${renderMarkdownScript}
           ? content.querySelector('.approvers-section[data-app="' + approverApp + '"] .approvers-result')
           : content.querySelector('dialog.msg-dialog[open] .notifier-result') || content.querySelector('#notifierResult');
         if (r) r.textContent = message;
+        var folded = r && r.closest('details.msg-approvers');
+        if (folded) folded.open = true;
       }
     }).catch(function (err) {
       if (currentName !== name) return;
