@@ -746,6 +746,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .workflow-param-row .wp-limits input { flex: 1; min-width: 140px; font-size: 12.5px; }
   .workflow-params select, .workflow-params input[type="number"], .workflow-params input[type="date"] { font: inherit; }
   .workflow-param { display: flex; flex-direction: column; gap: 3px; flex: 1 1 220px; font-size: 12px; min-width: 180px; }
+  .workflow-param-k { display: flex; align-items: baseline; gap: 6px; }
+  .workflow-param-k .hint { font-size: 11px; }
   .workflow-param textarea { width: 100%; box-sizing: border-box; resize: none; overflow-y: hidden; max-height: 18em; font: inherit; font-size: 13px; line-height: 1.45; }
   .advanced-part { font-size: 17px; font-weight: 600; margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
   .advanced-part#advanced-tools { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -2897,7 +2899,7 @@ ${renderMarkdownScript}
         var spec = w.parameters[p];
         // One line to start, growing as an email or a thread is pasted in
         // (wireWorkflowCard sizes it).
-        return '<label class="workflow-param">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">(optional)</span>') +
+        return '<label class="workflow-param"><span class="workflow-param-k">' + escapeHtml(p) + (spec.required ? '' : ' <span class="hint">optional</span>') + '</span>' +
           inputControlHtml(p, spec, spec.required) + '</label>';
       }).join('');
       // Recent runs, one line each, opening the case (where everything
@@ -6105,7 +6107,7 @@ ${renderMarkdownScript}
       var w = schedulesWorkflows.filter(function (x) { return x.id === workflowSelect.value; })[0];
       var parameters = (w && w.parameters) || {};
       paramsBox.innerHTML = Object.keys(parameters).map(function (p) {
-        return '<label class="workflow-param">' + escapeHtml(p) + (parameters[p].required ? '' : ' <span class="hint">(optional)</span>') +
+        return '<label class="workflow-param"><span class="workflow-param-k">' + escapeHtml(p) + (parameters[p].required ? '' : ' <span class="hint">optional</span>') + '</span>' +
           inputControlHtml('param:' + p, parameters[p], false) + '</label>';
       }).join('');
     }
