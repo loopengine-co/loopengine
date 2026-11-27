@@ -42,6 +42,9 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .sc-icon svg { width: 16px; height: 16px; }
   .sc-card-text { display: grid; gap: 2px; min-width: 0; }
   .sc-card-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  button.sc-card-title, button.sc-card-title:hover:not(:disabled) { justify-self: start; height: auto; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; }
+  button.sc-card-title:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+  .sc-menu-list .sc-danger { color: var(--bad); }
   .sc-card-desc { font-size: 13px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .sc-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .sc-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; text-decoration: none; }
@@ -100,6 +103,9 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .sc-dlg-head button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
   .sc-dlg-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: auto; }
   .sc-dlg-col { display: grid; align-content: start; }
+  .sc-dialog.one-col { width: min(520px, calc(100vw - 32px)); }
+  .sc-dialog.one-col .sc-dlg-body { grid-template-columns: minmax(0, 1fr); }
+  .sc-dialog.one-col .sc-dlg-col + .sc-dlg-col { display: none; }
   .sc-dlg-col + .sc-dlg-col { border-left: 1px solid var(--line); background: var(--surface); }
   .sc-field { display: grid; gap: 9px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
   .sc-field > label, .sc-field-k { font-size: 14px; font-weight: 500; }
@@ -112,6 +118,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .sc-row[hidden], .sc-field .le-seg[hidden] { display: none; }
   .sc-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .sc-inputs { display: grid; gap: 12px; }
+  .sc-field textarea { min-height: 96px; border-radius: 9px; font-size: 13.5px; }
+  .sc-field[hidden] { display: none; }
   .sc-inputs label { display: grid; gap: 5px; font-size: 13px; font-weight: 500; }
   .sc-inputs textarea { min-height: 70px; border-radius: 9px; font-size: 13.5px; }
   .sc-dlg-foot { padding: 12px 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-muted); min-height: 46px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -156,7 +164,8 @@ ${consoleSidebarHtml}
     <div class="sc-dlg-head"><h2 id="scDlgTitle">Create schedule</h2><button type="button" id="scCancel">Cancel</button><button type="submit" class="primary" id="scSave">Save</button></div>
     <div class="sc-dlg-body">
       <div class="sc-dlg-col">
-        <div class="sc-field"><label for="scWorkflow">Workflow</label><select id="scWorkflow" required></select></div>
+        <div class="sc-field" id="scWorkflowField"><label for="scWorkflow">Workflow</label><select id="scWorkflow" required></select></div>
+        <div class="sc-field" id="scMessageField" hidden><label for="scMessage">Message</label><textarea id="scMessage" rows="4"></textarea><p class="hint">What the agent receives each time, as if someone typed it.</p></div>
         <div class="sc-field"><label for="scName">Name <span class="hint">(optional)</span></label><input id="scName" maxlength="80" placeholder="e.g. Monday sales summary"></div>
         <div class="sc-field">
           <span class="sc-field-k">Schedule</span>
@@ -168,14 +177,14 @@ ${consoleSidebarHtml}
           <div class="sc-row" id="scWhenOnce" hidden><input type="date" id="scDate" aria-label="Date"><input type="time" id="scAtOnce" value="09:00" aria-label="At"></div>
           <p class="hint" id="scZone"></p>
         </div>
-        <div class="sc-field">
+        <div class="sc-field" id="scNotifyField">
           <div class="sc-switch-row"><span class="sc-field-k">Send each result to chat</span><button type="button" class="le-switch" id="scNotify" role="switch" aria-checked="false" aria-label="Send each result to chat"></button></div>
           <p class="hint">After every run, its result goes to the agent's messaging app (Slack, Telegram or Lark), if it has one.</p>
         </div>
       </div>
       <div class="sc-dlg-col">
-        <div class="sc-field"><span class="sc-field-k">Inputs for every run</span><div class="sc-inputs" id="scInputs"></div></div>
-        <div class="sc-field"><span class="sc-field-k">When it starts</span><p class="hint">Right away: the first run is at the next time you chose. Switch it off on its card to pause it.</p></div>
+        <div class="sc-field" id="scInputsField"><span class="sc-field-k">Inputs for every run</span><div class="sc-inputs" id="scInputs"></div></div>
+        <div class="sc-field" id="scStartsField"><span class="sc-field-k">When it starts</span><p class="hint">Right away: the first run is at the next time you chose. Switch it off on its card to pause it.</p></div>
       </div>
     </div>
     <div class="sc-dlg-foot" id="scFoot"></div>
@@ -270,21 +279,29 @@ ${consoleShellScript}
   function cardHtml(t) {
     var on = t.status !== 'paused';
     var wf = t.workflow;
-    var title = t.task_name || (wf && wf.title) || String(t.message || '').split(String.fromCharCode(10))[0] || 'Schedule';
-    var desc = (wf && (wf.description && wf.description !== wf.title ? wf.description : wf.start_message)) || t.message || '';
+    var lines = String(t.message || '').split(String.fromCharCode(10));
+    var title = t.task_name || (wf && wf.title) || lines[0] || 'Schedule';
+    // A message's title is its first line, unless it has a name.
+    var desc = wf ? (wf.description && wf.description !== wf.title ? wf.description : wf.start_message) || '' : t.workflow_id ? '' : t.task_name ? t.message : lines.slice(1).join(' ').trim();
+    // What it runs: a workflow (linked) or a message the agent receives.
+    var what = wf ? '<a class="sc-chip" href="' + wfHref(t.agent, t.workflow_id, 'overview') + '">Workflow: ' + esc(wf.title) + '</a>'
+      : t.workflow_id ? '<span class="sc-chip bad">Its workflow was removed</span>'
+      : '<span class="sc-chip" title="Sends the agent a message each time">Message</span>';
     var state = t.status === 'awaiting_approval' || t.pending ? '<a class="sc-chip warn" href="/inbox?view=needs">Waiting for you</a>'
       : t.status === 'running' ? '<span class="sc-chip strong">Running now</span>'
       : t.last_status === 'error' ? '<span class="sc-chip bad" title="' + esc(t.last_error || '') + '">Last run failed</span>' : '';
     var next = !on ? 'Paused' : t.next_run_at ? 'Next run ' + untilText(t.next_run_at) : '';
     return '<div class="sc-card' + (on ? '' : ' is-off') + '" data-task="' + esc(t.task_id) + '">' +
       '<div class="sc-card-head"><span class="sc-icon">' + (t.schedule && t.schedule.run_at ? ICON_ONCE : ICON_REPEAT) + '</span>' +
-        '<span class="sc-card-text"><span class="sc-card-title">' + esc(title) + '</span>' + (desc ? '<span class="sc-card-desc">' + esc(desc) + '</span>' : '') + '</span>' +
+        '<span class="sc-card-text"><button type="button" class="sc-card-title" data-edit="' + esc(t.task_id) + '" title="Edit">' + esc(title) + '</button>' + (desc ? '<span class="sc-card-desc">' + esc(desc) + '</span>' : '') + '</span>' +
         '<button type="button" class="le-switch" role="switch" aria-checked="' + on + '" aria-label="' + (on ? 'Pause ' : 'Resume ') + esc(title) + '" data-toggle="' + esc(t.task_id) + '"' + (t.status === 'running' ? ' disabled' : '') + '></button>' +
         '<details class="sc-menu"><summary aria-label="More">' + ICON_DOTS + '</summary><div class="sc-menu-list">' +
+          '<button type="button" data-edit="' + esc(t.task_id) + '">Edit</button>' +
           '<button type="button" data-run="' + esc(t.task_id) + '">Run now</button>' +
-          (t.workflow_id ? '<a href="' + wfHref(t.agent, t.workflow_id, 'activity') + '">Open its workflow</a><a href="' + wfHref(t.agent, t.workflow_id, 'triggers') + '">Change or remove</a>' : '') +
+          (wf ? '<a href="' + wfHref(t.agent, t.workflow_id, 'activity') + '">Open its workflow</a>' : '') +
+          '<button type="button" class="sc-danger" data-remove="' + esc(t.task_id) + '">Remove</button>' +
         '</div></details></div>' +
-      '<div class="sc-chips"><span class="sc-chip strong">' + esc(describe(t)) + '</span>' +
+      '<div class="sc-chips"><span class="sc-chip strong">' + esc(describe(t)) + '</span>' + what +
         '<a class="sc-chip" href="/agents/config?agent=' + encodeURIComponent(t.agent) + '">' + esc(t.agentLabel) + '</a>' +
         (t.notify ? '<span class="sc-chip">Result to chat</span>' : '') + state +
         (next ? '<span class="sc-next">' + esc(next) + '</span>' : '') + '</div>' +
@@ -406,6 +423,24 @@ ${consoleShellScript}
       });
       return;
     }
+    var edit = ev.target.closest('[data-edit]');
+    if (edit) {
+      var menu = edit.closest('details');
+      if (menu) menu.removeAttribute('open');
+      var task = data.tasks.filter(function (x) { return x.task_id === edit.getAttribute('data-edit'); })[0];
+      if (task) openEdit(task);
+      return;
+    }
+    var remove = ev.target.closest('[data-remove]');
+    if (remove) {
+      if (remove.getAttribute('data-confirming') !== '1') { remove.setAttribute('data-confirming', '1'); remove.textContent = 'Click again to remove'; return; }
+      remove.disabled = true;
+      api('POST', '/schedules/' + encodeURIComponent(remove.getAttribute('data-remove')) + '/cancel').then(function (r) {
+        if (!r.ok) { remove.disabled = false; alertIn(remove, r.body.error || 'That did not work'); return; }
+        load();
+      });
+      return;
+    }
     var week = ev.target.closest('[data-week]');
     if (week) {
       var w = Number(week.getAttribute('data-week'));
@@ -471,12 +506,75 @@ ${consoleShellScript}
       : !names.length ? '<p class="hint">This workflow takes no inputs: every run is the same.</p>'
       : names.map(function (n) {
           var spec = w.parameters[n] || {};
-          return '<label>' + esc(n) + (spec.required ? '' : ' <span class="hint">(optional)</span>') + (spec.description ? '<span class="hint" style="font-weight:400">' + esc(spec.description) + '</span>' : '') +
+          return '<label><span>' + esc(n) + (spec.required ? '' : ' <span class="hint" style="font-weight:400">optional</span>') + '</span>' + (spec.description ? '<span class="hint" style="font-weight:400">' + esc(spec.description) + '</span>' : '') +
             '<textarea data-param="' + esc(n) + '" rows="2"' + (spec.required ? ' required' : '') + '>' + esc(spec.default != null ? String(spec.default) : '') + '</textarea></label>';
         }).join('');
   }
   pick.addEventListener('change', fillInputs);
+  // Create schedule runs a workflow; Edit schedule changes one in place,
+  // a workflow's or a message's, keeping what it runs.
+  var editing = null;
+  function setMode(task) {
+    editing = task;
+    var isWf = !task || Boolean(task.workflow_id);
+    document.getElementById('scDlgTitle').textContent = task ? 'Edit schedule' : 'Create schedule';
+    pick.disabled = Boolean(task);
+    document.getElementById('scWorkflowField').hidden = !isWf;
+    document.getElementById('scMessageField').hidden = isWf;
+    document.getElementById('scInputsField').hidden = !isWf;
+    // A workflow's results go where its Messaging tab says.
+    document.getElementById('scNotifyField').hidden = Boolean(task) && isWf;
+    document.getElementById('scStartsField').hidden = Boolean(task);
+    // A message's edit has nothing for the second column.
+    dlg.classList.toggle('one-col', Boolean(task) && !isWf);
+  }
+  function inZone(o) { if (data.zone) o.timeZone = data.zone; return o; }
+  function hhmm(iso) { return new Date(iso).toLocaleTimeString('en-GB', inZone({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })); }
+  function openEdit(t) {
+    form.reset();
+    setMode(t);
+    if (t.workflow_id) {
+      var key = t.agent + '/' + t.workflow_id;
+      pick.innerHTML = '<option value="' + esc(key) + '">' + esc((t.workflow && t.workflow.title) || t.workflow_id) + '</option>';
+      pick.value = key;
+    }
+    document.getElementById('scMessage').value = t.message || '';
+    document.getElementById('scName').value = t.task_name || '';
+    notify.setAttribute('aria-checked', String(Boolean(t.notify)));
+    var s = t.schedule || {};
+    if (s.run_at) {
+      kind = 'once';
+      document.getElementById('scDate').value = new Date(s.run_at).toLocaleDateString('en-CA', inZone({ year: 'numeric', month: '2-digit', day: '2-digit' }));
+      document.getElementById('scAtOnce').value = hhmm(s.run_at);
+    } else {
+      kind = 'repeat';
+      var every = String(s.every || '1h').trim();
+      var unit = every.charAt(every.length - 1), n = parseInt(every, 10) || 1;
+      if (every === '1d' && s.anchor) { freq = 'daily'; document.getElementById('scAt').value = hhmm(s.anchor); }
+      else if (every === '7d' && s.anchor) {
+        freq = 'weekly';
+        document.getElementById('scAtWeekly').value = hhmm(s.anchor);
+        document.getElementById('scWeekday').value = new Date(s.anchor).toLocaleDateString('en-US', inZone({ weekday: 'long' })).toLowerCase();
+      } else {
+        freq = 'interval';
+        if (unit === 's') { n = Math.max(1, Math.round(n / 60)); unit = 'm'; }
+        document.getElementById('scEvery').value = String(n);
+        document.getElementById('scUnit').value = unit;
+      }
+    }
+    pressIn('scKind', 'data-kind', kind); pressIn('scFreq', 'data-freq', freq); showWhen();
+    document.getElementById('scZone').textContent = data.zone ? 'Times are in ' + data.zone + ', the workspace' + String.fromCharCode(8217) + 's time zone.' : '';
+    foot.innerHTML = '';
+    document.getElementById('scSave').disabled = false;
+    if (t.workflow_id) {
+      fillInputs();
+      var fields = document.querySelectorAll('#scInputs [data-param]');
+      for (var i = 0; i < fields.length; i++) fields[i].value = (t.params || {})[fields[i].getAttribute('data-param')] || '';
+    }
+    dlg.showModal();
+  }
   function openDialog(preset) {
+    setMode(null);
     if (!data.workflows.length) { page.insertAdjacentHTML('afterbegin', '<p class="error" style="margin:0 0 12px">There are no workflows to schedule yet. Build one first, from Home or Workflows.</p>'); return; }
     var groups = {};
     data.workflows.forEach(function (w) { (groups[w.agentLabel] = groups[w.agentLabel] || []).push(w); });
@@ -518,6 +616,7 @@ ${consoleShellScript}
     ev.preventDefault();
     var w = chosen();
     var schedule = scheduleBody();
+    if (editing) { saveEdit(editing, schedule); return; }
     if (!w) { foot.innerHTML = '<span class="error">Choose a workflow.</span>'; return; }
     if (!schedule) { foot.innerHTML = '<span class="error">Choose a date and time.</span>'; return; }
     var values = {};
@@ -540,6 +639,31 @@ ${consoleShellScript}
       load();
     });
   });
+
+  function saveEdit(t, schedule) {
+    if (!schedule) { foot.innerHTML = '<span class="error">Choose a date and time.</span>'; return; }
+    var body = { schedule: schedule, task_name: document.getElementById('scName').value.trim() };
+    if (t.workflow_id) {
+      var values = {};
+      var fields = document.querySelectorAll('#scInputs [data-param]');
+      for (var i = 0; i < fields.length; i++) if (fields[i].value.trim()) values[fields[i].getAttribute('data-param')] = fields[i].value.trim();
+      body.params = values;
+    } else {
+      var message = document.getElementById('scMessage').value;
+      if (!message.trim()) { foot.innerHTML = '<span class="error">Write the message the agent receives.</span>'; return; }
+      body.message = message;
+    }
+    var save = document.getElementById('scSave');
+    save.disabled = true;
+    foot.textContent = 'Saving' + String.fromCharCode(8230);
+    var path = '/schedules/' + encodeURIComponent(t.task_id);
+    api('PUT', path, body).then(function (r) {
+      if (!r.ok) { save.disabled = false; foot.innerHTML = '<span class="error">' + esc(r.body.error || 'Could not save it') + '</span>'; return; }
+      var on = notify.getAttribute('aria-checked') === 'true';
+      var after = !t.workflow_id && on !== Boolean(t.notify) ? api('POST', path + '/result-to-chat', { result_to_chat: on }) : Promise.resolve();
+      return after.then(function () { dlg.close(); load(); });
+    });
+  }
 
   load().catch(function (err) { page.innerHTML = '<p class="error">Could not load schedules: ' + esc(err.message) + '</p>'; });
 })();
