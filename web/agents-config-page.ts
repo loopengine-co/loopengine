@@ -296,6 +296,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-vs-row .wf-evals-run.plain, .ev-vs-row .wf-evals-run.plain:hover:not(:disabled) { background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
   .ev-steps .wf-evals-run:disabled { opacity: .45; }
   .ev-shown { margin-left: auto; }
+  .wf-case-skip { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
   .ev-compare { display: grid; gap: 10px; }
   .ev-sum { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); align-items: center; gap: 6px 22px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; }
   .ev-sum-side { display: grid; gap: 2px; }
@@ -2910,7 +2911,7 @@ ${renderMarkdownScript}
       return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
     }).join('');
     var critSection = '<h4 class="wf-sub">Success criteria</h4>' +
-      (draftedCriteria(w) ? draftNoteHtml('These success criteria are in the draft: evaluations use the published ones until then.') : '') +
+      (draftedCriteria(w) ? draftNoteHtml('These success criteria are in the draft: Evaluate draft checks both versions on them, and the published version' + RSQ + 's own Evaluate uses the published ones until then.') : '') +
       '<p class="hint" style="margin:0">' + (evals.criteria && evals.criteria.length
         ? 'What every good result must get right. Each eval case is checked against every criterion, yes or no.'
         : 'What every good result must get right. None set yet, so each eval case is only compared with its good result. Add the criteria that matter, or have them suggested from its instructions.') + '</p>' +
@@ -2938,7 +2939,9 @@ ${renderMarkdownScript}
     var passedAll = function (last) { return last ? (last.checks ? last.checks.every(function (x) { return x.pass; }) : last.score >= 4) : null; };
     // One round's outcome for a case: its pill, what it missed and why,
     // and the calls the test didn't make.
-    var outcome = function (last, names) {
+    // skipped: the good-result check the round had but couldn't make for
+    // this case, with no good result saved for it.
+    var outcome = function (last, names, skipped) {
       if (!last) return { pill: '<span class="ev-none">Not tested yet</span>', body: '' };
       var fails = last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
       var pill = last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' criteria missed</span>' : '<span class="le-pill good">Passed all ' + last.checks.length + '</span>')
@@ -2950,7 +2953,15 @@ ${renderMarkdownScript}
             return '<code title="' + escapeHtml(JSON.stringify(x.input)) + '">' + escapeHtml(x.tool) + '</code>' + (x.replayed ? ' <span class="hint">(reply from its run)</span>' : '');
           }).join(', ') + '</p>'
         : '';
-      return { pill: pill, body: why + standIns };
+      var skip = skipped ? '<p class="wf-case-skip">' + escapeHtml(skipped) + ' wasn' + RSQ + 't checked: this case has no good result saved. Add one under Good result.</p>' : '';
+      return { pill: pill, body: why + skip + standIns };
+    };
+    // The good-result check a round had, named, when this case has no good
+    // result to check it against.
+    var skippedFor = function (r, c) {
+      if (!r || (c.reference || '').trim()) return '';
+      var ref = (r.criteria || []).filter(function (x) { return x.kind === 'reference'; })[0];
+      return ref ? ref.text : '';
     };
     var resultBlock = function (label, last) {
       return last && last.result ? '<div class="ev-result"><div class="workflow-run-entry-label">' + label + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div></div>' : '';
@@ -2968,13 +2979,13 @@ ${renderMarkdownScript}
       if (comparing) {
         // The draft's outcome; how it compares is in the table above.
         var dr = draftCases[c.id];
-        var d = outcome(dr, draftNames);
+        var d = outcome(dr, draftNames, skippedFor(draftRound, c));
         return '<li class="wf-case" id="ev-case-' + escapeHtml(c.id) + '" data-case="' + escapeHtml(c.id) + '">' + head(d.pill) + d.body +
           '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (dr && dr.result ? ' and the draft' + RSQ + 's result' : '') + '</summary>' + goodResult + resultBlock('The draft' + RSQ + 's result', dr) +
           '</details></li>';
       }
       var last = latest[c.id];
-      var o = last ? outcome(last, critName) : { pill: '', body: '' };
+      var o = last ? outcome(last, critName, skippedFor(round, c)) : { pill: '', body: '' };
       return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '">' + head(o.pill) + o.body +
         '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (last && last.result ? ' and its latest result' : '') + '</summary>' + goodResult + resultBlock('Latest result', last) +
         '</details></li>';
