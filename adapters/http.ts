@@ -1901,6 +1901,29 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
       const judge = await evalJudge(tested.config)
       const workflowVersion = draft ? undefined : await noteWorkflowVersion(agentName, id)
       const draftedChecks = draft?.criteria?.map((c, i) => ({ ...c, id: c.id ?? `draft-${i}` })) as EvalCriterion[] | undefined
+      // One test run of a case, of the draft or of the published version.
+      const caseRunner = (useDraft: boolean) => async (c: { params: Record<string, string>; fromRun?: string }) => {
+        const current = useDraft && draft ? withDraft(readWorkflow(dir, id) ?? workflow, draft.fields) : readWorkflow(dir, id) ?? workflow
+        const message = await composeWorkflowMessage(agentName, current, c.params)
+        const { config, modelCall } = await runModel(agentName, id, useDraft ? current : undefined)
+        // The case's own run's calls, replayed for the calls a test
+        // doesn't make.
+        const source = c.fromRun ? await getRun(agentName, c.fromRun) : undefined
+        const replay = source ? recordedCalls(await sessions.getHistory(`default:${process.env.LOOPENGINE_ENV ?? 'production'}:${agentName}:${source.session_id}`).catch(() => [])) : []
+        const standIns: StandIn[] = []
+        const result = await runAgent(config, modelCall, message, [], {
+          tenant: 'default',
+          sessionId: `eval-${randomUUID().slice(0, 8)}`,
+          runningSkill: id,
+          evalMode: { replay, onStandIn: (call) => standIns.push(call) },
+          approver: { requestApproval: async () => false },
+          questionHandler: { requestQuestion: async () => NO_HUMAN_ANSWER },
+        })
+        // Every call it made, run or not (a test run doesn't run those
+        // that need approval; asking counts as calling).
+        const tools = result.newMessages.flatMap((m) => (m.role === 'assistant' && Array.isArray(m.content) ? m.content.flatMap((b) => (b.type === 'tool_use' && b.name ? [b.name] : [])) : []))
+        return { result: result.text, tools, standIns }
+      }
       const round = startEvalRound({
         agentDir: dir,
         workflowId: id,
@@ -1911,30 +1934,36 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
         model: modelLabelOf(tested.config),
         judgeLabel: judge.label,
         judge: judge.call,
-        runCase: async (c) => {
-          const current = testedWorkflow()
-          const message = await composeWorkflowMessage(agentName, current, c.params)
-          const { config, modelCall } = await runModel(agentName, id, draft ? current : undefined)
-          // The case's own run's calls, replayed for the calls a test
-          // doesn't make.
-          const source = c.fromRun ? await getRun(agentName, c.fromRun) : undefined
-          const replay = source ? recordedCalls(await sessions.getHistory(`default:${process.env.LOOPENGINE_ENV ?? 'production'}:${agentName}:${source.session_id}`).catch(() => [])) : []
-          const standIns: StandIn[] = []
-          const result = await runAgent(config, modelCall, message, [], {
-            tenant: 'default',
-            sessionId: `eval-${randomUUID().slice(0, 8)}`,
-            runningSkill: id,
-            evalMode: { replay, onStandIn: (call) => standIns.push(call) },
-            approver: { requestApproval: async () => false },
-            questionHandler: { requestQuestion: async () => NO_HUMAN_ANSWER },
-          })
-          // Every call it made, run or not (a test run doesn't run those
-          // that need approval; asking counts as calling).
-          const tools = result.newMessages.flatMap((m) => (m.role === 'assistant' && Array.isArray(m.content) ? m.content.flatMap((b) => (b.type === 'tool_use' && b.name ? [b.name] : [])) : []))
-          return { result: result.text, tools, standIns }
-        },
+        runCase: caseRunner(Boolean(draft)),
       })
-      void round.catch((err) => console.error(`[loopengine] eval round for ${agentName}/${id} failed:`, err))
+      // A draft with criteria of its own: the published version is checked
+      // on them too, so the two are compared on the same checks. Its last
+      // results for the same version are judged again rather than run again.
+      const followUp = draft && draftedChecks
+        ? round.then(async () => {
+            const published = readWorkflow(dir, id) ?? workflow
+            const version = await noteWorkflowVersion(agentName, id)
+            const last = readEvals(dir, id).rounds.find((r) => !r.draft && !r.forDraft && r.workflowVersion === version)
+            const reuse: Record<string, { result: string; tools: string[]; standIns?: StandIn[] }> = {}
+            for (const c of last?.cases ?? []) if (c.result !== undefined && !c.error) reuse[c.caseId] = { result: c.result, tools: c.tools ?? [], ...(c.standIns ? { standIns: c.standIns } : {}) }
+            const live = await runModel(agentName, id)
+            return startEvalRound({
+              agentDir: dir,
+              workflowId: id,
+              ...(version ? { workflowVersion: version } : {}),
+              forDraft: { savedAt: draft.savedAt },
+              criteria: draftedChecks,
+              reuse,
+              ...(published.outputSchema ? { outputSchema: published.outputSchema } : {}),
+              instructions: published.instructions,
+              model: modelLabelOf(live.config),
+              judgeLabel: judge.label,
+              judge: judge.call,
+              runCase: caseRunner(false),
+            })
+          })
+        : round
+      void followUp.catch((err) => console.error(`[loopengine] eval round for ${agentName}/${id} failed:`, err))
       return json(202, readEvals(dir, id))
     }
     return json(404, { error: 'not found' })

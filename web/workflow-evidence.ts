@@ -162,6 +162,9 @@ export interface EvalRound {
   /** Set on a round that tested the draft, not a published version: when
    * that draft was saved, so a later edit shows the round is out of date. */
   draft?: { savedAt: string }
+  /** Set on a round that checked the published version against a draft's
+   * success criteria, so the two are compared on the same checks. */
+  forDraft?: { savedAt: string }
   /** On rounds from when only the brief was versioned: the same number. */
   briefVersion?: number
   /** The workflow's model and the judge's, as "provider model". */
@@ -413,8 +416,14 @@ export interface EvalRunDeps {
   workflowVersion?: number
   /** Testing the draft: when it was saved, recorded on the round. */
   draft?: { savedAt: string }
+  /** Checking the published version on a draft's criteria (`criteria`):
+   * that draft, recorded on the round. */
+  forDraft?: { savedAt: string }
   /** The criteria to check instead of the saved ones (a draft's). */
   criteria?: EvalCriterion[]
+  /** Results already had for some cases (the same version's last round):
+   * only judged again, not run again. */
+  reuse?: Record<string, { result: string; tools: string[]; standIns?: StandIn[] }>
   /** Its output schema: each case is also checked against it. */
   outputSchema?: JsonSchema
   instructions: string
@@ -437,7 +446,7 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
   if (!evals.cases.length) throw new EvidenceError('Add an eval case first: save a past run as one, from History.')
   const cases = evals.cases
   const startedAt = new Date().toISOString()
-  const drafting = deps.draft ? { draft: true } : {}
+  const drafting = deps.draft || deps.forDraft ? { draft: true } : {}
   writeEvals(deps.agentDir, deps.workflowId, { ...evals, running: { startedAt, done: 0, total: cases.length, ...drafting } })
   const criteria = [...effectiveCriteria(deps.criteria ? { criteria: deps.criteria } : evals), ...(deps.outputSchema ? [OUTPUT_SCHEMA_CRITERION] : [])]
   return (async () => {
@@ -445,7 +454,7 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
     for (const c of cases) {
       let run: { result: string; tools: string[]; standIns?: StandIn[] } | { error: string }
       try {
-        run = await deps.runCase(c)
+        run = deps.reuse?.[c.id] ?? (await deps.runCase(c))
       } catch (err) {
         run = { error: err instanceof Error ? err.message : String(err) }
       }
@@ -461,6 +470,7 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
     const round: EvalRound = {
       at: startedAt,
       ...(deps.draft ? { draft: deps.draft } : deps.workflowVersion ? { workflowVersion: deps.workflowVersion } : {}),
+      ...(deps.forDraft ? { forDraft: deps.forDraft } : {}),
       model: deps.model,
       judge: deps.judgeLabel,
       cases: results,

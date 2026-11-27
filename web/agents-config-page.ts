@@ -2896,7 +2896,10 @@ ${renderMarkdownScript}
     var live = w.evals || { cases: [], criteria: [], rounds: [] };
     var evals = draftedCriteria(w) ? Object.assign({}, live, { criteria: draftedCriteria(w) }) : live;
     var criteria = evals.criteria && evals.criteria.length ? evals.criteria : [REFERENCE_CRIT];
-    var round = evals.rounds[0];
+    // A round that checked the published version on a draft's criteria
+    // only counts while that draft is the one shown.
+    var current = function (r) { return !r.forDraft || Boolean(w.draft && r.forDraft.savedAt === w.draft.savedAt); };
+    var round = evals.rounds.filter(current)[0];
     var checked = round && round.passRates;
     // Each criterion, with how often the latest round passed it.
     var rateOf = {};
@@ -2923,9 +2926,12 @@ ${renderMarkdownScript}
     // The published version's latest round, and the draft's (only one of
     // this draft as it is now: an edit since makes its test out of date).
     // With both, each case shows the two side by side.
-    var pubRound = evals.rounds.filter(function (r) { return !r.draft; })[0];
     var draftRounds = w.draft ? evals.rounds.filter(function (r) { return r.draft; }) : [];
     var draftRound = draftRounds.filter(function (r) { return r.draft.savedAt === w.draft.savedAt; })[0];
+    // The published version's latest round; beside a draft that changes the
+    // criteria, its round on the draft's criteria, so both face the same checks.
+    var pubForDraft = w.draft ? evals.rounds.filter(function (r) { return r.forDraft && r.forDraft.savedAt === w.draft.savedAt; })[0] : null;
+    var pubRound = pubForDraft || evals.rounds.filter(function (r) { return !r.draft && !r.forDraft; })[0];
     var comparing = Boolean(w.draft && pubRound && draftRound);
     var byCase = function (r) { var m = {}; (r ? r.cases : []).forEach(function (c) { m[c.caseId] = c; }); return m; };
     var namesOf = function (r) { var m = {}; ((r && r.criteria) || criteria).forEach(function (c) { m[c.id] = c.text; }); return m; };
@@ -3000,10 +3006,10 @@ ${renderMarkdownScript}
           '<div class="wf-evals-bar">' + runBtn(false, 'Evaluate', true) + details(pubRound) + '</div>')
       : '<div class="ev-step"><div class="ev-step-k"><span class="ev-step-n">3</span>Evaluate the draft</div>' +
           '<div class="ev-vs">' +
-            '<div class="ev-vs-row"><span class="ev-vs-k">Published<span class="ev-pub-v"></span></span><span class="ev-vs-v">' + (pubRound ? resultOf(pubRound) : '<span class="ev-none">Not run yet</span>') + '</span>' + runBtn(false, 'Evaluate', false) + '</div>' +
+            '<div class="ev-vs-row"><span class="ev-vs-k">Published<span class="ev-pub-v"></span></span><span class="ev-vs-v">' + (pubRound ? resultOf(pubRound) + (pubForDraft ? ' <span class="hint">on the draft' + RSQ + 's criteria</span>' : '') : '<span class="ev-none">Not run yet</span>') + '</span>' + runBtn(false, 'Evaluate', false) + '</div>' +
             '<div class="ev-vs-row is-draft"><span class="ev-vs-k"><span class="le-pill warn">Draft</span></span><span class="ev-vs-v">' + (draftRound ? resultOf(draftRound) : '<span class="ev-none">' + (draftRounds.length ? 'Changed since its test' : 'Not tested yet') + '</span>') + '</span>' + runBtn(true, 'Evaluate draft', true) + '</div>' +
           '</div>' +
-          '<p class="hint">Test the draft on the same cases before you publish it. Nothing is sent, refunded or submitted.</p>' + details(draftRound || pubRound) + '</div>';
+          '<p class="hint">Test the draft on the same cases before you publish it.' + (w.draft.criteria ? ' The draft changes the success criteria, so Evaluate draft checks the published version on them too.' : '') + ' Nothing is sent, refunded or submitted.</p>' + details(draftRound || pubRound) + '</div>';
     // The three steps, in order, with where each stands; Evaluate in the third.
     var steps = '<div class="ev-steps' + (w.draft ? ' has-draft' : '') + '">' +
       step(1, 'Pick real runs', nCases ? nCases + (nCases === 1 ? ' eval case' : ' eval cases') : '<span class="ev-none">None yet</span>',

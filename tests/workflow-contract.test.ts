@@ -99,6 +99,22 @@ describe('a workflow evidence', () => {
     expect(readEvals(dir, 'reply').criteria).toEqual([])
   })
 
+  it("checks the published version on a draft's criteria by judging its saved results again, without running it", async () => {
+    const dir = agentWithWorkflow()
+    const added = addEvalCase(dir, 'reply', { params: { order_number: 'EM-1' } })
+    let runs = 0
+    const round = await startEvalRound({
+      agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'm', judgeLabel: 'j', judge: judgeSays('{"checks": []}'),
+      workflowVersion: 4, forDraft: { savedAt: '2026-11-27T10:00:00.000Z' },
+      criteria: [{ id: 'signed', text: 'Signed by Support', kind: 'contains', value: 'Everymarket Support' }],
+      reuse: { [added.id]: { result: 'Thanks. Everymarket Support', tools: [] } },
+      runCase: async () => { runs++; return { result: 'should not run', tools: [] } },
+    })
+    expect(runs).toBe(0)
+    expect(round).toMatchObject({ workflowVersion: 4, forDraft: { savedAt: '2026-11-27T10:00:00.000Z' }, allPassed: 1 })
+    expect(round.draft).toBeUndefined()
+  })
+
   it('checks every criterion: code checks by program, the rest by the judge in one call, a crash failing them all', async () => {
     const dir = agentWithWorkflow()
     setEvalCriteria(dir, 'reply', [
