@@ -6232,8 +6232,12 @@ ${renderMarkdownScript}
     content.querySelector('#scheduleCancel').addEventListener('click', function () { dialog.close(); });
     dialog.addEventListener('click', function (ev) { if (ev.target === dialog) dialog.close(); });
     // Opened from a workflow's "Add a schedule": that workflow, chosen.
+    // Only that workflow: no message, no other workflow.
     if (pendingScheduleWorkflow && workflowSelect) {
       workflowSelect.value = pendingScheduleWorkflow;
+      workflowSelect.disabled = true;
+      var runsChoice = content.querySelector('#scheduleRuns');
+      if (runsChoice) runsChoice.hidden = true;
       openDialog();
     }
     pendingScheduleWorkflow = null;
@@ -6387,7 +6391,7 @@ ${renderMarkdownScript}
       fetchJsonRetryOnce(target, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(Object.assign(
-          runsWorkflow ? { workflow_id: data.get('workflow_id'), params: scheduleParams(data) } : { message: data.get('message') },
+          runsWorkflow ? { workflow_id: workflowSelect.value, params: scheduleParams(data) } : { message: data.get('message') },
           { schedule: schedule, task_name: data.get('task_name'), result_to_chat: !runsWorkflow && data.get('notify') === 'on' }
         )),
       }).then(function (r) {
