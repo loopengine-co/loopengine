@@ -39,7 +39,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .sc-card.is-off .sc-card-text { opacity: .55; }
   .sc-card-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 12px; align-items: start; }
   .sc-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
-  .sc-icon svg { width: 16px; height: 16px; }
+  .sc-icon svg { width: 16px; height: 16px; margin: 0; opacity: 1; }
   .sc-card-text { display: grid; gap: 2px; min-width: 0; }
   .sc-card-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
   a.sc-card-title { justify-self: start; color: var(--ink); text-decoration: none; }
@@ -204,8 +204,6 @@ ${consoleShellScript}
   var DAY = 86400000;
   var UNIT_MS = { s: 1000, m: 60000, h: 3600000, d: DAY };
   var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  var ICON_REPEAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18 2v4h-4"/><path d="M6 22v-4h4"/></svg>';
-  var ICON_ONCE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>';
   var mascot = document.getElementById('scMascot').innerHTML;
   var GLYPH_AGENT = '${AGENT_GLYPH}';
   var GLYPH_FLOW = '${WORKFLOW_GLYPH}';
@@ -290,17 +288,17 @@ ${consoleShellScript}
     var title = t.task_name || (wf && wf.title) || lines[0] || 'Schedule';
     // A message's title is its first line, unless it has a name.
     var desc = wf ? (wf.description && wf.description !== wf.title ? wf.description : wf.start_message) || '' : t.workflow_id ? '' : t.task_name ? t.message : lines.slice(1).join(' ').trim();
-    // What it runs: a workflow (linked) or a message the agent receives.
+    // What it runs shows as the card's icon: a workflow or a message.
     // A workflow's chip only when the title isn't already its name.
     var what = wf ? (title === wf.title ? '' : '<a class="sc-chip" href="' + wfHref(t.agent, t.workflow_id, 'overview') + '" title="Workflow">' + GLYPH_FLOW + esc(wf.title) + '</a>')
       : t.workflow_id ? '<span class="sc-chip bad">Its workflow was removed</span>'
-      : '<span class="sc-chip" title="Sends the agent a message each time">' + GLYPH_MESSAGE + 'Message</span>';
+      : '';
     var state = t.status === 'awaiting_approval' || t.pending ? '<a class="sc-chip warn" href="/inbox?view=needs">Waiting for you</a>'
       : t.status === 'running' ? '<span class="sc-chip strong">Running now</span>'
       : t.last_status === 'error' ? '<span class="sc-chip bad" title="' + esc(t.last_error || '') + '">Last run failed</span>' : '';
     var next = !on ? 'Paused' : t.next_run_at ? 'Next run ' + untilText(t.next_run_at) : '';
     return '<div class="sc-card' + (on ? '' : ' is-off') + '" data-task="' + esc(t.task_id) + '">' +
-      '<div class="sc-card-head"><span class="sc-icon">' + (t.schedule && t.schedule.run_at ? ICON_ONCE : ICON_REPEAT) + '</span>' +
+      '<div class="sc-card-head"><span class="sc-icon" title="' + (t.workflow_id ? 'Runs a workflow' : 'Sends the agent a message') + '">' + (t.workflow_id ? GLYPH_FLOW : GLYPH_MESSAGE) + '</span>' +
         '<span class="sc-card-text">' + (wf
           // A workflow's title opens its runs; Edit is in the menu.
           ? '<a class="sc-card-title" href="' + wfHref(t.agent, t.workflow_id, 'activity') + '" title="See its runs">' + esc(title) + '</a>'
