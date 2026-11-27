@@ -673,10 +673,10 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wfe input:not([type="checkbox"]), .wfe select { height: 36px; }
   .wfe input[name="title"] { height: 40px; font-size: 16px; font-weight: 500; }
   .wfe #wpInstructions { min-height: 320px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; resize: vertical; }
-  .wfe .wp-sections { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  form.wfe .wp-sections { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
   .wfe .wp-sections .wp-section { height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
   .wfe .wp-preview, .wfe .wp-sections .wp-section { background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
-  .wfe .wp-preview:hover:not(:disabled), .wfe .wp-sections .wp-section:hover:not(:disabled) { background: var(--surface-2); }
+  .wfe .wp-preview:hover:not(:disabled), .wfe .wp-sections .wp-section:hover:not(:disabled) { background: var(--surface-2); border-color: var(--line); color: var(--ink); }
   .wfe .wp-preview-box { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--surface); }
   .wfe .wp-preview-text { margin: 6px 0 0; white-space: pre-wrap; font-size: 12px; max-height: 260px; overflow: auto; }
   .wfe .workflow-param-rows { display: grid; gap: 10px; }
