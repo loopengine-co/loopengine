@@ -3016,6 +3016,8 @@ ${renderMarkdownScript}
   var workflowsRefreshTimer = null;
   // Set by a workflow's "Add a schedule", for the Schedules tab's form.
   var pendingScheduleWorkflow = null;
+  // Create schedule was opened from a workflow's Triggers: its card refreshes after.
+  var scheduleFromWorkflow = false;
   // Set by a workflow's Edit on the Skills list: the workflow to open in
   // its editor once the Workflows tab has drawn it.
   var pendingWorkflowEdit = null;
@@ -4445,9 +4447,12 @@ ${renderMarkdownScript}
     var wf = workflowsById[id];
     if (wf && (wf.webhooks || wf.webhooksWaiting || wf.webhooksOff)) loadWorkflowHooks(name, card);
     // Add a schedule: the Schedules tab's form, with this workflow chosen.
+    // Create schedule, over this page, with this workflow chosen; the
+    // Schedules tab's dialog, drawn without switching to it.
     card.querySelector('.workflow-add-schedule').addEventListener('click', function () {
       pendingScheduleWorkflow = id;
-      switchTab('schedules');
+      scheduleFromWorkflow = true;
+      loadSchedulesTab(name);
     });
     // Undoing a removal drafted before schedules went live at once.
     var draftScheduleBtns = card.querySelectorAll('.workflow-schedule-draft');
@@ -6113,7 +6118,21 @@ ${renderMarkdownScript}
     }
     // + Add schedule opens the form in a dialog.
     var dialog = content.querySelector('#scheduleDialog');
-    var openDialog = function () { result.textContent = ''; if (!dialog.open) dialog.showModal(); };
+    var openDialog = function () {
+      result.textContent = '';
+      // From a workflow's Triggers the Schedules tab is hidden: the dialog
+      // opens over the page, and the tab is drawn afresh once it closes.
+      var panel = dialog.closest('.tab-panel');
+      if (panel && getComputedStyle(panel).display === 'none') {
+        document.body.appendChild(dialog);
+        dialog.addEventListener('close', function () {
+          dialog.remove();
+          loadSchedulesTab(name);
+          if (scheduleFromWorkflow) { scheduleFromWorkflow = false; loadWorkflowsSection(name); }
+        });
+      }
+      if (!dialog.open) dialog.showModal();
+    };
     content.querySelector('#scheduleAddBtn').addEventListener('click', openDialog);
     content.querySelector('#scheduleCancel').addEventListener('click', function () { dialog.close(); });
     dialog.addEventListener('click', function (ev) { if (ev.target === dialog) dialog.close(); });
