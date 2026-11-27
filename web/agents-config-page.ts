@@ -1333,7 +1333,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-tl::before { left: 19px; width: 2px; top: 20px; bottom: 20px; }
   .wf-tl-step { border: 0; border-radius: 10px; padding: 10px 14px 10px 14px; }
   .wf-tl-step:hover { background: var(--surface); }
-  .wf-tl-step[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; box-shadow: none; }
+  .wf-tl-step[aria-pressed="true"], .wf-tl-step[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent-soft); border-color: transparent; box-shadow: none; }
   .wf-tl-step[aria-pressed="true"] .wf-tl-title { color: var(--ink); }
   .wf-tl-step.k-model[aria-pressed="true"] .wf-tl-dot { background: var(--accent); }
   .wf-tl-step.k-tool[aria-pressed="true"] .wf-tl-dot { background: var(--good); }
