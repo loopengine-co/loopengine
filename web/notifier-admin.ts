@@ -318,9 +318,10 @@ function activeNotifierTargets(config: AgentConfig, defaultWebhook?: DefaultWebh
  * channel (slack, telegram, lark, webhook), added to each app's message as
  * Good / Needs work links and to a webhook's payload as feedback_url. */
 export function announceToNotifier(config: AgentConfig, text: string, data: Record<string, unknown>, defaultWebhook?: DefaultWebhook, feedback?: (channel: string) => string | undefined): boolean {
-  const ask = (channel: string): string => {
+  // Two words to click, not the signed links themselves.
+  const ask = (channel: string): string | undefined => {
     const url = feedback?.(channel)
-    return url ? `${text}\n\nHow did it do? Good: ${url}?v=good  ·  Needs work: ${url}?v=bad` : text
+    return url ? `How did it do? [Good](${url}?v=good) · [Needs work](${url}?v=bad)` : undefined
   }
   let targets: HttpNotifierConfig[]
   try {
@@ -336,15 +337,15 @@ export function announceToNotifier(config: AgentConfig, text: string, data: Reco
         sent = true
         break
       case 'slack':
-        new SlackNotifier({ botToken: target.config.botToken, channelId: target.config.channelId }).postMessage(ask('slack'))
+        new SlackNotifier({ botToken: target.config.botToken, channelId: target.config.channelId }).postMessage(text, undefined, undefined, ask('slack'))
         sent = true
         break
       case 'lark':
-        new LarkNotifier({ appId: target.config.appId, appSecret: target.config.appSecret, chatId: target.config.chatId }).postMessage(ask('lark'))
+        new LarkNotifier({ appId: target.config.appId, appSecret: target.config.appSecret, chatId: target.config.chatId }).postMessage(text, ask('lark'))
         sent = true
         break
       case 'telegram':
-        new TelegramNotifier({ botToken: target.config.botToken, chatId: target.config.chatId }).postMessage(ask('telegram'))
+        new TelegramNotifier({ botToken: target.config.botToken, chatId: target.config.chatId }).postMessage(text, ask('telegram'))
         sent = true
         break
     }

@@ -145,8 +145,9 @@ export class TelegramNotifier implements DurableApprover, DurableQuestionHandler
   }
 
   /** A plain announcement (run started/finished, a scheduled task's
-   * result), with nothing to decide. */
-  postMessage(text: string): void {
-    this.send(telegramAgentText(text), 'an announcement')
+   * result), with nothing to decide. `footer`: the engine's own Markdown
+   * under it (a run's feedback links), whose links show as their text. */
+  postMessage(text: string, footer?: string): void {
+    this.send(telegramAgentText(text) + (footer ? `\n\n${footer}` : ''), 'an announcement')
   }
 }

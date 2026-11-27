@@ -221,6 +221,19 @@ describe('long Telegram messages', () => {
 })
 
 describe('TelegramNotifier', () => {
+  it("shows a result's feedback links as words, while the result's own links keep their address", async () => {
+    const sent: Array<Record<string, any>> = []
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent.push(JSON.parse(init.body as string))
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: -100 } } }))
+    })
+    const link = 'https://le.test/feedback/eyJm.sig'
+    new TelegramNotifier({ botToken: 't', chatId: '-100' }).postMessage('Ran:\n- [A story](https://a.test/x)', `How did it do? [Good](${link}?v=good) · [Needs work](${link}?v=bad)`)
+    await vi.waitFor(() => expect(sent.length).toBe(1))
+    expect(sent[0].text).toContain(`<a href="${link}?v=good">Good</a> · <a href="${link}?v=bad">Needs work</a>`)
+    expect(sent[0].text).toContain('A story (https://a.test/x)')
+  })
+
   it('sends a long question as several messages: the later ones reply to the first, the last has the link and buttons', async () => {
     const sent: Array<Record<string, any>> = []
     let next = 70

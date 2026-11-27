@@ -136,7 +136,7 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
    * `blocks` — a plain announcement, since there's nothing to resolve and
    * so nothing to attach buttons to. `onPosted` gets the channel and ts
    * Slack answered with. */
-  postMessage(text: string, blocks?: unknown[], onPosted?: (posted: { channel: string; ts: string }) => void): void {
+  postMessage(text: string, blocks?: unknown[], onPosted?: (posted: { channel: string; ts: string }) => void, footer?: string): void {
     // Not awaited — both requestDurableApproval/notifyPendingQuestion
     // above return immediately, by contract (see DurableApprover's own
     // doc comment); a delivery failure here has no synchronous way to
@@ -146,7 +146,8 @@ export class SlackNotifier implements DurableApprover, DurableQuestionHandler {
       headers: { Authorization: `Bearer ${this.botToken}`, 'content-type': 'application/json; charset=utf-8' },
       // A plain announcement (a run's result) is the agent's writing:
       // formatted, escaped and with links showing (slackAgentText).
-      body: JSON.stringify({ channel: this.channelId, text: blocks ? text : toSlackMrkdwn(slackAgentText(text)), ...(blocks ? { blocks } : {}) }),
+      // `footer` is ours (a run's feedback links): its links show as text.
+      body: JSON.stringify({ channel: this.channelId, text: blocks ? text : toSlackMrkdwn(slackAgentText(text) + (footer ? `\n\n${footer}` : '')), ...(blocks ? { blocks } : {}) }),
     })
       .then((res) => res.json() as Promise<{ ok: boolean; error?: string; channel?: string; ts?: string }>)
       .then((body) => {

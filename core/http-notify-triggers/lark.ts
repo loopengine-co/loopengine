@@ -173,13 +173,14 @@ export class LarkNotifier implements DurableApprover, DurableQuestionHandler {
   /** Public, not private: core/http-notifier.ts's own onRunStart/onRunFinish
    * lifecycle sender for `channel: 'lark'` calls this directly — a plain
    * text announcement, no buttons, since there's nothing to resolve. */
-  postMessage(text: string): void {
+  postMessage(text: string, footer?: string): void {
     void (async () => {
       try {
         const token = await getTenantAccessToken(this.appId, this.appSecret)
         const card = {
           config: { wide_screen_mode: true },
-          elements: [{ tag: 'div', text: { tag: 'lark_md', content: larkAgentText(text) } }],
+          // `footer` is ours (a run's feedback links): its links show as text.
+          elements: [{ tag: 'div', text: { tag: 'lark_md', content: larkAgentText(text) + (footer ? `\n\n${footer}` : '') } }],
         }
         await this.sendCard(token, card, 'lifecycle')
       } catch (err) {
