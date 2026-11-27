@@ -4,7 +4,7 @@
 // behind /interviews/*). Same shell and styles as the other console
 // pages. Like them, its inline script avoids backslashes and template
 // placeholders, since it lives inside a template literal.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
 export const interviewPageHtml: string = `<!doctype html>
@@ -13,7 +13,7 @@ export const interviewPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Find your first agent</title>
-<style>${devUiCss}
+${themeHeadHtml}<style>${devUiCss}
   .iv-steps { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-faint); }
   .iv-steps span { padding: 2px 8px; border-radius: 999px; background: var(--surface); }
   .iv-steps span.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }

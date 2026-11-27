@@ -11,7 +11,7 @@
 // viewer can't decide. Like the other console pages, its inline script avoids
 // backslashes and template placeholders, since it lives inside a template
 // literal.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { renderMarkdownScript } from './markdown-script.js'
 
@@ -21,7 +21,7 @@ export const inboxPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Inbox</title>
-<style>${devUiCss}
+${themeHeadHtml}<style>${devUiCss}
   .ib { max-width: 980px; display: grid; gap: 16px; }
   .ib-state { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 600; background: var(--surface); color: var(--ink-muted); white-space: nowrap; }
   .ib-state.warn { background: var(--warn-soft); color: var(--warn); }
@@ -722,6 +722,6 @@ ${renderMarkdownScript}
 export function renderInboxOnlyPage(message: string): string {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Inbox only</title>
-<style>${devUiCss} .io { max-width: 460px; margin: 18vh auto 0; padding: 0 20px; display: grid; gap: 12px; } .io a { color: var(--accent-ink); font-weight: 600; }</style></head>
+${themeHeadHtml}<style>${devUiCss} .io { max-width: 460px; margin: 18vh auto 0; padding: 0 20px; display: grid; gap: 12px; } .io a { color: var(--accent-ink); font-weight: 600; }</style></head>
 <body><div class="io"><h1 style="margin:0;font-size:20px">Inbox only</h1><p style="margin:0">${esc(message)}</p><p style="margin:0"><a href="/inbox">Open the Inbox</a></p></div></body></html>`
 }

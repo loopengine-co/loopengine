@@ -9,7 +9,7 @@
 // styles as the other console pages; like them, its inline script avoids
 // backslashes and template placeholders, since it lives inside a template
 // literal.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
@@ -19,7 +19,7 @@ const goalsPageTemplate: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Goals</title>
-<style>${devUiCss}${MASCOT_CSS}
+${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .gl { max-width: 1120px; display: grid; gap: 0; }
   .gl textarea { width: 100%; box-sizing: border-box; min-height: 64px; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); resize: vertical; }
   .gl textarea:focus, .gl select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }

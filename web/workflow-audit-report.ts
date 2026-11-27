@@ -4,7 +4,7 @@
 // how the workflow changed (line by line), other settings changed, every
 // case, and whether the log checks out. Rendered here, with no script, so
 // the printed copy is exactly what's shown.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import type { AuditCounts, WorkflowAudit } from './workflow-audit.js'
 
 const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
@@ -45,7 +45,7 @@ export function workflowAuditReportHtml(audit: WorkflowAudit, options: { generat
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Audit report: ${esc(w.title)}</title>
-<style>${devUiCss}
+${themeHeadHtml}<style>${devUiCss}
   body { background: var(--bg); }
   .ar { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; display: grid; gap: 28px; font-size: 14px; }
   .ar header { display: grid; gap: 6px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }

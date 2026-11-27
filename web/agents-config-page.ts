@@ -26,7 +26,7 @@
 // concatenation, not a nested template literal, for the same
 // backtick/${}-escaping reason playground.ts's own header comment explains.
 import { WORKFLOW_SECTIONS_CSS, WORKFLOW_SECTIONS_SCRIPT } from './workflow-sections.js'
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { MESSAGING_ICONS } from './messaging-icons.js'
 import { renderMarkdownScript } from './markdown-script.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
@@ -40,7 +40,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Console</title>
-<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
+${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   /* Each tab panel is a .le-page column inside the shell's scrolling
      main area (see web/console-shell.ts); everything below styles the
      panels' own content. */

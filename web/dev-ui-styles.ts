@@ -15,6 +15,23 @@
 // system's own (SF Pro, Segoe UI, Roboto...): never a web font download,
 // so a self-hosted server works offline and loads nothing from a third
 // party.
+// The dark theme's colours, used for the system's dark mode and for Dark
+// picked in the console.
+const DARK_TOKENS = `
+      color-scheme: dark;
+      --bg: #101617; --canvas: #070b0c; --surface: #151d1e; --surface-2: #1c2627; --sidebar: var(--canvas);
+      --ink: #e8eded; --ink-muted: #a2b0ae; --ink-faint: #6b7a78; --line: #222d2e; --code-bg: #141c1d;
+      --primary: #eef2f1; --on-primary: #0c1112;
+      --accent: #57cdb8; --accent-ink: #7ee0cd; --accent-soft: #16302c; --on-accent: #06221d;
+      --good: #6fd08f; --good-soft: #12301d; --warn: #f0b75c; --warn-soft: #33270f; --bad: #f2877c; --bad-soft: #3a1714;
+    `
+
+// Each page's <head> runs this before its styles, so a theme picked in
+// the console (System, Light or Dark, kept in this browser) applies
+// before anything is drawn: no flash of the other one.
+export const themeHeadHtml: string =
+  '<script>(function(){try{var t=localStorage.getItem("loopengine.theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}})()</script>'
+
 export const devUiCss: string = `
   :root {
     color-scheme: light;
@@ -41,16 +58,12 @@ export const devUiCss: string = `
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --radius: 12px;
   }
+  /* Dark: the system's choice, unless Light was picked here; or Dark
+     picked here (data-theme on <html>, set by themeHeadHtml below). */
   @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-      --bg: #101617; --canvas: #070b0c; --surface: #151d1e; --surface-2: #1c2627; --sidebar: var(--canvas);
-      --ink: #e8eded; --ink-muted: #a2b0ae; --ink-faint: #6b7a78; --line: #222d2e; --code-bg: #141c1d;
-      --primary: #eef2f1; --on-primary: #0c1112;
-      --accent: #57cdb8; --accent-ink: #7ee0cd; --accent-soft: #16302c; --on-accent: #06221d;
-      --good: #6fd08f; --good-soft: #12301d; --warn: #f0b75c; --warn-soft: #33270f; --bad: #f2877c; --bad-soft: #3a1714;
-    }
+    :root:not([data-theme="light"]) {${DARK_TOKENS}}
   }
+  :root[data-theme="dark"] {${DARK_TOKENS}}
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
@@ -170,6 +183,8 @@ export const devUiCss: string = `
   .le-rail-item .le-inbox-count { position: absolute; top: 2px; right: 4px; margin: 0; padding: 0 5px; font-size: 10px; }
   .le-inbox-count[hidden] { display: none; }
   .le-rail-gap { flex: 1; }
+  button.le-rail-item { width: 100%; border: 0; background: none; cursor: pointer; font: inherit; }
+  button.le-rail-item:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
   .le-nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
   .le-panel { width: 228px; flex: none; display: flex; flex-direction: column; min-height: 0; padding-top: 14px; }
   .le-panel[hidden] { display: none; }

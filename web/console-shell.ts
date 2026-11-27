@@ -67,6 +67,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
     <span class="le-rail-gap"></span>
     <a class="le-rail-item" href="/audit" data-le-nav-head="audit" data-le-section="audit">${AUDIT_ICON}<span>Audit</span></a>
     <a class="le-rail-item" href="/config?section=settings" data-le-nav-head="settings" data-le-section="settings">${SETTINGS_ICON}<span>Settings</span></a>
+    <button type="button" class="le-rail-item le-theme-btn" id="leThemeBtn" aria-label="Theme"></button>
     <div class="le-who" id="leWho" hidden></div>
   </nav>
   <div class="le-panel" hidden>
@@ -700,6 +701,39 @@ export const consoleShellScript: string = `<script>
   }
 
 
-  window.leShell = { adminNote: adminNote, loadError: function () { return loadError; }, ready: ready, settings: function () { return settings; }, getJson: getJson, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadWorkflows: reloadWorkflows, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
+  // Theme: System (follows the computer), Light or Dark, kept in this
+  // browser. The rail's button goes round the three; Settings has them too.
+  var THEME_ICONS = {
+    system: '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>',
+    light: '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    dark: '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
+  };
+  var THEME_NAMES = { system: 'System', light: 'Light', dark: 'Dark' };
+  function getTheme() {
+    try { var t = localStorage.getItem('loopengine.theme'); return t === 'light' || t === 'dark' ? t : 'system'; } catch (e) { return 'system'; }
+  }
+  function setTheme(t) {
+    try { if (t === 'system') localStorage.removeItem('loopengine.theme'); else localStorage.setItem('loopengine.theme', t); } catch (e) {}
+    if (t === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+    drawThemeButton();
+    document.dispatchEvent(new CustomEvent('le-theme', { detail: t }));
+  }
+  function drawThemeButton() {
+    var btn = document.getElementById('leThemeBtn');
+    if (!btn) return;
+    var t = getTheme();
+    btn.innerHTML = THEME_ICONS[t] + '<span>Theme: ' + THEME_NAMES[t] + '</span>';
+    btn.title = 'Theme: ' + THEME_NAMES[t] + ' (click to change)';
+  }
+  var themeBtn = document.getElementById('leThemeBtn');
+  if (themeBtn) {
+    drawThemeButton();
+    themeBtn.addEventListener('click', function () {
+      var order = ['system', 'light', 'dark'];
+      setTheme(order[(order.indexOf(getTheme()) + 1) % order.length]);
+    });
+  }
+
+  window.leShell = { getTheme: getTheme, setTheme: setTheme, adminNote: adminNote, loadError: function () { return loadError; }, ready: ready, settings: function () { return settings; }, getJson: getJson, reloadGoals: reloadGoals, reloadJobs: reloadJobs, reloadWorkflows: reloadWorkflows, reloadInboxCount: reloadInboxCount, renderHead: renderHead, setTab: setTab, setActive: setActive, setDisplayName: setDisplayName, displayNameOf: displayNameOf, esc: esc, tabHref: tabHref, envCountHtml: envCountHtml, setCount: setCount, wireModelPicker: wireModelPicker, loadProviderKeys: loadProviderKeys, applyProviderKeys: applyProviderKeys, abilityOriginBadge: abilityOriginBadge, toggleAbilityDetails: toggleAbilityDetails };
 })();
 </script>`

@@ -5,7 +5,7 @@
 // fetch('/agents') calls) still gets the plain {agents: [...]} JSON body
 // that route always returned, unchanged. See web/dev-ui-styles.ts for
 // why the look is a shared import rather than a third copy of the same CSS.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
@@ -15,7 +15,7 @@ export const agentsListPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Agents</title>
-<style>${devUiCss}${MASCOT_CSS}
+${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .ag { max-width: 1120px; display: grid; gap: 0; }
   .ag-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 22px 28px; border: 1px solid var(--line); border-bottom: 0; }
   .ag-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }

@@ -8,7 +8,7 @@
 // the same URL (POST /decide/<token>) and shows the outcome. Written
 // without backticks or backslashes inside the script, same convention as
 // the other embedded pages.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 
 export interface DecidePageItem {
   kind: 'approval' | 'question'
@@ -55,7 +55,7 @@ function shell(title: string, body: string, script = ''): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${esc(title)}</title>
-<style>${devUiCss}${PAGE_CSS}</style>
+${themeHeadHtml}<style>${devUiCss}${PAGE_CSS}</style>
 </head>
 <body>
 <main>

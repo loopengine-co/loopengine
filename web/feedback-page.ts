@@ -3,7 +3,7 @@
 // say whether it was good, add a note, give the text actually used, and a
 // name, sent with no sign-in (POST, the link is the permission). Plain
 // HTML and a form, so it works anywhere, scripts or not.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import type { RunFeedback } from '../core/workflow-runs.js'
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
@@ -13,7 +13,7 @@ export function feedbackPageHtml(view:
   | { state: 'thanks'; title: string }
   | { state: 'invalid' }): string {
   const page = (title: string, body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
-<style>${devUiCss}
+${themeHeadHtml}<style>${devUiCss}
   body { background: var(--canvas); }
   .fb { max-width: 640px; margin: 6vh auto 40px; padding: 0 16px; display: grid; gap: 18px; }
   .fb-card { background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px; display: grid; gap: 16px; box-shadow: 0 2px 10px rgba(0, 0, 0, .04); }

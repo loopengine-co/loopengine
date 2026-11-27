@@ -19,7 +19,7 @@
 // explains — see also the memory note on this file's double-escaping
 // hazard (template-literal escapes run twice: once when this constant
 // is built, once when a browser parses the served <script> as JS).
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { PROVIDER_ICONS } from './provider-icons.js'
 
@@ -29,7 +29,7 @@ export const globalConfigPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Settings</title>
-<style>${devUiCss}
+${themeHeadHtml}<style>${devUiCss}
   .ability-name { display: grid; gap: 1px; }
   .ability-name .hint { white-space: nowrap; }
   .ability-name .hint code { font-size: 11px; }
@@ -1150,6 +1150,19 @@ ${consoleShellScript}
 
   // ---- Settings section ----
 
+  // Appearance: System, Light or Dark (leShell keeps it), in step with
+  // the rail's theme button.
+  function wireThemeSeg() {
+    var seg = document.getElementById('themeSeg');
+    if (!seg) return;
+    var draw = function () { seg.querySelectorAll('[data-theme-pick]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.themePick === leShell.getTheme())); }); };
+    seg.addEventListener('click', function (ev) {
+      var b = ev.target.closest && ev.target.closest('[data-theme-pick]');
+      if (b) leShell.setTheme(b.dataset.themePick);
+    });
+    document.addEventListener('le-theme', draw);
+  }
+
   function renderSettings(d) {
     var si = d.signIn || {};
     var signIn = si.mode === 'hosted'
@@ -1166,11 +1179,13 @@ ${consoleShellScript}
       ['Scheduled tasks', d.scheduler === 'off' ? 'Off on this server (LOOPENGINE_SCHEDULER=off)' : 'Run by this server', true],
       // With a time zone to choose, it has its own section below.
       d.timeZone ? null : ['Time zone', '<span class="hint">The server' + String.fromCharCode(8217) + 's own. Update the template below to choose one here.</span>'],
-      ['Theme', 'Follows your system'],
     ];
     return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
       rows.filter(Boolean).map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
       '</tbody></table></section>' +
+      '<section><h3>Appearance</h3><div class="source"><div class="le-seg" role="radiogroup" aria-label="Theme" id="themeSeg">' +
+        ['system', 'light', 'dark'].map(function (t) { return '<button type="button" role="radio" data-theme-pick="' + t + '" aria-pressed="' + (leShell.getTheme() === t) + '">' + { system: 'System', light: 'Light', dark: 'Dark' }[t] + '</button>'; }).join('') +
+        '</div><p class="hint" style="margin:8px 0 0">System follows your computer' + String.fromCharCode(8217) + 's setting. Kept in this browser; the theme button at the bottom of the left rail changes it too.</p></div></section>' +
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
       '<section><h3>Publishing</h3><div class="source" id="publishingBox"></div></section>' +
       '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
@@ -1591,6 +1606,7 @@ ${consoleShellScript}
         content.innerHTML = renderSettings(d);
         loadedSections.settings = true;
         renderPublishing(d);
+        wireThemeSeg();
         loadTimeZone();
         loadPolicies();
         loadAbilitySources();

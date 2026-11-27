@@ -8,7 +8,7 @@
 // editors see it; approvers and viewers use the Inbox only. Like the
 // other console pages, its inline script avoids backslashes and template
 // placeholders, since it lives inside a template literal.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 
 /** The page with its filters' choices in it (agents, workflows, people),
@@ -24,7 +24,7 @@ export const auditPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Audit</title>
-<style>${devUiCss}
+${themeHeadHtml}<style>${devUiCss}
   .au { max-width: 1180px; display: grid; gap: 14px; }
   .au-topbar { flex-wrap: wrap; row-gap: 8px; }
   .au-tool { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 13.5px; font-weight: 500; color: var(--ink); }

@@ -3,7 +3,7 @@
 // in the Inbox (web/workflows-overview.ts behind /workflows/overview).
 // Like the other console pages, its inline script avoids backslashes and
 // template placeholders, since it lives inside a template literal.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 import { newWorkflowDialogCss, newWorkflowDialogHtml, newWorkflowDialogScript } from './new-workflow-dialog.js'
@@ -14,7 +14,7 @@ export const workflowsOverviewPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Workflows</title>
-<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
+${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wo { max-width: 1120px; display: grid; gap: 0; }
   .wo-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 36px 22px 28px; border: 1px solid var(--line); border-bottom: 0; }
   .wo-hero .le-mascot { flex: none; margin-bottom: -6px; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }

@@ -9,7 +9,7 @@
 // its conversation. Every workflow, as a table, is at /workflows.
 // Like the other console pages, its inline script avoids backslashes and
 // template placeholders, since it lives inside a template literal.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
@@ -25,7 +25,7 @@ export const homePageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Home</title>
-<style>${devUiCss}${MASCOT_CSS}
+${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .hm { width: 100%; max-width: 860px; margin: 0 auto; display: grid; gap: 44px; padding: 0 0 56px; }
   /* The hero, between two guide lines, with crosses where they end. */
   .hm-hero { position: relative; display: grid; justify-items: center; gap: 0; padding: 7vh 56px 44px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }

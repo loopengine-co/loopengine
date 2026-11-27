@@ -15,7 +15,7 @@
 // template literal would need every backtick/${ escaped relative to the
 // outer one. Plain string concatenation sidesteps that class of bug
 // entirely rather than relying on getting every escape right.
-import { devUiCss } from './dev-ui-styles.js'
+import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
@@ -25,7 +25,7 @@ export const playgroundHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Chat</title>
-<style>${devUiCss}
+${themeHeadHtml}<style>${devUiCss}
   /* The Chat tab of the agent console (see web/console-shell.ts): a
      toolbar, then History | conversation | Run trace. History and Run
      trace can each be hidden (.no-history / .no-trace on .chat-body). */
