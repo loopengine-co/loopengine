@@ -1343,6 +1343,33 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-tl-time { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; gap: 1px; }
   .wf-tl-detail { border: 0; border-radius: 12px; background: var(--surface); padding: 16px 18px; }
   .wf-tl-when { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
+  /* Input, then Output, full width; a long text clamped to a dozen lines. */
+  .wf-xd-io { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .lb { position: relative; display: grid; gap: 0; border-radius: 10px; background: var(--surface); min-width: 0; }
+  .wf-tl-detail .lb { background: var(--bg); }
+  .lb-bar { position: absolute; top: 6px; right: 6px; z-index: 1; display: flex; gap: 6px; align-items: center; }
+  .lb-bar button { height: 26px; padding: 0 10px; border-radius: 7px; font-size: 12px; }
+  .lb-copy { background: var(--bg); border: 1px solid var(--line); color: var(--ink-muted); }
+  .lb-copy:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+  .lb-modes { padding: 2px; }
+  .lb-modes button { height: 22px; padding: 0 8px; font-size: 11.5px; }
+  .lb-body { padding: 12px 14px; padding-right: 180px; min-width: 0; }
+  .wf-tl-detail .lb-body { padding-right: 70px; }
+  .lb.is-long:not(.is-open) .lb-body { max-height: 19em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent); mask-image: linear-gradient(to bottom, #000 70%, transparent); }
+  .lb-raw { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lb-raw[hidden], .lb-md[hidden] { display: none; }
+  .lb-md { font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere; }
+  .lb-md > :first-child { margin-top: 0; }
+  .lb-md > :last-child { margin-bottom: 0; }
+  .lb-md h1, .lb-md h2, .lb-md h3, .lb-md h4 { margin: .6em 0 .3em; font-size: 15px; font-weight: 600; }
+  .lb-md p { margin: 0 0 .6em; }
+  .lb-md ul, .lb-md ol { margin: .2em 0 .6em; padding-left: 1.4em; }
+  .lb-md li { margin: .2em 0; }
+  .lb-md a { color: var(--accent-ink); }
+  .lb-md code { padding: 1px 4px; border-radius: 4px; background: var(--surface-2); font-size: 12px; }
+  .lb-md pre { padding: 8px 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; }
+  .lb-more { justify-self: start; margin: 0 14px 12px; height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
+  .lb-more:hover:not(:disabled) { background: var(--surface-2); }
 
   /* With no workflows yet, the empty state's Build a workflow is the one. */
   .tab-panel[data-tab-panel="workflows"]:has(.wf-empty-state) .wf-tab-head .wf-new-btn { display: none; }
@@ -2477,6 +2504,47 @@ ${renderMarkdownScript}
     return Boolean(s.error) || (s.type === 'decision' && !s.approved) || (s.type === 'end' && s.status === 'error') || (s.type === 'tool_call' && /denied|error|fail/i.test(s.status || ''));
   }
 
+  // A long text in a run: its first dozen lines, fading out, with Show
+  // all; Copy; and, for a reply in markdown, Formatted and Raw. Wired once
+  // on the run's popup (wireLongBlocks).
+  function longBlockHtml(text, markdown) {
+    var s = String(text == null ? '' : text);
+    var lines = s.split(String.fromCharCode(10)).length;
+    var long = lines > 12 || s.length > 1200;
+    return '<div class="lb' + (long ? ' is-long' : '') + '">' +
+      '<div class="lb-bar">' + (markdown ? '<span class="le-seg lb-modes"><button type="button" data-lb-mode="md" aria-pressed="true">Formatted</button><button type="button" data-lb-mode="raw" aria-pressed="false">Raw</button></span>' : '') +
+        '<button type="button" class="lb-copy">Copy</button></div>' +
+      '<div class="lb-body">' +
+        (markdown ? '<div class="lb-md">' + renderMarkdownPreview(s) + '</div>' : '') +
+        '<pre class="lb-raw"' + (markdown ? ' hidden' : '') + '>' + escapeHtml(s) + '</pre>' +
+      '</div>' +
+      (long ? '<button type="button" class="lb-more">Show all (' + lines + (lines === 1 ? ' line' : ' lines') + ')</button>' : '') +
+    '</div>';
+  }
+  function wireLongBlocks(root) {
+    if (root.dataset.lbWired) return;
+    root.dataset.lbWired = '1';
+    root.addEventListener('click', function (ev) {
+      var t = ev.target.closest && ev.target.closest('.lb-more, .lb-copy, [data-lb-mode]');
+      if (!t) return;
+      var lb = t.closest('.lb');
+      if (t.classList.contains('lb-more')) {
+        var open = lb.classList.toggle('is-open');
+        var n = (lb.querySelector('.lb-raw').textContent.split(String.fromCharCode(10))).length;
+        t.textContent = open ? 'Show less' : 'Show all (' + n + (n === 1 ? ' line' : ' lines') + ')';
+      } else if (t.classList.contains('lb-copy')) {
+        var text = lb.querySelector('.lb-raw').textContent;
+        var done = function () { t.textContent = 'Copied'; setTimeout(function () { t.textContent = 'Copy'; }, 1500); };
+        if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {}); else done();
+      } else {
+        var raw = t.dataset.lbMode === 'raw';
+        lb.querySelectorAll('[data-lb-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === t)); });
+        lb.querySelector('.lb-md').hidden = raw;
+        lb.querySelector('.lb-raw').hidden = !raw;
+      }
+    });
+  }
+
   function workflowTraceHtml(name, t) {
     var steps = traceSteps(t);
     var start = Date.parse(t.started_at);
@@ -2518,7 +2586,7 @@ ${renderMarkdownScript}
           ? '<dl class="wf-xd-params">' + params.map(function (k) { return '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(t.input.params[k]) + '</dd>'; }).join('') + '</dl>'
           : '<p class="hint" style="margin:0">No inputs</p>') + '</div>' +
         '<div><div class="wf-xd-k">Output</div>' + (t.final_output_json != null || t.final_output
-          ? '<pre class="wf-tv-pre' + (t.final_output_json != null ? '' : ' is-text') + '">' + escapeHtml(traceValueText(t.final_output_json != null ? t.final_output_json : t.final_output)) + '</pre>'
+          ? longBlockHtml(traceValueText(t.final_output_json != null ? t.final_output_json : t.final_output), t.final_output_json == null)
           : '<p class="hint" style="margin:0">' + (t.status === 'error' ? 'None: it failed' : 'None yet') + '</p>') +
           (t.output_schema_check && t.output_schema_check.valid === false ? '<p class="error" style="margin:4px 0 0">Didn' + RSQ + 't match the output schema: ' + escapeHtml((t.output_schema_check.errors || []).join('; ')) + '</p>' : '') +
         '</div>' +
@@ -2578,7 +2646,7 @@ ${renderMarkdownScript}
     var kind = STEP_KINDS[s.type] || [s.type];
     var rows = [];
     var row = function (k, v) { rows.push('<div class="wf-xd-item"><dt>' + k + '</dt><dd>' + v + '</dd></div>'); };
-    var block = function (k, v) { return v == null || v === '' ? '' : '<div class="wf-tv-block"><div class="wf-xd-k">' + k + '</div><pre class="wf-tv-pre">' + escapeHtml(traceValueText(v)) + '</pre></div>'; };
+    var block = function (k, v) { return v == null || v === '' ? '' : '<div class="wf-tv-block"><div class="wf-xd-k">' + k + '</div>' + longBlockHtml(traceValueText(v), false) + '</div>'; };
     if (s.type === 'tool_call') { row('Tool', '<code>' + escapeHtml(s.name) + '</code>'); if (s.status) row('Status', escapeHtml(s.status)); }
     if (s.type === 'model_call') {
       row('Model', escapeHtml(s.model || (t.model && t.model.model) || String.fromCharCode(8212)));
@@ -2657,6 +2725,7 @@ ${renderMarkdownScript}
   function wireTrace(name, card, box, t) {
     var id = card.dataset.workflow;
     box.querySelector('.wf-trace-back').addEventListener('click', function () { closeRunTrace(card); });
+    wireLongBlocks(box);
     if (!t) return;
     wireTraceEvalCase(name, card, box, t);
     var steps = traceSteps(t);
