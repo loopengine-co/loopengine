@@ -658,6 +658,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wfe-id code { font-size: 11.5px; }
   .wfe-head button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; white-space: nowrap; }
   .wfe-head .wp-save-draft:not(.primary) { background: var(--bg); border-color: var(--line); color: var(--ink); }
+  /* A submit button's hover is the dark primary one; this one stays light. */
+  .wfe-head .wp-save-draft:not(.primary):hover:not(:disabled) { background: var(--surface-2); border-color: var(--line); color: var(--ink); }
   .wfe-body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); overflow: auto; min-height: 0; }
   .wfe-main, .wfe-side { display: grid; align-content: start; gap: 18px; padding: 20px 22px; min-width: 0; }
   .wfe-side { border-left: 1px solid var(--line); background: var(--surface); }
@@ -694,7 +696,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wfe-more { border-top: 1px solid var(--line); padding-top: 14px; }
   .wfe-more > summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
   .wfe-more > summary .wfe-hint { font-weight: 400; margin-left: 4px; }
-  .wfe-more[open] { display: grid; gap: 16px; }
+  .wfe-more > .wfe-field { margin-top: 16px; }
   .wfe-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 22px; border-top: 1px solid var(--line); }
   .wfe-foot .wp-note-field { display: flex; align-items: center; gap: 10px; flex: 1 1 360px; }
   .wfe-foot .wp-note-field[hidden] { display: none; }
