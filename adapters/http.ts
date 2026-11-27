@@ -96,7 +96,7 @@ import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { buildWorkflowAudit, type WorkflowAudit } from '#web/workflow-audit.js'
 import { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
-import { EvidenceError, type StandIn, feedbackSourceOf, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, checkEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
+import { EvidenceError, type EvalCriterion, type StandIn, feedbackSourceOf, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, checkEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, workflowVersionOf, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
@@ -1888,23 +1888,33 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
       const tools = (config.tools ?? []).map((t) => t.name)
       return json(200, { criteria: await draftCriteria(model.call, { instructions: workflow.instructions, tools }) })
     }
+    // { draft: true } tests the draft (its instructions, inputs, model and
+    // success criteria) instead of the published version, before it's
+    // published.
     if (part === 'run' && req.method === 'POST') {
-      const tested = await runModel(agentName, id)
+      const body = await readJsonBody(req)
+      const draft = body.draft === true ? readDraft(projectDir(), agentName, id) : undefined
+      if (body.draft === true && !draft) return json(400, { error: 'There is no draft to test.' })
+      const testedWorkflow = (): Workflow => (draft ? withDraft(readWorkflow(dir, id) ?? workflow, draft.fields) : readWorkflow(dir, id) ?? workflow)
+      const first = testedWorkflow()
+      const tested = await runModel(agentName, id, draft ? first : undefined)
       const judge = await evalJudge(tested.config)
-      const workflowVersion = await noteWorkflowVersion(agentName, id)
+      const workflowVersion = draft ? undefined : await noteWorkflowVersion(agentName, id)
+      const draftedChecks = draft?.criteria?.map((c, i) => ({ ...c, id: c.id ?? `draft-${i}` })) as EvalCriterion[] | undefined
       const round = startEvalRound({
         agentDir: dir,
         workflowId: id,
-        ...(workflowVersion ? { workflowVersion } : {}),
-        ...(workflow.outputSchema ? { outputSchema: workflow.outputSchema } : {}),
-        instructions: workflow.instructions,
+        ...(draft ? { draft: { savedAt: draft.savedAt } } : workflowVersion ? { workflowVersion } : {}),
+        ...(draftedChecks ? { criteria: draftedChecks } : {}),
+        ...(first.outputSchema ? { outputSchema: first.outputSchema } : {}),
+        instructions: first.instructions,
         model: modelLabelOf(tested.config),
         judgeLabel: judge.label,
         judge: judge.call,
         runCase: async (c) => {
-          const current = readWorkflow(dir, id) ?? workflow
+          const current = testedWorkflow()
           const message = await composeWorkflowMessage(agentName, current, c.params)
-          const { config, modelCall } = await runModel(agentName, id)
+          const { config, modelCall } = await runModel(agentName, id, draft ? current : undefined)
           // The case's own run's calls, replayed for the calls a test
           // doesn't make.
           const source = c.fromRun ? await getRun(agentName, c.fromRun) : undefined
@@ -2389,10 +2399,11 @@ const NO_HUMAN_ANSWER = 'No human is available to answer — this is an unattend
 
 // The agent's config and model call for a run: a workflow with its own
 // model (its contract) runs on that one, the agent's other settings kept.
-async function runModel(agent: string, workflowId?: string): Promise<{ config: AgentConfig; modelCall: ModelCall }> {
+async function runModel(agent: string, workflowId?: string, workflow?: Workflow): Promise<{ config: AgentConfig; modelCall: ModelCall }> {
   const entry = getEntry(agent)
   if (!entry) throw new Error(`no agent named "${agent}" in this project`)
-  const own = workflowId ? readWorkflow(agentDir(agent), workflowId)?.model : undefined
+  // `workflow`: one as given (a draft's), instead of the saved one.
+  const own = workflow ? workflow.model : workflowId ? readWorkflow(agentDir(agent), workflowId)?.model : undefined
   if (!own || (own.provider === entry.config.model?.provider && own.model === entry.config.model?.model)) return { config: entry.config, modelCall: entry.createModelCall() }
   const { reasoningEffort: _effort, ...base } = (entry.config.model ?? {}) as AgentModelConfig & { reasoningEffort?: unknown }
   const model = { ...base, provider: own.provider, model: own.model } as AgentModelConfig

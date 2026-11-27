@@ -284,13 +284,24 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-none { color: var(--ink-faint); }
   .ev-when { font-size: 12.5px; color: var(--ink-muted); }
   .ev-step .hint { margin: 0; }
-  .ev-draft-note { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--ink); }
+  .ev-vs { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .ev-steps.has-draft { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr); }
+  .ev-vs-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; font-size: 13px; }
+  .ev-vs-v .le-pill { white-space: nowrap; }
+  .ev-vs-row + .ev-vs-row { border-top: 1px solid var(--line); }
+  .ev-vs-row.is-draft { background: var(--surface); }
+  .ev-vs-k { font-weight: 600; color: var(--ink); }
+  .ev-vs-v { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .ev-vs-row .wf-evals-run { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
+  .ev-vs-row .wf-evals-run.plain, .ev-vs-row .wf-evals-run.plain:hover:not(:disabled) { background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
+  .ev-steps .wf-evals-run:disabled { opacity: .45; }
+  .ev-shown { margin-left: auto; }
   .ev-step .wf-evals-bar { margin-top: 4px; }
-  .ev-step .wf-evals-run, .ev-step .wf-evals-run:hover:not(:disabled) { height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--primary); border: 1px solid var(--primary); color: var(--on-primary); }
+  .ev-step .wf-evals-run.primary, .ev-step .wf-evals-run.primary:hover:not(:disabled) { height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--primary); border: 1px solid var(--primary); color: var(--on-primary); }
   .ev-step .wf-evals-run:disabled { opacity: .45; }
   .ev-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--surface-2); font-size: 12px; color: var(--ink-muted); vertical-align: 2px; }
   .ev-sub { margin: 18px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
-  @media (max-width: 860px) { .ev-steps { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 860px) { .ev-steps, .ev-steps.has-draft { grid-template-columns: minmax(0, 1fr); } }
   .wf-evals-bar button, .wf-case-actions button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
   .wf-crits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
@@ -2909,28 +2920,52 @@ ${renderMarkdownScript}
     }).join('');
     var nCases = evals.cases.length;
     var nCrit = (evals.criteria || []).length;
-    var passed = !round ? 0 : round.cases.filter(function (c) { return c.checks ? c.checks.every(function (x) { return x.pass; }) : c.score >= 4; }).length;
-    var roundWhen = !round ? '' : escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + ((round.workflowVersion || round.briefVersion) ? DOT + 'v' + (round.workflowVersion || round.briefVersion) : '');
+    // A round's result: how many cases passed every check.
+    var resultOf = function (r) {
+      var ok = r.cases.filter(function (c) { return c.checks ? c.checks.every(function (x) { return x.pass; }) : c.score >= 4; }).length;
+      return '<span class="le-pill ' + (ok === r.cases.length ? 'good' : ok * 2 >= r.cases.length ? 'ask' : 'bad') + '">' + ok + ' of ' + r.cases.length + ' passed</span>' +
+        ' <span class="ev-when">' + escapeHtml(new Date(r.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>';
+    };
+    var details = function (r) {
+      return r ? '<details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(r.model) + DOT + 'judged by ' + escapeHtml(r.judge) + DOT + escapeHtml(new Date(r.at).toLocaleString()) + '</details>' : '';
+    };
+    // The published version's latest round, and the draft's (only one of
+    // this draft as it is now: an edit since makes its test out of date).
+    var pubRound = evals.rounds.filter(function (r) { return !r.draft; })[0];
+    var draftRounds = w.draft ? evals.rounds.filter(function (r) { return r.draft; }) : [];
+    var draftRound = draftRounds.filter(function (r) { return r.draft.savedAt === w.draft.savedAt; })[0];
+    var runBtn = function (forDraft, label, primary) {
+      var mine = running && Boolean(running.draft) === forDraft;
+      return '<button type="button" class="' + (primary ? 'primary ' : 'plain ') + 'wf-evals-run"' + (forDraft ? ' data-draft="1"' : '') + (!nCases || running ? ' disabled' : '') + (nCases ? '' : ' title="Add an eval case first"') + '>' +
+        (mine ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : label) + '</button>';
+    };
     var step = function (n, title, value, hint, extra) {
       return '<div class="ev-step"><div class="ev-step-k"><span class="ev-step-n">' + n + '</span>' + title + '</div><div class="ev-step-v">' + value + '</div><p class="hint">' + hint + '</p>' + (extra || '') + '</div>';
     };
+    // Evaluate: the published version alone, or, with a draft, the draft
+    // beside it, so a change is tested before it's published.
+    var evaluate = !w.draft
+      ? step(3, 'Evaluate', pubRound ? resultOf(pubRound) : '<span class="ev-none">Not run yet</span>',
+          'Runs every case again with the published version<span class="ev-pub-v"></span>, the one live runs use. Nothing is sent, refunded or submitted.',
+          '<div class="wf-evals-bar">' + runBtn(false, 'Evaluate', true) + details(pubRound) + '</div>')
+      : '<div class="ev-step"><div class="ev-step-k"><span class="ev-step-n">3</span>Evaluate the draft</div>' +
+          '<div class="ev-vs">' +
+            '<div class="ev-vs-row"><span class="ev-vs-k">Published<span class="ev-pub-v"></span></span><span class="ev-vs-v">' + (pubRound ? resultOf(pubRound) : '<span class="ev-none">Not run yet</span>') + '</span>' + runBtn(false, 'Evaluate', false) + '</div>' +
+            '<div class="ev-vs-row is-draft"><span class="ev-vs-k"><span class="le-pill warn">Draft</span></span><span class="ev-vs-v">' + (draftRound ? resultOf(draftRound) : '<span class="ev-none">' + (draftRounds.length ? 'Changed since its test' : 'Not tested yet') + '</span>') + '</span>' + runBtn(true, 'Evaluate draft', true) + '</div>' +
+          '</div>' +
+          '<p class="hint">Test the draft on the same cases before you publish it. Nothing is sent, refunded or submitted.</p>' + details(draftRound || pubRound) + '</div>';
     // The three steps, in order, with where each stands; Evaluate in the third.
-    var steps = '<div class="ev-steps">' +
+    var steps = '<div class="ev-steps' + (w.draft ? ' has-draft' : '') + '">' +
       step(1, 'Pick real runs', nCases ? nCases + (nCases === 1 ? ' eval case' : ' eval cases') : '<span class="ev-none">None yet</span>',
         nCases ? 'Saved runs each change is tested against.' : 'Add one from the suggestions below.') +
       step(2, 'Say what good looks like', nCrit ? nCrit + (nCrit === 1 ? ' success criterion' : ' success criteria') : '<span class="ev-none">Its good result</span>',
         nCrit ? 'Each case is checked against every one, yes or no.' : 'With no criteria, each case is compared with its saved good result.') +
-      step(3, 'Evaluate', !round ? '<span class="ev-none">Not run yet</span>'
-          : '<span class="le-pill ' + (passed === round.cases.length ? 'good' : passed * 2 >= round.cases.length ? 'ask' : 'bad') + '">' + passed + ' of ' + round.cases.length + ' passed</span> <span class="ev-when">' + roundWhen + '</span>',
-        // Which version it tests: the published one, never the draft
-        // (adapters/http.ts reads the published workflow for a round).
-        'Runs every case again with the published version<span class="ev-pub-v"></span>, the one live runs use. Nothing is sent, refunded or submitted.' +
-          (w.draft ? '<span class="ev-draft-note"><span class="le-pill warn">Draft</span> Your draft isn' + String.fromCharCode(8217) + 't tested until it' + String.fromCharCode(8217) + 's published.</span>' : ''),
-        '<div class="wf-evals-bar"><button type="button" class="primary wf-evals-run"' + (!nCases || running ? ' disabled' : '') + (nCases ? '' : ' title="Add an eval case first"') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
-          (round ? '<details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details>' : '') + '</div>') +
+      evaluate +
       '</div>';
+    // Which round the cases below show.
+    var shown = round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
     return steps +
-      '<section class="wf-section ev-cases"><h4 class="wf-sub">Eval cases' + (nCases ? ' <span class="ev-count">' + nCases + '</span>' : '') + '</h4>' +
+      '<section class="wf-section ev-cases"><div class="wf-sub-row"><h4 class="wf-sub">Eval cases' + (nCases ? ' <span class="ev-count">' + nCases + '</span>' : '') + '</h4>' + shown + '</div>' +
         (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet. Add one of the runs suggested below, or save any run from its trace.</p>') +
         (workflowPageId ? '<h5 class="ev-sub">Suggested from recent runs</h5><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
       '</section>' +
@@ -4122,8 +4157,7 @@ ${renderMarkdownScript}
         var contractVersion = card.querySelector('.wf-contract-version');
         if (contractVersion) contractVersion.innerHTML = current ? '<strong>v' + current.number + '</strong>' : 'not numbered yet';
         // The version Evaluate tests, named on the Evaluation tab.
-        var evalVersion = card.querySelector('.ev-pub-v');
-        if (evalVersion && current) evalVersion.textContent = ' (v' + current.number + ')';
+        card.querySelectorAll('.ev-pub-v').forEach(function (el) { if (current) el.textContent = ' v' + current.number; });
         if (meta && current) {
           var draft = workflowsById[card.dataset.workflow] && workflowsById[card.dataset.workflow].draft;
           meta.innerHTML = '<a href="' + workflowPageHref(name, card.dataset.workflow, 'versions') + '">v' + current.number + '</a>' + (draft ? ' <span class="hint">+ draft</span>' : '');
@@ -4553,7 +4587,7 @@ ${renderMarkdownScript}
         if (btn.dataset.confirming !== '1') { btn.dataset.confirming = '1'; btn.textContent = 'Click again to remove'; return; }
         request = [base + '/evals/cases/' + encodeURIComponent(caseEl.dataset.case), { method: 'DELETE' }];
       } else if (btn.classList.contains('wf-case-save')) request = [base + '/evals/cases/' + encodeURIComponent(caseEl.dataset.case), { method: 'PUT', body: { reference: caseEl.querySelector('.wf-case-ref').value } }];
-      else request = [base + '/evals/run', { method: 'POST', body: {} }];
+      else request = [base + '/evals/run', { method: 'POST', body: btn.dataset.draft ? { draft: true } : {} }];
       btn.disabled = true;
       var opts = { method: request[1].method, headers: { 'content-type': 'application/json' } };
       if (request[1].body) opts.body = JSON.stringify(request[1].body);

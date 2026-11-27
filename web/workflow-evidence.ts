@@ -159,6 +159,9 @@ export interface EvalRound {
   at: string
   /** The workflow version it tested (core/audit-store.ts), when kept. */
   workflowVersion?: number
+  /** Set on a round that tested the draft, not a published version: when
+   * that draft was saved, so a later edit shows the round is out of date. */
+  draft?: { savedAt: string }
   /** On rounds from when only the brief was versioned: the same number. */
   briefVersion?: number
   /** The workflow's model and the judge's, as "provider model". */
@@ -180,8 +183,8 @@ export interface WorkflowEvals {
   cases: EvalCase[]
   criteria: EvalCriterion[]
   rounds: EvalRound[]
-  /** Set while a round is running. */
-  running?: { startedAt: string; done: number; total: number }
+  /** Set while a round is running; `draft` when it's testing the draft. */
+  running?: { startedAt: string; done: number; total: number; draft?: boolean }
 }
 
 const MAX_CASES = 30
@@ -408,6 +411,10 @@ export interface EvalRunDeps {
   workflowId: string
   /** The workflow version being tested, recorded on the round. */
   workflowVersion?: number
+  /** Testing the draft: when it was saved, recorded on the round. */
+  draft?: { savedAt: string }
+  /** The criteria to check instead of the saved ones (a draft's). */
+  criteria?: EvalCriterion[]
   /** Its output schema: each case is also checked against it. */
   outputSchema?: JsonSchema
   instructions: string
@@ -430,8 +437,9 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
   if (!evals.cases.length) throw new EvidenceError('Add an eval case first: save a past run as one, from History.')
   const cases = evals.cases
   const startedAt = new Date().toISOString()
-  writeEvals(deps.agentDir, deps.workflowId, { ...evals, running: { startedAt, done: 0, total: cases.length } })
-  const criteria = [...effectiveCriteria(evals), ...(deps.outputSchema ? [OUTPUT_SCHEMA_CRITERION] : [])]
+  const drafting = deps.draft ? { draft: true } : {}
+  writeEvals(deps.agentDir, deps.workflowId, { ...evals, running: { startedAt, done: 0, total: cases.length, ...drafting } })
+  const criteria = [...effectiveCriteria(deps.criteria ? { criteria: deps.criteria } : evals), ...(deps.outputSchema ? [OUTPUT_SCHEMA_CRITERION] : [])]
   return (async () => {
     const results: EvalCaseResult[] = []
     for (const c of cases) {
@@ -448,11 +456,11 @@ export function startEvalRound(deps: EvalRunDeps): Promise<EvalRound> {
         checks,
       })
       const now = readEvals(deps.agentDir, deps.workflowId)
-      writeEvals(deps.agentDir, deps.workflowId, { ...now, running: { startedAt, done: results.length, total: cases.length } })
+      writeEvals(deps.agentDir, deps.workflowId, { ...now, running: { startedAt, done: results.length, total: cases.length, ...drafting } })
     }
     const round: EvalRound = {
       at: startedAt,
-      ...(deps.workflowVersion ? { workflowVersion: deps.workflowVersion } : {}),
+      ...(deps.draft ? { draft: deps.draft } : deps.workflowVersion ? { workflowVersion: deps.workflowVersion } : {}),
       model: deps.model,
       judge: deps.judgeLabel,
       cases: results,

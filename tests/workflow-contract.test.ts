@@ -82,6 +82,23 @@ describe('a workflow evidence', () => {
     expect(readEvals(dir, 'reply').cases).toEqual([])
   })
 
+  it("tests a draft with its own criteria, recorded as the draft's round, not a version's", async () => {
+    const dir = agentWithWorkflow()
+    addEvalCase(dir, 'reply', { params: { order_number: 'EM-1' } })
+    const round = await startEvalRound({
+      agentDir: dir, workflowId: 'reply', instructions: 'Draft a better reply.', model: 'm', judgeLabel: 'j', judge: judgeSays('{"checks": []}'),
+      draft: { savedAt: '2026-11-27T10:00:00.000Z' },
+      criteria: [{ id: 'signed', text: 'Signed by Support', kind: 'contains', value: 'Everymarket Support' }],
+      runCase: async () => ({ result: 'Thanks. Everymarket Support', tools: [] }),
+    })
+    expect(round.draft).toEqual({ savedAt: '2026-11-27T10:00:00.000Z' })
+    expect(round.workflowVersion).toBeUndefined()
+    expect(round.criteria!.map((c) => c.id)).toEqual(['signed'])
+    expect(round.allPassed).toBe(1)
+    // The saved criteria are untouched: the draft's were only tested.
+    expect(readEvals(dir, 'reply').criteria).toEqual([])
+  })
+
   it('checks every criterion: code checks by program, the rest by the judge in one call, a crash failing them all', async () => {
     const dir = agentWithWorkflow()
     setEvalCriteria(dir, 'reply', [
