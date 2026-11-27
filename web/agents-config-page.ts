@@ -284,6 +284,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-none { color: var(--ink-faint); }
   .ev-when { font-size: 12.5px; color: var(--ink-muted); }
   .ev-step .hint { margin: 0; }
+  .ev-draft-note { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--ink); }
   .ev-step .wf-evals-bar { margin-top: 4px; }
   .ev-step .wf-evals-run, .ev-step .wf-evals-run:hover:not(:disabled) { height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--primary); border: 1px solid var(--primary); color: var(--on-primary); }
   .ev-step .wf-evals-run:disabled { opacity: .45; }
@@ -2921,7 +2922,10 @@ ${renderMarkdownScript}
         nCrit ? 'Each case is checked against every one, yes or no.' : 'With no criteria, each case is compared with its saved good result.') +
       step(3, 'Evaluate', !round ? '<span class="ev-none">Not run yet</span>'
           : '<span class="le-pill ' + (passed === round.cases.length ? 'good' : passed * 2 >= round.cases.length ? 'ask' : 'bad') + '">' + passed + ' of ' + round.cases.length + ' passed</span> <span class="ev-when">' + roundWhen + '</span>',
-        'Runs every case again with the current instructions. Nothing is sent, refunded or submitted.',
+        // Which version it tests: the published one, never the draft
+        // (adapters/http.ts reads the published workflow for a round).
+        'Runs every case again with the published version<span class="ev-pub-v"></span>, the one live runs use. Nothing is sent, refunded or submitted.' +
+          (w.draft ? '<span class="ev-draft-note"><span class="le-pill warn">Draft</span> Your draft isn' + String.fromCharCode(8217) + 't tested until it' + String.fromCharCode(8217) + 's published.</span>' : ''),
         '<div class="wf-evals-bar"><button type="button" class="primary wf-evals-run"' + (!nCases || running ? ' disabled' : '') + (nCases ? '' : ' title="Add an eval case first"') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
           (round ? '<details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details>' : '') + '</div>') +
       '</div>';
@@ -4117,6 +4121,9 @@ ${renderMarkdownScript}
         var current = versions.filter(function (v) { return v.number === data.current; })[0] || versions[0];
         var contractVersion = card.querySelector('.wf-contract-version');
         if (contractVersion) contractVersion.innerHTML = current ? '<strong>v' + current.number + '</strong>' : 'not numbered yet';
+        // The version Evaluate tests, named on the Evaluation tab.
+        var evalVersion = card.querySelector('.ev-pub-v');
+        if (evalVersion && current) evalVersion.textContent = ' (v' + current.number + ')';
         if (meta && current) {
           var draft = workflowsById[card.dataset.workflow] && workflowsById[card.dataset.workflow].draft;
           meta.innerHTML = '<a href="' + workflowPageHref(name, card.dataset.workflow, 'versions') + '">v' + current.number + '</a>' + (draft ? ' <span class="hint">+ draft</span>' : '');
