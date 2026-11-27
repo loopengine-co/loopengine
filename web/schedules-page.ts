@@ -160,11 +160,13 @@ ${consoleSidebarHtml}
 </div>
 <template id="scMascot">${mascotSvg(92)}</template>
 <dialog class="sc-dialog" id="scDialog" aria-labelledby="scDlgTitle">
-  <form method="dialog" id="scForm">
+  <form method="dialog" id="scForm" novalidate>
     <div class="sc-dlg-head"><h2 id="scDlgTitle">Create schedule</h2><button type="button" id="scCancel">Cancel</button><button type="submit" class="primary" id="scSave">Save</button></div>
     <div class="sc-dlg-body">
       <div class="sc-dlg-col">
-        <div class="sc-field" id="scWorkflowField"><label for="scWorkflow">Workflow</label><select id="scWorkflow" required></select></div>
+        <div class="sc-field" id="scRunsField"><span class="sc-field-k">Runs</span><span class="le-seg" id="scRuns"><button type="button" data-runs="workflow" aria-pressed="true">A workflow</button><button type="button" data-runs="message" aria-pressed="false">A message</button></span></div>
+        <div class="sc-field" id="scWorkflowField"><label for="scWorkflow">Workflow</label><select id="scWorkflow"></select></div>
+        <div class="sc-field" id="scAgentField" hidden><label for="scAgent">Agent</label><select id="scAgent"></select><p class="hint">The agent that receives the message and does the work.</p></div>
         <div class="sc-field" id="scMessageField" hidden><label for="scMessage">Message</label><textarea id="scMessage" rows="4"></textarea><p class="hint">What the agent receives each time, as if someone typed it.</p></div>
         <div class="sc-field"><label for="scName">Name <span class="hint">(optional)</span></label><input id="scName" maxlength="80" placeholder="e.g. Monday sales summary"></div>
         <div class="sc-field">
@@ -256,8 +258,10 @@ ${consoleShellScript}
   function isLive(t) { return t.status !== 'cancelled' && t.status !== 'done'; }
 
   // Every agent's schedules, with its workflows.
+  var agentList = [];
   function load() {
     return window.leShell.ready.then(function (agents) {
+      agentList = (agents || []).map(function (a) { return { name: a.name, label: a.displayName || a.name }; });
       return Promise.all((agents || []).map(function (a) {
         return api('GET', '/agents/' + encodeURIComponent(a.name) + '/schedules').then(function (r) {
           if (!r.ok) return null;
@@ -511,22 +515,43 @@ ${consoleShellScript}
         }).join('');
   }
   pick.addEventListener('change', fillInputs);
-  // Create schedule runs a workflow; Edit schedule changes one in place,
+  // Create schedule runs a workflow or a message; Edit schedule changes one in place,
   // a workflow's or a message's, keeping what it runs.
   var editing = null;
-  function setMode(task) {
-    editing = task;
-    var isWf = !task || Boolean(task.workflow_id);
-    document.getElementById('scDlgTitle').textContent = task ? 'Edit schedule' : 'Create schedule';
-    pick.disabled = Boolean(task);
+  // What a new schedule runs: one of the agents' workflows, or a message
+  // to the agent chosen.
+  var runs = 'workflow';
+  var agentPick = document.getElementById('scAgent');
+  function showRuns() {
+    var isWf = runs === 'workflow';
+    pressIn('scRuns', 'data-runs', runs);
     document.getElementById('scWorkflowField').hidden = !isWf;
+    document.getElementById('scAgentField').hidden = isWf;
     document.getElementById('scMessageField').hidden = isWf;
     document.getElementById('scInputsField').hidden = !isWf;
     // A workflow's results go where its Messaging tab says.
-    document.getElementById('scNotifyField').hidden = Boolean(task) && isWf;
+    document.getElementById('scNotifyField').hidden = isWf;
+    // A message has nothing for the second column.
+    dlg.classList.toggle('one-col', !isWf);
+  }
+  document.getElementById('scRuns').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-runs]');
+    if (!b) return;
+    runs = b.getAttribute('data-runs');
+    showRuns();
+  });
+  function setMode(task) {
+    editing = task;
+    runs = task ? (task.workflow_id ? 'workflow' : 'message') : (data.workflows.length ? 'workflow' : 'message');
+    document.getElementById('scDlgTitle').textContent = task ? 'Edit schedule' : 'Create schedule';
+    // What it runs, and for whom, stays as it is.
+    document.getElementById('scRunsField').hidden = Boolean(task) || !data.workflows.length;
+    pick.disabled = Boolean(task);
+    agentPick.disabled = Boolean(task);
+    agentPick.innerHTML = agentList.map(function (a) { return '<option value="' + esc(a.name) + '">' + esc(a.label) + '</option>'; }).join('');
+    if (task) agentPick.value = task.agent;
     document.getElementById('scStartsField').hidden = Boolean(task);
-    // A message's edit has nothing for the second column.
-    dlg.classList.toggle('one-col', Boolean(task) && !isWf);
+    showRuns();
   }
   function inZone(o) { if (data.zone) o.timeZone = data.zone; return o; }
   function hhmm(iso) { return new Date(iso).toLocaleTimeString('en-GB', inZone({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })); }
@@ -574,15 +599,17 @@ ${consoleShellScript}
     dlg.showModal();
   }
   function openDialog(preset) {
+    if (!agentList.length) { page.insertAdjacentHTML('afterbegin', '<p class="error" style="margin:0 0 12px">There are no agents yet. Make one first, from Home or Agents.</p>'); return; }
     setMode(null);
-    if (!data.workflows.length) { page.insertAdjacentHTML('afterbegin', '<p class="error" style="margin:0 0 12px">There are no workflows to schedule yet. Build one first, from Home or Workflows.</p>'); return; }
     var groups = {};
     data.workflows.forEach(function (w) { (groups[w.agentLabel] = groups[w.agentLabel] || []).push(w); });
     pick.innerHTML = Object.keys(groups).sort().map(function (g) {
       return '<optgroup label="' + esc(g) + '">' + groups[g].map(function (w) { return '<option value="' + esc(w.agent + '/' + w.id) + '">' + esc(w.title) + '</option>'; }).join('') + '</optgroup>';
     }).join('');
     if (preset) pick.value = preset;
+    var agentNow = agentPick.value;
     form.reset();
+    agentPick.value = agentNow;
     if (preset) pick.value = preset;
     kind = 'repeat'; freq = 'daily'; pressIn('scKind', 'data-kind', kind); pressIn('scFreq', 'data-freq', freq); showWhen();
     notify.setAttribute('aria-checked', 'false');
@@ -617,6 +644,7 @@ ${consoleShellScript}
     var w = chosen();
     var schedule = scheduleBody();
     if (editing) { saveEdit(editing, schedule); return; }
+    if (runs === 'message') { addMessage(schedule); return; }
     if (!w) { foot.innerHTML = '<span class="error">Choose a workflow.</span>'; return; }
     if (!schedule) { foot.innerHTML = '<span class="error">Choose a date and time.</span>'; return; }
     var values = {};
@@ -639,6 +667,26 @@ ${consoleShellScript}
       load();
     });
   });
+
+  // A message schedule: the agent chosen receives the message each time.
+  function addMessage(schedule) {
+    var agent = agentPick.value;
+    var message = document.getElementById('scMessage').value;
+    if (!agent) { foot.innerHTML = '<span class="error">Choose an agent.</span>'; return; }
+    if (!message.trim()) { foot.innerHTML = '<span class="error">Write the message the agent receives.</span>'; return; }
+    if (!schedule) { foot.innerHTML = '<span class="error">Choose a date and time.</span>'; return; }
+    var body = { message: message, schedule: schedule, result_to_chat: notify.getAttribute('aria-checked') === 'true' };
+    var name = document.getElementById('scName').value.trim();
+    if (name) body.task_name = name;
+    var save = document.getElementById('scSave');
+    save.disabled = true;
+    foot.textContent = 'Saving' + String.fromCharCode(8230);
+    api('POST', '/agents/' + encodeURIComponent(agent) + '/schedules', body).then(function (r) {
+      if (!r.ok) { save.disabled = false; foot.innerHTML = '<span class="error">' + esc(r.body.error || 'Could not add it') + '</span>'; return; }
+      dlg.close();
+      load();
+    });
+  }
 
   function saveEdit(t, schedule) {
     if (!schedule) { foot.innerHTML = '<span class="error">Choose a date and time.</span>'; return; }
