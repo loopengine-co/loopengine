@@ -1,5 +1,5 @@
 // The app shell every console page renders inside: a sidebar listing the
-// agents (plus Models, Abilities and Settings), and, for a page about one agent,
+// agents (plus Models, Apps and Settings), and, for a page about one agent,
 // a header with its name, prompt and tabs. The tabs span two pages —
 // Chat is playground.ts, every other tab is agents-config-page.ts — so
 // both render the header through this one script and read as one app.
@@ -88,7 +88,6 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
       <nav class="le-settings-menu" aria-label="Settings">
         <a href="/config?section=models" data-le-nav="models">Models</a>
         <a href="/config?section=apps" data-le-nav="apps">Apps</a>
-        <a href="/config?section=abilities" data-le-nav="abilities">Abilities</a>
         <a href="/config?section=settings" data-le-nav="settings">General settings</a>
       </nav>
     </section>
@@ -386,7 +385,7 @@ export const consoleShellScript: string = `<script>
   }
 
   var section = params.get('section');
-  var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' ? 'abilities' : section === 'apps' ? 'apps' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'workflows' ? page : '';
+  var foot = page === 'config' ? (section === 'abilities' || section === 'gateways' || section === 'apps' ? 'apps' : section === 'settings' ? 'settings' : 'models') : page === 'interview' || page === 'workflows' ? page : '';
   // The section this page is in, whose column shows beside the sections.
   var sidebar = document.querySelector('.le-sidebar');
   var panel = document.querySelector('.le-panel');

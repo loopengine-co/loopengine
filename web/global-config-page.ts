@@ -119,6 +119,56 @@ export const globalConfigPageHtml: string = `<!doctype html>
   .app-cats { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
   .app-cats button { font-size: 12px; }
   .app-cats button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  /* Apps: apps, official and private abilities, as cards in hairline
+     grids (the agent Apps tab's look). */
+  .cf-views { margin: 0 0 26px; }
+  .cf-view[hidden] { display: none; }
+  .cf-sec { margin: 0 0 40px; }
+  .cf-sec-head { display: grid; gap: 4px; margin: 0 0 14px; }
+  .cf-sec-head h3 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
+  .cf-sec-head .hint { margin: 0; font-size: 12.5px; }
+  .cf-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: dense; max-width: 1100px; }
+  .cf-card { display: grid; gap: 10px; align-content: start; padding: 18px 20px; background: var(--bg); min-width: 0; }
+  .cf-card:has(.ability-details-row), .cf-card:has(.app-tools), .cf-card:has(.app-form) { grid-column: 1 / -1; }
+  .cf-card-head { display: flex; gap: 12px; align-items: center; min-width: 0; }
+  .cf-ico { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
+  .cf-ico svg { width: 16px; height: 16px; }
+  .cf-card .app-icon, .cf-card .app-letter { width: 34px; height: 34px; border-radius: 10px; }
+  .cf-card-text { display: grid; gap: 2px; min-width: 0; }
+  .cf-card-text strong { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+  .cf-sub { font-size: 12px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cf-desc { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .cf-problem { margin: 0; font-size: 12.5px; }
+  .cf-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+  .cf-foot .app-slot { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+  .cf-foot button, .cf-own-form > button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; white-space: nowrap; }
+  .cf-foot .delete-btn { background: var(--bg); border-color: var(--line); color: var(--bad); }
+  .cf-foot .delete-btn:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad-soft); }
+  .cf-foot .app-form { flex: 1; max-width: 520px; }
+  .cf-foot button.app-link { height: auto; padding: 2px 0; }
+  .cf-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+  .cf-chip.strong { background: var(--surface); border-color: transparent; color: var(--ink); font-weight: 500; }
+  .cf-chip.good { background: var(--good-soft); border-color: transparent; color: var(--good); }
+  .cf-empty { padding: 22px; border: 1px dashed var(--line); font-size: 13px; color: var(--ink-muted); max-width: 1100px; box-sizing: border-box; }
+  .cf-cats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .cf-cats button { height: 30px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; }
+  .cf-cats button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  .cf-search { display: flex; gap: 8px; margin: 0 0 14px; max-width: 520px; }
+  .cf-search .le-search { flex: 1; }
+  .cf-search .le-search input { width: 100%; }
+  .cf-search button { height: 36px; border-radius: 9px; }
+  .cf-source { margin: 0 0 18px; }
+  .cf-source-k { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .cf-box { display: grid; gap: 12px; max-width: 620px; padding: 18px 20px; border: 1px solid var(--line); background: var(--surface); }
+  .cf-inline { display: flex; gap: 8px; }
+  .cf-inline input { flex: 1; min-width: 0; height: 36px; border-radius: 9px; }
+  .cf-inline button { height: 36px; border-radius: 9px; }
+  .cf-inline-start { flex-wrap: wrap; }
+  .cf-or { font-size: 12.5px; color: var(--ink-muted); }
+  .cf-own-form { margin-top: 12px; }
+  #abilityInstallStatus:empty { display: none; }
+  @media (max-width: 1000px) { .cf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cf-filler { display: none; } }
+  @media (max-width: 640px) { .cf-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body data-le-page="config">
@@ -132,13 +182,16 @@ ${consoleSidebarHtml}
   </div>
   <div class="section-panel" data-section-panel="apps" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Apps</h1><p>Connect the apps your agents work in. All of a connected app&rsquo;s tools become available to the workspace, each with a default permission; each agent then chooses which tools it gets, from its Apps tab.</p></div></div></div>
-    <div class="le-scroll"><div class="le-page" style="display:block"><div id="appsContent"><p class="hint">Loading&hellip;</p></div></div></div>
-  </div>
-  <div class="section-panel" data-section-panel="abilities" style="display:none">
-    <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Abilities</h1><p>What agents can do beyond your connected apps: search the web, read documents, schedule work, or your own code. An ability added to an agent brings its tools, skills and permission rules.</p></div></div></div>
-    <div class="le-scroll"><div class="le-page" style="display:block"><div id="abilitiesContent"><p class="hint">Loading&hellip;</p></div></div></div>
+      <div><h1>Apps</h1><p>Connect the apps your agents work in, and install abilities for the workspace. Each agent then picks what it gets, from its Apps tab.</p></div></div></div>
+    <div class="le-scroll"><div class="le-page" style="display:block">
+      <div class="le-seg cf-views" role="tablist" aria-label="Apps and abilities">
+        <button type="button" role="tab" data-cf-view="apps" aria-selected="true">Apps</button>
+        <button type="button" role="tab" data-cf-view="official" aria-selected="false">Official abilities</button>
+        <button type="button" role="tab" data-cf-view="private" aria-selected="false">Private abilities</button>
+      </div>
+      <div class="cf-view" data-view="apps"><div id="appsContent"><p class="hint">Loading&hellip;</p></div></div>
+      <div id="abilitiesContent"></div>
+    </div></div>
   </div>
   <div class="section-panel" data-section-panel="settings" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
@@ -286,30 +339,47 @@ ${consoleShellScript}
   var lastPrivate = null;
   var workspaceAbilities = null;
 
+  var AB_ICON = '<span class="cf-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="m3 7 9 5 9-5"/><path d="M12 12v10"/></svg></span>';
+
+  // A card in the page's grids: icon, name and a line under it, what it
+  // does, then its buttons. Details and forms open inside it.
+  function cfCard(icon, title, sub, desc, foot, extra) {
+    return '<div class="cf-card" data-details-host><div class="cf-card-head">' + icon +
+      '<div class="cf-card-text"><strong>' + title + '</strong>' + (sub ? '<span class="cf-sub">' + sub + '</span>' : '') + '</div></div>' +
+      (desc ? '<p class="cf-desc">' + desc + '</p>' : '') + (extra || '') +
+      '<div class="cf-foot">' + foot + '</div></div>';
+  }
+  function cfGrid(cards) {
+    var n = cards.length % 3 ? 3 - (cards.length % 3) : 0;
+    return '<div class="le-grid cf-grid">' + cards.join('') + new Array(n + 1).join('<div class="cf-card cf-filler" aria-hidden="true"></div>') + '</div>';
+  }
+  function cfHead(title, hint) {
+    return '<div class="cf-sec-head"><h3>' + title + '</h3>' + (hint ? '<p class="hint">' + hint + '</p>' : '') + '</div>';
+  }
+
   function renderAbilities() {
     var content = document.getElementById('abilitiesContent');
-    content.innerHTML = '<section>' +
-      '<h4>Official <span class="hint">published by LoopEngine; add one to an agent from its Apps tab</span></h4>' +
-      '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
-        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search official abilities" style="flex:1">' +
-        '<button type="submit">Search</button>' +
-      '</form>' +
-      '<div id="abilitySearchResults"><p class="hint">Loading&hellip;</p></div>' +
-      '<h4 id="private-abilities">Private <span class="hint">your own, from the sources in <a href="/config?section=settings">Settings</a>; install one into the workspace, then add it to agents from their Apps tab</span></h4>' +
-      '<p id="abilityInstallStatus" class="hint"></p>' +
-      '<div id="workspaceAbilities"></div>' +
-      '<div id="privateAbilities"><p class="hint">Loading&hellip;</p></div>' +
-      '<form id="abilitySpecForm" style="display:flex;gap:6px;margin:10px 0 0;max-width:560px">' +
-        '<input name="spec" placeholder="Or install by name or spec: @company/lp-x, github:org/repo" aria-label="Ability name or spec" style="flex:1">' +
-        '<button type="submit">Install</button>' +
-      '</form>' +
-      '<div class="source" style="margin-top:12px;max-width:560px;box-sizing:border-box">' +
-        '<p style="margin:0 0 8px"><strong>Upload an ability</strong> <span class="hint">from your computer: a .zip or .tgz, or its folder (up to 25 MB)</span></p>' +
-        '<input type="file" id="abilityUploadFile" accept=".zip,.tgz,.gz" hidden>' +
-        '<input type="file" id="abilityUploadFolder" webkitdirectory hidden>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" id="abilityUploadFileBtn">Choose a file' + String.fromCharCode(8230) + '</button>' +
-        '<button type="button" id="abilityUploadFolderBtn">Choose a folder' + String.fromCharCode(8230) + '</button></div>' +
-      '</div></section>';
+    content.innerHTML =
+      '<div class="cf-view" data-view="official"' + (cfView === 'official' ? '' : ' hidden') + '>' +
+        '<section class="cf-sec">' + cfHead('Official abilities', 'Published by LoopEngine. Add one to an agent from its Apps tab.') +
+        '<form id="abilitySearchForm" class="cf-search"><label class="le-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
+          '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search official abilities"></label><button type="submit">Search</button></form>' +
+        '<div id="abilitySearchResults"><p class="hint">Loading&hellip;</p></div></section></div>' +
+      '<div class="cf-view" data-view="private"' + (cfView === 'private' ? '' : ' hidden') + '>' +
+        '<p id="abilityInstallStatus" class="hint"></p>' +
+        '<section class="cf-sec" id="private-abilities">' + cfHead('In this workspace', 'Your own abilities, ready to add to agents from their Apps tab.') +
+          '<div id="workspaceAbilities"></div></section>' +
+        '<section class="cf-sec">' + cfHead('From your sources', 'Private GitHub orgs or npm registries, set in <a href="/config?section=settings">General settings</a>.') +
+          '<div id="privateAbilities"><p class="hint">Loading&hellip;</p></div></section>' +
+        '<section class="cf-sec">' + cfHead('Install one yourself', '') +
+          '<div class="cf-box">' +
+            '<form id="abilitySpecForm" class="cf-inline"><input name="spec" placeholder="By name or spec: @company/lp-x, github:org/repo" aria-label="Ability name or spec"><button type="submit">Install</button></form>' +
+            '<div class="cf-or">or upload it from your computer: a .zip or .tgz, or its folder (up to 25 MB)</div>' +
+            '<input type="file" id="abilityUploadFile" accept=".zip,.tgz,.gz" hidden>' +
+            '<input type="file" id="abilityUploadFolder" webkitdirectory hidden>' +
+            '<div class="cf-inline cf-inline-start"><button type="button" id="abilityUploadFileBtn">Choose a file' + String.fromCharCode(8230) + '</button>' +
+            '<button type="button" id="abilityUploadFolderBtn">Choose a folder' + String.fromCharCode(8230) + '</button></div>' +
+          '</div></section></div>';
     var form = document.getElementById('abilitySearchForm');
     form.addEventListener('submit', function (ev) { ev.preventDefault(); searchAbilities(form.q.value.trim()); });
     var specForm = document.getElementById('abilitySpecForm');
@@ -398,10 +468,9 @@ ${consoleShellScript}
 
   // An ability as people read it: its name (Gmail, from @loopengine-co/gmail)
   // with its package and version under it.
-  function abilityNameHtml(name, version) {
+  function abilityTitle(name) {
     var base = String(name).replace(/^@[^/]+[/]/, '').replace(/^loopengine-ability-/, '');
-    var title = base.split('-').map(function (w) { return w ? w.charAt(0).toUpperCase() + w.slice(1) : w; }).join(' ');
-    return '<div class="ability-name"><strong>' + escapeHtml(title) + '</strong><span class="hint"><code>' + escapeHtml(name) + '</code>' + (version ? ' ' + escapeHtml(version) : '') + '</span></div>';
+    return escapeHtml(base.split('-').map(function (w) { return w ? w.charAt(0).toUpperCase() + w.slice(1) : w; }).join(' '));
   }
   // Its description without the "A loopengine ability:" every one begins with.
   function abilityAbout(text) {
@@ -412,12 +481,10 @@ ${consoleShellScript}
     var resultsEl = document.getElementById('abilitySearchResults');
     var results = lastSearch.results;
     resultsEl.innerHTML = results.length
-      ? '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' + results.map(function (pkg) {
-          return '<tr><td>' + abilityNameHtml(pkg.name, pkg.version) + '</td>' +
-            '<td>' + abilityAbout(pkg.description) + '</td>' +
-            '<td style="white-space:nowrap">' + detailsButton(pkg.name + '@' + pkg.version) + '</td></tr>';
-        }).join('') + '</tbody></table>'
-      : '<p class="hint">No published abilities match.</p>';
+      ? cfGrid(results.map(function (pkg) {
+          return cfCard(AB_ICON, abilityTitle(pkg.name), escapeHtml(pkg.name) + (pkg.version ? ' ' + escapeHtml(pkg.version) : ''), abilityAbout(pkg.description), detailsButton(pkg.name + '@' + pkg.version));
+        }))
+      : '<div class="cf-empty">No published abilities match.</div>';
   }
 
   function workspaceCopy(name) {
@@ -431,14 +498,13 @@ ${consoleShellScript}
     // Abilities made from a connected app are listed under Apps.
     var fromApps = workspaceAbilities.filter(function (a) { return a.app || a.source.indexOf('mcp:') === 0; }).length;
     var own = workspaceAbilities.filter(function (a) { return !a.app && a.source.indexOf('mcp:') !== 0; });
-    el.innerHTML = (fromApps ? '<p class="hint" style="margin:0 0 8px">' + fromApps + ' connected app' + (fromApps === 1 ? '' : 's') + ' also in this workspace: see <a href="/config?section=apps">Apps</a>.</p>' : '') + (own.length
-      ? '<div class="source"><p style="margin:0 0 8px"><strong>In this workspace</strong> <span class="hint">add these to an agent from its Apps tab</span></p>' +
-          '<table><thead><tr><th>Ability</th><th>From</th><th></th></tr></thead><tbody>' + own.map(function (a) {
-            return '<tr><td><code>' + escapeHtml(a.name) + '</code>' + (a.version ? ' <span class="hint">' + escapeHtml(a.version) + '</span>' : '') + '</td>' +
-              '<td><span class="hint">' + escapeHtml(a.source.indexOf('upload:') === 0 ? 'Uploaded ' + a.source.slice(7) : a.source) + '</span></td>' +
-              '<td style="white-space:nowrap">' + detailsButton(a.spec) + ' <button type="button" class="delete-btn workspace-remove-btn" data-name="' + escapeHtml(a.name) + '">Remove</button></td></tr>';
-          }).join('') + '</tbody></table></div>'
-      : '');
+    el.innerHTML = own.length
+      ? cfGrid(own.map(function (a) {
+          return cfCard(AB_ICON, abilityTitle(a.name), escapeHtml(a.name) + (a.version ? ' ' + escapeHtml(a.version) : ''),
+            escapeHtml(a.source.indexOf('upload:') === 0 ? 'Uploaded ' + a.source.slice(7) : 'From ' + a.source),
+            detailsButton(a.spec) + '<button type="button" class="delete-btn workspace-remove-btn" data-name="' + escapeHtml(a.name) + '">Remove</button>');
+        }))
+      : '<div class="cf-empty">None yet. Install one from your sources below, by name, or by uploading it.' + (fromApps ? ' (Connected apps are under Apps.)' : '') + '</div>';
   }
 
   // Each source's abilities: Install puts one into the workspace; one
@@ -449,26 +515,24 @@ ${consoleShellScript}
     var sources = lastPrivate.sources || [];
     if (lastPrivate.error) { el.innerHTML = '<p class="error">' + escapeHtml(lastPrivate.error) + '</p>'; return; }
     if (!sources.length) {
-      el.innerHTML = '<p class="hint">No private sources yet. <a href="/config?section=settings">Add one in Settings</a> (a GitHub org or user, or a private npm registry), or upload an ability below.</p>';
+      el.innerHTML = '<div class="cf-empty">No private sources yet. <a href="/config?section=settings">Add one in General settings</a>: a GitHub org or user, or a private npm registry.</div>';
       return;
     }
     el.innerHTML = sources.map(function (s) {
       var body = s.error
         ? '<p class="error" style="margin:0">' + escapeHtml(s.error) + '</p>'
         : s.abilities.length
-          ? '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' + s.abilities.map(function (a) {
+          ? cfGrid(s.abilities.map(function (a) {
               var copy = workspaceCopy(a.name);
               var action = !copy
-                ? '<button type="button" class="workspace-install-btn" data-spec="' + escapeHtml(a.spec) + '">Install</button>'
+                ? '<button type="button" class="primary workspace-install-btn" data-spec="' + escapeHtml(a.spec) + '">Install</button>'
                 : copy.version && a.version && copy.version !== a.version
-                  ? '<span class="hint">In workspace (' + escapeHtml(copy.version) + ')</span> <button type="button" class="workspace-install-btn" data-spec="' + escapeHtml(a.spec) + '">Update to ' + escapeHtml(a.version) + '</button>'
-                  : '<span class="hint">In workspace</span>';
-              return '<tr><td>' + abilityNameHtml(a.name, a.version) + '</td>' +
-                '<td>' + abilityAbout(a.description) + '</td>' +
-                '<td style="white-space:nowrap">' + detailsButton(a.spec) + ' ' + action + '</td></tr>';
-            }).join('') + '</tbody></table>'
-          : '<p class="hint" style="margin:0">No abilities found here.</p>';
-      return '<div class="source"><p style="margin:0 0 8px"><strong>' + escapeHtml(s.label) + '</strong></p>' + body + '</div>';
+                  ? '<span class="cf-chip">In workspace (' + escapeHtml(copy.version) + ')</span><button type="button" class="workspace-install-btn" data-spec="' + escapeHtml(a.spec) + '">Update to ' + escapeHtml(a.version) + '</button>'
+                  : '<span class="cf-chip strong">In workspace</span>';
+              return cfCard(AB_ICON, abilityTitle(a.name), escapeHtml(a.name) + (a.version ? ' ' + escapeHtml(a.version) : ''), abilityAbout(a.description), detailsButton(a.spec) + action);
+            }))
+          : '<div class="cf-empty">No abilities found here.</div>';
+      return '<div class="cf-source"><p class="cf-source-k">' + escapeHtml(s.label) + '</p>' + body + '</div>';
     }).join('');
   }
 
@@ -567,6 +631,24 @@ ${consoleShellScript}
     loadedSections.abilities = true;
   }
 
+  // The Apps page's three views: apps, official and private abilities.
+  var cfView = 'apps';
+  function showCfView(view) {
+    cfView = view;
+    if (view !== 'apps' && !loadedSections.abilities) loadAbilities();
+    document.querySelectorAll('[data-cf-view]').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.cfView === view)); });
+    document.querySelectorAll('.cf-view').forEach(function (v) { v.hidden = v.dataset.view !== view; });
+  }
+  document.querySelectorAll('[data-cf-view]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      showCfView(b.dataset.cfView);
+      var url = new URL(location.href);
+      url.searchParams.set('section', b.dataset.cfView === 'apps' ? 'apps' : 'abilities');
+      if (b.dataset.cfView === 'private') url.hash = 'private-abilities'; else url.hash = '';
+      history.replaceState(null, '', url);
+    });
+  });
+
   // ---- Apps section ----
   // Popular apps' own MCP servers (core/mcp-apps.ts) and the connected
   // ones. Connecting makes a workspace ability from the server; agents
@@ -659,13 +741,12 @@ ${consoleShellScript}
     var saved = apps.saved || [];
     var rows = saved.map(function (s) {
       var connected = apps.connected.some(function (c) { return c.url === s.url; });
-      return '<div class="app-row" data-app="' + escapeHtml(s.id) + '"><div class="app-head">' + appLetter(s.title) + '</div>' +
-        '<div class="app-row-main"><div><strong>' + escapeHtml(s.title) + '</strong> <span class="badge badge-default">Private</span></div>' +
-          '<div class="hint">' + escapeHtml(s.url) + (s.description ? ' &middot; ' + escapeHtml(s.description) : '') + (s.header ? ' &middot; key sent in ' + escapeHtml(s.header) : '') + '</div></div>' +
+      return cfCard(appLetter(s.title), escapeHtml(s.title), escapeHtml(s.url),
+        escapeHtml(s.description || '') + (s.header ? (s.description ? ' &middot; ' : '') + 'Key sent in ' + escapeHtml(s.header) : ''),
         '<div class="app-slot">' + (connected
-          ? '<span class="badge badge-custom">Connected</span>'
-          : '<button type="button" class="app-connect" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button> <button type="button" class="delete-btn app-forget" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Remove</button>') + '</div></div>';
-    }).join('');
+          ? '<span class="cf-chip strong">Connected</span>'
+          : '<button type="button" class="app-connect" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button><button type="button" class="delete-btn app-forget" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Remove</button>') + '</div>');
+    });
     var form = ownForm.open
       ? '<form id="ownServerForm" class="app-form" style="max-width:560px">' +
           '<label>Name<input name="title" required maxlength="60" placeholder="Acme CRM"></label>' +
@@ -684,9 +765,8 @@ ${consoleShellScript}
           '<div class="app-foot"><button type="submit">Connect</button><button type="button" class="own-cancel">Cancel</button></div>' +
           '<p class="hint app-msg" style="margin:0"></p></form>'
       : '<button type="button" class="own-add"' + (apps.canConnect ? '' : ' disabled') + '>Add your own server</button>';
-    return '<section id="own-servers"><h3>Your own servers</h3>' +
-      '<p class="hint">Your company' + String.fromCharCode(8217) + 's own MCP server, by its address: it connects like any app, and only this workspace sees it. It can take a sign-in (OAuth), an API key, or nothing.</p>' +
-      (rows ? '<div class="app-list" style="margin-bottom:10px">' + rows + '</div>' : '') + form + '</section>';
+    return '<section class="cf-sec" id="own-servers">' + cfHead('Your own servers', 'Your company' + String.fromCharCode(8217) + 's own MCP server, by its address. Only this workspace sees it.') +
+      (rows.length ? cfGrid(rows) : '') + '<div class="cf-own-form">' + form + '</div></section>';
   }
 
   // By name: form.title is the form's own title attribute.
@@ -701,31 +781,26 @@ ${consoleShellScript}
     el.innerHTML =
       (apps.canConnect ? '' : leShell.adminNote('Connecting an app saves its key on this server, so it needs <code>LOOPENGINE_ADMIN_AUTH</code> set first.')) +
       (signInNote ? '<p class="' + (signInNote.bad ? 'error' : 'hint') + '">' + escapeHtml(signInNote.text) + '</p>' : '') +
-      '<section><h3>Connected</h3>' + (apps.connected.length
-        ? '<div class="app-list">' + apps.connected.map(function (c) {
-            var used = c.agents.length ? 'Used by ' + c.agents.map(escapeHtml).join(', ') : 'Not added to an agent yet: add <code>' + escapeHtml(c.ability) + '</code> from an agent' + String.fromCharCode(8217) + 's Apps tab';
-            return '<div class="app-row"><div class="app-head">' + appIcon(findApp(c) || c) + '</div>' +
-              '<div class="app-row-main"><div><strong>' + escapeHtml(c.title) + '</strong> ' + (c.oauthEnv ? '<span class="badge badge-default">Signed in</span> ' : '') + '<span class="hint">' + c.tools.length + ' tool' + (c.tools.length === 1 ? '' : 's') + ' &middot; <code>' + escapeHtml(c.ability) + '</code></span></div>' +
-                '<div class="hint">' + used + '</div>' +
-                (c.keyEnv && !c.keySet ? '<div class="error" style="font-size:12px">Its key, ' + escapeHtml(c.keyEnv) + ', isn' + String.fromCharCode(8217) + 't set.</div>' : '') +
-                (c.oauthEnv && !c.keySet ? '<div class="error" style="font-size:12px">Its sign-in is gone. Disconnect it and connect it again to sign in.</div>' : '') +
-              (openTools[c.ability] ? toolsPanel(c.ability) : '') +
-              '</div>' +
-              '<div class="app-foot"><button type="button" class="app-tools-btn" data-ability="' + escapeHtml(c.ability) + '">' + (openTools[c.ability] ? 'Hide tools' : 'Tools') + '</button> <button type="button" class="delete-btn app-disconnect" data-ability="' + escapeHtml(c.ability) + '">Disconnect</button></div></div>';
-          }).join('') + '</div>'
-        : '<p class="hint">No apps connected yet. Pick one below.</p>') + '</section>' +
-      '<section><h3>Popular apps</h3>' +
-        '<div class="app-cats">' + categories.map(function (c) { return '<button type="button" class="' + (c === appCategory ? 'active' : '') + '" data-app-cat="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>'; }).join('') + '</div>' +
-        '<div class="app-grid">' + shown.map(function (a) {
-          return '<div class="app-tile" data-app="' + escapeHtml(a.id) + '"><div class="app-head">' + appIcon(a) + '<div><strong>' + escapeHtml(a.title) + '</strong><div class="hint">' + escapeHtml(a.category) + '</div></div></div>' +
-            '<p class="app-desc">' + escapeHtml(a.description) + '</p>' +
-            '<div class="app-slot">' + (a.connected ? '<span class="badge badge-custom">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(a.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div></div>';
-        }).join('') + '</div>' +
-        '<p class="hint">Each is the app' + String.fromCharCode(8217) + 's own MCP server. Connect shows the ways it takes: signing in with your account on the app (OAuth), or an API key.</p>' +
+      '<section class="cf-sec">' + cfHead('Connected' + (apps.connected.length ? ' (' + apps.connected.length + ')' : ''), apps.connected.length ? 'Each agent picks which of their tools it gets, from its Apps tab.' : '') + (apps.connected.length
+        ? cfGrid(apps.connected.map(function (c) {
+            var used = c.agents.length ? 'Used by ' + c.agents.map(escapeHtml).join(', ') : 'Not on an agent yet: add it from an agent' + String.fromCharCode(8217) + 's Apps tab.';
+            var problem = (c.keyEnv && !c.keySet ? '<p class="error cf-problem">Its key, ' + escapeHtml(c.keyEnv) + ', isn' + String.fromCharCode(8217) + 't set.</p>' : '') +
+              (c.oauthEnv && !c.keySet ? '<p class="error cf-problem">Its sign-in is gone. Disconnect it and connect it again to sign in.</p>' : '');
+            return cfCard(appIcon(findApp(c) || c), escapeHtml(c.title), c.tools.length + ' tool' + (c.tools.length === 1 ? '' : 's') + (c.oauthEnv ? ' &middot; signed in' : ''), used,
+              '<button type="button" class="app-tools-btn" data-ability="' + escapeHtml(c.ability) + '">' + (openTools[c.ability] ? 'Hide tools' : 'Tools') + '</button><button type="button" class="delete-btn app-disconnect" data-ability="' + escapeHtml(c.ability) + '">Disconnect</button>',
+              problem + (openTools[c.ability] ? toolsPanel(c.ability) : ''));
+          }))
+        : '<div class="cf-empty">No apps connected yet. Pick one below: its tools become available to your agents.</div>') + '</section>' +
+      '<section class="cf-sec">' + cfHead('Popular apps', 'Each connects through the app' + String.fromCharCode(8217) + 's own MCP server: by signing in, or with an API key.') +
+        '<div class="cf-cats">' + categories.map(function (c) { return '<button type="button" aria-pressed="' + (c === appCategory) + '" data-app-cat="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>'; }).join('') + '</div>' +
+        cfGrid(shown.map(function (a) {
+          return cfCard(appIcon(a), escapeHtml(a.title), escapeHtml(a.category), escapeHtml(a.description),
+            '<div class="app-slot">' + (a.connected ? '<span class="cf-chip strong">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(a.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div>');
+        })) +
       '</section>' +
       renderOwnServers() +
-      '<section><h3>More apps</h3>' +
-        '<form id="appSearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px"><input type="search" name="q" placeholder="Search the MCP Registry, e.g. calendly" aria-label="Search apps" style="flex:1" value="' + escapeHtml(appSearch.q) + '"><button type="submit">Search</button></form>' +
+      '<section class="cf-sec">' + cfHead('More apps', 'Thousands of apps publish an MCP server. Search the MCP Registry.') +
+        '<form id="appSearchForm" class="cf-search"><label class="le-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" name="q" placeholder="Search, e.g. calendly" aria-label="Search apps" value="' + escapeHtml(appSearch.q) + '"></label><button type="submit">Search</button></form>' +
         '<div id="appSearchResults">' + renderAppSearch() + '</div>' +
       '</section>';
   }
@@ -804,15 +879,14 @@ ${consoleShellScript}
 
   function renderAppSearch() {
     if (appSearch.error) return '<p class="error">' + escapeHtml(appSearch.error) + '</p>';
-    if (!appSearch.servers) return '<p class="hint">Thousands of apps publish an MCP server. Verified means it' + String.fromCharCode(8217) + 's on its publisher' + String.fromCharCode(8217) + 's own domain; only add a key to one you trust.</p>';
-    if (!appSearch.servers.length) return '<p class="hint">Nothing found for ' + escapeHtml(appSearch.q) + '.</p>';
-    return '<div class="app-list">' + appSearch.servers.map(function (s) {
+    if (!appSearch.servers) return '<p class="hint">Verified means it' + String.fromCharCode(8217) + 's on its publisher' + String.fromCharCode(8217) + 's own domain; only add a key to one you trust.</p>';
+    if (!appSearch.servers.length) return '<div class="cf-empty">Nothing found for ' + escapeHtml(appSearch.q) + '.</div>';
+    return cfGrid(appSearch.servers.map(function (s) {
       var connected = apps.connected.some(function (c) { return c.url === s.url; });
-      return '<div class="app-row" data-app="' + escapeHtml(s.id) + '"><div class="app-head">' + appIcon(s) + '</div>' +
-        '<div class="app-row-main"><div><strong>' + escapeHtml(s.title) + '</strong> ' + (s.verified ? '<span class="badge badge-custom">Verified</span>' : '<span class="badge badge-default">Unverified</span>') + '</div>' +
-          '<div class="hint">' + escapeHtml(s.url) + (s.description ? ' &middot; ' + escapeHtml(s.description) : '') + '</div></div>' +
-        '<div class="app-slot">' + (connected ? '<span class="badge badge-custom">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div></div>';
-    }).join('') + '</div>';
+      return cfCard(appIcon(s), escapeHtml(s.title), escapeHtml(s.url), escapeHtml(s.description || ''),
+        '<span class="cf-chip' + (s.verified ? ' good' : '') + '">' + (s.verified ? 'Verified' : 'Unverified') + '</span>' +
+        '<div class="app-slot">' + (connected ? '<span class="cf-chip strong">Connected</span>' : '<button type="button" class="app-connect" data-id="' + escapeHtml(s.id) + '"' + (apps.canConnect ? '' : ' disabled') + '>Connect</button>') + '</div>');
+    }));
   }
 
   function loadApps() {
@@ -1042,7 +1116,7 @@ ${consoleShellScript}
       (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
       '<section><h3>Publishing</h3><div class="source" id="publishingBox"></div></section>' +
       '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
-      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under Private on the Abilities page next to LoopEngine&#39;s official ones.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
+      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under <a href="/config?section=abilities#private-abilities">Apps &rarr; Private abilities</a>.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
       '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
   }
 
@@ -1481,7 +1555,6 @@ ${consoleShellScript}
       panels[j].style.display = panels[j].dataset.sectionPanel === section ? 'contents' : 'none';
     }
     if (section === 'models' && !loadedSections.models) loadModels();
-    if (section === 'abilities' && !loadedSections.abilities) loadAbilities();
     if (section === 'apps' && !loadedSections.apps) loadApps();
     if (section === 'settings' && !loadedSections.settings) loadSettings();
   }
@@ -1497,7 +1570,12 @@ ${consoleShellScript}
   var requestedSection = new URLSearchParams(location.search).get('section');
   // ?section=gateways is the old Integrations page's link.
   if (requestedSection === 'gateways') requestedSection = 'abilities';
+  // Abilities are part of the Apps page now: its official or private view.
   var initialSection = requestedSection === 'abilities' || requestedSection === 'apps' || requestedSection === 'models' || requestedSection === 'settings' ? requestedSection : currentSection;
+  if (initialSection === 'abilities') {
+    initialSection = 'apps';
+    showCfView(location.hash === '#private-abilities' ? 'private' : 'official');
+  }
   switchSection(initialSection);
 })();
 </script>

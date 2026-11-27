@@ -118,8 +118,8 @@ export const devUiCss: string = `
   .le-pill.allow, .le-pill.good { background: var(--good-soft); color: var(--good); }
   .le-pill.ask, .le-pill.warn { background: var(--warn-soft); color: var(--warn); }
   .le-pill.deny, .le-pill.bad { background: var(--bad-soft); color: var(--bad); }
-  /* An ability's details (leShell.toggleAbilityDetails), on the Abilities
-     page and each agent's Apps tab. */
+  /* An ability's details (leShell.toggleAbilityDetails), on Settings → Apps
+     and each agent's Apps tab. */
   .ability-details-row > td { padding: 0 10px 14px; border-top: 0; background: transparent; }
   .ability-details { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
   .ad-head { display: grid; gap: 10px; padding: 16px 18px; background: var(--surface); border-bottom: 1px solid var(--line); }

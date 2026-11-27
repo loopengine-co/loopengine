@@ -54,5 +54,5 @@ export function assertOfficialAbility(spec: string): void {
   if (unofficialAbilitiesAllowed()) return
   const name = publicNpmPackage(spec)
   if (!name || isOfficialScope(name)) return
-  throw new UnofficialAbilityError(`${name} isn't an official LoopEngine ability, so it can't be installed: official abilities are under ${OFFICIAL_ABILITY_SCOPE} on npm (search them on the Abilities page). To use your own, add it as a private ability (Settings → Private ability sources, or upload it on the Abilities page).`)
+  throw new UnofficialAbilityError(`${name} isn't an official LoopEngine ability, so it can't be installed: official abilities are under ${OFFICIAL_ABILITY_SCOPE} on npm (search them under Settings → Apps → Official abilities). To use your own, add it as a private ability (Settings → General settings → Private ability sources, or upload it under Settings → Apps → Private abilities).`)
 }

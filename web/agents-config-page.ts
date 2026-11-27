@@ -1002,7 +1002,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   /* Apps tab: what the agent has, then Add more (apps, official or
      private abilities), all as cards. */
   .ab-intro { margin: 0 0 24px; max-width: 760px; }
-  .ab-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ab-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: dense; }
   .ab-card { display: grid; gap: 12px; align-content: start; padding: 20px 22px; background: var(--bg); min-width: 0; }
   .ab-card:has(.ability-details-row), .ab-card:has(.app-pick) { grid-column: 1 / -1; }
   .ab-card .sched-icon svg { width: 16px; height: 16px; }
