@@ -275,6 +275,21 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-score-k { font-size: 12.5px; font-weight: 400; color: var(--ink-muted); }
   .wf-score-v { font-size: 28px; font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
   .wf-evals-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .ev-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); margin-bottom: 22px; }
+  .ev-step { display: grid; gap: 6px; align-content: start; padding: 18px 20px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+  .ev-step-k { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .ev-step-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); color: var(--ink-muted); font-size: 11.5px; font-weight: 600; }
+  .ev-step-v { font-size: 18px; letter-spacing: -0.01em; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ev-step-v .le-pill { font-size: 12.5px; }
+  .ev-none { color: var(--ink-faint); }
+  .ev-when { font-size: 12.5px; color: var(--ink-muted); }
+  .ev-step .hint { margin: 0; }
+  .ev-step .wf-evals-bar { margin-top: 4px; }
+  .ev-step .wf-evals-run, .ev-step .wf-evals-run:hover:not(:disabled) { height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--primary); border: 1px solid var(--primary); color: var(--on-primary); }
+  .ev-step .wf-evals-run:disabled { opacity: .45; }
+  .ev-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--surface-2); font-size: 12px; color: var(--ink-muted); vertical-align: 2px; }
+  .ev-sub { margin: 18px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  @media (max-width: 860px) { .ev-steps { grid-template-columns: minmax(0, 1fr); } }
   .wf-evals-bar button, .wf-case-actions button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
   .wf-crits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
@@ -2477,7 +2492,8 @@ ${renderMarkdownScript}
 
   function setRunParam(runId) {
     var q = new URLSearchParams(location.search);
-    if (runId) { q.set('run', runId); q.set('wtab', 'activity'); } else q.delete('run');
+    // The tab underneath stays as it is: a run opens over any of them.
+    if (runId) q.set('run', runId); else q.delete('run');
     history.replaceState(null, '', location.pathname + '?' + q.toString());
   }
 
@@ -2489,6 +2505,8 @@ ${renderMarkdownScript}
     var dlg = card.querySelector('.wf-trace-dialog');
     var box = card.querySelector('.wf-trace');
     if (!dlg || !box) return;
+    // Out of the Activity tab's panel, so it opens over whichever tab is shown.
+    if (dlg.parentNode !== card) card.appendChild(dlg);
     if (!dlg.dataset.wired) {
       dlg.dataset.wired = '1';
       // Esc, a click outside or Close: back to the list just as it was.
@@ -2888,18 +2906,31 @@ ${renderMarkdownScript}
           (last && last.result ? '<div class="workflow-run-entry-label">Latest result' + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div>' : '') +
         '</details></li>';
     }).join('');
-    var lastLine = !round ? ''
-      : '<p class="wf-eval-last"><strong>Last evaluation: ' + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + ((round.workflowVersion || round.briefVersion) ? ', workflow v' + (round.workflowVersion || round.briefVersion) : '') + '</strong>' +
-        (checked ? String.fromCharCode(8212) + ' ' + round.allPassed + ' of ' + round.cases.length + ' cases met every success criterion.' : '') +
-        ' <details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details></p>';
-    return '<section class="wf-section">' + critSection + '</section>' +
-      '<section class="wf-section"><h4 class="wf-sub">Eval cases' + (evals.cases.length ? ' (' + evals.cases.length + ')' : '') + '</h4>' +
-        '<p class="hint" style="margin:0">Real runs saved to check every change against.</p>' +
-        (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet: add suggested ones below, or save any run from its trace (Activity).</p>') +
-        '<div class="wf-evals-bar"><button type="button" class="wf-evals-run"' + (!evals.cases.length || running ? ' disabled' : '') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
-          '<span class="hint">Runs every eval case again with the current instructions and checks each result against the success criteria. Nothing is sent, refunded or submitted.</span></div>' +
-        lastLine + '</section>' +
-      (workflowPageId ? '<section class="wf-section"><h4 class="wf-sub">Suggested eval cases</h4><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div></section>' : '');
+    var nCases = evals.cases.length;
+    var nCrit = (evals.criteria || []).length;
+    var passed = !round ? 0 : round.cases.filter(function (c) { return c.checks ? c.checks.every(function (x) { return x.pass; }) : c.score >= 4; }).length;
+    var roundWhen = !round ? '' : escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + ((round.workflowVersion || round.briefVersion) ? DOT + 'v' + (round.workflowVersion || round.briefVersion) : '');
+    var step = function (n, title, value, hint, extra) {
+      return '<div class="ev-step"><div class="ev-step-k"><span class="ev-step-n">' + n + '</span>' + title + '</div><div class="ev-step-v">' + value + '</div><p class="hint">' + hint + '</p>' + (extra || '') + '</div>';
+    };
+    // The three steps, in order, with where each stands; Evaluate in the third.
+    var steps = '<div class="ev-steps">' +
+      step(1, 'Pick real runs', nCases ? nCases + (nCases === 1 ? ' eval case' : ' eval cases') : '<span class="ev-none">None yet</span>',
+        nCases ? 'Saved runs each change is tested against.' : 'Add one from the suggestions below.') +
+      step(2, 'Say what good looks like', nCrit ? nCrit + (nCrit === 1 ? ' success criterion' : ' success criteria') : '<span class="ev-none">Its good result</span>',
+        nCrit ? 'Each case is checked against every one, yes or no.' : 'With no criteria, each case is compared with its saved good result.') +
+      step(3, 'Evaluate', !round ? '<span class="ev-none">Not run yet</span>'
+          : '<span class="le-pill ' + (passed === round.cases.length ? 'good' : passed * 2 >= round.cases.length ? 'ask' : 'bad') + '">' + passed + ' of ' + round.cases.length + ' passed</span> <span class="ev-when">' + roundWhen + '</span>',
+        'Runs every case again with the current instructions. Nothing is sent, refunded or submitted.',
+        '<div class="wf-evals-bar"><button type="button" class="primary wf-evals-run"' + (!nCases || running ? ' disabled' : '') + (nCases ? '' : ' title="Add an eval case first"') + '>' + (running ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : 'Evaluate') + '</button>' +
+          (round ? '<details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(round.model) + DOT + 'judged by ' + escapeHtml(round.judge) + DOT + escapeHtml(new Date(round.at).toLocaleString()) + '</details>' : '') + '</div>') +
+      '</div>';
+    return steps +
+      '<section class="wf-section ev-cases"><h4 class="wf-sub">Eval cases' + (nCases ? ' <span class="ev-count">' + nCases + '</span>' : '') + '</h4>' +
+        (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet. Add one of the runs suggested below, or save any run from its trace.</p>') +
+        (workflowPageId ? '<h5 class="ev-sub">Suggested from recent runs</h5><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
+      '</section>' +
+      '<section class="wf-section">' + critSection + '</section>';
   }
 
   // Worth testing: runs from the last 30 days that would make good eval
@@ -2914,7 +2945,7 @@ ${renderMarkdownScript}
       .then(function (data) {
         var list = data.candidates || [];
         if (!list.length) { box.innerHTML = '<p class="hint" style="margin:0">Nothing new to suggest from the last 30 days.</p>'; return; }
-        box.innerHTML = '<p class="hint" style="margin:0 0 6px">Runs from the last 30 days worth adding, best first: where a person denied or changed what it did, a bad result, a question it asked, or a typical good run. Open one' + RSQ + 's trace to read it in full first.</p><ul class="wf-cand-list">' + list.map(function (c) {
+        box.innerHTML = '<p class="hint" style="margin:0 0 8px">From the last 30 days, best first: runs a person denied or changed, bad results, questions it asked, and a typical good run.</p><ul class="wf-cand-list">' + list.map(function (c) {
           var why = WHY[c.why] || ['', c.why];
           return '<li><span class="le-pill ' + why[0] + '">' + why[1] + '</span>' +
             '<span class="wf-cand-text"><strong>' + escapeHtml(c.detail) + '</strong><span class="hint">' + escapeHtml(new Date(c.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + (c.inputs ? DOT + escapeHtml(c.inputs) : '') + '</span></span>' +
@@ -2923,14 +2954,12 @@ ${renderMarkdownScript}
         }).join('') + '</ul>';
       })
       .catch(function (err) { box.innerHTML = '<p class="error">Could not look through its runs: ' + escapeHtml(err.message) + '</p>'; });
-    // Open trace: the run's trace on the Activity tab, without leaving.
+    // Open trace: the run, over this tab; closing it comes back here.
     box.addEventListener('click', function (ev) {
       var a = ev.target.closest('.wf-cand-trace');
       if (!a || !card.querySelector('.wf-trace') || ev.metaKey || ev.ctrlKey) return;
       ev.preventDefault();
-      showWorkflowTab(card, 'activity');
       openRunTrace(name, card, a.getAttribute('data-run'));
-      card.scrollIntoView({ block: 'start' });
     });
   }
 
@@ -3981,7 +4010,6 @@ ${renderMarkdownScript}
         var a = ev.target.closest('.wf-fb-trace');
         if (!a) return;
         ev.preventDefault();
-        showWorkflowTab(card, 'activity');
         openRunTrace(name, card, a.getAttribute('data-run'));
       };
       box.addEventListener('click', trace);
