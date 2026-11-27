@@ -598,16 +598,33 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .actauth-rules td code { overflow-wrap: anywhere; }
   .decision-switch button { min-width: 64px; padding: 5px 10px; white-space: nowrap; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .decision-switch button:hover { border-color: var(--ink-faint); }
-  .decision-switch button[aria-pressed="true"] { color: var(--on-accent); }
-  .decision-switch button[aria-pressed="true"][data-decision="allow"] { background: var(--accent); border-color: var(--accent); }
-  .decision-switch button[aria-pressed="true"][data-decision="ask"] { background: var(--warn); border-color: var(--warn); }
-  .decision-switch button[aria-pressed="true"][data-decision="deny"] { background: var(--ink-muted); border-color: var(--ink-muted); }
+  .decision-switch button[aria-pressed="true"] { font-weight: 600; }
+  .decision-switch button[aria-pressed="true"][data-decision="allow"] { background: var(--good-soft); border-color: transparent; color: var(--good); }
+  .decision-switch button[aria-pressed="true"][data-decision="ask"] { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+  .decision-switch button[aria-pressed="true"][data-decision="deny"] { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
   .decision-switch.is-saving button { cursor: progress; opacity: 0.7; }
   /* Messaging: one section per app; the primary one is outlined. */
   .msg-conn-title { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
   .msg-conn-bot { font-weight: 500; font-size: 12.5px; color: var(--ink-muted); font-family: var(--font-mono); }
   .le-channel-icon { width: 18px; height: 18px; flex: none; }
   .env-desc { max-width: 340px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Environment: a row per setting, its project-wide and agent values. */
+  .ev-group { margin: 0 0 24px; }
+  .ev-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 20px; padding: 16px 18px; align-items: start; }
+  .ev-row + .ev-row { border-top: 1px solid var(--line); }
+  .ev-name { display: grid; gap: 4px; min-width: 0; }
+  .ev-name-k { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .ev-name-k code { font-size: 12.5px; font-weight: 600; background: none; padding: 0; overflow-wrap: anywhere; }
+  .ev-desc { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .ev-meta { font-size: 11.5px; color: var(--ink-faint); }
+  .ev-slot { display: grid; gap: 6px; min-width: 0; }
+  .ev-slot-k { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+  .ev-slot form.add-source.env-inline { max-width: none; }
+  .ev-slot form.add-source.env-inline input, .ev-slot form.add-source.env-inline select { height: 32px; border-radius: 8px; }
+  .ev-slot form.add-source.env-inline button { height: 32px; border-radius: 8px; padding: 0 12px; }
+  .ev-slot form.add-source.env-inline button[type="submit"] { background: var(--bg); border-color: var(--line); color: var(--ink); }
+  .ev-slot form.add-source.env-inline button[type="submit"]:hover:not(:disabled) { background: var(--surface); }
+  @media (max-width: 860px) { .ev-row { grid-template-columns: minmax(0, 1fr); } }
   form.add-source.env-inline { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-width: 320px; }
   form.add-source.env-inline input, form.add-source.env-inline select { flex: 1 1 140px; width: auto; min-width: 0; }
   form.add-source.env-inline textarea { flex: 1 1 100%; }
@@ -712,7 +729,24 @@ export const agentsConfigPageHtml: string = `<!doctype html>
     border-color: var(--bad);
   }
   .delete-btn:hover { background: var(--bad-soft); }
-  .agent-delete { display: grid; gap: 10px; max-width: 640px; }
+  .agent-delete { display: grid; gap: 12px; max-width: 720px; padding: 20px 22px; border: 1px solid var(--bad-soft); background: color-mix(in srgb, var(--bad-soft) 35%, var(--bg)); }
+  .agent-delete-row input { height: 34px; border-radius: 8px; }
+  .agent-delete .delete-btn { height: 34px; border-radius: 8px; padding: 0 14px; }
+  /* Advanced: a jump bar to its parts; Composio's tools as a list. */
+  .adv-nav { margin: 0 0 28px; }
+  .rl-actions { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+  .rl-actions > button { height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12px; }
+  .rl-actions > .delete-btn { background: var(--bg); border-color: var(--line); color: var(--bad); }
+  .rl-actions > .delete-btn:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad-soft); }
+  .rl-row .pm-note code { font-size: 11px; background: none; padding: 0; }
+  .advanced-part { scroll-margin-top: 16px; }
+  [data-tab-panel="advanced"] .tool-list { list-style: none; margin: 10px 0 0; border: 1px solid var(--line); }
+  [data-tab-panel="advanced"] .tool-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 14px; margin: 0; border: 0; border-radius: 0; background: none; }
+  [data-tab-panel="advanced"] .tool-list li + li { border-top: 1px solid var(--line); }
+  [data-tab-panel="advanced"] .tool-list .tool-picker-label { font-size: 12.5px; line-height: 1.5; color: var(--ink-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  [data-tab-panel="advanced"] .tool-list .tool-picker-label code { color: var(--ink); font-weight: 600; background: none; padding: 0; }
+  [data-tab-panel="advanced"] .tool-list .delete-btn, [data-tab-panel="advanced"] .source .delete-btn { flex: none; height: 28px; padding: 0 10px; border-radius: 7px; background: var(--bg); border-color: var(--line); color: var(--bad); font-size: 12px; }
+  [data-tab-panel="advanced"] .tool-list .delete-btn:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad-soft); }
   .agent-delete-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
   .agent-delete-row input { width: 220px; max-width: 100%; }
   .agent-delete .delete-btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -1026,6 +1060,41 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .ab-search button { height: 36px; border-radius: 9px; }
   #abilityUpgradeStatus:empty, #abilityInstallStatus:empty { display: none; }
   @media (max-width: 860px) { .ab-cards { grid-template-columns: minmax(0, 1fr); } }
+  /* Permissions: counts and Anything else, then tools by where they
+     come from. The switch is one rounded strip, its choice tinted. */
+  .pm-intro { margin: 0 0 20px; max-width: 760px; }
+  .pm-stats { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.6fr); margin-bottom: 32px; }
+  .pm-stat { display: grid; gap: 6px; align-content: start; padding: 18px 22px; background: var(--bg); min-width: 0; }
+  .pm-stat-k { font-size: 12.5px; color: var(--ink-muted); }
+  .pm-stat-v { font-size: 30px; font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; }
+  .pm-allow .pm-stat-v { color: var(--good); }
+  .pm-ask .pm-stat-v { color: var(--warn); }
+  .pm-deny .pm-stat-v { color: var(--bad); }
+  .pm-default { background: var(--surface); }
+  .pm-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 14px; }
+  .tab-panel .pm-head h3 { margin: 0; }
+  .pm-search { min-width: 240px; }
+  .pm-group { margin: 0 0 22px; }
+  .pm-group[hidden], .pm-row[hidden] { display: none; }
+  .pm-group-k { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .pm-group-k code { font-size: 12.5px; background: none; padding: 0; }
+  .pm-group-n { font-size: 11.5px; font-weight: 500; color: var(--ink-muted); background: var(--surface); border-radius: 6px; padding: 1px 7px; }
+  .pm-list { border: 1px solid var(--line); }
+  .pm-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 16px; min-width: 0; }
+  .pm-row + .pm-row { border-top: 1px solid var(--line); }
+  .pm-row:hover { background: var(--surface); }
+  .pm-name { display: grid; gap: 2px; min-width: 0; }
+  .pm-name code { font-size: 12.5px; background: none; padding: 0; overflow-wrap: anywhere; }
+  .pm-note { font-size: 11.5px; color: var(--ink-faint); }
+  .pm-none { color: var(--ink-muted); font-size: 13px; }
+  .tab-panel .decision-switch { gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface); flex: none; }
+  .tab-panel .decision-switch button { min-width: 0; height: 28px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--ink-muted); font-size: 12.5px; font-weight: 500; }
+  .tab-panel .decision-switch button:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+  .tab-panel .decision-switch button[aria-pressed="true"][data-decision="allow"] { background: var(--good-soft); color: var(--good); }
+  .tab-panel .decision-switch button[aria-pressed="true"][data-decision="ask"] { background: var(--warn-soft); color: var(--warn); }
+  .tab-panel .decision-switch button[aria-pressed="true"][data-decision="deny"] { background: var(--bad-soft); color: var(--bad); }
+  .pm-default .decision-switch { justify-self: start; background: var(--bg); }
+  @media (max-width: 900px) { .pm-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .pm-default { grid-column: 1 / -1; } }
   .msg-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
   .msg-dialog[open] { display: flex; flex-direction: column; }
   .msg-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
@@ -4138,6 +4207,14 @@ ${renderMarkdownScript}
         '<button type="button" class="delete-btn" id="deleteAgentBtn" disabled>Delete agent</button></div>' +
       '<p class="hint" id="deleteAgentStatus" style="margin:0"></p></div>';
   }
+  // Advanced's jump bar: to one of its parts.
+  detail.addEventListener('click', function (ev) {
+    var jump = ev.target.closest && ev.target.closest('[data-adv-jump]');
+    if (!jump) return;
+    var part = detail.querySelector('#' + jump.dataset.advJump);
+    if (part) part.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   function wireDeleteAgent(name) {
     var input = detail.querySelector('#deleteAgentName');
     var btn = detail.querySelector('#deleteAgentBtn');
@@ -4470,16 +4547,15 @@ ${renderMarkdownScript}
       // visible, but not editable here.
       : '<span class="hint">unnamed — edit actauth.yml directly</span>';
     // Advanced's rule editor: every rule in full, name and scope included.
-    return '<tr>' +
-      '<td><code>' + escapeHtml(r.name || '') + '</code></td>' +
-      '<td><code>' + escapeHtml(r.scope) + '</code></td>' +
-      '<td>' + abilityCellHtml(r) + '</td>' +
-      '<td><code>' + escapeHtml(r.tool) + '</code></td>' +
-      '<td>' + (r.name
+    return '<div class="pm-row rl-row">' +
+      '<div class="pm-name"><code>' + escapeHtml(r.tool) + '</code>' +
+        '<span class="pm-note">' + (r.scope === '*/*' ? 'Everyone' : 'Only <code>' + escapeHtml(r.scope) + '</code>') + ' &middot; ' + abilityCellHtml(r) +
+          (r.name ? ' &middot; rule <code>' + escapeHtml(r.name) + '</code>' : '') + '</span></div>' +
+      '<div class="rl-actions">' + (r.name
         ? decisionSwitch(r.decision, 'Decision for ' + r.name, 'data-rule="' + escapeHtml(r.name) + '"')
-        : '<span class="le-pill ' + escapeHtml(r.decision) + '">' + escapeHtml(DECISION_LABELS[r.decision] || r.decision) + '</span>') + '</td>' +
-      '<td>' + actionsHtml + '</td>' +
-      '</tr>';
+        : '<span class="le-pill ' + escapeHtml(r.decision) + '">' + escapeHtml(DECISION_LABELS[r.decision] || r.decision) + '</span>') +
+        actionsHtml + '</div>' +
+      '</div>';
   }
 
   // The App/Ability column: an app by its name (Stripe), an ability by
@@ -4489,41 +4565,87 @@ ${renderMarkdownScript}
     return x.ability ? '<code>' + escapeHtml(x.ability) + '</code>' : '<span class="hint">The agent' + String.fromCharCode(8217) + 's own</span>';
   }
 
-  // The Permissions tab: every tool the agent has, each with its ability
-  // and Allow / Ask me / Never (saved at once: its rule for everyone is
-  // updated, or added), then the decision when no rule matches. Rules in
+  // The Permissions tab: how many tool calls run on their own, ask first
+  // or never run, and what anything else does; then every tool the agent
+  // has, grouped by where it comes from, each with Allow / Ask me / Never
+  // (saved at once: its rule for everyone is updated, or added). Rules in
   // full (scopes, names, adding and removing) are in Advanced.
   function renderPermissionsHtml(cfg) {
     var tools = cfg.tools || [];
-    var rows = tools.map(function (t) {
+    var groups = [];
+    var byFrom = {};
+    tools.forEach(function (t) {
+      var key = t.app || t.ability || '';
+      if (!byFrom[key]) { byFrom[key] = { label: abilityCellHtml(t), tools: [] }; groups.push(key); }
+      byFrom[key].tools.push(t);
+    });
+    var row = function (t) {
       var decision = t.editable
         ? decisionSwitch(t.decision, 'Decision for ' + t.tool, 'data-tool="' + escapeHtml(t.tool) + '"')
         : '<span class="le-pill ' + escapeHtml(t.decision) + '">' + escapeHtml(DECISION_LABELS[t.decision] || t.decision) + '</span>';
-      var note = t.isDefault ? 'default' : t.scopeNote;
-      return '<tr>' +
-        '<td><code>' + escapeHtml(t.tool) + '</code></td>' +
-        '<td>' + abilityCellHtml(t) + '</td>' +
-        '<td>' + decision + (note ? ' <span class="hint">' + escapeHtml(note) + '</span>' : '') + '</td>' +
-        '</tr>';
-    }).join('');
-    return '<p class="muted" style="margin:0 0 20px">Decide which tool calls run on their own (Allow), which wait for a person (Ask me), and which never run (Never). Click to change; it&#39;s saved at once. Scoped rules, adding and removing rules are in <a href="?tab=advanced" data-tab="advanced">Advanced</a>.</p>' +
-      '<section><h3>Tools (' + tools.length + ')</h3>' +
-        (tools.length
-          ? '<div class="le-table-wrap"><table class="actauth-rules"><thead><tr><th>Tool</th><th>From</th><th>Permission</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
-          : '<p class="hint">This agent has no tools yet. Install an ability, or add a tool in Advanced.</p>') +
-        '<p class="error" id="toolsDecisionError" style="margin:6px 0 0"></p></section>' +
-      '<section><h3>When no rule matches</h3>' +
-        decisionSwitch(cfg.defaultDecision, 'Decision when no rule matches', 'id="defaultDecisionSwitch"') +
-        '<p class="hint" style="margin:6px 0 0">For a tool with no rule (shown as default above), and any call no rule covers.</p>' +
-        '<p class="error" id="defaultDecisionError" style="margin:4px 0 0"></p></section>';
+      var note = t.isDefault ? 'No rule: uses Anything else' : t.scopeNote;
+      return '<div class="pm-row" data-tool-name="' + escapeHtml(String(t.tool).toLowerCase()) + '">' +
+        '<div class="pm-name"><code>' + escapeHtml(t.tool) + '</code>' + (note ? '<span class="pm-note">' + escapeHtml(note) + '</span>' : '') + '</div>' +
+        decision + '</div>';
+    };
+    var stat = function (d, label) {
+      return '<div class="pm-stat pm-' + d + '"><span class="pm-stat-k">' + label + '</span><span class="pm-stat-v" data-pm-count="' + d + '">0</span></div>';
+    };
+    return '<p class="muted pm-intro">Decide which tool calls run on their own, which wait for you to approve, and which never run. A change is saved at once. Rules for one tenant or environment are in <a href="?tab=advanced" data-tab="advanced">Advanced</a>.</p>' +
+      '<div class="le-grid pm-stats">' + stat('allow', 'Run on their own') + stat('ask', 'Ask you first') + stat('deny', 'Never run') +
+        '<div class="pm-stat pm-default"><span class="pm-stat-k">Anything else</span>' +
+          decisionSwitch(cfg.defaultDecision, 'Decision when no rule matches', 'id="defaultDecisionSwitch"') +
+          '<span class="pm-note">A tool with no rule, and any call no rule covers.</span>' +
+          '<p class="error" id="defaultDecisionError" style="margin:0"></p></div></div>' +
+      '<div class="pm-head"><h3>Tools (' + tools.length + ')</h3>' +
+        (tools.length > 8 ? '<label class="le-search pm-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="pmFilter" placeholder="Find a tool" aria-label="Find a tool"></label>' : '') + '</div>' +
+      (tools.length
+        ? groups.map(function (k) {
+            var g = byFrom[k];
+            return '<section class="pm-group"><div class="pm-group-k">' + g.label + '<span class="pm-group-n">' + g.tools.length + '</span></div>' +
+              '<div class="pm-list">' + g.tools.map(row).join('') + '</div></section>';
+          }).join('') + '<p class="pm-none" id="pmNone" hidden>No tool matches.</p>'
+        : '<div class="ab-empty">This agent has no tools yet. Add an app or ability on its <a href="?tab=abilities" data-tab="abilities">Apps</a> tab.</div>') +
+      '<p class="error" id="toolsDecisionError" style="margin:6px 0 0"></p>';
+  }
+
+  // The counts at the top of Permissions, from the switches as they are.
+  function countPermissions(perm) {
+    var counts = { allow: 0, ask: 0, deny: 0 };
+    perm.querySelectorAll('.decision-switch[data-tool] [aria-pressed="true"], .pm-row > .le-pill').forEach(function (el) {
+      var d = el.dataset.decision || (el.classList.contains('allow') ? 'allow' : el.classList.contains('ask') ? 'ask' : el.classList.contains('deny') ? 'deny' : '');
+      if (counts[d] != null) counts[d]++;
+    });
+    Object.keys(counts).forEach(function (d) {
+      var el = perm.querySelector('[data-pm-count="' + d + '"]');
+      if (el) el.textContent = String(counts[d]);
+    });
+  }
+  function wirePermissionsView(perm) {
+    countPermissions(perm);
+    perm.addEventListener('click', function (ev) {
+      if (ev.target.closest && ev.target.closest('.decision-switch')) setTimeout(function () { countPermissions(perm); }, 0);
+    });
+    var filter = perm.querySelector('#pmFilter');
+    if (!filter) return;
+    filter.addEventListener('input', function () {
+      var q = filter.value.trim().toLowerCase();
+      var shown = 0;
+      perm.querySelectorAll('.pm-group').forEach(function (g) {
+        var any = 0;
+        g.querySelectorAll('.pm-row').forEach(function (r) { var hit = !q || r.dataset.toolName.indexOf(q) !== -1; r.hidden = !hit; if (hit) any++; });
+        g.hidden = !any;
+        shown += any;
+      });
+      perm.querySelector('#pmNone').hidden = shown > 0;
+    });
   }
 
   // Advanced's Permission rules: every rule in actauth.yml, with its name
   // and scope, to edit, remove or add.
   function renderRulesEditorHtml(cfg) {
     var rulesHtml = cfg.rules.length
-      ? '<div class="le-table-wrap"><table class="actauth-rules actauth-rules-full"><thead><tr><th>Name</th><th>Who (tenant / environment)</th><th>App/Ability</th><th>Tool</th><th>Decision</th><th></th></tr></thead><tbody>' +
-        cfg.rules.map(renderActauthRuleRow).join('') + '</tbody></table></div>'
+      ? '<div class="pm-list">' + cfg.rules.map(renderActauthRuleRow).join('') + '</div>'
       : '<p class="hint">No rules yet: every tool call gets the decision for when no rule matches.</p>';
     return '<p class="muted" style="margin:0 0 12px">Every rule in <code>actauth.yml</code>. The first rule that matches a call decides it; Who narrows a rule to a tenant and environment (<code>*/*</code> is everyone).</p>' +
       rulesHtml + '<p class="error" id="rulesError" style="margin:6px 0 0"></p>' +
@@ -5811,6 +5933,7 @@ ${renderMarkdownScript}
     content.innerHTML = renderPermissionsHtml(cfg);
     advanced.innerHTML = renderRulesEditorHtml(cfg);
     wireActauthHandlers(name, cfg);
+    wirePermissionsView(content);
     actauthLoadedFor = name;
   }
 
@@ -5897,14 +6020,13 @@ ${renderMarkdownScript}
       : v.scope === 'agent'
         ? '<span class="error">nothing &mdash; its tools fail</span>'
         : shared && shared.set ? 'project-wide' : '<span class="hint">not set</span>';
-    return '<tr>' +
-      '<td style="min-width:200px"><code>' + escapeHtml(v.name) + '</code>' + (v.secret ? ' <span class="le-pill neutral">secret</span>' : '') + alsoDeclared +
-        '<div class="hint">' + escapeHtml(ENV_SCOPE_LABELS[v.scope] || '') + '</div>' +
-        (description ? '<div class="hint env-desc" title="' + escapeHtml(description) + '">' + escapeHtml(description) + '</div>' : '') + '</td>' +
-      '<td>' + (shared ? renderEnvSlotCell(shared) : '<span class="hint">not used</span>') + '</td>' +
-      '<td>' + (own ? renderEnvSlotCell(own) : '<span class="hint">&mdash;</span>') + '</td>' +
-      '<td>' + used + '</td>' +
-      '</tr>';
+    return '<div class="ev-row">' +
+      '<div class="ev-name"><div class="ev-name-k"><code>' + escapeHtml(v.name) + '</code>' + (v.secret ? '<span class="le-pill neutral">secret</span>' : '') + alsoDeclared + '</div>' +
+        (description ? '<p class="ev-desc">' + escapeHtml(description) + '</p>' : '') +
+        '<span class="ev-meta">' + escapeHtml(ENV_SCOPE_LABELS[v.scope] || '') + ' &middot; this agent uses: ' + used + '</span></div>' +
+      '<div class="ev-slot"><span class="ev-slot-k">Project-wide</span>' + (shared ? renderEnvSlotCell(shared) : '<span class="hint">Not used</span>') + '</div>' +
+      '<div class="ev-slot"><span class="ev-slot-k">This agent</span>' + (own ? renderEnvSlotCell(own) : '<span class="hint">Not used</span>') + '</div>' +
+      '</div>';
   }
 
   function renderEnvAbilityCard(abilityName, vars) {
@@ -5915,15 +6037,15 @@ ${renderMarkdownScript}
       bySlot[v.name][v.slot] = v;
     });
     var rows = names.map(function (n) { return renderEnvSettingRow(bySlot[n].shared, bySlot[n].agent); }).join('');
-    return '<section><h3>' + escapeHtml(abilityName) + '</h3>' +
-      '<div class="le-table-wrap"><table><thead><tr><th>Setting</th><th>Project-wide</th><th>This agent</th><th>Used</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
-      '</section>';
+    return '<section class="ev-group"><div class="pm-group-k">' + escapeHtml(abilityName) + '<span class="pm-group-n">' + names.length + '</span></div>' +
+      '<div class="pm-list">' + rows + '</div></section>';
   }
 
   function renderEnvConfigHtml(vars) {
-    if (!vars.length) return '<p class="hint">No installed ability has declared any environment variables for this agent yet.</p>';
-
-    var summaryHtml = '<p class="muted" style="margin:0 0 20px">Settings your installed abilities read. A secret is never shown again after it is saved. Project-wide values live in the project <code>.env</code>; this agent&#39;s own values in <code>agents/&lt;name&gt;/.env</code>.</p>';
+    var summaryHtml = '<p class="muted pm-intro">Keys and settings the agent' + String.fromCharCode(8217) + 's apps and abilities read, like an API key. A secret is never shown again once saved. A project-wide value is shared by every agent (the project <code>.env</code>); one set for this agent wins over it (<code>agents/&lt;name&gt;/.env</code>).</p>';
+    if (!vars.length) return summaryHtml + '<div class="ab-empty">Nothing to set. When this agent gets an ability that needs a key or setting (Gmail' + String.fromCharCode(8217) + 's, say), it shows up here. Add one on its <a href="?tab=abilities" data-tab="abilities">Apps</a> tab.</div>';
+    var missing = vars.filter(function (v) { return v.slot === 'agent' && v.scope === 'agent' && !v.set; }).length;
+    if (missing) summaryHtml += '<div class="approvals-nudge">' + (missing === 1 ? '1 setting is' : missing + ' settings are') + ' missing, so tools that need ' + (missing === 1 ? 'it' : 'them') + ' fail until set.</div>';
 
     // Grouped by declaring ability, not a single flat list — a var
     // declared by more than one ability (rare, but see renderEnvRow's
@@ -7569,7 +7691,11 @@ ${renderMarkdownScript}
       // own skills. Each part keeps its old data-tab-panel name, which the
       // code that redraws it looks for; only .tab-panel is shown or hidden.
       '<div class="tab-panel" data-tab-panel="advanced">' +
-        '<p class="muted" style="margin:0 0 20px">For building your own: tools and skills that don&#39;t come from an ability, Composio tools, subagents and permission rules in full. What each ability adds is in its Details on the Apps tab.</p>' +
+        '<p class="muted pm-intro">For building your own: tools and skills that don&#39;t come from an app or ability, Composio tools, subagents, and permission rules in full. What each ability adds is in its Details on the Apps tab.</p>' +
+        '<nav class="le-seg adv-nav" aria-label="Advanced">' +
+          [['advanced-tools', 'Tools'], ['advanced-skills', 'Skills'], ['advanced-rules', 'Permission rules'], ['advanced-delete', 'Delete agent']].map(function (x) {
+            return '<button type="button" data-adv-jump="' + x[0] + '">' + x[1] + '</button>';
+          }).join('') + '</nav>' +
         '<h2 class="advanced-part" id="advanced-tools">Tools</h2>' +
         '<div data-tab-panel="tools">' + renderToolsTabHtml(cfg) + '</div>' +
         '<h2 class="advanced-part" id="advanced-skills">Skills</h2>' +
