@@ -106,8 +106,7 @@ ${consoleSidebarHtml}
     <div class="ag-dlg-head"><h2 id="agDlgTitle">New agent</h2><button type="button" id="cancelNewAgentBtn">Cancel</button><button type="submit" class="primary">Create agent</button></div>
     <div class="ag-dlg-body">
       <div class="ag-dlg-col">
-        <div class="ag-field"><label for="agDisplayName">Name</label><input type="text" id="agDisplayName" name="displayName" placeholder="Weather assistant" maxlength="60" required><p class="hint">What you'll see in the sidebar. You can change it later.</p></div>
-        <div class="ag-field"><label for="agId">ID</label><input type="text" id="agId" name="name" placeholder="weather-assistant" pattern="[a-z0-9]+(-[a-z0-9]+)*" required><p class="hint">Lowercase and hyphens. Its folder agents/&lt;id&gt;/ and API address use it, so it can't be changed later.</p></div>
+        <div class="ag-field"><label for="agId">ID</label><input type="text" id="agId" name="name" placeholder="support-agent" pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="40" required autocapitalize="off" spellcheck="false"><p class="hint">Lowercase letters, numbers and hyphens. Its folder agents/&lt;id&gt;/ and API address use it, so it can't be changed later; give it a display name any time on its Overview.</p></div>
         <div class="ag-field"><label for="agPrompt">Instructions</label><textarea id="agPrompt" name="systemPrompt" placeholder="You are ..."></textarea><p class="hint">Who it is and the rules it always follows. Its workflows say what to do.</p></div>
       </div>
       <div class="ag-dlg-col">
@@ -251,7 +250,7 @@ ${consoleShellScript}
     newAgentResult.style.display = 'none';
     newAgentError.style.display = 'none';
     if (!newAgentDialog.open) newAgentDialog.showModal();
-    newAgentForm.querySelector('input[name="displayName"]').focus();
+    newAgentForm.querySelector('input[name="name"]').focus();
     // Checks which providers have keys, then loads the chosen provider's
     // models; both when the form opens, not on every visit to this page.
     // Starts on openai / gpt-6-luna (the markup's defaults) when openai
@@ -263,17 +262,6 @@ ${consoleShellScript}
     });
   });
 
-  // The id follows the name as it's typed ("Weather assistant" becomes
-  // weather-assistant), until the id is typed in itself.
-  var displayNameInput = newAgentForm.querySelector('input[name="displayName"]');
-  var idInput = newAgentForm.querySelector('input[name="name"]');
-  var idTyped = false;
-  idInput.addEventListener('input', function () { idTyped = idInput.value !== ''; });
-  displayNameInput.addEventListener('input', function () {
-    if (idTyped) return;
-    idInput.value = displayNameInput.value.toLowerCase().split("'").join('').split(String.fromCharCode(8217)).join('').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
-  });
-  newAgentForm.addEventListener('reset', function () { idTyped = false; });
 
   newAgentDialog.addEventListener('click', function (ev) { if (ev.target === newAgentDialog) newAgentDialog.close(); });
   cancelNewAgentBtn.addEventListener('click', function () {
@@ -292,8 +280,6 @@ ${consoleShellScript}
     // adapters/http.ts's parseAgentTemplateOptions for the defaults
     // scaffoldAgent falls back to then.
     var body = { name: data.get('name') };
-    var displayName = data.get('displayName');
-    if (displayName && displayName.trim()) body.displayName = displayName;
     var systemPrompt = data.get('systemPrompt');
     if (systemPrompt && systemPrompt.trim()) body.systemPrompt = systemPrompt;
     var provider = data.get('provider');
