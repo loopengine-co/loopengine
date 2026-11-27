@@ -29,7 +29,7 @@ import { WORKFLOW_SECTIONS_CSS, WORKFLOW_SECTIONS_SCRIPT } from './workflow-sect
 import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
 import { MESSAGING_ICONS } from './messaging-icons.js'
 import { renderMarkdownScript } from './markdown-script.js'
-import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { MESSAGE_GLYPH, WORKFLOW_GLYPH, consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 import { newWorkflowDialogCss, newWorkflowDialogHtml, newWorkflowDialogScript } from './new-workflow-dialog.js'
 import { REASONING_PROVIDERS } from './agent-file-admin.js'
@@ -1232,7 +1232,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .sched-card.schedule-focus { background: var(--accent-soft); }
   .sched-card-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 12px; align-items: start; }
   .sched-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
-  .sched-icon svg { width: 16px; height: 16px; }
+  .sched-icon svg { width: 16px; height: 16px; margin: 0; opacity: 1; }
   .sched-card-text { display: grid; gap: 3px; min-width: 0; }
   .sched-card-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
   button.sched-card-title, button.sched-card-title:hover:not(:disabled) { justify-self: start; height: auto; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; }
@@ -6059,8 +6059,9 @@ ${renderMarkdownScript}
     if (h < 48) return 'in ' + h + 'h ' + (min % 60) + 'm';
     return 'in ' + Math.round(h / 24) + ' days';
   }
-  var SCHED_ICON_REPEAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18 2v4h-4"/><path d="M6 22v-4h4"/></svg>';
-  var SCHED_ICON_ONCE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>';
+  // What a schedule runs, as its card's icon: a workflow or a message.
+  var SCHED_ICON_WORKFLOW = '${WORKFLOW_GLYPH}';
+  var SCHED_ICON_MESSAGE = '${MESSAGE_GLYPH}';
   var SCHED_ICON_DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
 
   // A schedule as a card, as on the Schedules page: what it runs, a switch
@@ -6086,14 +6087,14 @@ ${renderMarkdownScript}
       : t.last_status === 'error' ? '<span class="sched-chip bad">Last run failed</span>' : '';
     var next = ended ? '' : !on ? 'Paused' : t.next_run_at ? 'Next run ' + scheduleUntil(t.next_run_at) : '';
     return '<div class="sched-card' + (on && !ended ? '' : ' is-off') + '" id="schedule-' + escapeHtml(t.task_id) + '">' +
-      '<div class="sched-card-head"><span class="sched-icon">' + (t.schedule && t.schedule.run_at ? SCHED_ICON_ONCE : SCHED_ICON_REPEAT) + '</span>' +
+      '<div class="sched-card-head"><span class="sched-icon" title="' + (t.workflow_id ? 'Runs a workflow' : 'Sends the agent a message') + '">' + (t.workflow_id ? SCHED_ICON_WORKFLOW : SCHED_ICON_MESSAGE) + '</span>' +
         '<span class="sched-card-text">' + (ended ? '<span class="sched-card-title">' + escapeHtml(title) + '</span>' : '<button type="button" class="sched-card-title schedule-edit" data-id="' + escapeHtml(t.task_id) + '" title="Edit">' + escapeHtml(title) + '</button>') +
           (t.workflow_missing ? '<span class="le-pill bad" style="justify-self:start">Its workflow was removed</span>' : desc ? '<span class="sched-card-desc">' + escapeHtml(desc) + '</span>' : '') +
           (params ? '<span class="hint">' + params + '</span>' : '') + '</span>' +
         (ended ? '<span></span>' : '<button type="button" class="le-switch schedule-action" role="switch" aria-checked="' + on + '" aria-label="' + (on ? 'Pause ' : 'Resume ') + escapeHtml(title) + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + (on ? 'pause' : 'resume') + '"' + (t.status === 'running' || t.status === 'awaiting_approval' ? ' disabled' : '') + '></button>') +
         '<details class="sched-menu"><summary aria-label="More">' + SCHED_ICON_DOTS + '</summary><div class="sched-menu-list">' + menu.join('') + '</div></details></div>' +
       '<div class="sched-chips"><span class="sched-chip strong">' + escapeHtml(describeSchedule(t)) + '</span>' +
-        (t.workflow ? '<a class="sched-chip" href="' + escapeHtml(workflowPageHref(currentName, t.workflow.id)) + '">Workflow: ' + escapeHtml(t.workflow.title) + '</a>' : !t.workflow_id ? '<span class="sched-chip">Message</span>' : '') +
+        (t.workflow ? '<a class="sched-chip" href="' + escapeHtml(workflowPageHref(currentName, t.workflow.id)) + '">Workflow: ' + escapeHtml(t.workflow.title) + '</a>' : '') +
         // A message's result to chat, switched here; a workflow's follows its Messaging tab.
         (!ended && !t.workflow_id ? '<label class="sched-chip"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Result to chat</label>' : '') +
         state + (next ? '<span class="sched-next">' + escapeHtml(next) + '</span>' : '') + '</div>' +
