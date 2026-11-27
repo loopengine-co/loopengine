@@ -345,6 +345,50 @@ export async function setScheduledTaskNotify(taskId: string, notify: boolean): P
   return mustExist(await getSchedulerStore().update(taskId, (t) => t && { ...t, notify: notify || undefined }), taskId)
 }
 
+export interface UpdateScheduledTaskInput {
+  task_name?: string
+  /** A message task's message; a workflow task has none. */
+  message?: string
+  /** A workflow task's params, replacing the old ones. The caller checks
+   * they fit the workflow. */
+  params?: Record<string, string>
+  /** As createScheduledTask takes it; from now on, its runs follow it. */
+  schedule?: CreateScheduledTaskInput['schedule']
+}
+
+/** Changes a task's name, message or params, or when it runs. History
+ * stays. A paused task stays paused; a finished one-off task given a new
+ * time is scheduled again; a run in progress finishes, and the next run
+ * follows the new schedule. */
+export async function updateScheduledTask(taskId: string, input: UpdateScheduledTaskInput, nowMs = Date.now()): Promise<ScheduledTask> {
+  const current = mustExist(await getSchedulerStore().get(taskId), taskId)
+  if (current.status === 'cancelled') throw new ScheduleError('a removed schedule can\'t be changed')
+  if (input.message !== undefined) {
+    if (current.workflow_id) throw new ScheduleError('a workflow\'s schedule runs the workflow: change its params instead of a message')
+    if (!input.message.trim()) throw new ScheduleError('message can\'t be empty')
+  }
+  if (input.params !== undefined && !current.workflow_id) throw new ScheduleError('params go with a workflow\'s schedule')
+  const parsed = input.schedule ? parseScheduleInput(input.schedule, nowMs) : undefined
+  return mustExist(
+    await getSchedulerStore().update(taskId, (t) => {
+      if (!t) return t
+      const next: ScheduledTask = { ...t }
+      if (input.task_name !== undefined) next.task_name = input.task_name.trim() || undefined
+      if (input.message !== undefined) next.message = input.message
+      if (input.params !== undefined) next.params = Object.keys(input.params).length ? input.params : undefined
+      if (parsed) {
+        next.schedule = parsed.schedule
+        if (t.status === 'scheduled' || t.status === 'done') {
+          next.status = 'scheduled'
+          next.next_run_at = new Date(parsed.nextRunMs).toISOString()
+        }
+      }
+      return next
+    }),
+    taskId,
+  )
+}
+
 export async function resumeScheduledTask(taskId: string, nowMs = Date.now()): Promise<ScheduledTask> {
   return mustExist(
     await getSchedulerStore().update(taskId, (t) => {

@@ -115,7 +115,7 @@ import { feedbackSummary, suggestImprovements } from '#web/workflow-feedback.js'
 import { feedbackPageHtml } from '#web/feedback-page.js'
 import { renderDecideGonePage, renderDecideInvalidPage, renderDecidePage } from '#web/decide-page.js'
 import { agentApprovers, agentMessagingIdentities, agentTelegramWebhookInfo, announceToChat, announceToNotifier, clickAllowed, connectionPublicUrl, conversationsOn, describeAgentNotifier, jobAllowed, jobsOn, listAgentPending, listAgentSlackChannels, listAgentSlackMembers, listAgentTelegramPeople, removeAgentNotifier, saveAgentNotifier, setAgentApprovers, setAgentPrimaryNotifier, setupAgentTelegramWebhook, slackClickAllowed, slackCredentialsFor, telegramCredentialsFor, testAgentNotifier, hasChatApp, hasNotifier, type TwoWayApp } from '#web/notifier-admin.js'
-import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, parseScheduleInput, type CreateScheduledTaskInput, type Schedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
+import { Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, deleteScheduledTask, describeSchedule, parseScheduleInput, type CreateScheduledTaskInput, type Schedule, getScheduledTask, listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, updateScheduledTask, type ScheduledTask, type ScheduledTaskRun } from '#core/scheduler.js'
 import { firstSighting, handleInboundMessage, handleMessagingAction, outcomeText, settleRequest, settleThreadChoice, type DecisionOutcome, type MessagingDecision, type MessagingDeps } from '#core/messaging/engine.js'
 import { handleJobMessage, isJobMessage, settleJobThread, type JobDeps, type JobTurn } from '#core/messaging/jobs.js'
 import { findJobThreadBySession, findThread, findThreadByPending } from '#core/messaging/threads.js'
@@ -3173,6 +3173,35 @@ async function handleSchedulesPost(req: IncomingMessage, res: ServerResponse, ag
     })
     if (workflowId && (body.result_to_chat ?? body.notify) === true) postWorkflowResults(agentDir(agentName), workflowId)
     scheduleJson(res, 201, task)
+  } catch (err) {
+    scheduleJson(res, err instanceof ScheduleError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// PUT /schedules/:id { task_name?, message?, params?, schedule? }: changes
+// a schedule in place, keeping its history. A workflow's params are
+// checked against the workflow, as when it was made.
+async function handleSchedulePut(req: IncomingMessage, res: ServerResponse, taskId: string): Promise<void> {
+  const task = await getScheduledTask(taskId)
+  if (!task) return scheduleJson(res, 404, { error: `no scheduled task "${taskId}"` })
+  const body = await readJsonBody(req)
+  let params: Record<string, string> | undefined
+  if (body.params !== undefined && task.workflow_id) {
+    const workflow = getEntry(task.agent) ? readWorkflow(agentDir(task.agent), task.workflow_id) : undefined
+    if (!workflow) return scheduleJson(res, 400, { error: `${task.agent} has no workflow "${task.workflow_id}"` })
+    try {
+      params = validateParams(workflow, body.params)
+    } catch (err) {
+      return scheduleJson(res, 400, { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  try {
+    scheduleJson(res, 200, await updateScheduledTask(taskId, {
+      ...(typeof body.task_name === 'string' ? { task_name: body.task_name } : {}),
+      ...(typeof body.message === 'string' ? { message: body.message } : {}),
+      ...(params ? { params } : {}),
+      ...(body.schedule && typeof body.schedule === 'object' ? { schedule: body.schedule as CreateScheduledTaskInput['schedule'] } : {}),
+    }))
   } catch (err) {
     scheduleJson(res, err instanceof ScheduleError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
   }
@@ -6654,6 +6683,11 @@ const server = createServer(async (req, res) => {
     const scheduleActionMatch = req.method === 'POST' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)\/(run|pause|resume|cancel)$/)
     if (scheduleActionMatch) {
       await handleScheduleAction(res, scheduleActionMatch[1], scheduleActionMatch[2])
+      return
+    }
+    const schedulePutMatch = req.method === 'PUT' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)$/)
+    if (schedulePutMatch) {
+      await handleSchedulePut(req, res, schedulePutMatch[1])
       return
     }
     const scheduleDeleteMatch = req.method === 'DELETE' && pathname.match(/^\/schedules\/([A-Za-z0-9_-]+)$/)

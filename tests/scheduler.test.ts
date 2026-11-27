@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   FileSchedulerStore, Scheduler, ScheduleError, cancelScheduledTask, createScheduledTask, getScheduledTask, importLegacyScheduledTasks,
-  listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, setSchedulerStore, type FireTask,
+  listScheduledTasks, nextScheduledWakeAt, pauseScheduledTask, resumeScheduledTask, runScheduledTaskNow, setScheduledTaskNotify, setSchedulerStore, updateScheduledTask, type FireTask,
 } from '#core/scheduler.js'
 
 let dir: string
@@ -219,5 +219,31 @@ describe('importLegacyScheduledTasks', () => {
     expect(await importLegacyScheduledTasks(legacy)).toBe(0)
     expect(existsSync(join(legacy, '.tasks', 'old-1.json.migrated'))).toBe(true)
     expect((await getScheduledTask('old-1'))?.schedule).toEqual({ every: '1d', anchor: '2026-10-13T09:00:00.000Z' })
+  })
+})
+
+describe('editing tasks', () => {
+  it('changes when it runs, its name and its params in place, keeping a paused task paused', async () => {
+    const now = Date.parse('2026-10-12T10:07:00Z')
+    const task = await createScheduledTask({ agent: 'a', workflow_id: 'news', params: { topic: 'ai' }, schedule: { every: '1h' }, task_name: 'Old' }, now)
+    const edited = await updateScheduledTask(task.task_id, { task_name: 'New', params: { topic: 'robots' }, schedule: { every: '2h' } }, now)
+    expect(edited).toMatchObject({ task_name: 'New', params: { topic: 'robots' }, status: 'scheduled', next_run_at: '2026-10-12T12:07:00.000Z' })
+    expect(edited.schedule).toEqual({ every: '2h', anchor: '2026-10-12T12:07:00.000Z' })
+    await pauseScheduledTask(task.task_id)
+    const paused = await updateScheduledTask(task.task_id, { schedule: { every: '3h' } }, now)
+    expect(paused.status).toBe('paused')
+    expect(paused.next_run_at).toBeUndefined()
+    expect(paused.schedule).toMatchObject({ every: '3h' })
+  })
+
+  it('keeps a workflow task a workflow task, and refuses a bad schedule or a removed task', async () => {
+    const wf = await createScheduledTask({ agent: 'a', workflow_id: 'news', schedule: { every: '1h' } })
+    await expect(updateScheduledTask(wf.task_id, { message: 'hi' })).rejects.toThrow(/workflow/)
+    const msg = await createScheduledTask({ agent: 'a', message: 'hi', schedule: { every: '1h' } })
+    await expect(updateScheduledTask(msg.task_id, { params: { x: 'y' } })).rejects.toThrow(/params/)
+    await expect(updateScheduledTask(msg.task_id, { schedule: { every: '5s' } })).rejects.toThrow(/too short/)
+    expect((await updateScheduledTask(msg.task_id, { message: 'hello' })).message).toBe('hello')
+    await cancelScheduledTask(msg.task_id)
+    await expect(updateScheduledTask(msg.task_id, { task_name: 'x' })).rejects.toThrow(ScheduleError)
   })
 })

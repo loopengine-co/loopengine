@@ -1229,6 +1229,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .sched-icon svg { width: 16px; height: 16px; }
   .sched-card-text { display: grid; gap: 3px; min-width: 0; }
   .sched-card-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  button.sched-card-title, button.sched-card-title:hover:not(:disabled) { justify-self: start; height: auto; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; }
+  button.sched-card-title:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
   .sched-card-desc { font-size: 13px; color: var(--ink-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .sched-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .sched-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -1722,10 +1724,11 @@ ${renderMarkdownScript}
         : (x.nextRunAt ? '<span class="hint">next ' + escapeHtml(new Date(x.nextRunAt).toLocaleString()) + '</span>' : '');
       var values = x.params ? Object.keys(x.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(x.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
       return '<div class="wf-trigger-item">' +
-        '<span><a href="?agent=' + encodeURIComponent(agentName) + '&amp;tab=schedules#schedule-' + escapeHtml(x.taskId) + '" class="workflow-schedule-link" data-task="' + escapeHtml(x.taskId) + '" title="See it in the Schedules tab">' +
-          escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + '</a></span>' + state +
+        '<span><button type="button" class="wf-link workflow-schedule-edit" data-task="' + escapeHtml(x.taskId) + '" title="Edit">' +
+          escapeHtml(x.describe.charAt(0).toUpperCase() + x.describe.slice(1)) + '</button></span>' + state +
         (values ? '<span class="hint">' + values + '</span>' : '') +
         '<span style="display:flex;gap:6px;margin-left:auto">' +
+          '<button type="button" class="workflow-schedule-edit" data-task="' + escapeHtml(x.taskId) + '">Edit</button>' +
           (x.status === 'paused' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="resume">Resume</button>'
             : x.status === 'scheduled' ? '<button type="button" class="workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="pause">Pause</button>' : '') +
           '<button type="button" class="delete-btn workflow-schedule-action" data-id="' + escapeHtml(x.taskId) + '" data-action="cancel">Remove in draft</button>' +
@@ -3082,6 +3085,8 @@ ${renderMarkdownScript}
   var workflowsRefreshTimer = null;
   // Set by a workflow's "Add a schedule", for the Schedules tab's form.
   var pendingScheduleWorkflow = null;
+  // Set by a schedule's Edit on a workflow's Triggers: the schedule to open in Edit schedule.
+  var pendingScheduleEdit = null;
   // Create schedule was opened from a workflow's Triggers: its card refreshes after.
   var scheduleFromWorkflow = false;
   // Set by a workflow's Edit on the Skills list: the workflow to open in
@@ -4524,15 +4529,13 @@ ${renderMarkdownScript}
         loadWorkflowsSection(name);
       });
     });
-    // A schedule opens its own row in the Schedules tab.
-    var scheduleLinks = card.querySelectorAll('.workflow-schedule-link');
-    for (var sl = 0; sl < scheduleLinks.length; sl++) {
-      scheduleLinks[sl].addEventListener('click', function (ev) {
-        if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
-        ev.preventDefault();
-        pendingScheduleFocus = ev.currentTarget.dataset.task;
-        switchTab('schedules');
-        focusScheduleRow();
+    // A schedule's Edit: Edit schedule, over this page.
+    var scheduleEdits = card.querySelectorAll('.workflow-schedule-edit');
+    for (var sl = 0; sl < scheduleEdits.length; sl++) {
+      scheduleEdits[sl].addEventListener('click', function (ev) {
+        pendingScheduleEdit = ev.currentTarget.dataset.task;
+        scheduleFromWorkflow = true;
+        loadSchedulesTab(name);
       });
     }
     // + Webhook, beside + Schedule: straight to the form; once made, it's
@@ -6011,6 +6014,8 @@ ${renderMarkdownScript}
   // The agent's workflows, from the same response: a new schedule can run
   // one of them instead of a message.
   var schedulesWorkflows = [];
+  // The agent's schedules as last loaded, for Edit schedule.
+  var schedulesTasks = [];
 
   function fmtScheduleTime(iso) {
     var d = new Date(iso);
@@ -6069,6 +6074,7 @@ ${renderMarkdownScript}
     var desc = t.workflow ? (t.workflow.description || t.workflow.start_message || '') : t.workflow_missing ? '' : (t.task_name ? t.message : '');
     var params = t.params ? Object.keys(t.params).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(t.params[k]); }).join(' ' + String.fromCharCode(183) + ' ') : '';
     var menu = [];
+    if (!ended) menu.push('<button type="button" class="schedule-edit" data-id="' + escapeHtml(t.task_id) + '">Edit</button>');
     if (t.status !== 'running' && t.status !== 'awaiting_approval' && !ended) menu.push('<button type="button" class="schedule-action" data-id="' + escapeHtml(t.task_id) + '" data-action="run">Run now</button>');
     if (t.workflow) menu.push('<a href="' + escapeHtml(workflowPageHref(currentName, t.workflow.id)) + '">Open its workflow</a>');
     menu.push(ended
@@ -6080,19 +6086,9 @@ ${renderMarkdownScript}
       : t.status === 'cancelled' ? '<span class="sched-chip">Removed</span>'
       : t.last_status === 'error' ? '<span class="sched-chip bad">Last run failed</span>' : '';
     var next = ended ? '' : !on ? 'Paused' : t.next_run_at ? 'Next run ' + scheduleUntil(t.next_run_at) : '';
-    var lastOutcome = t.last_status === 'ok' ? (t.last_result || '') : (t.last_error || '');
-    var last = t.last_run_at
-      ? '<div class="sched-last"><span class="sched-last-k">Last run</span><span class="le-pill ' + (t.last_status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(t.last_status === 'ok' ? 'done' : t.last_status) + '</span> <span class="hint">' + escapeHtml(fmtScheduleTime(t.last_run_at)) + '</span>' +
-          (lastOutcome ? '<div class="schedule-result workflow-markdown">' + renderMarkdownPreview(lastOutcome) + '</div>' : '') + '</div>'
-      : '';
-    var history = (t.history || []).slice().reverse().map(function (h) {
-      var outcome = h.status === 'ok' ? (h.result || '') : (h.error || '');
-      return '<li><span class="le-pill ' + (h.status === 'ok' ? 'good' : 'bad') + '">' + escapeHtml(h.status) + '</span> <span class="hint">' + escapeHtml(fmtScheduleTime(h.ran_at)) + '</span>' +
-        (outcome ? '<div class="schedule-result workflow-markdown">' + renderMarkdownPreview(outcome) + '</div>' : '') + '</li>';
-    }).join('');
     return '<div class="sched-card' + (on && !ended ? '' : ' is-off') + '" id="schedule-' + escapeHtml(t.task_id) + '">' +
       '<div class="sched-card-head"><span class="sched-icon">' + (t.schedule && t.schedule.run_at ? SCHED_ICON_ONCE : SCHED_ICON_REPEAT) + '</span>' +
-        '<span class="sched-card-text"><span class="sched-card-title">' + escapeHtml(title) + '</span>' +
+        '<span class="sched-card-text">' + (ended ? '<span class="sched-card-title">' + escapeHtml(title) + '</span>' : '<button type="button" class="sched-card-title schedule-edit" data-id="' + escapeHtml(t.task_id) + '" title="Edit">' + escapeHtml(title) + '</button>') +
           (t.workflow_missing ? '<span class="le-pill bad" style="justify-self:start">Its workflow was removed</span>' : desc ? '<span class="sched-card-desc">' + escapeHtml(desc) + '</span>' : '') +
           (params ? '<span class="hint">' + params + '</span>' : '') + '</span>' +
         (ended ? '<span></span>' : '<button type="button" class="le-switch schedule-action" role="switch" aria-checked="' + on + '" aria-label="' + (on ? 'Pause ' : 'Resume ') + escapeHtml(title) + '" data-id="' + escapeHtml(t.task_id) + '" data-action="' + (on ? 'pause' : 'resume') + '"' + (t.status === 'running' || t.status === 'awaiting_approval' ? ' disabled' : '') + '></button>') +
@@ -6102,8 +6098,6 @@ ${renderMarkdownScript}
         // A message's result to chat, switched here; a workflow's follows its Messaging tab.
         (!ended && !t.workflow_id ? '<label class="sched-chip"><input type="checkbox" class="schedule-notify-toggle" data-id="' + escapeHtml(t.task_id) + '"' + (t.notify ? ' checked' : '') + '> Result to chat</label>' : '') +
         state + (next ? '<span class="sched-next">' + escapeHtml(next) + '</span>' : '') + '</div>' +
-      last +
-      (history ? '<details class="sched-history"><summary class="hint">History (' + (t.history || []).length + ')</summary><ul class="schedule-history">' + history + '</ul></details>' : '') +
     '</div>';
   }
 
@@ -6143,7 +6137,7 @@ ${renderMarkdownScript}
           '</div><div class="sched-dlg-col">' +
           (schedulesWorkflows.length ? '<div class="sched-field" id="scheduleInputsField"><span class="sched-field-k">Inputs for every run</span><div class="workflow-params" id="scheduleParams"></div><p class="hint" style="margin:0">Each run follows the workflow&#39;s instructions as they are then, so changing the workflow changes what runs.</p></div>' : '') +
           '<div class="sched-field" id="scheduleNotifyField"' + (schedulesWorkflows.length ? ' hidden' : '') + '><div class="sched-switch-row"><span class="sched-field-k">Send each result to chat</span><input type="checkbox" name="notify" aria-label="Send each result to chat"></div><p class="hint" style="margin:0">After every run, its result goes to the agent&#39;s messaging app (Slack, Telegram, Lark or email), if it has one. A workflow&#39;s results go where its Messaging tab says.</p></div>' +
-          '<div class="sched-field"><span class="sched-field-k">When it starts</span><p class="hint" style="margin:0">Right away: the first run is at the next time you chose. Pause or remove it from the list.</p></div>' +
+          '<div class="sched-field" id="scheduleStartsField"><span class="sched-field-k">When it starts</span><p class="hint" style="margin:0">Right away: the first run is at the next time you chose. Pause or remove it from the list.</p></div>' +
           '</div></div>' +
           '<div class="sched-dlg-foot"><span id="scheduleResult"></span></div>' +
         '</form></dialog>';
@@ -6284,6 +6278,78 @@ ${renderMarkdownScript}
     });
     var tomorrow = new Date(Date.now() + 86400000);
     form.onceDate.value = tomorrow.getFullYear() + '-' + String(tomorrow.getMonth() + 1).padStart(2, '0') + '-' + String(tomorrow.getDate()).padStart(2, '0');
+    // Edit schedule: the same form, filled in from a schedule, saved in
+    // place. What it runs (a workflow or a message) stays as it is.
+    var editingId = null;
+    var inZone = function (o) { if (schedulesTimeZone) o.timeZone = schedulesTimeZone; return o; };
+    var hhmm = function (iso) { return new Date(iso).toLocaleTimeString('en-GB', inZone({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })); };
+    var openEdit = function (t) {
+      editingId = t.task_id;
+      content.querySelector('#scheduleDlgTitle').textContent = 'Edit schedule';
+      var byMessage = !t.workflow_id;
+      form.runs.value = byMessage ? 'message' : 'workflow';
+      if (runsBox) runsBox.hidden = true;
+      messageField.hidden = !byMessage;
+      if (byMessage) form.message.value = t.message || '';
+      if (workflowSelect) {
+        workflowSelect.hidden = byMessage;
+        if (!byMessage) { workflowSelect.value = t.workflow_id; workflowSelect.disabled = true; }
+      }
+      var inputs = form.querySelector('#scheduleInputsField');
+      if (inputs) inputs.hidden = byMessage;
+      form.querySelector('#scheduleNotifyField').hidden = true;
+      form.querySelector('#scheduleStartsField').hidden = true;
+      form.task_name.value = t.task_name || '';
+      var sc = t.schedule || {};
+      if (sc.run_at) {
+        skind = 'once';
+        form.onceDate.value = new Date(sc.run_at).toLocaleDateString('en-CA', inZone({ year: 'numeric', month: '2-digit', day: '2-digit' }));
+        form.onceAt.value = hhmm(sc.run_at);
+      } else {
+        skind = 'repeat';
+        var every = String(sc.every || '1h').trim();
+        var unit = every.charAt(every.length - 1);
+        var n = parseInt(every, 10) || 1;
+        if (every === '1d' && sc.anchor) { sfreq = 'daily'; form.dailyAt.value = hhmm(sc.anchor); }
+        else if (every === '7d' && sc.anchor) {
+          sfreq = 'weekly';
+          form.weeklyAt.value = hhmm(sc.anchor);
+          form.weekday.value = new Date(sc.anchor).toLocaleDateString('en-US', inZone({ weekday: 'long' })).toLowerCase();
+        } else {
+          sfreq = 'interval';
+          if (unit === 's') { n = Math.max(1, Math.round(n / 60)); unit = 'm'; }
+          form.everyN.value = String(n);
+          form.everyUnit.value = unit;
+        }
+      }
+      press(form.querySelector('#scheduleKind'), 'data-skind', skind);
+      press(form.querySelector('#scheduleFreq'), 'data-sfreq', sfreq);
+      showWhen();
+      renderScheduleParams();
+      Object.keys(t.params || {}).forEach(function (k) {
+        var el = form.elements['param:' + k];
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = t.params[k] === 'true'; else el.value = t.params[k];
+      });
+      openDialog();
+    };
+    var editBtns = content.querySelectorAll('.schedule-edit');
+    for (var eb = 0; eb < editBtns.length; eb++) {
+      editBtns[eb].addEventListener('click', function (ev) {
+        var id = ev.currentTarget.dataset.id;
+        var menu = ev.currentTarget.closest('details');
+        if (menu) menu.open = false;
+        var t = schedulesTasks.filter(function (x) { return x.task_id === id; })[0];
+        if (t) openEdit(t);
+      });
+    }
+    // Closed without saving: drawn afresh, so + Add schedule starts blank.
+    dialog.addEventListener('close', function () { if (editingId && dialog.isConnected && content.contains(dialog)) loadSchedulesTab(name); });
+    if (pendingScheduleEdit) {
+      var pendingTask = schedulesTasks.filter(function (x) { return x.task_id === pendingScheduleEdit; })[0];
+      pendingScheduleEdit = null;
+      if (pendingTask) openEdit(pendingTask);
+    }
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var data = new FormData(form);
@@ -6299,6 +6365,20 @@ ${renderMarkdownScript}
         schedule = { every: '7d', at: data.get('weeklyAt') || '09:00', weekday: data.get('weekday') };
       } else {
         schedule = { every: '1d', at: data.get('dailyAt') || '09:00' };
+      }
+      if (editingId) {
+        result.textContent = 'Saving' + String.fromCharCode(8230);
+        fetchJsonRetryOnce('/schedules/' + encodeURIComponent(editingId), {
+          method: 'PUT', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(Object.assign(
+            runsWorkflow ? { params: scheduleParams(data) } : { message: data.get('message') },
+            { schedule: schedule, task_name: data.get('task_name') || '' }
+          )),
+        }).then(function (r) {
+          if (!r.ok) { result.innerHTML = '<span class="error">' + escapeHtml(r.body.error || 'Could not save') + '</span>'; return; }
+          dialog.close();
+        });
+        return;
       }
       result.textContent = 'Scheduling' + String.fromCharCode(8230);
       // Live at once, a workflow's schedule too (it's how the workflow
@@ -6331,6 +6411,7 @@ ${renderMarkdownScript}
       var tasks = r.body.tasks || [];
       schedulesTimeZone = r.body.time_zone || null;
       schedulesWorkflows = r.body.workflows || [];
+      schedulesTasks = tasks;
       content.innerHTML = renderSchedulesHtml(tasks);
       wireSchedulesHandlers(name);
       leShell.setCount('schedules', tasks.filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; }).length);
