@@ -999,6 +999,33 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .msg-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .msg-card-foot button { flex: none; height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
   @media (max-width: 860px) { .msg-cards { grid-template-columns: minmax(0, 1fr); } }
+  /* Apps tab: what the agent has, then Add more (apps, official or
+     private abilities), all as cards. */
+  .ab-intro { margin: 0 0 24px; max-width: 760px; }
+  .ab-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ab-card { display: grid; gap: 12px; align-content: start; padding: 20px 22px; background: var(--bg); min-width: 0; }
+  .ab-card:has(.ability-details-row), .ab-card:has(.app-pick) { grid-column: 1 / -1; }
+  .ab-card .sched-icon svg { width: 16px; height: 16px; }
+  .ab-sub { font-size: 12px; color: var(--ink-faint); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ab-desc { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .ab-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: auto; }
+  .ab-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .ab-actions button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; white-space: nowrap; }
+  .ab-card .ability-details-row > div { margin-top: 4px; }
+  .ab-actions .delete-btn { background: var(--bg); border-color: var(--line); color: var(--bad); }
+  .ab-actions .delete-btn:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad-soft); }
+  .ab-card .app-pick { margin-top: 4px; }
+  .ab-empty { padding: 22px; border: 1px dashed var(--line); font-size: 13px; color: var(--ink-muted); }
+  .ab-add-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 36px 0 14px; }
+  .tab-panel .ab-add-head h3 { margin: 0; }
+  .ab-pane[hidden] { display: none; }
+  .ab-pane-hint { margin: 0 0 14px; }
+  .ab-search { display: flex; gap: 8px; margin: 0 0 14px; max-width: 520px; }
+  .ab-search .le-search { flex: 1; }
+  .ab-search .le-search input { width: 100%; }
+  .ab-search button { height: 36px; border-radius: 9px; }
+  #abilityUpgradeStatus:empty, #abilityInstallStatus:empty { display: none; }
+  @media (max-width: 860px) { .ab-cards { grid-template-columns: minmax(0, 1fr); } }
   .msg-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
   .msg-dialog[open] { display: flex; flex-direction: column; }
   .msg-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
@@ -6018,6 +6045,31 @@ ${renderMarkdownScript}
     return '<section id="abilitiesSection"><div id="abilitiesContent"><p class="hint">Loading&hellip;</p></div></section>';
   }
 
+  var AB_ICON_ABILITY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="m3 7 9 5 9-5"/><path d="M12 12v10"/></svg>';
+  var AB_ICON_APP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M6 8h12v4a6 6 0 0 1-12 0z"/><path d="M12 18v4"/></svg>';
+  // Which list "Add more" shows: apps, official or private abilities.
+  // Apps first, unless none is connected and nobody picked one yet.
+  var abilitiesPane = 'apps';
+  var abilitiesPanePicked = false;
+
+  // A card in the tab's grids: icon, name and a line under it, a
+  // description, then chips and buttons. Details open at its end.
+  function abCard(icon, title, sub, desc, chips, actions, extra) {
+    return '<div class="ab-card" data-details-host>' +
+      '<div class="sched-card-head"><span class="sched-icon">' + icon + '</span>' +
+        '<span class="sched-card-text"><span class="sched-card-title">' + title + '</span>' + (sub ? '<span class="ab-sub">' + sub + '</span>' : '') + '</span></div>' +
+      (desc ? '<p class="ab-desc">' + desc + '</p>' : '') +
+      '<div class="ab-foot"><span class="sched-chips">' + chips + '</span><span class="ab-actions">' + actions + '</span></div>' +
+      (extra || '') +
+    '</div>';
+  }
+  function abGrid(cards) {
+    return '<div class="le-grid ab-cards">' + cards.join('') + (cards.length % 2 ? '<div class="ab-card ab-filler" aria-hidden="true"></div>' : '') + '</div>';
+  }
+  function abName(name) {
+    return escapeHtml(String(name).replace(/^@loopengine-co[/]/, ''));
+  }
+
   function renderInstalledAbilityRow(a) {
     // a.upToDate only ever comes back true when the npm registry lookup
     // (handleAbilitiesGet's own fetchLatestAbilityVersion) actually
@@ -6025,69 +6077,71 @@ ${renderMarkdownScript}
     // any registry hiccup, leaves it false, so the button still shows
     // rather than silently hiding on an unknown instead of a genuine
     // "nothing to upgrade".
-    var actionHtml = a.upToDate
-      ? '<span class="hint">up to date</span>'
-      : '<button type="button" class="ability-upgrade-btn" data-name="' + escapeHtml(a.name) + '">Upgrade</button>';
+    var actionHtml = a.upToDate ? '' : '<button type="button" class="ability-upgrade-btn" data-name="' + escapeHtml(a.name) + '">Upgrade</button>';
     // Same reasoning as upToDate above — missingDependencies (see
     // hasNodeModule) only ever hides this once the server actually
     // found every dependency already present in node_modules; anything
     // it can't confirm still shows the button.
     var deps = a.missingDependencies || [];
     if (deps.length) {
-      actionHtml += ' <button type="button" class="ability-install-deps-btn" data-name="' + escapeHtml(a.name) + '" title="npm install ' + escapeHtml(deps.join(' ')) + '">Install deps</button>';
+      actionHtml += '<button type="button" class="ability-install-deps-btn" data-name="' + escapeHtml(a.name) + '" title="npm install ' + escapeHtml(deps.join(' ')) + '">Install deps</button>';
     }
-    actionHtml += ' <button type="button" class="ability-uninstall-btn" data-name="' + escapeHtml(a.name) + '">Uninstall</button>';
     // Details: what it can do, with this agent's own permissions. Fetched
     // by its install spec, pinned to the installed version for an npm name.
     var spec = a.spec || a.name;
     if (!/^(git[+:]|github:|https?:|file:|[.]|[/])/.test(spec) && spec.lastIndexOf('@') <= 0 && a.version) spec += '@' + a.version;
     var detailsHtml = '<button type="button" class="ability-details-btn" data-spec="' + escapeHtml(spec) + '" data-agent="' + escapeHtml(currentName) + '">Details</button>';
-    return '<tr>' +
-      '<td><code>' + escapeHtml(a.name) + '</code></td>' +
-      '<td>' + escapeHtml(a.version) + '</td>' +
-      '<td>' + leShell.abilityOriginBadge(a.origin) + '</td>' +
-      '<td class="hint">' + escapeHtml((a.tools || []).concat(a.mcp ? a.mcp.tools.map(function (t) { return t.name; }) : []).join(', ')) + '</td>' +
-      '<td style="white-space:nowrap">' + detailsHtml + ' ' + actionHtml + '</td>' +
-      '</tr>';
+    var tools = (a.tools || []).concat(a.mcp ? a.mcp.tools.map(function (t) { return t.name; }) : []);
+    var isApp = a.origin && a.origin.kind === 'app';
+    var chips = '<span class="sched-chip strong">' + tools.length + (tools.length === 1 ? ' tool' : ' tools') + '</span>' +
+      (a.origin ? '<span class="sched-chip" title="' + escapeHtml(a.origin.label || '') + '">' + (isApp ? 'App' : a.origin.kind === 'private' ? 'Private' : a.origin.kind === 'official' ? 'Official' : 'Public') + '</span>' : '') +
+      (a.upToDate ? '' : '<span class="sched-chip warn">Update available</span>');
+    return abCard(isApp ? AB_ICON_APP : AB_ICON_ABILITY, abName(a.name), a.version ? 'v' + escapeHtml(a.version) : '',
+      tools.length ? escapeHtml(tools.join(', ')) : '', chips,
+      detailsHtml + actionHtml + '<button type="button" class="delete-btn ability-uninstall-btn" data-name="' + escapeHtml(a.name) + '">Remove</button>');
   }
 
   // An official or private ability not installed here yet: its
   // details show the permissions it ships with.
   function renderAbilitySearchResultRow(pkg, installedNames, spec) {
     var installSpec = spec || pkg.name;
-    var actionHtml = installedNames.indexOf(pkg.name) !== -1
-      ? '<span class="hint">Installed</span>'
-      : '<button type="button" class="ability-install-btn" data-spec="' + escapeHtml(installSpec) + '">Install</button>';
+    var installed = installedNames.indexOf(pkg.name) !== -1;
+    var actionHtml = installed ? '' : '<button type="button" class="primary ability-install-btn" data-spec="' + escapeHtml(installSpec) + '">Add</button>';
     var detailsSpec = spec || (pkg.version ? pkg.name + '@' + pkg.version : pkg.name);
-    return '<tr>' +
-      '<td><code>' + escapeHtml(pkg.name) + '</code>' + (pkg.version ? ' <span class="hint">' + escapeHtml(pkg.version) + '</span>' : '') + '</td>' +
-      '<td>' + escapeHtml(pkg.description || '') + '</td>' +
-      '<td style="white-space:nowrap"><button type="button" class="ability-details-btn" data-spec="' + escapeHtml(detailsSpec) + '">Details</button> ' + actionHtml + '</td>' +
-      '</tr>';
+    var desc = String(pkg.description || '').replace(/^A loopengine ability: */i, '');
+    return abCard(AB_ICON_ABILITY, abName(pkg.name), pkg.version ? 'v' + escapeHtml(pkg.version) : '',
+      escapeHtml(desc.charAt(0).toUpperCase() + desc.slice(1)),
+      installed ? '<span class="sched-chip strong">On this agent</span>' : '',
+      '<button type="button" class="ability-details-btn" data-spec="' + escapeHtml(detailsSpec) + '">Details</button>' + actionHtml);
   }
 
   function renderAbilitiesConfigHtml(data) {
     var installed = data.abilities || [];
     var installedHtml = installed.length
-      ? '<table><thead><tr><th>Name</th><th>Version</th><th>Source</th><th>Tools</th><th></th></tr></thead><tbody>' + installed.map(renderInstalledAbilityRow).join('') + '</tbody></table>' +
-        '<p id="abilityUpgradeStatus" class="hint"></p>'
-      : '<p class="hint">Nothing added to this agent yet.</p>';
-
-    // What this agent has first; then the workspace's connected apps (each
-    // with the tools this agent gets), then official and private abilities.
-    return '<h3 style="justify-content:flex-start;align-items:baseline;gap:8px">Installed <span class="hint" style="font-weight:400">the apps and abilities this agent has</span></h3>' + installedHtml +
+      ? abGrid(installed.map(renderInstalledAbilityRow))
+      : '<div class="ab-empty">Nothing yet. Add an app or ability from the list below, and its tools become this agent' + String.fromCharCode(8217) + 's.</div>';
+    var pane = function (id, label) {
+      return '<button type="button" role="tab" data-ab-pane="' + id + '" aria-selected="' + (abilitiesPane === id) + '">' + label + '</button>';
+    };
+    // What this agent has first; then what it could add: the workspace's
+    // connected apps, official abilities and private ones, one at a time.
+    return '<p class="muted ab-intro">Apps and abilities give this agent its tools. An <b>app</b> is a service connected once for the workspace (Gmail, Slack' + String.fromCharCode(8230) + '); an <b>ability</b> is a pack of tools and skills installed into this agent.</p>' +
+      '<h3>On this agent' + (installed.length ? ' (' + installed.length + ')' : '') + '</h3>' +
+      installedHtml +
+      '<p id="abilityUpgradeStatus" class="hint"></p>' +
       // Installing by name or spec is on the console's Abilities page.
       '<p id="abilityInstallStatus" class="hint"></p>' +
-      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Apps <span class="hint" style="font-weight:400">connected in this workspace; choose which of their tools this agent gets, and each one' + String.fromCharCode(8217) + 's permission</span></h3>' +
-      '<div id="agentApps" style="margin-bottom:32px"><p class="hint">Loading&hellip;</p></div>' +
-      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Official abilities <span class="hint" style="font-weight:400">published by LoopEngine</span></h3>' +
-      '<form id="abilitySearchForm" style="display:flex;gap:6px;margin:0 0 10px;max-width:560px">' +
-        '<input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search official abilities" style="flex:1">' +
-        '<button type="submit">Search</button>' +
-      '</form>' +
-      '<div id="abilitySearchResults" style="margin-bottom:32px"></div>' +
-      '<h3 style="margin-top:24px;justify-content:flex-start;align-items:baseline;gap:8px">Private abilities <span class="hint" style="font-weight:400">your own, installed in this workspace</span></h3>' +
-      '<div id="abilityPrivateResults" style="margin-bottom:32px"><p class="hint">Loading&hellip;</p></div>';
+      '<div class="ab-add-head"><h3>Add more</h3><div class="le-seg" role="tablist" aria-label="Add more">' +
+        pane('apps', 'Apps') + pane('official', 'Official abilities') + pane('private', 'Private abilities') + '</div></div>' +
+      '<div class="ab-pane" data-pane="apps"' + (abilitiesPane === 'apps' ? '' : ' hidden') + '>' +
+        '<p class="hint ab-pane-hint">Apps connected in this workspace. Add one and choose which of its tools this agent gets. <a href="/config?section=apps">Connect another app</a></p>' +
+        '<div id="agentApps"><p class="hint">Loading&hellip;</p></div></div>' +
+      '<div class="ab-pane" data-pane="official"' + (abilitiesPane === 'official' ? '' : ' hidden') + '>' +
+        '<form id="abilitySearchForm" class="ab-search"><label class="le-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" name="q" placeholder="Search abilities, e.g. gmail" aria-label="Search official abilities"></label><button type="submit">Search</button></form>' +
+        '<div id="abilitySearchResults"></div></div>' +
+      '<div class="ab-pane" data-pane="private"' + (abilitiesPane === 'private' ? '' : ' hidden') + '>' +
+        '<p class="hint ab-pane-hint">Your own abilities, installed in this workspace. <a href="/config?section=abilities#private-abilities">Install more</a></p>' +
+        '<div id="abilityPrivateResults"><p class="hint">Loading&hellip;</p></div></div>';
   }
 
   function abilitiesContentEl() {
@@ -6270,12 +6324,10 @@ ${renderMarkdownScript}
         // Connected apps are listed under Apps, above.
         var abilities = (d.abilities || []).filter(function (a) { return !a.app; });
         if (!abilities.length) {
-          el.innerHTML = '<p><a href="/config?section=abilities#private-abilities">Install private abilities</a></p>';
+          el.innerHTML = '<div class="ab-empty">No private abilities yet. <a href="/config?section=abilities#private-abilities">Install one for the workspace</a>, then add it here.</div>';
           return;
         }
-        el.innerHTML = '<table><thead><tr><th>Ability</th><th>What it does</th><th></th></tr></thead><tbody>' +
-          abilities.map(function (a) { return renderAbilitySearchResultRow(a, installedNames, a.spec); }).join('') + '</tbody></table>' +
-          '<p class="hint" style="margin:6px 0 0"><a href="/config?section=abilities#private-abilities">Install more private abilities</a></p>';
+        el.innerHTML = abGrid(abilities.map(function (a) { return renderAbilitySearchResultRow(a, installedNames, a.spec); }));
         var installBtns = el.querySelectorAll('.ability-install-btn');
         for (var i = 0; i < installBtns.length; i++) {
           installBtns[i].addEventListener('click', function (ev) {
@@ -6299,8 +6351,8 @@ ${renderMarkdownScript}
         if (!result.ok) throw new Error(result.body.error || 'search failed');
         var results = result.body.results || [];
         resultsEl.innerHTML = results.length
-          ? '<table><thead><tr><th>Package</th><th>Description</th><th></th></tr></thead><tbody>' + results.map(function (pkg) { return renderAbilitySearchResultRow(pkg, installedNames); }).join('') + '</tbody></table>'
-          : '<p class="hint">No official abilities found.</p>';
+          ? abGrid(results.map(function (pkg) { return renderAbilitySearchResultRow(pkg, installedNames); }))
+          : '<div class="ab-empty">No official abilities found.</div>';
         var installBtns = resultsEl.querySelectorAll('.ability-install-btn');
         for (var i = 0; i < installBtns.length; i++) {
           installBtns[i].addEventListener('click', function (ev2) {
@@ -6350,7 +6402,7 @@ ${renderMarkdownScript}
       uninstallBtns[r].addEventListener('click', function (ev) {
         var btn = ev.currentTarget;
         var abilityName = btn.dataset.name;
-        if (!confirm('Uninstall ' + abilityName + '? This deletes its tool and skill files and actauth rules from this agent.')) return;
+        if (!confirm('Remove ' + abilityName + ' from this agent? This deletes its tool and skill files and permission rules here.')) return;
         uninstallAbility(name, abilityName, upgradeStatusEl, btn, false);
       });
     }
@@ -6369,6 +6421,15 @@ ${renderMarkdownScript}
     }
     loadPrivateAbilitiesFor(name, content, installedNames);
     loadAgentApps(name, content);
+    // Add more: one list at a time.
+    content.querySelectorAll('[data-ab-pane]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        abilitiesPane = btn.dataset.abPane;
+        abilitiesPanePicked = true;
+        content.querySelectorAll('[data-ab-pane]').forEach(function (b) { b.setAttribute('aria-selected', String(b === btn)); });
+        content.querySelectorAll('.ab-pane').forEach(function (p) { p.hidden = p.dataset.pane !== abilitiesPane; });
+      });
+    });
   }
 
   // ---- Apps: a connected app's tools for this agent ----
@@ -6390,6 +6451,10 @@ ${renderMarkdownScript}
         if (currentName !== name) return;
         agentApps.connected = d.connected || [];
         agentApps.canChange = Boolean(d.canConnect);
+        if (!agentApps.connected.length && !abilitiesPanePicked && abilitiesPane === 'apps') {
+          var official = content.querySelector('[data-ab-pane="official"]');
+          if (official) { official.click(); abilitiesPanePicked = false; }
+        }
         renderAgentApps();
       })
       .catch(function (err) { el.innerHTML = '<p class="error">Could not list apps: ' + escapeHtml(err.message) + '</p>'; });
@@ -6407,18 +6472,17 @@ ${renderMarkdownScript}
     if (!el) return;
     var name = agentApps.name;
     if (!agentApps.connected.length) {
-      el.innerHTML = '<p class="hint">No apps connected yet. <a href="/config?section=apps">Connect one on the Apps page</a>, then add it here.</p>';
+      el.innerHTML = '<div class="ab-empty">No apps connected yet. <a href="/config?section=apps">Connect one on the Apps page</a>, then add it here.</div>';
       return;
     }
-    el.innerHTML = '<table><thead><tr><th>App</th><th>For this agent</th><th></th></tr></thead><tbody>' + agentApps.connected.map(function (c) {
+    el.innerHTML = abGrid(agentApps.connected.map(function (c) {
       var added = c.agents.indexOf(name) !== -1;
       var open = agentApps.pickers[c.ability];
-      return '<tr><td><strong>' + escapeHtml(c.title) + '</strong> <span class="hint">' + escapeHtml(c.ability) + '</span></td>' +
-        '<td class="hint">' + (added ? 'Added' : 'Not added') + '</td>' +
-        '<td style="white-space:nowrap"><button type="button" class="app-pick-open" data-ability="' + escapeHtml(c.ability) + '">' + (open ? 'Close' : added ? 'Choose tools' : 'Add') + '</button></td></tr>' +
-        (open ? '<tr><td colspan="3">' + pickerHtml(c.ability) + '</td></tr>' : '');
-    }).join('') + '</tbody></table>' +
-    '<p class="hint" style="margin:6px 0 0"><a href="/config?section=apps">Connect more apps</a></p>';
+      return abCard(AB_ICON_APP, escapeHtml(c.title), escapeHtml(c.ability), '',
+        added ? '<span class="sched-chip strong">On this agent</span>' : '',
+        '<button type="button" class="app-pick-open' + (open || added ? '' : ' primary') + '" data-ability="' + escapeHtml(c.ability) + '">' + (open ? 'Close' : added ? 'Choose tools' : 'Add') + '</button>',
+        open ? pickerHtml(c.ability) : '');
+    }));
   }
 
   function pickerHtml(ability) {

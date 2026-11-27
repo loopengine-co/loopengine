@@ -669,19 +669,28 @@ export const consoleShellScript: string = `<script>
   }
 
   // Opens (or closes) an ability's details in a row right under its own.
+  // Under the button's table row, or at the end of its card
+  // ([data-details-host]).
   function toggleAbilityDetails(btn) {
     var tr = btn.closest('tr');
-    var next = tr.nextElementSibling;
+    var host = tr ? null : btn.closest('[data-details-host]');
+    var next = tr ? tr.nextElementSibling : host.querySelector('.ability-details-row');
     if (next && next.classList.contains('ability-details-row')) {
       next.remove();
       btn.textContent = 'Details';
       btn.classList.remove('is-open');
       return;
     }
-    var row = document.createElement('tr');
+    var reading = '<div class="ability-details"><p class="hint" style="margin:0">Reading what it can do' + String.fromCharCode(8230) + '</p></div>';
+    var row = document.createElement(tr ? 'tr' : 'div');
     row.className = 'ability-details-row';
-    row.innerHTML = '<td colspan="' + tr.children.length + '"><div class="ability-details"><p class="hint" style="margin:0">Reading what it can do' + String.fromCharCode(8230) + '</p></div></td>';
-    tr.parentNode.insertBefore(row, tr.nextSibling);
+    if (tr) {
+      row.innerHTML = '<td colspan="' + tr.children.length + '">' + reading + '</td>';
+      tr.parentNode.insertBefore(row, tr.nextSibling);
+    } else {
+      row.innerHTML = '<div>' + reading + '</div>';
+      host.appendChild(row);
+    }
     btn.textContent = 'Hide details';
     btn.classList.add('is-open');
     var agent = btn.dataset.agent;
