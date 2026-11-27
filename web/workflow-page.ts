@@ -818,9 +818,11 @@ ${consoleShellScript}
       state.examples = d.examples || [];
       state.messages = d.messages || [];
       renderDescribe();
-      // From a goal: the request and agent are filled in, so start building.
+      // From a goal, or the New workflow dialog (&go=1): the request and
+      // agent are filled in, so start building.
       var buildBtn = document.getElementById('wfPlan');
-      if (fromGoal.goal && state.ready && state.agent && state.description && buildBtn && !buildBtn.disabled) buildBtn.click();
+      var go = fromGoal.goal || new URLSearchParams(location.search).get('go') === '1';
+      if (go && state.ready && state.agent && state.description && buildBtn && !buildBtn.disabled) buildBtn.click();
     })
     .catch(function (err) { page.innerHTML = '<p class="error">Could not load: ' + esc(err.message) + '</p>'; });
 })();
