@@ -438,12 +438,13 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-run-card-out.error { color: var(--bad); }
   .wf-trace { display: grid; gap: 20px; min-width: 0; }
   /* A run, over the Activity list. */
-  .wf-trace-dialog { width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--canvas); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .25); overflow: auto; }
+  .wf-trace-dialog { width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .25); overflow: auto; }
   .wf-trace-dialog:focus, .wf-trace-dialog:focus-visible { outline: none; }
   .wf-trace-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
   .wf-trace-dialog .wf-trace { padding: 0 24px 24px; }
-  .wf-trace-dialog .wf-trace-bar { position: sticky; top: 0; z-index: 2; margin: 0 -24px; padding: 14px 24px; background: var(--canvas); border-bottom: 1px solid var(--line); }
+  .wf-trace-dialog .wf-trace-bar { position: sticky; top: 0; z-index: 2; margin: 0 -24px; padding: 14px 24px; background: var(--bg); border-bottom: 1px solid var(--line); }
   .wf-trace-dialog .wf-trace > .hint:first-child { padding-top: 24px; }
+  .wf-trace-dialog .wf-xt { margin-top: -8px; padding-top: 20px; border-top: 1px solid var(--line); }
   .wf-trace-back { height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
   /* Add a webhook: three questions on the left, how it works (and its
      secret and name) on the right. */
