@@ -22,7 +22,7 @@ import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
 import { loadGatewayToolsFromDir } from './gateway-tools.js'
 import { loadMcpAbilityTools } from './mcp-abilities.js'
-import { generatedGuideSkills, skillsForResult, skillsInHistory, toolSkillsFor, type ToolSkills } from './ability-skills.js'
+import { skillsForResult, skillsInHistory, toolSkillsFor, type ToolSkills } from './ability-skills.js'
 import { systemTools, createAskUserTool, createScheduleTools, CliQuestionHandler, isDurableQuestionHandler, type PendingQuestion } from './system-tools/index.js'
 import { resolveHttpNotifier } from './http-notifier.js'
 import type { LoopEvent } from './loop-events.js'
@@ -696,10 +696,8 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   const skillGarden = new SkillGarden({ dirs: [...skillsDirs, systemSkillsDir], indexBudgetTokens: config.skillIndexBudgetTokens ?? 2000 })
   // A workflow run leaves out its own skill and every other workflow's:
   // it follows its instructions, and running another workflow from
-  // inside it isn't something it should do. An app's generated guide is
-  // left out everywhere (ability-skills.ts).
-  const guides = generatedGuideSkills(agentDirFor(config))
-  const skillIndex = skillGarden.buildIndex().included.filter((s) => s.name !== options.runningSkill && !guides.has(s.name) && !(options.runningSkill && skillGarden.frontmatterOf(s.name)?.workflow === true))
+  // inside it isn't something it should do.
+  const skillIndex = skillGarden.buildIndex().included.filter((s) => s.name !== options.runningSkill && !(options.runningSkill && skillGarden.frontmatterOf(s.name)?.workflow === true))
   // Abilities' skills, attached to their tools' first results (see
   // ability-skills.ts).
   const skillText = (name: string): string | undefined => {

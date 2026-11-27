@@ -379,7 +379,7 @@ describe('runAgent', () => {
     expect(events.some((e) => e.type === 'skill:loaded')).toBe(false)
   })
 
-  it("leaves other workflows out of a workflow's run, and an app's generated guide out of every run", async () => {
+  it("leaves other workflows out of a workflow's run, and lists them in chat", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'loopengine-skill-index-'))
     try {
       const skill = (name: string, front: string) => {
@@ -390,11 +390,7 @@ describe('runAgent', () => {
       skill('weekly-digest', 'workflow: true\n')
       skill('shop', '')
       skill('style', '')
-      skill('firecrawl', '')
-      writeFileSync(join(dir, '.loopengine-abilities.json'), JSON.stringify({
-        shop: { tools: ['shop_find', 'shop_list'], skills: ['shop'] },
-        'mcp-firecrawl': { version: '1.0.0', mcp: { server: { url: 'http://127.0.0.1:9/mcp', auth: { type: 'none' } }, tools: [{ name: 'firecrawl_scrape', remote: 'firecrawl_scrape' }] }, skills: ['firecrawl'] },
-      }))
+      writeFileSync(join(dir, '.loopengine-abilities.json'), JSON.stringify({ shop: { tools: ['shop_find', 'shop_list'], skills: ['shop'] } }))
       const promptFor = async (options: { runningSkill?: string }) => {
         const config = baseConfig({ skillsDirs: [join(dir, 'skills')] })
         setAgentDir(config, dir)
@@ -407,11 +403,9 @@ describe('runAgent', () => {
       expect(run).not.toContain('- weekly-digest:')
       expect(run).toContain('- style: About style\n')
       expect(run).toContain('- shop: About shop\n')
-      expect(run).not.toContain('- firecrawl:')
       const chat = await promptFor({})
       expect(chat).toContain('- daily-digest:')
       expect(chat).toContain('- weekly-digest:')
-      expect(chat).not.toContain('- firecrawl:')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

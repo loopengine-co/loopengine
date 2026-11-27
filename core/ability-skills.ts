@@ -10,10 +10,6 @@
 // - with several: each goes with the tools its text names;
 // - a tool none of them names gets a one-line pointer to them instead.
 // A skill over SKILL_ATTACH_MAX_CHARS gets the pointer too.
-//
-// Except the guide LoopEngine used to write for an app it made from an
-// MCP server (an mcp-<app> ability): it's neither listed nor attached
-// (see generatedGuideSkills).
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Message } from './run-agent.js'
@@ -35,29 +31,6 @@ interface AbilityRecord {
 
 const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : [])
 
-function readRecords(agentDir: string): Record<string, AbilityRecord> {
-  const file = join(agentDir, '.loopengine-abilities.json')
-  if (!existsSync(file)) return {}
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as Record<string, AbilityRecord>
-  } catch {
-    return {}
-  }
-}
-
-/** The skills of the agent's apps LoopEngine made from an MCP server
- * (core/mcp-ability-generator.ts names them mcp-<app>): a generated
- * guide, for every tool the server offers, that its tools' own
- * descriptions already cover. Left out of the skill index and not
- * attached. An ability someone wrote keeps its skills. */
-export function generatedGuideSkills(agentDir: string): Set<string> {
-  const guides = new Set<string>()
-  for (const [name, record] of Object.entries(readRecords(agentDir))) {
-    if (name.startsWith('mcp-') && record?.mcp) for (const skill of strings(record.skills)) guides.add(skill)
-  }
-  return guides
-}
-
 function namesTool(text: string, tool: string): boolean {
   return new RegExp(`(?<![A-Za-z0-9_])${tool.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`).test(text)
 }
@@ -66,15 +39,21 @@ function namesTool(text: string, tool: string): boolean {
  * skill's body, or undefined for one the agent doesn't have. */
 export function toolSkillsFor(agentDir: string, skillText: (name: string) => string | undefined): ToolSkills {
   const result: ToolSkills = { attach: new Map(), point: new Map() }
-  const records = readRecords(agentDir)
-  const guides = generatedGuideSkills(agentDir)
+  const file = join(agentDir, '.loopengine-abilities.json')
+  if (!existsSync(file)) return result
+  let records: Record<string, AbilityRecord>
+  try {
+    records = JSON.parse(readFileSync(file, 'utf8')) as Record<string, AbilityRecord>
+  } catch {
+    return result
+  }
   const add = (map: Map<string, string[]>, tool: string, skill: string) => {
     const list = map.get(tool) ?? []
     if (!list.includes(skill)) map.set(tool, [...list, skill])
   }
   for (const record of Object.values(records)) {
     const tools = [...strings(record?.tools), ...strings(record?.mcp?.tools?.map((t) => t?.name))]
-    const skills = strings(record?.skills).filter((name) => !guides.has(name)).flatMap((name) => {
+    const skills = strings(record?.skills).flatMap((name) => {
       const text = skillText(name)
       return text === undefined ? [] : [{ name, text }]
     })
