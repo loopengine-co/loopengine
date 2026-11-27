@@ -81,6 +81,8 @@
     "dist/core/ability-details.d.ts",
     "dist/core/mcp-abilities.js",
     "dist/core/mcp-abilities.d.ts",
+    "dist/core/mcp-tool-notes.js",
+    "dist/core/mcp-tool-notes.d.ts",
     "dist/core/mcp-directory.js",
     "dist/core/mcp-directory.d.ts",
     "dist/core/mcp-ability-generator.js",

@@ -60,7 +60,7 @@ describe('a turn’s trace', () => {
     expect(first!.input).toEqual([])
     expect(first!.output).toEqual([{ type: 'text', text: 'Checking.' }, { type: 'tool_use', id: 't1', name: 'echo', input: { msg: 'hi' } }])
     expect(first!.meta).toMatchObject({ sent: 1, inputTokens: 120, outputTokens: 8, stopReason: 'tool_use' })
-    expect(tool).toMatchObject({ input: { msg: 'hi' }, output: '"echo:hi"', meta: { toolUseId: 't1' } })
+    expect(tool).toMatchObject({ input: { msg: 'hi' }, output: 'echo:hi', meta: { toolUseId: 't1' } })
     expect(tool!.durationMs).toBeGreaterThanOrEqual(0)
     // The second call's new input is the tool result only, not the whole conversation again.
     expect(second!.input).toEqual([expect.objectContaining({ role: 'user', content: [expect.objectContaining({ type: 'tool_result', tool_use_id: 't1' })] })])

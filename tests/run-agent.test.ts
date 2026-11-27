@@ -82,7 +82,7 @@ describe('runAgent', () => {
 
     const results = toolResults(result.history)
     expect(results).toEqual([
-      { type: 'tool_result', tool_use_id: 't1', content: '"echo:hi"', is_error: false, reason: "matched rule 'default/production/test-agent'" },
+      { type: 'tool_result', tool_use_id: 't1', content: 'echo:hi', is_error: false, reason: "matched rule 'default/production/test-agent'" },
     ])
 
     // second modelCall invocation should have seen the tool result in its messages
@@ -120,8 +120,8 @@ describe('runAgent', () => {
 
     const results = toolResults(result.history)
     expect(results).toHaveLength(2)
-    expect(results.find((r) => r.tool_use_id === 't1')?.content).toBe('"echo:first"')
-    expect(results.find((r) => r.tool_use_id === 't2')?.content).toBe('"echo:second"')
+    expect(results.find((r) => r.tool_use_id === 't1')?.content).toBe('echo:first')
+    expect(results.find((r) => r.tool_use_id === 't2')?.content).toBe('echo:second')
   })
 
   it('derives isSafeTool from each tool\'s own `safe` flag when AgentConfig.isSafeTool is not set', async () => {
@@ -155,8 +155,8 @@ describe('runAgent', () => {
 
     const results = toolResults(result.history)
     expect(results).toHaveLength(2)
-    expect(results.find((r) => r.tool_use_id === 't1')?.content).toBe('"echo:first"')
-    expect(results.find((r) => r.tool_use_id === 't2')?.content).toBe('"echo:second"')
+    expect(results.find((r) => r.tool_use_id === 't1')?.content).toBe('echo:first')
+    expect(results.find((r) => r.tool_use_id === 't2')?.content).toBe('echo:second')
   })
 
   it('AgentConfig.isSafeTool takes precedence over a tool\'s own `safe` flag when both are set', async () => {
@@ -218,7 +218,7 @@ describe('runAgent', () => {
       {
         type: 'tool_result',
         tool_use_id: 't1',
-        content: '"echoed"',
+        content: 'echoed',
         is_error: false,
         reason: "matched rule 'default/production/test-agent' — human approved",
       },
@@ -377,6 +377,19 @@ describe('runAgent', () => {
     expect(results[0].content).toMatch(/already|first message/)
     expect(results[0].content).not.toContain('Summarize files')
     expect(events.some((e) => e.type === 'skill:loaded')).toBe(false)
+  })
+
+  it("leaves the scheduling tools out of a workflow's run, and keeps them in chat", async () => {
+    const toolsIn = async (options: { runningSkill?: string }) => {
+      const modelCall: ModelCall = vi.fn(async () => textResponse('done'))
+      await runAgent(baseConfig(), modelCall, 'go', [], options)
+      return ((modelCall as ReturnType<typeof vi.fn>).mock.calls[0][2] as { name: string }[]).map((t) => t.name)
+    }
+    const chat = await toolsIn({})
+    const run = await toolsIn({ runningSkill: 'daily-digest' })
+    expect(chat).toContain('system_schedule_task')
+    expect(run.filter((n) => n.includes('schedul'))).toEqual([])
+    expect(run).toContain('system_ask_user')
   })
 
   it('still declares a Skill tool with no agent skillsDirs, because the system skill is always present', async () => {
@@ -630,7 +643,7 @@ describe('runAgent', () => {
 
     const results = toolResults(result.history)
     expect(results.find((r) => r.tool_use_id === 't1')?.content).toContain('Summarize files')
-    expect(results.find((r) => r.tool_use_id === 't2')?.content).toBe('"echoed"')
+    expect(results.find((r) => r.tool_use_id === 't2')?.content).toBe('echoed')
     expect(events.some((e) => e.type === 'actauth:decision')).toBe(true)
     expect(events.some((e) => e.type === 'toollane:result')).toBe(true)
   })
@@ -742,7 +755,7 @@ describe('runAgent', () => {
       {
         role: 'user',
         content: [
-          { type: 'tool_result', tool_use_id: 't1', content: '"echoed"', is_error: false, reason: "matched rule 'default/production/test-agent'" },
+          { type: 'tool_result', tool_use_id: 't1', content: 'echoed', is_error: false, reason: "matched rule 'default/production/test-agent'" },
         ],
       },
       { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
@@ -800,14 +813,14 @@ describe('runAgent', () => {
       {
         role: 'user',
         content: [
-          { type: 'tool_result', tool_use_id: 't1', content: '"ok"', is_error: false, reason: "matched rule 'default/production/test-agent'" },
+          { type: 'tool_result', tool_use_id: 't1', content: 'ok', is_error: false, reason: "matched rule 'default/production/test-agent'" },
         ],
       },
       { role: 'assistant', content: [{ type: 'tool_use', id: 't2', name: 'echo', input: { round: 2 } }] },
       {
         role: 'user',
         content: [
-          { type: 'tool_result', tool_use_id: 't2', content: '"ok"', is_error: false, reason: "matched rule 'default/production/test-agent'" },
+          { type: 'tool_result', tool_use_id: 't2', content: 'ok', is_error: false, reason: "matched rule 'default/production/test-agent'" },
         ],
       },
       { role: 'assistant', content: [{ type: 'text', text: 'all done' }] },
@@ -920,7 +933,7 @@ describe('runAgent system tools/skills', () => {
 
     const results = toolResults(result.history)
     expect(results).toEqual([
-      { type: 'tool_result', tool_use_id: 't1', content: '"custom result"', is_error: false, reason: "matched rule 'default/production/test-agent'" },
+      { type: 'tool_result', tool_use_id: 't1', content: 'custom result', is_error: false, reason: "matched rule 'default/production/test-agent'" },
     ])
   })
 
@@ -969,7 +982,7 @@ describe('runAgent durable approvals', () => {
     expect(modelCall).toHaveBeenCalledTimes(1) // no second model call — the turn paused, it didn't continue
     expect(result.stopReason).toBe('pending_approval')
     expect(result.pending?.resultsSoFar).toEqual([
-      { type: 'tool_result', tool_use_id: 't1', content: '"ran fine"', is_error: false, reason: "matched rule 'default/production/test-agent'" },
+      { type: 'tool_result', tool_use_id: 't1', content: 'ran fine', is_error: false, reason: "matched rule 'default/production/test-agent'" },
     ])
     expect(result.pending?.outstanding).toEqual([
       { kind: 'approval', toolUseId: 't2', tool: 'gated', args: { amount: 900 }, pendingId: 'pending-1', reason: expect.stringContaining('awaiting durable approval') },
@@ -1159,7 +1172,7 @@ describe('runAgent durable questions', () => {
     // other system tool call, not a special code path of its own.
     const results = toolResults(result.history)
     expect(results).toEqual([
-      { type: 'tool_result', tool_use_id: 't1', content: '"blue"', is_error: false, reason: 'system tool — always allowed' },
+      { type: 'tool_result', tool_use_id: 't1', content: 'blue', is_error: false, reason: 'system tool — always allowed' },
     ])
   })
 })

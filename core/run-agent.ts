@@ -663,7 +663,10 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // Bound to this agent: it can schedule, list and cancel only its own
   // tasks (see core/system-tools/schedule.ts). AgentConfig.selfScheduling
   // false leaves them out.
-  const scheduleTools = config.selfScheduling === false ? [] : createScheduleTools(config.name, { agentDir: agentDirFor(config) })
+  // A workflow's run doesn't schedule more work: its schedules are set on
+  // the workflow. Leaving the four tools out saves their schemas (about a
+  // thousand tokens) on every call of every run; chat keeps them.
+  const scheduleTools = config.selfScheduling === false || options.runningSkill ? [] : createScheduleTools(config.name, { agentDir: agentDirFor(config) })
 
   const tools = dedupeToolsByName([
     ...systemTools,
@@ -1274,14 +1277,17 @@ async function runTracedLoop(ctx: TurnContext, trace: TurnTrace, messages: Messa
       // flattened-text design could only link by tool *name*, ambiguous
       // the moment two calls to the same tool ran in one turn.
       for await (const result of toolLane.run(approvedCalls)) {
-        const summary = result.status === 'fulfilled' ? JSON.stringify(result.value) : `ERROR: ${result.error}`
+        const asJson = result.status === 'fulfilled' ? JSON.stringify(result.value) : `ERROR: ${result.error}`
+        // Text goes to the model as it is: quoting it again would escape
+        // every quote and newline, more tokens for the same words.
+        const summary = result.status === 'fulfilled' && typeof result.value === 'string' ? result.value : asJson
         const meta = approvedMetaById.get(result.id)
         log({ type: 'toollane:result', name: result.name, summary })
         // A later tool call this same run (or a follow-up message in
         // this same session) can reference a URL from this result —
         // see known-urls.ts's own doc comment. Harmless no-op for a
         // non-JSON/error summary.
-        recordKnownUrlsFromResult(summary, knownUrlsByBase)
+        recordKnownUrlsFromResult(asJson, knownUrlsByBase)
         const skills = result.status === 'fulfilled' ? skillsForResult(result.name, toolSkills, seenSkills, skillText) : { text: '', attached: [] }
         for (const skill of skills.attached) log({ type: 'skill:loaded', skill })
         resultBlocks.push({

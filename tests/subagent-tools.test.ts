@@ -104,7 +104,7 @@ describe('subagent auto-loading (agents/<name>/subagents/*)', () => {
     const result = await runAgent(baseConfig(), modelCall, 'what do I owe')
 
     const secondCallMessages = (modelCall as ReturnType<typeof vi.fn>).mock.calls[1][0] as Message[]
-    expect(firstToolResult(secondCallMessages)?.content).toBe('"billing handled it"')
+    expect(firstToolResult(secondCallMessages)?.content).toBe('billing handled it')
     expect(result.text).toBe('forwarded to billing')
   })
 
@@ -152,7 +152,7 @@ export function createModelCall() {
     const result = await runAgent(baseConfig(), modelCall, 'dispute a charge')
 
     const secondCallMessages = (modelCall as ReturnType<typeof vi.fn>).mock.calls[1][0] as Message[]
-    expect(firstToolResult(secondCallMessages)?.content).toBe('"billing resolved via disputes-agent"')
+    expect(firstToolResult(secondCallMessages)?.content).toBe('billing resolved via disputes-agent')
     expect(result.text).toBe('done')
   })
 
@@ -210,7 +210,7 @@ export function createModelCall() {
     await runAgent(baseConfig(), modelCall, 'what is INV-1002')
 
     const secondCallMessages = (modelCall as ReturnType<typeof vi.fn>).mock.calls[1][0] as Message[]
-    expect(firstToolResult(secondCallMessages)?.content).toBe('"billing-agent-owndefaults answered"')
+    expect(firstToolResult(secondCallMessages)?.content).toBe('billing-agent-owndefaults answered')
   })
 
   it('does not leak an unrelated top-level agent\'s tools/rules into a same-named subagent', async () => {
@@ -268,6 +268,6 @@ export function createModelCall() {
     // Just the always-on system tool/skill, not "flat_secret_tool" —
     // proves the subagent's tools default resolved against its own
     // nested (empty) folder, not the flat same-named top-level one.
-    expect(firstToolResult(secondCallMessages)?.content).toBe('"tools seen: Skill,system_ask_user,system_cancel_scheduled_task,system_check_scheduled_task,system_list_scheduled_tasks,system_read_file,system_schedule_task"')
+    expect(firstToolResult(secondCallMessages)?.content).toBe('tools seen: Skill,system_ask_user,system_cancel_scheduled_task,system_check_scheduled_task,system_list_scheduled_tasks,system_read_file,system_schedule_task')
   })
 })

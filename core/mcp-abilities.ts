@@ -20,6 +20,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { AgentEnv, ToolDefinition } from './agent-config.js'
 import { createAgentEnv } from './agent-env.js'
 import { runtimeOAuthProvider } from './mcp-oauth.js'
+import { toolNote } from './mcp-tool-notes.js'
 
 /** How the adapter authenticates to a remote server. `key` sends an
  * agent setting as a header (`Authorization: Bearer <value>` by
@@ -445,9 +446,10 @@ function withDefaults(schema: Record<string, unknown>, values: Record<string, st
 function toolDefinition(dir: string, abilityName: string, mcp: InstalledMcpRecord, tool: { name: string; remote: string }, schema: CachedTool, env?: AgentEnv): ToolDefinition {
   const maxChars = mcp.server.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS
   const properties = (schema.input_schema.properties ?? {}) as Record<string, unknown>
+  const note = toolNote(mcp.server.url, tool.remote)
   return {
     name: tool.name,
-    description: schema.description || tool.remote,
+    description: (schema.description || tool.remote) + (note ? `\n\n${note}` : ''),
     input_schema: env ? withDefaults(schema.input_schema, defaultValues(mcp.server.defaults, env)) : schema.input_schema,
     ...(schema.readOnly ? { safe: true } : {}),
     async execute(input, ctx) {
@@ -482,13 +484,42 @@ function isConnectionError(err: unknown): boolean {
 /** A tool result as text for the model: structured content as JSON when
  * the server gives it, otherwise the text parts, with anything else
  * (images, audio) noted rather than dropped silently. */
+/** A JSON object that carries long text (a page's markdown, an email's
+ * body) as readable sections, each field under its name: text as it is,
+ * a list of plain values one per line, anything else as compact JSON.
+ * Escaped inside a JSON string, the same text costs the model more
+ * tokens (every newline and quote escaped) and reads worse. Other JSON,
+ * and text that isn't JSON, stays as it is. */
+export function readableResult(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('{')) return text
+  let value: unknown
+  try {
+    value = JSON.parse(trimmed)
+  } catch {
+    return text
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return text
+  const entries = Object.entries(value as Record<string, unknown>)
+  const long = entries.some(([, v]) => typeof v === 'string' && (v.length > 300 || v.includes('\n')))
+  if (!long) return text
+  return entries
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => {
+      if (typeof v === 'string') return `${k}:\n${v}`
+      if (Array.isArray(v) && v.every((x) => typeof x !== 'object' || x === null)) return `${k}:\n${v.map(String).join('\n')}`
+      return `${k}: ${JSON.stringify(v)}`
+    })
+    .join('\n\n')
+}
+
 function resultText(result: Record<string, unknown>): string {
-  if (result.structuredContent !== undefined) return JSON.stringify(result.structuredContent)
-  if ('toolResult' in result) return typeof result.toolResult === 'string' ? result.toolResult : JSON.stringify(result.toolResult)
+  if (result.structuredContent !== undefined) return readableResult(JSON.stringify(result.structuredContent))
+  if ('toolResult' in result) return typeof result.toolResult === 'string' ? result.toolResult : readableResult(JSON.stringify(result.toolResult))
   const content = Array.isArray(result.content) ? (result.content as Array<Record<string, unknown>>) : []
   return content
     .map((part) => {
-      if (part.type === 'text') return String(part.text ?? '')
+      if (part.type === 'text') return readableResult(String(part.text ?? ''))
       if (part.type === 'resource') {
         const resource = part.resource as { text?: string; uri?: string } | undefined
         return resource?.text ?? `[resource ${resource?.uri ?? ''}]`
