@@ -307,6 +307,17 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-change { font-size: 12px; color: var(--ink-muted); }
   .ev-change.better { color: var(--good); font-weight: 600; }
   .ev-change.worse { color: var(--bad); font-weight: 600; }
+  .ev-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .ev-table th, .ev-table td { padding: 8px 12px; text-align: left; border-top: 1px solid var(--line); font-weight: 400; }
+  .ev-table thead th { border-top: 0; background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .ev-table tbody th[scope="row"] { color: var(--ink); }
+  .ev-table td { width: 140px; white-space: nowrap; }
+  .ev-table td:last-child { width: 90px; }
+  .ev-table .ev-group-k { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); background: var(--bg); padding-top: 12px; }
+  .ev-delta { font-weight: 600; color: var(--ink-muted); }
+  .ev-delta.better, .ev-yes { color: var(--good); }
+  .ev-delta.worse, .ev-no { color: var(--bad); }
+  .ev-yes, .ev-no { font-weight: 600; }
   .ev-verdict { margin: 0; font-size: 13px; color: var(--ink); font-weight: 600; }
   .ev-verdict.better { color: var(--good); }
   .ev-verdict.worse { color: var(--bad); }
@@ -3015,7 +3026,44 @@ ${renderMarkdownScript}
       '</div>';
     // Which round the cases below show.
     var shown = comparing ? '<span class="hint ev-shown">' + escapeHtml(pubLabel) + ' beside the draft</span>' : round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
-    return steps +
+    // Draft against published over every case: each criterion's pass rate,
+    // all of them together, and each case's change.
+    var compareTable = '';
+    if (comparing) {
+      var rateRow = function (label, a, b, total) {
+        var d = b - a;
+        return '<tr><th scope="row">' + label + '</th><td>' + a + ' of ' + total + '</td><td>' + b + ' of ' + total + '</td>' +
+          '<td class="ev-delta ' + (d > 0 ? 'better' : d < 0 ? 'worse' : '') + '">' + (d > 0 ? '+' + d : d < 0 ? String(d) : String.fromCharCode(8212)) + '</td></tr>';
+      };
+      var total = evals.cases.length;
+      var allOf = function (r) { return evals.cases.filter(function (c) { return passedAll(byCase(r)[c.id]); }).length; };
+      // Criteria matched by their words: a draft's may have new ids.
+      var rates = function (r) {
+        var m = {};
+        (r.passRates || []).forEach(function (x) { var name = namesOf(r)[x.criterionId] || x.criterionId; m[name] = x; });
+        return m;
+      };
+      var pr = rates(pubRound), dr = rates(draftRound);
+      var names = Object.keys(pr).concat(Object.keys(dr).filter(function (n) { return !pr[n]; }));
+      var critRows = names.map(function (n) {
+        var a = pr[n], b = dr[n];
+        if (a && b) return rateRow(escapeHtml(n), a.passed, b.passed, Math.max(a.total, b.total));
+        return '<tr><th scope="row">' + escapeHtml(n) + '</th><td>' + (a ? a.passed + ' of ' + a.total : '<span class="ev-none">Not checked</span>') + '</td><td>' + (b ? b.passed + ' of ' + b.total : '<span class="ev-none">Not checked</span>') + '</td><td class="ev-delta">' + (a ? 'Removed' : 'New') + '</td></tr>';
+      }).join('');
+      var caseRows = evals.cases.map(function (c, i) {
+        var was = passedAll(pubCases[c.id]), now = passedAll(draftCases[c.id]);
+        var mark = function (v) { return v === null ? '<span class="ev-none">' + String.fromCharCode(8212) + '</span>' : v ? '<span class="ev-yes">Passed</span>' : '<span class="ev-no">Missed</span>'; };
+        return '<tr><th scope="row">Case ' + (i + 1) + '</th><td>' + mark(was) + '</td><td>' + mark(now) + '</td>' +
+          '<td class="ev-delta ' + (now && was === false ? 'better' : was && now === false ? 'worse' : '') + '">' + (was === null || now === null ? '' : now && !was ? 'Fixed' : was && !now ? 'Broken' : 'Same') + '</td></tr>';
+      }).join('');
+      compareTable = '<section class="wf-section ev-compare"><h4 class="wf-sub">Draft against ' + escapeHtml(pubLabel) + '</h4>' +
+        '<table class="ev-table"><thead><tr><th></th><th scope="col">' + escapeHtml(pubLabel) + '</th><th scope="col">Draft</th><th scope="col">Change</th></tr></thead>' +
+          '<tbody>' + rateRow('<strong>Passed every check</strong>', allOf(pubRound), allOf(draftRound), total) + '</tbody>' +
+          '<tbody class="ev-group"><tr><th colspan="4" class="ev-group-k">By success criterion</th></tr>' + critRows + '</tbody>' +
+          '<tbody class="ev-group"><tr><th colspan="4" class="ev-group-k">By case</th></tr>' + caseRows + '</tbody>' +
+        '</table></section>';
+    }
+    return steps + compareTable +
       '<section class="wf-section ev-cases"><div class="wf-sub-row"><h4 class="wf-sub">Eval cases' + (nCases ? ' <span class="ev-count">' + nCases + '</span>' : '') + '</h4>' + shown + '</div>' +
         (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet. Add one of the runs suggested below, or save any run from its trace.</p>') +
         (workflowPageId ? '<h5 class="ev-sub">Suggested from recent runs</h5><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
