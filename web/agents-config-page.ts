@@ -1314,7 +1314,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-trace-bar a.wf-link, .wf-trace-save-case { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 13px; font-weight: 500; text-decoration: none; }
   .wf-trace-bar a.wf-link:hover, .wf-trace-save-case:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
   .wf-trace-bar { gap: 8px; }
-  .wf-xd { padding: 22px 0 0; border: 0; background: none; display: grid; gap: 16px; }
+  .wf-xd { padding: 0; border: 0; background: none; display: grid; gap: 16px; }
   .wf-xd-head { display: grid; gap: 6px; }
   .wf-xd-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .wf-xd-head h3 { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: -0.02em; }
