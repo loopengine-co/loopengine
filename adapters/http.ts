@@ -1913,6 +1913,7 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
           const result = await runAgent(config, modelCall, message, [], {
             tenant: 'default',
             sessionId: `eval-${randomUUID().slice(0, 8)}`,
+            runningSkill: id,
             evalMode: { replay, onStandIn: (call) => standIns.push(call) },
             approver: { requestApproval: async () => false },
             questionHandler: { requestQuestion: async () => NO_HUMAN_ANSWER },
@@ -2425,6 +2426,8 @@ async function executeUnattendedRun(agent: string, message: string, rawSessionId
       sessionId: rawSessionId,
       channel: 'http',
       unattended: true,
+      // Its instructions are in the message: not offered again as a skill.
+      ...(options.workflowId ? { runningSkill: options.workflowId } : {}),
       // Decisions for the run's callback wait here until its app answers;
       // nothing is sent to the agent's messaging app.
       ...(options.decisionsTo === 'callback'
@@ -4709,6 +4712,7 @@ async function respondAfterResolutionNow(res: ServerResponse, finalCheckpoint: T
       tenant: finalCheckpoint.tenant,
       sessionId: finalCheckpoint.sessionId,
       channel: 'http',
+      ...(resumedRun?.workflow_id ? { runningSkill: resumedRun.workflow_id } : {}),
       // A job thread's run keeps asking in its thread (runJobTurn), and a
       // run whose decisions go to its callback keeps sending them there.
       ...(resumedRun?.decisions_to === 'callback'

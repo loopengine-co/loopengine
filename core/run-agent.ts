@@ -230,6 +230,12 @@ export interface RunAgentOptions {
    * asks the person something is sent back for the agent to make the
    * call (the tool, or system_ask_user) instead. */
   unattended?: boolean
+  /** The workflow skill this call runs, its instructions already in the
+   * message (core/workflows.ts's workflowRunMessage): left out of the
+   * skill index, so the model doesn't spend a turn loading what it has,
+   * and a Skill call for it anyway gets a line saying so, not the body a
+   * second time. */
+  runningSkill?: string
   /** Whoever started this run handles its decisions (a workflow run
    * started with "decisions": "callback"): `approver` and
    * `questionHandler` apply even on the `http` channel, the agent's
@@ -575,6 +581,7 @@ interface TurnContext {
   scope: Scope
   sessionId: string | undefined
   skillGarden: SkillGarden
+  runningSkill: string | undefined
   toolSkills: ToolSkills
   skillText: (name: string) => string | undefined
   toolsByName: Map<string, ToolDefinition>
@@ -684,7 +691,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   // comment. loopengine used to default lower (200), which left barely
   // enough room for a handful of skills before truncating the index.
   const skillGarden = new SkillGarden({ dirs: [...skillsDirs, systemSkillsDir], indexBudgetTokens: config.skillIndexBudgetTokens ?? 2000 })
-  const skillIndex = skillGarden.buildIndex().included
+  const skillIndex = skillGarden.buildIndex().included.filter((s) => s.name !== options.runningSkill)
   // Abilities' skills, attached to their tools' first results (see
   // ability-skills.ts).
   const skillText = (name: string): string | undefined => {
@@ -822,6 +829,7 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     scope,
     sessionId: options.sessionId,
     skillGarden,
+    runningSkill: options.runningSkill,
     toolSkills,
     skillText,
     toolsByName,
@@ -877,7 +885,7 @@ async function runLoop(ctx: TurnContext, messages: Message[], newMessages: Messa
 }
 
 async function runTracedLoop(ctx: TurnContext, trace: TurnTrace, messages: Message[], newMessages: Message[], starterMessage: Message): Promise<RunAgentResult> {
-  const { modelCall, log: logEvent, scope, sessionId, skillGarden, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel, evalMode, unattended } = ctx
+  const { modelCall, log: logEvent, scope, sessionId, skillGarden, runningSkill, toolSkills, skillText, toolsByName, systemToolInstances, toolSchemas, systemPrompt, budgetTracker, compactor, gate, toolLane, maxTurns, tailMessages, askUserTool, questionHandler, toolContext, modelLabel, evalMode, unattended } = ctx
 
   const log = (event: LoopEvent): void => {
     trace.event(event)
@@ -1071,6 +1079,10 @@ async function runTracedLoop(ctx: TurnContext, trace: TurnTrace, messages: Messa
       // real tool call and doesn't need ActAuth gating or ToolLane
       // scheduling — but it's still a tool_use block the model emitted,
       // so it still needs a tool_result to answer it, same as any other.
+      if (block.name === 'Skill' && skillGarden && runningSkill && block.input?.skill === runningSkill) {
+        resultBlocks.push({ type: 'tool_result', tool_use_id: block.id!, content: `You are running "${runningSkill}" now: its instructions are in the run's first message. Follow them from there.` })
+        continue
+      }
       if (block.name === 'Skill' && skillGarden) {
         const rawParams = block.input?.params
         const params = rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams)

@@ -355,6 +355,30 @@ describe('runAgent', () => {
     )
   })
 
+  it('leaves the running workflow out of the skill index, and answers a Skill call for it with a line, not its body again', async () => {
+    let call = 0
+    const modelCall: ModelCall = vi.fn(async () => {
+      call++
+      if (call === 1) return toolUseResponse({ id: 't1', name: 'Skill', input: { skill: 'summarize-files' } })
+      return textResponse('done')
+    })
+    const events: LoopEvent[] = []
+    const config = baseConfig({ skillsDirs: ['agents/file-agent/skills'] })
+
+    const result = await runAgent(config, modelCall, 'Run the "Summarize files" workflow.', [], {
+      runningSkill: 'summarize-files',
+      onEvent: (event) => events.push(event),
+    })
+
+    const systemPrompt = (modelCall as ReturnType<typeof vi.fn>).mock.calls[0][1] as string
+    expect(systemPrompt).toContain('Available skills:')
+    expect(systemPrompt).not.toContain('- summarize-files:')
+    const results = toolResults(result.history)
+    expect(results[0].content).toMatch(/already|first message/)
+    expect(results[0].content).not.toContain('Summarize files')
+    expect(events.some((e) => e.type === 'skill:loaded')).toBe(false)
+  })
+
   it('still declares a Skill tool with no agent skillsDirs, because the system skill is always present', async () => {
     const modelCall: ModelCall = vi.fn(async () => textResponse('no skills here'))
 
