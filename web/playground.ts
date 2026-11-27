@@ -17,6 +17,7 @@
 // entirely rather than relying on getting every escape right.
 import { devUiCss } from './dev-ui-styles.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
 export const playgroundHtml: string = `<!doctype html>
 <html lang="en">
@@ -31,17 +32,19 @@ export const playgroundHtml: string = `<!doctype html>
   .chat-toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
-    padding: 8px 24px;
+    padding: 10px 20px;
     border-bottom: 1px solid var(--line);
   }
-  .chat-toolbar button { padding: 4px 10px; font-size: 12.5px; }
-  .chat-toolbar button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-soft); }
+  .chat-toolbar button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; }
+  .chat-toolbar button svg { width: 15px; height: 15px; }
+  .chat-toggles { display: inline-flex; gap: 2px; padding: 3px; margin-left: auto; border-radius: 10px; background: var(--surface); }
+  .chat-toggles button { height: 28px; border: 0; background: none; color: var(--ink-muted); border-radius: 8px; padding: 0 10px; }
+  .chat-toggles button:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+  .chat-toggles button[aria-pressed="true"], .chat-toggles button[aria-pressed="true"]:hover:not(:disabled) { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
   #sessionLabel {
-    margin-left: auto;
-    font-size: 12px;
-    font-family: var(--font-mono);
+    font-size: 12.5px;
     color: var(--ink-faint);
   }
   #sessionLabel.copyable { cursor: pointer; }
@@ -64,29 +67,30 @@ export const playgroundHtml: string = `<!doctype html>
     border-right: 1px solid var(--line);
   }
   .pane:last-child { border-right: none; }
-  .sessions-pane, .trace-pane { background: var(--surface); }
+  .sessions-pane { background: var(--bg); }
+  .trace-pane { background: var(--surface); }
   .sessions-pane .pane-body { padding: 6px; gap: 2px; }
   .sessions-pane { flex: 0 0 200px; }
   .sessions-pane .pane-body { padding: 6px; gap: 2px; }
   .session-item {
     display: flex;
     align-items: center;
-    gap: 4px;
-    border-radius: 6px;
-    padding: 6px 8px;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 8px 10px;
     cursor: pointer;
   }
   .session-item:hover { background: var(--surface); }
-  .session-item.active { background: var(--accent-soft); }
+  .session-item.active { background: var(--surface-2); font-weight: 500; }
   .session-item .preview {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
+    font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .session-item .session-time { font-size: 10px; color: var(--ink-faint); flex-shrink: 0; }
+  .session-item .session-time { font-size: 11px; color: var(--ink-faint); flex-shrink: 0; font-weight: 400; }
   .session-item .session-remove {
     flex-shrink: 0;
     border: none;
@@ -100,12 +104,13 @@ export const playgroundHtml: string = `<!doctype html>
   .session-item:hover .session-remove { display: block; }
   .session-item .session-remove:hover { color: var(--bad); }
   .pane h2 {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--ink);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
     margin: 0;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--line);
+    padding: 14px 16px 8px;
   }
   .pane-body {
     flex: 1;
@@ -115,22 +120,27 @@ export const playgroundHtml: string = `<!doctype html>
     flex-direction: column;
     gap: 10px;
   }
-  .chat-pane .pane-body { padding: 20px 24px; gap: 14px; }
-  .msg { max-width: min(72ch, 92%); }
+  .chat-pane .pane-body { padding: 24px max(24px, calc((100% - 760px) / 2)); gap: 16px; }
+  .msg { max-width: min(72ch, 88%); }
   .msg-label {
     font-size: 12px;
     color: var(--ink-faint);
-    margin-bottom: 3px;
+    margin: 0 4px 4px;
   }
   .msg-body {
     padding: 10px 14px;
-    border-radius: 10px;
+    border-radius: 16px;
     white-space: pre-wrap;
     word-break: break-word;
+    font-size: 14px;
+    line-height: 1.55;
   }
   .msg-user { align-self: flex-end; }
-  .msg-user .msg-body { background: var(--accent-soft); }
-  .msg-assistant .msg-body { background: var(--surface); }
+  .msg-user .msg-label { text-align: right; }
+  .msg-user .msg-body { background: var(--primary); color: var(--on-primary); border-bottom-right-radius: 5px; }
+  .msg-assistant .msg-body { background: var(--surface); border-bottom-left-radius: 5px; }
+  .msg-user .msg-body code { background: rgba(255, 255, 255, .16); color: inherit; }
+  .msg-user .msg-body a { color: inherit; text-decoration: underline; }
   .msg-error .msg-body { background: var(--bad-soft); color: var(--bad); }
   .msg-stopped .msg-body { font-style: italic; color: var(--ink-muted); background: var(--surface); }
   .msg-thinking .msg-body { display: inline-flex; gap: 4px; padding: 11px 10px; }
@@ -274,6 +284,13 @@ export const playgroundHtml: string = `<!doctype html>
   .dot:nth-child(3) { animation-delay: 0.4s; }
   @keyframes dot-blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
   .empty-hint { padding: 10px 2px; }
+  /* A new conversation: who you're talking to, and how. */
+  .chat-welcome { margin: auto; display: grid; justify-items: center; gap: 8px; text-align: center; max-width: 460px; padding: 24px 0; }
+  .chat-welcome h3 { margin: 6px 0 0; font-size: 22px; font-weight: 400; letter-spacing: -0.01em; }
+  .chat-welcome p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); }
+  .chat-welcome .chat-welcome-about { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .chat-welcome .chat-welcome-hint { font-size: 12.5px; color: var(--ink-faint); }
+  ${MASCOT_CSS}
   .event {
     border-left: 3px solid var(--line);
     padding: 4px 8px;
@@ -297,17 +314,20 @@ export const playgroundHtml: string = `<!doctype html>
   .event-approval { border-left-color: #eab308; }
   .event-question { border-left-color: #3b82f6; }
   .composer {
-    border-top: 1px solid var(--line);
-    padding: 12px 24px 16px;
+    padding: 8px max(24px, calc((100% - 760px) / 2)) 16px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
-  .send-row { display: flex; gap: 8px; align-items: flex-end; }
-  #messageInput { flex: 1; min-width: 0; resize: vertical; height: 64px; border-radius: var(--radius); padding: 10px 12px; }
-  #sendButton { background: var(--primary); border-color: var(--primary); color: var(--on-primary); padding: 8px 16px; }
+  .send-row { display: grid; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: 0 2px 10px rgba(0, 0, 0, .05); padding: 6px 8px 8px 14px; }
+  .send-row:focus-within { border-color: var(--ink-faint); }
+  #messageInput { width: 100%; min-width: 0; resize: none; min-height: 44px; max-height: 220px; border: 0; padding: 8px 0 4px; background: none; font-size: 14px; line-height: 1.5; box-shadow: none; outline: none; }
+  .send-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .send-hint { font-size: 11.5px; color: var(--ink-faint); }
+  #sendButton { background: var(--primary); border-color: var(--primary); color: var(--on-primary); height: 32px; padding: 0 16px; border-radius: 9px; }
   #messageInput:disabled, #sendButton:disabled { cursor: not-allowed; }
   details summary { cursor: pointer; font-size: 12px; color: var(--ink-muted); }
+  .composer > details { padding: 0 4px; }
   .advanced-hint { margin: 6px 0 0; font-size: 11px; }
   .advanced-fields { display: flex; gap: 8px; margin-top: 6px; }
   .advanced-fields > div { flex: 1; display: flex; flex-direction: column; gap: 4px; }
@@ -332,22 +352,24 @@ ${consoleSidebarHtml}
     <select id="agentSelect" hidden aria-label="Agent"></select>
     <span id="agentCaption" hidden></span>
     <a id="configLink" href="/agents/config" hidden>Agent config</a>
-    <button id="newConversationButton" type="button">New conversation</button>
-    <button id="historyToggle" type="button" aria-pressed="true">History</button>
-    <button id="traceToggle" type="button" aria-pressed="true">Run trace</button>
-    <span id="sessionLabel">session: (new)</span>
+    <button id="newConversationButton" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New chat</button>
+    <span id="sessionLabel">New conversation</span>
+    <span class="chat-toggles">
+      <button id="historyToggle" type="button" aria-pressed="true" title="Past conversations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>History</button>
+      <button id="traceToggle" type="button" aria-pressed="true" title="Each step of a turn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h7"/></svg>Run trace</button>
+    </span>
   </div>
   <div class="chat-body" id="chatBody">
   <section class="pane sessions-pane">
-    <h2>History</h2>
+    <h2>Conversations</h2>
     <div class="pane-body" id="sessionsPane"></div>
   </section>
   <section class="pane chat-pane" aria-label="Conversation">
     <div class="pane-body" id="chatPane"></div>
     <div class="composer">
       <div class="send-row">
-        <textarea id="messageInput" placeholder="Message&hellip; (Enter to send, Shift+Enter for a new line)"></textarea>
-        <button id="sendButton" type="button">Send</button>
+        <textarea id="messageInput" rows="2" placeholder="Message&hellip;"></textarea>
+        <div class="send-foot"><span class="send-hint">Enter to send &middot; Shift+Enter for a new line</span><button id="sendButton" type="button">Send</button></div>
       </div>
       <details>
         <summary>Request options</summary>
@@ -386,6 +408,9 @@ ${consoleShellScript}
   var agentCaption = document.getElementById('agentCaption');
   var configLink = document.getElementById('configLink');
   var sessionLabel = document.getElementById('sessionLabel');
+  // Its first characters are enough to tell one apart; the whole id is
+  // in the tooltip and copied on click.
+  function sessionText(id) { return 'Session ' + String(id).slice(0, 8); }
   var chatPane = document.getElementById('chatPane');
   var timelinePane = document.getElementById('timelinePane');
   var sessionsPane = document.getElementById('sessionsPane');
@@ -460,6 +485,17 @@ ${consoleShellScript}
   // conversation from the real store once one's picked.
   var SESSIONS_STORAGE_KEY = 'loopengine-playground-sessions';
   var MAX_SAVED_SESSIONS = 50;
+
+  // A new conversation: the agent's name and what it's for, and how to
+  // talk to it. Removed like any empty hint once a message is sent.
+  var MASCOT = ${JSON.stringify(mascotSvg(72))};
+  function showWelcome(name) {
+    var agent = currentAgents.filter(function (a) { return a.name === name; })[0] || {};
+    chatPane.innerHTML = '<div class="empty-hint chat-welcome">' + MASCOT +
+      '<h3>Chat with ' + escapeHtml(agent.displayName || name) + '</h3>' +
+      (agent.systemPrompt ? '<p class="chat-welcome-about">' + escapeHtml(agent.systemPrompt) + '</p>' : '') +
+      '<p class="chat-welcome-hint">Ask it anything it can do, or to run one of its workflows. A tool call that needs your OK shows up here to approve.</p></div>';
+  }
 
   function clearEmptyHint(pane) {
     var hint = pane.querySelector('.empty-hint');
@@ -1249,8 +1285,8 @@ ${consoleShellScript}
     agentSelect.value = item.agent;
     updateCaption();
     sessionId = item.sessionId;
-    sessionLabel.textContent = 'session: ' + sessionId;
-    sessionLabel.title = 'Click to copy session id';
+    sessionLabel.textContent = sessionText(sessionId);
+    sessionLabel.title = sessionId + ' (click to copy)';
     sessionLabel.classList.add('copyable');
     chatPane.textContent = '';
     toolCallCardsById = {};
@@ -1407,14 +1443,18 @@ ${consoleShellScript}
     toolCallCardsById = {};
     knownUrlsByBase = {};
     removeThinking();
-    sessionLabel.textContent = 'session: (new)';
+    sessionLabel.textContent = 'New conversation';
     sessionLabel.classList.remove('copyable');
     sessionLabel.title = '';
     var name = agentSelect.value;
-    setEmptyHint(chatPane, name ? 'No messages yet \\u2014 say hi to ' + name + '.' : 'No messages yet \\u2014 pick an agent above to get started.');
+    if (name) showWelcome(name);
+    else setEmptyHint(chatPane, 'No agents yet. Create one to start chatting.');
     setEmptyHint(timelinePane, 'Each step of a turn (model calls, tool calls, permission checks) appears here as the agent runs.');
     renderSessionsPane();
   }
+
+  var PROVIDER_NAMES = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', meta: 'Meta', xai: 'xAI', deepseek: 'DeepSeek', kimi: 'Kimi', glm: 'GLM' };
+  var OTHER_CALLS = { allow: 'run on their own', ask: 'ask you first', deny: 'never run' };
 
   // The console's agent header + tabs (web/console-shell.ts), with this
   // page as the Chat tab. Rendered from the /agents list right away, then
@@ -1433,15 +1473,26 @@ ${consoleShellScript}
       var chips = [];
       var counts = {};
       if (cfg) {
-        chips.push({ text: typeof cfg.model === 'string' ? cfg.model : cfg.model.provider + ' \u00b7 ' + (cfg.model.model || 'default model'), mono: true });
-        counts = { tools: cfg.tools.length, skills: cfg.skills.length, abilities: cfg.abilityCount };
+        chips.push(typeof cfg.model === 'string' ? { text: cfg.model, mono: true } : { text: (PROVIDER_NAMES[cfg.model.provider] || cfg.model.provider) + ' \u00b7 ' + (cfg.model.model || 'default model') });
+        if (cfg.permissions) chips.push({ text: 'Other tool calls ' + (OTHER_CALLS[cfg.permissions.defaultDecision] || cfg.permissions.defaultDecision) });
+        counts = { tools: cfg.tools.length, skills: cfg.skills.length, abilities: cfg.abilityCount, workflows: cfg.skills.filter(function (s) { return s.workflow; }).length };
       }
       head.innerHTML = leShell.renderHead({ name: name, displayName: agent.displayName, prompt: agent.systemPrompt, chips: chips, tab: 'chat', counts: counts });
     }
     draw(null);
     fetch('/agents/' + encodeURIComponent(name) + '/config')
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (cfg) { if (cfg && agentSelect.value === name) draw(cfg); })
+      .then(function (cfg) {
+        if (!cfg || agentSelect.value !== name) return;
+        draw(cfg);
+        // Messaging Apps and Schedules, counted as their tabs count them.
+        fetch('/agents/' + encodeURIComponent(name) + '/notifier').then(function (r) { return r.ok ? r.json() : null; }).then(function (n) {
+          if (n && agentSelect.value === name) leShell.setCount('messaging', (n.connections || []).length || (n.source === 'code' || n.source === 'default' ? 1 : 0));
+        }).catch(function () {});
+        fetch('/agents/' + encodeURIComponent(name) + '/schedules').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+          if (d && agentSelect.value === name) leShell.setCount('schedules', (d.tasks || []).filter(function (t) { return t.status !== 'cancelled' && t.status !== 'done'; }).length);
+        }).catch(function () {});
+      })
       .catch(function () {});
   }
 
@@ -1489,7 +1540,7 @@ ${consoleShellScript}
         agentSelect.disabled = !hasAgents;
         messageInput.disabled = !hasAgents;
         messageInput.placeholder = hasAgents
-          ? 'Message\\u2026 (Enter to send, Shift+Enter for a new line)'
+          ? 'Message ' + (agentSelect.value || '') + '\\u2026'
           : 'No agents registered';
         updateCaption();
         renderAgentHead();
@@ -1523,8 +1574,8 @@ ${consoleShellScript}
     }
     if (eventName === 'session') {
       sessionId = data.sessionId;
-      sessionLabel.textContent = 'session: ' + sessionId;
-      sessionLabel.title = 'Click to copy session id';
+      sessionLabel.textContent = sessionText(sessionId);
+      sessionLabel.title = sessionId + ' (click to copy)';
       sessionLabel.classList.add('copyable');
       if (lastSentMessage) {
         rememberSession(agentSelect.value, sessionId, lastSentMessage);
@@ -1706,7 +1757,7 @@ ${consoleShellScript}
   sessionLabel.addEventListener('click', function () {
     if (!sessionId || !navigator.clipboard) return;
     navigator.clipboard.writeText(sessionId).then(function () {
-      var original = 'session: ' + sessionId;
+      var original = sessionText(sessionId);
       sessionLabel.textContent = 'copied!';
       setTimeout(function () { sessionLabel.textContent = original; }, 1000);
     });
