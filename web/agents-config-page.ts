@@ -297,6 +297,14 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-steps .wf-evals-run:disabled { opacity: .45; }
   .ev-shown { margin-left: auto; }
   .wf-case-skip { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
+  .ev-sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .ev-side { display: grid; gap: 6px; align-content: start; padding: 10px 12px; min-width: 0; }
+  .ev-side + .ev-side { border-left: 1px solid var(--line); }
+  .ev-side.is-draft { background: var(--surface); }
+  .ev-side-k { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .ev-side .wf-case-fails, .ev-side .wf-case-standins, .ev-side .wf-case-skip { margin: 0; }
+  details .ev-sides { margin-top: 8px; }
+  @media (max-width: 760px) { .ev-sides { grid-template-columns: minmax(0, 1fr); } .ev-side + .ev-side { border-left: 0; border-top: 1px solid var(--line); } }
   .ev-compare { display: grid; gap: 10px; }
   .ev-sum { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); align-items: center; gap: 6px 22px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; }
   .ev-sum-side { display: grid; gap: 2px; }
@@ -2949,9 +2957,17 @@ ${renderMarkdownScript}
         : typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>';
       var why = last.checks ? (fails.length ? '<ul class="wf-case-fails">' + fails.map(function (x) { return '<li><strong>' + escapeHtml(names[x.criterionId] || x.criterionId) + '</strong>' + (x.reason ? ': ' + escapeHtml(x.reason) : '') + '</li>'; }).join('') + '</ul>' : '')
         : '<p class="hint" style="margin:0">' + escapeHtml(last.reason || last.error || '') + '</p>';
-      var standIns = last.standIns && last.standIns.length
-        ? '<p class="wf-case-standins">Not made in the test: ' + last.standIns.map(function (x) {
-            return '<code title="' + escapeHtml(JSON.stringify(x.input)) + '">' + escapeHtml(x.tool) + '</code>' + (x.replayed ? ' <span class="hint">(reply from its run)</span>' : '');
+      // Each tool once, with how many of its calls weren't made.
+      var groups = [];
+      (last.standIns || []).forEach(function (x) {
+        var g = groups.filter(function (y) { return y.tool === x.tool; })[0];
+        if (!g) groups.push(g = { tool: x.tool, n: 0, replayed: 0, inputs: [] });
+        g.n++; if (x.replayed) g.replayed++; g.inputs.push(JSON.stringify(x.input));
+      });
+      var standIns = groups.length
+        ? '<p class="wf-case-standins">Not made in the test: ' + groups.map(function (g) {
+            return '<code title="' + escapeHtml(g.inputs.join(String.fromCharCode(10))) + '">' + escapeHtml(g.tool) + '</code>' + (g.n > 1 ? ' ' + String.fromCharCode(215) + g.n : '') +
+              (g.replayed ? ' <span class="hint">(' + (g.replayed === g.n ? 'reply from its run' : g.replayed + ' replied from its run') + ')</span>' : '');
           }).join(', ') + '</p>'
         : '';
       var skip = skipped ? '<p class="wf-case-skip">' + escapeHtml(skipped) + ' wasn' + RSQ + 't checked: this case has no good result saved. Add one under Good result.</p>' : '';
@@ -2978,11 +2994,15 @@ ${renderMarkdownScript}
       var goodResult = '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '" placeholder="Optional: what a good result says, to compare against">' + escapeHtml(c.reference || '') + '</textarea>' +
         '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>';
       if (comparing) {
-        // The draft's outcome; how it compares is in the table above.
-        var dr = draftCases[c.id];
-        var d = outcome(dr, draftNames, skippedFor(draftRound, c));
-        return '<li class="wf-case" id="ev-case-' + escapeHtml(c.id) + '" data-case="' + escapeHtml(c.id) + '">' + head(d.pill) + d.body +
-          '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (dr && dr.result ? ' and the draft' + RSQ + 's result' : '') + '</summary>' + goodResult + resultBlock('The draft' + RSQ + 's result', dr) +
+        // Both versions' outcomes on this case, side by side.
+        var pub = pubCases[c.id], dr = draftCases[c.id];
+        var p = outcome(pub, pubNames, skippedFor(pubRound, c)), d = outcome(dr, draftNames, skippedFor(draftRound, c));
+        var col = function (label, o, draftSide) { return '<div class="ev-side' + (draftSide ? ' is-draft' : '') + '"><div class="ev-side-k">' + label + ' ' + o.pill + '</div>' + o.body + '</div>'; };
+        return '<li class="wf-case" id="ev-case-' + escapeHtml(c.id) + '" data-case="' + escapeHtml(c.id) + '">' + head('') +
+          '<div class="ev-sides">' + col(escapeHtml(pubLabel), p, false) + col('<span class="le-pill warn">Draft</span>', d, true) + '</div>' +
+          '<details><summary>Good result' + (c.reference ? '' : ' (none)') + ' and both results</summary>' + goodResult +
+            '<div class="ev-sides">' + '<div class="ev-side">' + (resultBlock(escapeHtml(pubLabel), pub) || '<span class="ev-none">No result</span>') + '</div>' +
+              '<div class="ev-side is-draft">' + (resultBlock('Draft', dr) || '<span class="ev-none">No result</span>') + '</div></div>' +
           '</details></li>';
       }
       var last = latest[c.id];
@@ -3031,7 +3051,7 @@ ${renderMarkdownScript}
       evaluate +
       '</div>';
     // Which round the cases below show.
-    var shown = comparing ? '<span class="hint ev-shown">Results from the draft</span>' : round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
+    var shown = comparing ? '<span class="hint ev-shown">' + escapeHtml(pubLabel) + ' and the draft</span>' : round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
     // Draft against published over every case: in a line, then each
     // criterion's pass rate as two bars, then what happened to each case.
     var compareTable = '';
