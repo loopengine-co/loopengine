@@ -350,6 +350,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-crits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .wf-crit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
   .wf-crit-kind { font-size: 12px; color: var(--ink-muted); }
+  .wf-crit .le-pill { margin-left: 4px; vertical-align: 1px; }
+  .wf-crit.is-removed { opacity: .65; }
   .wf-crit-rate { font-variant-numeric: tabular-nums; }
   .wf-case-standins { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
   .wf-panel { min-width: 0; }
@@ -2916,13 +2918,29 @@ ${renderMarkdownScript}
     // Each criterion, with how often the latest round passed it.
     var rateOf = {};
     (checked ? round.passRates : []).forEach(function (r) { rateOf[r.criterionId] = r; });
+    // With criteria in the draft, each is marked against the published
+    // ones (matched by its words): new, changed, or removed in the draft.
+    var drafted = draftedCriteria(w);
+    var liveCrit = live.criteria && live.criteria.length ? live.criteria : [REFERENCE_CRIT];
+    var sameCheck = function (a, b) { return a.kind === b.kind && (a.value || '') === (b.value || ''); };
+    var liveByText = {};
+    liveCrit.forEach(function (c) { liveByText[c.text.trim().toLowerCase()] = c; });
+    var draftTag = function (c) {
+      if (!drafted) return '';
+      var was = liveByText[c.text.trim().toLowerCase()];
+      return !was ? '<span class="le-pill warn">New in the draft</span>' : !sameCheck(was, c) ? '<span class="le-pill warn">Changed in the draft</span>' : '';
+    };
     var critList = criteria.map(function (c) {
       var r = rateOf[c.id];
       var pill = !r || !r.total ? '' : '<span class="le-pill ' + (r.passed === r.total ? 'good' : r.passed * 2 >= r.total ? 'ask' : 'bad') + ' wf-crit-rate">' + r.passed + ' / ' + r.total + '</span>';
-      return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
-    }).join('');
+      return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong> ' + draftTag(c) + '<br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
+    }).join('') + (drafted ? liveCrit.filter(function (c) {
+      return !criteria.some(function (d) { return d.text.trim().toLowerCase() === c.text.trim().toLowerCase(); });
+    }).map(function (c) {
+      return '<li class="wf-crit is-removed"><span><s>' + escapeHtml(c.text) + '</s> <span class="le-pill">Removed in the draft</span><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span></li>';
+    }).join('') : '');
     var critSection = '<h4 class="wf-sub">Success criteria</h4>' +
-      (draftedCriteria(w) ? draftNoteHtml('These success criteria are in the draft: Evaluate draft checks both versions on them, and the published version' + RSQ + 's own Evaluate uses the published ones until then.') : '') +
+      (drafted ? draftNoteHtml('The draft changes these success criteria (marked below): Evaluate draft checks both versions on them, and the published version' + RSQ + 's own Evaluate uses the published ones until then.') : '') +
       '<p class="hint" style="margin:0">' + (evals.criteria && evals.criteria.length
         ? 'What every good result must get right. Each eval case is checked against every criterion, yes or no.'
         : 'What every good result must get right. None set yet, so each eval case is only compared with its good result. Add the criteria that matter, or have them suggested from its instructions.') + '</p>' +
