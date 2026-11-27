@@ -337,6 +337,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-chip.better { background: var(--good-soft); color: var(--good); }
   .ev-chip.worse { background: var(--bad-soft); color: var(--bad); }
   .ev-chip.miss { background: var(--warn-soft); color: var(--warn); }
+  .ev-rest > summary { cursor: pointer; padding: 6px 12px; font-size: 13px; color: var(--ink-muted); }
+  .ev-rest[open] > summary { margin-bottom: 6px; }
   @media (max-width: 760px) { .ev-sum { grid-template-columns: auto auto auto; } .ev-sum-verdict { grid-column: 1 / -1; justify-self: start; text-align: left; } .ev-cmp-head { display: none; } .ev-crow { grid-template-columns: minmax(0, 1fr) auto; } .ev-crow-side { grid-column: 1 / -1; } }
   .ev-step .wf-evals-bar { margin-top: 4px; }
   .ev-step .wf-evals-run.primary, .ev-step .wf-evals-run.primary:hover:not(:disabled) { height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--primary); border: 1px solid var(--primary); color: var(--on-primary); }
@@ -3090,13 +3092,23 @@ ${renderMarkdownScript}
           '<span class="ev-crow-side">' + (x ? bar(x.passed, x.total) : '<span class="ev-none">Not checked</span>') + '</span>' +
           '<span class="ev-crow-side is-draft">' + (y ? bar(y.passed, y.total) : '<span class="ev-none">Not checked</span>') + '</span>' + chip + '</li>';
       }).join('');
-      var caseRows = evals.cases.map(function (c, i) {
+      // Each case's change, broken ones first; those that didn't change
+      // (or weren't in both tests) go in one line, opened on request.
+      var rank = { worse: 0, better: 1 };
+      var caseList = evals.cases.map(function (c, i) {
         var was = passedAll(pubCases[c.id]), now = passedAll(draftCases[c.id]);
         var values = Object.keys(c.params || {}).map(function (k) { return escapeHtml(k) + ': ' + escapeHtml(String(c.params[k]).slice(0, 40)); }).join(DOT);
-        var state = was === null && now === null ? ['', 'Added since: evaluate both again'] : was === null ? ['', 'Not in the published test'] : now === null ? ['', 'Not in the draft test']
+        var state = was === null && now === null ? ['untested', 'Added since: evaluate both again'] : was === null ? ['untested', 'Not in the published test'] : now === null ? ['untested', 'Not in the draft test']
           : now && !was ? ['better', 'Now passes'] : was && !now ? ['worse', 'Now fails'] : now ? ['', 'Passes in both'] : ['miss', 'Fails in both'];
-        return '<li class="ev-krow"><a href="#ev-case-' + escapeHtml(c.id) + '" class="ev-krow-name">Case ' + (i + 1) + '</a><span class="hint">' + (values || 'no inputs') + '</span><span class="ev-chip ' + state[0] + '">' + state[1] + '</span></li>';
-      }).join('');
+        return { kind: state[0], html: '<li class="ev-krow"><a href="#ev-case-' + escapeHtml(c.id) + '" class="ev-krow-name">Case ' + (i + 1) + '</a><span class="hint">' + (values || 'no inputs') + '</span><span class="ev-chip ' + state[0] + '">' + state[1] + '</span></li>' };
+      });
+      var changed = caseList.filter(function (x) { return x.kind in rank; }).sort(function (x, y) { return rank[x.kind] - rank[y.kind]; });
+      var rest = caseList.filter(function (x) { return !(x.kind in rank); });
+      var count = function (kind) { return caseList.filter(function (x) { return x.kind === kind; }).length; };
+      var restWords = [count('') ? count('') + ' pass in both' : '', count('miss') ? count('miss') + ' fail in both' : '', count('untested') ? count('untested') + ' not in both tests' : ''].filter(Boolean).join(', ');
+      var caseSection = '<div class="ev-cmp-head ev-cmp-head-cases"><span>' + (changed.length ? 'Cases that changed' : 'By case') + '</span></div>' +
+        (changed.length ? '<ul class="ev-krows">' + changed.map(function (x) { return x.html; }).join('') + '</ul>' : '') +
+        (rest.length ? '<details class="ev-rest"><summary>' + (changed.length ? rest.length + ' unchanged' : 'No case changed') + ': ' + restWords + '</summary><ul class="ev-krows">' + rest.map(function (x) { return x.html; }).join('') + '</ul></details>' : '');
       var sameChecks = JSON.stringify((pubRound.criteria || []).map(function (c) { return c.text; })) === JSON.stringify((draftRound.criteria || []).map(function (c) { return c.text; }));
       compareTable = '<section class="wf-section ev-compare"><h4 class="wf-sub">Draft against ' + escapeHtml(pubLabel) + '</h4>' +
         '<div class="ev-sum">' +
@@ -3108,8 +3120,7 @@ ${renderMarkdownScript}
         '</div>' +
         '<div class="ev-cmp-head"><span>By success criterion</span><span>' + escapeHtml(pubLabel) + '</span><span>Draft</span><span></span></div>' +
         '<ul class="ev-crows">' + critRows + '</ul>' +
-        '<div class="ev-cmp-head ev-cmp-head-cases"><span>By case</span></div>' +
-        '<ul class="ev-krows">' + caseRows + '</ul>' +
+        caseSection +
       '</section>';
     }
     return steps + compareTable +
