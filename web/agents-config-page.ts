@@ -304,8 +304,14 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-audit-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
   .wf-audit-tools a { font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
   .wf-audit-tools a.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
-  .wf-health-more summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent-ink); }
-  .wf-health-more .wf-health-table { margin-top: 8px; }
+  .wf-health-more { margin-top: 14px; border: 1px solid var(--line); background: var(--bg); }
+  .wf-health-more > summary { cursor: pointer; padding: 12px 16px; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+  .wf-health-more > summary .hint { font-weight: 400; margin-left: 6px; }
+  .wf-health-more[open] > summary { border-bottom: 1px solid var(--line); }
+  .wf-health-more .wf-health-table th, .wf-health-more .wf-health-table td { padding: 10px 16px; }
+  .wf-health-more .wf-health-table tr:last-child td { border-bottom: 0; }
+  .wf-health-when { display: block; font-size: 11.5px; margin-top: 2px; }
+  .wf-health-one { margin: 12px 0 0; font-size: 12.5px; color: var(--ink-muted); }
   .wf-sub-sub { font-size: 12px; font-weight: 700; color: var(--ink-muted); margin-top: 6px; }
   .wf-eval-last { margin: 0; font-size: 13px; }
   .wf-eval-details { display: inline; }
@@ -1881,6 +1887,35 @@ ${renderMarkdownScript}
     '</figure>';
   }
 
+  // The runs in range by the workflow version they ran: one line when
+  // they all ran the same one; else each version side by side, with a
+  // column for each number some version has.
+  function healthVersionsHtml(h) {
+    var vs = h.versions || [];
+    var name = function (v) { return v.version == null ? 'Before versions' : 'Version ' + v.version; };
+    // A version picked above already says which one.
+    if (vs.length < 2 && healthVersion) return '';
+    if (vs.length < 2) return vs.length ? '<p class="wf-health-one">All runs in this range used ' + (vs[0].version == null ? 'the workflow from before versions' : '<strong>version ' + vs[0].version + '</strong>') + '.</p>' : '';
+    var day = function (iso) { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); };
+    var decided = function (v) { return v.approved + v.denied; };
+    var cols = [
+      ['Runs', function (v) { return String(v.runs); }, true],
+      ['Failed', function (v) { return healthPct(v.failed, v.finished); }, true],
+      ['Approved', function (v) { return healthPct(v.approved, decided(v)); }, vs.some(function (v) { return decided(v); })],
+      ['Changed or denied', function (v) { return healthPct(v.changed + v.denied, decided(v)); }, vs.some(function (v) { return decided(v); })],
+      ['Questions per run', function (v) { return v.runs ? (v.questions / v.runs).toFixed(1) : '0'; }, vs.some(function (v) { return v.questions; })],
+      ['Used unedited', function (v) { return v.feedback ? healthPct(v.unedited, v.feedback) : String.fromCharCode(8212); }, vs.some(function (v) { return v.feedback; })],
+      ['Time', function (v) { return healthTime(v.medianMs); }, true],
+      ['Cost per run', function (v) { return healthCost(v.costPerRunUsd); }, vs.some(function (v) { return v.costPerRunUsd != null; })],
+    ].filter(function (c) { return c[2]; });
+    return '<details class="wf-health-more"><summary>Compare versions <span class="hint">' + vs.length + ' ran in this range</span></summary>' +
+      '<div class="wf-health-table"><table><thead><tr><th>Version</th>' + cols.map(function (c) { return '<th>' + c[0] + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      vs.map(function (v) {
+        return '<tr><td><strong>' + name(v) + '</strong><span class="hint wf-health-when">' + escapeHtml(day(v.from)) + (day(v.from) !== day(v.to) ? ' ' + String.fromCharCode(8211) + ' ' + escapeHtml(day(v.to)) : '') + '</span></td>' +
+          cols.map(function (c) { return '<td>' + c[1](v) + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div></details>';
+  }
+
   function workflowHealthHtml(h) {
     var t = h.total;
     if (!t.runs) return '<div class="ab-empty">No runs in the last ' + (h.days >= 365 ? 'year' : h.days + ' days') + '.</div>';
@@ -1894,13 +1929,7 @@ ${renderMarkdownScript}
       stat('Time', healthTime(t.medianMs), 'middle run, start to finish') +
       stat('Cost', healthCost(t.costPerRunUsd), t.costPerRunUsd == null ? 'no price for its model' : 'per run' + (t.pricedRuns < t.runs ? ', from ' + t.pricedRuns + ' of ' + t.runs + ' runs' : '')) +
       '</div>';
-    var rows = h.versions.map(function (v) {
-      var d = v.approved + v.denied;
-      return '<tr><td>' + (v.version == null ? '<span class="hint">before versions</span>' : 'Version ' + v.version) + '</td><td>' + v.runs + '</td><td>' + healthPct(v.failed, v.finished) + '</td><td>' + healthPct(v.approved, d) + '</td><td>' + healthPct(v.changed + v.denied, d) + '</td>' +
-        '<td>' + (v.runs ? (v.questions / v.runs).toFixed(1) : '0') + '</td><td>' + (v.feedback ? healthPct(v.unedited, v.feedback) : String.fromCharCode(8212)) + '</td><td>' + healthTime(v.medianMs) + '</td><td>' + healthCost(v.costPerRunUsd) + '</td></tr>';
-    }).join('');
-    return alerts + stats + healthChartHtml(h.daily) +
-      '<details class="wf-health-more"><summary>By workflow version</summary><div class="wf-health-table"><table><thead><tr><th>Version</th><th>Runs</th><th>Failed</th><th>Approved</th><th>Changed or denied</th><th>Questions per run</th><th>Used unedited</th><th>Time</th><th>Cost per run</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+    return alerts + stats + healthChartHtml(h.daily) + healthVersionsHtml(h);
   }
 
   // A change's details: each setting from and to, and for long texts the
