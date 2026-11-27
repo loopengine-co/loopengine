@@ -89,7 +89,9 @@ describe('generateMcpAbility', () => {
     const manifest = JSON.parse(readFileSync(join(generated.dir, 'loopengine.ability.json'), 'utf8'))
     expect(manifest.mcp).toMatchObject({ url: `${base}/mcp`, auth: { type: 'none' }, prefix: 'fake' })
     expect(manifest.mcp.tools).toHaveLength(generated.tools.length)
-    expect(readFileSync(join(generated.dir, 'skills', 'fake', 'SKILL.md'), 'utf8')).toContain('fake_create_thing')
+    // No skill: each tool's own description says what it does.
+    expect(manifest.skills).toEqual([])
+    expect(existsSync(join(generated.dir, 'skills'))).toBe(false)
 
     await installAbility(AGENT_NAME, 'mcp-fake', { fetchAbilityDir: () => generated.dir, mcpTools: ['listThings', 'createThing'] })
     const tools = await loadMcpAbilityTools(AGENT_DIR, AGENT_NAME)
@@ -97,7 +99,7 @@ describe('generateMcpAbility', () => {
     expect(await create.execute({ title: 'x' }, { agentName: AGENT_NAME, tenant: 'default', env: createAgentEnv(AGENT_NAME, AGENT_DIR) })).toBe('created x')
   })
 
-  it('with a model: its step choices and skill, with the installed tool names', async () => {
+  it('with a model: its step choices, and still no skill', async () => {
     const modelCall: ModelCall = async () => ({
       stop_reason: 'tool_use',
       content: [{
@@ -106,14 +108,13 @@ describe('generateMcpAbility', () => {
         name: 'save_ability',
         input: {
           steps: [{ step: 0, tool: 'listThings' }, { step: 2, tool: 'createThing' }],
-          skill: { description: 'Using Fake', body: 'Use listThings, then createThing.' },
         },
       }],
     })
     const generated = await generateMcpAbility({ server: server(), workflow: { ...workflow, steps: workflow.steps.map(({ tool: _t, ...s }) => s) }, modelCall })
 
     expect(generated.stepTools).toEqual({ 0: 'listThings', 2: 'createThing' })
-    expect(readFileSync(join(generated.dir, 'skills', 'fake', 'SKILL.md'), 'utf8')).toContain('Use fake_list_things, then fake_create_thing.')
+    expect(existsSync(join(generated.dir, 'skills'))).toBe(false)
   })
 
   it('sends a key, and records the setting it is read from', async () => {

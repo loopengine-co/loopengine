@@ -1,9 +1,13 @@
 // Makes an app's ability from its MCP server: connects (with the key the
 // person gave, if any), lists every tool the server offers, gives each a
-// default permission, writes a skill, and lays it all out as an ability
-// package (the `mcp` block of core/mcp-abilities.ts, actauth rules, a
-// SKILL.md). The caller stores it as a workspace ability: the app, as the
-// Apps page shows it.
+// default permission, and lays it all out as an ability package (the
+// `mcp` block of core/mcp-abilities.ts and actauth rules). The caller
+// stores it as a workspace ability: the app, as the Apps page shows it.
+//
+// No skill: each tool's own description says what it does, and a guide
+// written for every tool the server offers mostly covered tools an agent
+// wasn't given, cost tokens in every run, and led models to open it
+// before calling a tool their instructions already named.
 //
 // The package lists every tool; an agent that adds the app chooses which
 // of them it gets and with what permission (installAbility's mcpTools).
@@ -45,8 +49,8 @@ export interface McpAbilityRequest {
   /** Steps the app is used for, to work out each one's tool (workflow
    * builder); none when it's connected from the Apps page. */
   workflow?: { name: string; summary: string; steps: McpAbilityStep[] }
-  /** Matches steps to tools and writes the skill; without one, steps
-   * match only by the tool the planner named, and the skill is plainer. */
+  /** Matches steps to tools; without one, steps match only by the tool
+   * the planner named. */
   modelCall?: ModelCall
 }
 
@@ -151,7 +155,7 @@ export async function generateMcpAbility(request: McpAbilityRequest): Promise<Ge
   })
   const byName = new Map(available.map((t) => [t.name, t]))
 
-  const choice = request.modelCall ? await chooseWithModel(request.modelCall, server, request.workflow, available).catch(() => undefined) : undefined
+  const choice = request.modelCall && steps.length ? await chooseWithModel(request.modelCall, server, request.workflow, available).catch(() => undefined) : undefined
   const stepTools: Record<number, string> = {}
   for (const step of steps) {
     const picked = choice?.steps[step.index] ?? (step.tool && byName.has(step.tool) ? step.tool : undefined)
@@ -161,17 +165,8 @@ export async function generateMcpAbility(request: McpAbilityRequest): Promise<Ge
   const toolName = (remote: string) => mcpToolName(names.prefix, remote)
   const tools = available.map((t) => ({ name: toolName(t.name), remote: t.name, decision: defaultMcpDecision(t) }))
 
-  // The model writes the server's own tool names; the agent sees the installed ones.
-  let skillBody = choice?.skill.body || plainSkill(server, tools, byName)
-  for (const t of tools) {
-    if (t.remote !== t.name) skillBody = skillBody.replace(new RegExp(`(?<![A-Za-z0-9_])${t.remote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), t.name)
-  }
-  const skillDescription = choice?.skill.description || `How to use ${server.title} (its MCP server): which tool does what, and when to ask first.`
-
   const dir = mkdtempSync(join(tmpdir(), 'loopengine-mcp-generated-'))
-  const skillId = slug(names.prefix)
   mkdirSync(join(dir, 'actauth'), { recursive: true })
-  mkdirSync(join(dir, 'skills', skillId), { recursive: true })
   writeFileSync(join(dir, 'package.json'), JSON.stringify({
     name: names.name,
     version: '1.0.0',
@@ -182,13 +177,12 @@ export async function generateMcpAbility(request: McpAbilityRequest): Promise<Ge
   writeFileSync(join(dir, 'loopengine.ability.json'), JSON.stringify({
     loopengineVersion: '>=0.1.99',
     mcp: { ...serverBlock, tools: tools.map((t) => t.remote), prefix: names.prefix },
-    skills: [`skills/${skillId}`],
+    skills: [],
     actauth: 'actauth/rules.yml',
     env: keyEnv ? [{ name: keyEnv, description: `API key for ${server.title}'s MCP server`, secret: true, scope: 'overridable' }] : [],
     generatedFrom: { server: server.id, url: server.url, source: server.source },
   }, null, 2) + '\n')
   writeFileSync(join(dir, 'actauth', 'rules.yml'), stringifyYaml(tools.map((t) => ({ name: appRuleName(names.name, t.name), scope: '*/*', tool: t.name, decision: t.decision }))))
-  writeFileSync(join(dir, 'skills', skillId, 'SKILL.md'), `---\nname: ${skillId}\ndescription: ${JSON.stringify(skillDescription.slice(0, 300))}\n---\n\n${skillBody.trim()}\n`)
 
   return { dir, name: names.name, ...(keyEnv ? { keyEnv } : {}), ...(oauthEnv ? { oauthEnv } : {}), tools, stepTools }
 }
@@ -198,38 +192,26 @@ export function appRuleName(abilityName: string, toolName: string): string {
   return `${abilityName}-${toolName.replace(/_/g, '-')}`.slice(0, 80)
 }
 
-const PLAIN_SKILL_TOOLS = 30
-
-function plainSkill(server: McpDirectoryServer, tools: GeneratedMcpAbility['tools'], byName: Map<string, McpToolInfo>): string {
-  const shown = tools.slice(0, PLAIN_SKILL_TOOLS)
-  const lines = shown.map((t) => `- \`${t.name}\`: ${(byName.get(t.remote)?.description || t.remote).split('\n')[0].slice(0, 160)}`)
-  const more = tools.length > shown.length ? `\n\n…and ${tools.length - shown.length} more; each tool's description says what it does.` : ''
-  return `# ${server.title}\n\nTools from ${server.title}'s MCP server. You only have the ones this agent was given.\n\n${lines.join('\n')}${more}\n\nUse the search and lookup tools to find exact ids before creating or changing anything. A tool set to ask waits for a person's OK.`
-}
-
-// ---- Matching steps, and the skill, with the model ----
+// ---- Matching steps with the model ----
 
 interface ModelChoice {
   steps: Record<number, string>
-  skill: { description: string; body: string }
 }
 
 const CHOOSER_PROMPT = `You set up an app's MCP server for LoopEngine agents.
 
-You get the app, every tool its server offers (with its hints: readOnly, destructive), and, when it's being set up for a workflow, the steps that use it. Call save_ability once with:
-- steps: for each step listed, the one server tool that does it (its exact name). Empty when no steps are listed.
-- skill: a short general guide to using this app's tools well (under 1200 characters): which tool to use for what, what ids to look up first, and that tools set to ask wait for a person. Agents are given only some of the tools, so don't rely on any one being there. description: one sentence.`
+You get the app, every tool its server offers (with its hints: readOnly, destructive), and the workflow steps that use it. Call save_ability once with:
+- steps: for each step listed, the one server tool that does it (its exact name).`
 
 const CHOOSER_TOOL: ToolSchema = {
   name: 'save_ability',
-  description: 'Save the tool for each step, and the skill. Call once.',
+  description: 'Save the tool for each step. Call once.',
   input_schema: {
     type: 'object',
     properties: {
       steps: { type: 'array', items: { type: 'object', properties: { step: { type: 'number' }, tool: { type: 'string' } }, required: ['step', 'tool'] } },
-      skill: { type: 'object', properties: { description: { type: 'string' }, body: { type: 'string' } }, required: ['description', 'body'] },
     },
-    required: ['steps', 'skill'],
+    required: ['steps'],
   },
 }
 
@@ -257,11 +239,7 @@ async function chooseWithModel(modelCall: ModelCall, server: McpDirectoryServer,
       const e = (s ?? {}) as { step?: unknown; tool?: unknown }
       if (typeof e.step === 'number' && typeof e.tool === 'string') steps[e.step] = e.tool
     }
-    const skill = (input.skill ?? {}) as { description?: unknown; body?: unknown }
-    return {
-      steps,
-      skill: { description: typeof skill.description === 'string' ? skill.description : '', body: typeof skill.body === 'string' ? skill.body.slice(0, 4000) : '' },
-    }
+    return { steps }
   }
   return undefined
 }

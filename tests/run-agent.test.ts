@@ -379,7 +379,7 @@ describe('runAgent', () => {
     expect(events.some((e) => e.type === 'skill:loaded')).toBe(false)
   })
 
-  it("leaves other workflows out of a workflow's run, and says an app's guide comes with its tools' results", async () => {
+  it("leaves other workflows out of a workflow's run, and an app's generated guide out of every run", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'loopengine-skill-index-'))
     try {
       const skill = (name: string, front: string) => {
@@ -390,7 +390,11 @@ describe('runAgent', () => {
       skill('weekly-digest', 'workflow: true\n')
       skill('shop', '')
       skill('style', '')
-      writeFileSync(join(dir, '.loopengine-abilities.json'), JSON.stringify({ shop: { tools: ['shop_find', 'shop_list'], skills: ['shop'] } }))
+      skill('firecrawl', '')
+      writeFileSync(join(dir, '.loopengine-abilities.json'), JSON.stringify({
+        shop: { tools: ['shop_find', 'shop_list'], skills: ['shop'] },
+        'mcp-firecrawl': { version: '1.0.0', mcp: { server: { url: 'http://127.0.0.1:9/mcp', auth: { type: 'none' } }, tools: [{ name: 'firecrawl_scrape', remote: 'firecrawl_scrape' }] }, skills: ['firecrawl'] },
+      }))
       const promptFor = async (options: { runningSkill?: string }) => {
         const config = baseConfig({ skillsDirs: [join(dir, 'skills')] })
         setAgentDir(config, dir)
@@ -402,12 +406,12 @@ describe('runAgent', () => {
       expect(run).not.toContain('- daily-digest:')
       expect(run).not.toContain('- weekly-digest:')
       expect(run).toContain('- style: About style\n')
-      expect(run).toContain("- shop: Tips for shop_find, shop_list. They arrive with the first result of any of them, so there's no need to open them first.")
-      expect(run).not.toContain('About shop')
-      expect(run).toContain('When you know which tool to call, call it.')
+      expect(run).toContain('- shop: About shop\n')
+      expect(run).not.toContain('- firecrawl:')
       const chat = await promptFor({})
       expect(chat).toContain('- daily-digest:')
       expect(chat).toContain('- weekly-digest:')
+      expect(chat).not.toContain('- firecrawl:')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

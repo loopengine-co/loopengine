@@ -22,7 +22,7 @@ import { loadAgentModule } from './discover-agents.js'
 import { agentAsTool } from './agent-as-tool.js'
 import { loadGatewayToolsFromDir } from './gateway-tools.js'
 import { loadMcpAbilityTools } from './mcp-abilities.js'
-import { skillsForResult, skillsInHistory, toolSkillsFor, type ToolSkills } from './ability-skills.js'
+import { generatedGuideSkills, skillsForResult, skillsInHistory, toolSkillsFor, type ToolSkills } from './ability-skills.js'
 import { systemTools, createAskUserTool, createScheduleTools, CliQuestionHandler, isDurableQuestionHandler, type PendingQuestion } from './system-tools/index.js'
 import { resolveHttpNotifier } from './http-notifier.js'
 import type { LoopEvent } from './loop-events.js'
@@ -696,8 +696,10 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
   const skillGarden = new SkillGarden({ dirs: [...skillsDirs, systemSkillsDir], indexBudgetTokens: config.skillIndexBudgetTokens ?? 2000 })
   // A workflow run leaves out its own skill and every other workflow's:
   // it follows its instructions, and running another workflow from
-  // inside it isn't something it should do.
-  const skillIndex = skillGarden.buildIndex().included.filter((s) => s.name !== options.runningSkill && !(options.runningSkill && skillGarden.frontmatterOf(s.name)?.workflow === true))
+  // inside it isn't something it should do. An app's generated guide is
+  // left out everywhere (ability-skills.ts).
+  const guides = generatedGuideSkills(agentDirFor(config))
+  const skillIndex = skillGarden.buildIndex().included.filter((s) => s.name !== options.runningSkill && !guides.has(s.name) && !(options.runningSkill && skillGarden.frontmatterOf(s.name)?.workflow === true))
   // Abilities' skills, attached to their tools' first results (see
   // ability-skills.ts).
   const skillText = (name: string): string | undefined => {
@@ -820,21 +822,8 @@ async function buildTurnContext(config: AgentConfig, modelCall: ModelCall, optio
     })
   }
 
-  // An ability's skill that comes with its tools' first result is listed
-  // as tips that arrive on their own, so the model doesn't open it
-  // before calling a tool it already knows.
-  const attachedTo = new Map<string, string[]>()
-  for (const [tool, names] of toolSkills.attach) for (const name of names) attachedTo.set(name, [...(attachedTo.get(name) ?? []), tool])
-  const skillLine = (s: { name: string; description: string }): string => {
-    const tools = attachedTo.get(s.name)
-    // Its own description ("Use Firecrawl to…") reads like a step to
-    // take; it's tips, and they arrive on their own.
-    return tools
-      ? `- ${s.name}: Tips for ${toolsInWords(tools)}. They arrive with the first result of ${tools.length === 1 ? 'that tool' : 'any of them'}, so there's no need to open them first.`
-      : `- ${s.name}: ${s.description}`
-  }
   const systemPrompt = skillIndex.length
-    ? `${config.systemPrompt}\n\nAvailable skills:\n${skillIndex.map(skillLine).join('\n')}\n\nA skill is background to read when you're unsure how to do something. When you know which tool to call, call it.`
+    ? `${config.systemPrompt}\n\nAvailable skills:\n${skillIndex.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`
     : config.systemPrompt
 
   // Nothing else in this loop bounds a model stuck re-requesting the same
@@ -1537,12 +1526,4 @@ export function recordedCalls(history: Message[]): RecordedCall[] {
     }
   }
   return calls.filter((c) => c.result)
-}
-
-/** Tools named for a skill's line: a few by name, or a shared prefix
- * ("the firecrawl_… tools") for many. */
-function toolsInWords(tools: string[]): string {
-  if (tools.length <= 3) return tools.join(', ')
-  const prefix = tools[0].includes('_') ? tools[0].slice(0, tools[0].indexOf('_') + 1) : ''
-  return prefix && tools.every((t) => t.startsWith(prefix)) ? `the ${prefix}… tools` : `${tools.slice(0, 3).join(', ')} and ${tools.length - 3} more`
 }

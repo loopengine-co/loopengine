@@ -110,7 +110,7 @@ describe('createGlmModelCall', () => {
         {
           role: 'system',
           content:
-            "You are a test agent.\n\nAvailable skills:\n- composio-large-outputs: How to retrieve a gateway tool's real output when its result says storedInFile is true instead of returning the data inline.\n\nA skill is background to read when you're unsure how to do something. When you know which tool to call, call it.",
+            "You are a test agent.\n\nAvailable skills:\n- composio-large-outputs: How to retrieve a gateway tool's real output when its result says storedInFile is true instead of returning the data inline.",
         },
         { role: 'user', content: 'is order A-1001 delivered?' },
         {

@@ -6,7 +6,7 @@ import { runAgent, type Message, type ModelCall, type ModelResponse } from '#cor
 import type { AgentConfig, ToolDefinition } from '#core/agent-config.js'
 import type { LoopEvent } from '#core/loop-events.js'
 import { setAgentDir } from '#core/agent-env.js'
-import { SKILL_ATTACH_MAX_CHARS, skillsForResult, toolSkillsFor } from '#core/ability-skills.js'
+import { SKILL_ATTACH_MAX_CHARS, generatedGuideSkills, skillsForResult, toolSkillsFor } from '#core/ability-skills.js'
 
 /** An agent folder with abilities' records and their skills. */
 function agentFolder(records: Record<string, unknown>, skills: Record<string, string>): string {
@@ -22,17 +22,21 @@ function agentFolder(records: Record<string, unknown>, skills: Record<string, st
 const textOf = (skills: Record<string, string>) => (name: string) => skills[name]
 
 describe("which abilities' skills go with which tools", () => {
-  it("gives an ability's one skill to all its tools, apps' tools included", () => {
-    const skills = { 'em-order-shipment-flow': 'What an order status means.', linear: 'How to use Linear.' }
+  it("gives an ability's one skill to all its tools, a written app's tools included, but not an app's generated guide", () => {
+    const skills = { 'em-order-shipment-flow': 'What an order status means.', 'shop-rules': 'How the shop works.', linear: 'How to use Linear.' }
     const dir = agentFolder({
       'lp-em-orders': { tools: ['lookup_order_details', 'lookup_order_refunds'], skills: ['em-order-shipment-flow'] },
+      '@acme/shop': { tools: [], mcp: { tools: [{ name: 'shop_find', remote: 'find' }] }, skills: ['shop-rules'] },
       'mcp-linear': { tools: [], mcp: { tools: [{ name: 'linear_list_issues', remote: 'list_issues' }] }, skills: ['linear'] },
       'no-skills': { tools: ['other_tool'], skills: [] },
     }, skills)
     const found = toolSkillsFor(dir, textOf(skills))
     expect(found.attach.get('lookup_order_details')).toEqual(['em-order-shipment-flow'])
     expect(found.attach.get('lookup_order_refunds')).toEqual(['em-order-shipment-flow'])
-    expect(found.attach.get('linear_list_issues')).toEqual(['linear'])
+    expect(found.attach.get('shop_find')).toEqual(['shop-rules'])
+    expect(found.attach.has('linear_list_issues')).toBe(false)
+    expect(found.point.has('linear_list_issues')).toBe(false)
+    expect(generatedGuideSkills(dir)).toEqual(new Set(['linear']))
     expect(found.attach.has('other_tool')).toBe(false)
   })
 
