@@ -320,7 +320,7 @@ export const playgroundHtml: string = `<!doctype html>
     gap: 8px;
   }
   .send-row { display: grid; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: 0 2px 10px rgba(0, 0, 0, .05); padding: 6px 8px 8px 14px; }
-  .send-row:focus-within { border-color: var(--ink-faint); }
+  #messageInput:focus, #messageInput:focus-visible { outline: none; box-shadow: none; border: 0; }
   #messageInput { width: 100%; min-width: 0; resize: none; min-height: 44px; max-height: 220px; border: 0; padding: 8px 0 4px; background: none; font-size: 14px; line-height: 1.5; box-shadow: none; outline: none; }
   .send-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .send-hint { font-size: 11.5px; color: var(--ink-faint); }
