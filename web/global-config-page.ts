@@ -169,6 +169,31 @@ ${themeHeadHtml}<style>${devUiCss}
   .cf-or { font-size: 12.5px; color: var(--ink-muted); }
   .cf-own-form { margin-top: 12px; }
   #abilityInstallStatus:empty { display: none; }
+  /* General: settings in groups, each a row with its name and what it
+     does on the left, and the setting itself on the right. */
+  .gn-group { margin: 0 0 36px; max-width: 1000px; }
+  .gn-group > h3 { font-size: 18px; font-weight: 500; letter-spacing: -0.01em; margin: 0 0 12px; }
+  .gn-card { border: 1px solid var(--line); background: var(--bg); }
+  .gn-row { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 28px; padding: 20px 22px; }
+  .gn-row + .gn-row { border-top: 1px solid var(--line); }
+  .gn-k h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+  .gn-k p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-muted); }
+  .gn-v { min-width: 0; font-size: 13px; }
+  .gn-v p { margin: 0 0 8px; }
+  .gn-v > div > :last-child { margin-bottom: 0; }
+  .gn-info { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); column-gap: 28px; margin: 0; padding: 14px 22px; border-bottom: 1px solid var(--line); }
+  .gn-info dt, .gn-info dd { margin: 0; padding: 7px 0; font-size: 13px; }
+  .gn-info dt { color: var(--ink-muted); }
+  .gn-info dd { min-width: 0; overflow-wrap: anywhere; }
+  .gn-info dt + dd { border: 0; }
+  .gn-info dt:not(:first-of-type), .gn-info dt:not(:first-of-type) + dd { border-top: 1px solid var(--line); }
+  .gn-info + .gn-row { border-top: 0; }
+  @media (max-width: 760px) { .gn-info { grid-template-columns: minmax(0, 1fr); } .gn-info dd { padding-top: 0; } .gn-info dt:not(:first-of-type) + dd { border-top: 0; } }
+  .gn-v select, .gn-v input[type=text], .gn-v input[type=password], .gn-v textarea { max-width: 460px; }
+  .gn-v textarea { width: 100%; min-height: 120px; border-radius: 9px; }
+  .gn-v button { height: 32px; border-radius: 8px; padding: 0 14px; }
+  .gn-v .source-form { margin-top: 10px; }
+  @media (max-width: 760px) { .gn-row { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
   /* Models: provider cards, and each agent's model. */
   .md-card .cf-card-head { align-items: center; }
   .md-card .cf-card-text { flex: 1; }
@@ -215,7 +240,7 @@ ${consoleSidebarHtml}
   </div>
   <div class="section-panel" data-section-panel="settings" style="display:none">
     <div class="le-head plain"><div class="le-title"><button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
-      <div><h1>Settings</h1><p>How this server is set up. These come from its deployment, not from this page.</p></div></div></div>
+      <div><h1>General</h1><p>How this workspace works, and the server it runs on.</p></div></div></div>
     <div class="le-scroll"><div class="le-page" style="display:block"><div id="settingsContent"><p class="hint">Loading&hellip;</p></div></div></div>
   </div>
 </main>
@@ -427,7 +452,7 @@ ${consoleShellScript}
         '<p id="abilityInstallStatus" class="hint"></p>' +
         '<section class="cf-sec" id="private-abilities">' + cfHead('In this workspace', 'Your own abilities, ready to add to agents from their Apps tab.') +
           '<div id="workspaceAbilities"></div></section>' +
-        '<section class="cf-sec">' + cfHead('From your sources', 'Private GitHub orgs or npm registries, set in <a href="/config?section=settings">General settings</a>.') +
+        '<section class="cf-sec">' + cfHead('From your sources', 'Private GitHub orgs or npm registries, set in <a href="/config?section=settings">Settings → General</a>.') +
           '<div id="privateAbilities"><p class="hint">Loading&hellip;</p></div></section>' +
         '<section class="cf-sec">' + cfHead('Install one yourself', '') +
           '<div class="cf-box">' +
@@ -573,7 +598,7 @@ ${consoleShellScript}
     var sources = lastPrivate.sources || [];
     if (lastPrivate.error) { el.innerHTML = '<p class="error">' + escapeHtml(lastPrivate.error) + '</p>'; return; }
     if (!sources.length) {
-      el.innerHTML = '<div class="cf-empty">No private sources yet. <a href="/config?section=settings">Add one in General settings</a>: a GitHub org or user, or a private npm registry.</div>';
+      el.innerHTML = '<div class="cf-empty">No private sources yet. <a href="/config?section=settings">Add one in Settings → General</a>: a GitHub org or user, or a private npm registry.</div>';
       return;
     }
     el.innerHTML = sources.map(function (s) {
@@ -1180,17 +1205,24 @@ ${consoleShellScript}
       // With a time zone to choose, it has its own section below.
       d.timeZone ? null : ['Time zone', '<span class="hint">The server' + String.fromCharCode(8217) + 's own. Update the template below to choose one here.</span>'],
     ];
-    return '<section><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>' +
-      rows.filter(Boolean).map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
-      '</tbody></table></section>' +
-      '<section><h3>Appearance</h3><div class="source"><div class="le-seg" role="radiogroup" aria-label="Theme" id="themeSeg">' +
-        ['system', 'light', 'dark'].map(function (t) { return '<button type="button" role="radio" data-theme-pick="' + t + '" aria-pressed="' + (leShell.getTheme() === t) + '">' + { system: 'System', light: 'Light', dark: 'Dark' }[t] + '</button>'; }).join('') +
-        '</div><p class="hint" style="margin:8px 0 0">System follows your computer' + String.fromCharCode(8217) + 's setting. Kept in this browser; the theme button at the bottom of the left rail changes it too.</p></div></section>' +
-      (d.timeZone ? '<section><h3>Time zone</h3><div class="source" id="timeZoneBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' : '') +
-      '<section><h3>Publishing</h3><div class="source" id="publishingBox"></div></section>' +
-      '<section><h3>Shared policies</h3><div class="source" id="policiesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
-      '<section><h3>Private ability sources</h3><p class="muted" style="margin:0 0 10px">Where your own abilities come from, listed under <a href="/config?section=abilities#private-abilities">Apps &rarr; Private abilities</a>.</p><div class="source" id="abilitySourcesBox"><p class="hint">Loading' + String.fromCharCode(8230) + '</p></div></section>' +
-      '<section><h3>Updates</h3><div class="source" id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div></section>';
+    var row = function (title, about, body) {
+      return '<div class="gn-row"><div class="gn-k"><h4>' + title + '</h4>' + (about ? '<p>' + about + '</p>' : '') + '</div><div class="gn-v">' + body + '</div></div>';
+    };
+    var group = function (title, rows) { return '<section class="gn-group"><h3>' + title + '</h3><div class="gn-card">' + rows + '</div></section>'; };
+    var loading = '<p class="hint">Loading' + String.fromCharCode(8230) + '</p>';
+    return group('Workspace',
+        row('Appearance', 'System follows your computer. Kept in this browser; the theme button in the left rail changes it too.',
+          '<div class="le-seg" role="radiogroup" aria-label="Theme" id="themeSeg">' +
+            ['system', 'light', 'dark'].map(function (t) { return '<button type="button" role="radio" data-theme-pick="' + t + '" aria-pressed="' + (leShell.getTheme() === t) + '">' + { system: 'System', light: 'Light', dark: 'Dark' }[t] + '</button>'; }).join('') + '</div>') +
+        (d.timeZone ? row('Time zone', 'For times of day in schedules and templates: &ldquo;daily at 09:00&rdquo; runs at 9:00 here, through clock changes.', '<div id="timeZoneBox">' + loading + '</div>') : '') +
+        row('Publishing', 'A change to what a workflow does (its prompt, inputs, model, result or success criteria) becomes a new version when published. Schedules, webhooks and messaging change at once, and show in Audit.', '<div id="publishingBox"></div>')) +
+      group('Every workflow',
+        row('Shared policies', 'Rules every workflow follows, written once: your refund window, delivery promises, tone, who signs messages. A workflow' + String.fromCharCode(8217) + 's own instructions win where they say more.', '<div id="policiesBox">' + loading + '</div>')) +
+      group('Your own abilities',
+        row('Private ability sources', 'Where your own abilities come from: a GitHub org or user, or a private npm registry. They' + String.fromCharCode(8217) + 're listed under <a href="/config?section=abilities#private-abilities">Apps &rarr; Private abilities</a>.', '<div id="abilitySourcesBox">' + loading + '</div>')) +
+      group('This server',
+        '<dl class="gn-info">' + rows.filter(Boolean).map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>' +
+        row('Updates', 'Newer versions of LoopEngine and this project' + String.fromCharCode(8217) + 's template.', '<div id="upgradeBox"><p class="hint">Checking for a newer LoopEngine' + String.fromCharCode(8230) + '</p></div>'));
   }
 
   // ---- Private ability sources (Settings) ----
@@ -1295,8 +1327,7 @@ ${consoleShellScript}
   function renderTimeZone(t) {
     var box = document.getElementById('timeZoneBox');
     if (!box) return;
-    var intro = '<p>Schedules and templates use this for times of day: &ldquo;daily at 09:00&rdquo; runs at 9:00 here, and daily and weekly schedules keep that time when the clocks change. ' +
-      (t.chosen ? '' : 'Not chosen yet, so it' + String.fromCharCode(8217) + 's the server' + String.fromCharCode(8217) + 's (<code>' + escapeHtml(t.server) + '</code>).') + '</p>';
+    var intro = t.chosen ? '' : '<p class="hint" style="margin:0 0 8px">Not chosen yet, so it' + String.fromCharCode(8217) + 's the server' + String.fromCharCode(8217) + 's (<code>' + escapeHtml(t.server) + '</code>).</p>';
     if (!t.canSave) {
       box.innerHTML = intro + '<p>In use: <code>' + escapeHtml(t.timeZone) + '</code></p>' + leShell.adminNote('Set <code>LOOPENGINE_ADMIN_AUTH</code> to change it here, or put <code>LOOPENGINE_TIME_ZONE</code> in .env.');
       return;
@@ -1350,7 +1381,7 @@ ${consoleShellScript}
     var box = document.getElementById('publishingBox');
     if (!box) return;
     var on = d.requireReview === true;
-    var intro = '<p>Changes to what a workflow does (its prompt, inputs, model, result format and success criteria) become a new version when they' + String.fromCharCode(8217) + 're published. Schedules, webhooks and where messages go change straight away, and are recorded in Audit.</p>';
+    var intro = '';
     if (!d.canChangeSettings) {
       box.innerHTML = intro + '<p>' + (on ? 'Review is required before publishing.' : 'Changes can be saved and published in one step.') + '</p>' +
         leShell.adminNote('Set <code>LOOPENGINE_ADMIN_AUTH</code> to change it here, or put <code>LOOPENGINE_REQUIRE_REVIEW=1</code> in .env.');
@@ -1386,7 +1417,7 @@ ${consoleShellScript}
   function renderPolicies(p) {
     var box = document.getElementById('policiesBox');
     if (!box) return;
-    var intro = '<p style="margin:0 0 10px">Rules every workflow follows, written once: your refund window, delivery promises, tone, who signs messages. Each run reads them above its own instructions, and a workflow' + String.fromCharCode(8217) + 's own instructions win where they say more.</p>';
+    var intro = '';
     if (!p.canSave) {
       box.innerHTML = intro + (p.policies ? '<pre class="hint" style="white-space:pre-wrap;margin:0">' + escapeHtml(p.policies) + '</pre>' : '<p class="hint">None yet.</p>') + leShell.adminNote('Set <code>LOOPENGINE_ADMIN_AUTH</code> to change them here, or edit <code>policies.md</code> in the project.');
       return;

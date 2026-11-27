@@ -89,7 +89,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
       <nav class="le-settings-menu" aria-label="Settings">
         <a href="/config?section=models" data-le-nav="models">Models</a>
         <a href="/config?section=apps" data-le-nav="apps">Apps</a>
-        <a href="/config?section=settings" data-le-nav="settings">General settings</a>
+        <a href="/config?section=settings" data-le-nav="settings">General</a>
       </nav>
     </section>
   </div>
