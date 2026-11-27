@@ -2932,7 +2932,9 @@ ${renderMarkdownScript}
     };
     var critList = criteria.map(function (c) {
       var r = rateOf[c.id];
-      var pill = !r || !r.total ? '' : '<span class="le-pill ' + (r.passed === r.total ? 'good' : r.passed * 2 >= r.total ? 'ask' : 'bad') + ' wf-crit-rate">' + r.passed + ' / ' + r.total + '</span>';
+      // Its pass rate, only where nothing else shows it: beside a draft
+      // the comparison has each criterion's rate on both versions.
+      var pill = !r || !r.total || drafted ? '' : '<span class="le-pill ' + (r.passed === r.total ? 'good' : r.passed * 2 >= r.total ? 'ask' : 'bad') + ' wf-crit-rate">' + r.passed + ' / ' + r.total + '</span>';
       return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong> ' + draftTag(c) + '<br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
     }).join('') + (drafted ? liveCrit.filter(function (c) {
       return !criteria.some(function (d) { return d.text.trim().toLowerCase() === c.text.trim().toLowerCase(); });
