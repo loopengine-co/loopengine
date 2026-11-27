@@ -422,6 +422,49 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-trace-dialog .wf-trace-bar { position: sticky; top: 0; z-index: 2; margin: 0 -24px; padding: 14px 24px; background: var(--canvas); border-bottom: 1px solid var(--line); }
   .wf-trace-dialog .wf-trace > .hint:first-child { padding-top: 24px; }
   .wf-trace-back { height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
+  /* Add a webhook: three questions on the left, how it works (and its
+     secret and name) on the right. */
+  dialog.hk-dialog { width: min(1040px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
+  dialog.hk-dialog[open] { display: flex; }
+  dialog.hk-dialog:focus { outline: none; }
+  dialog.hk-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
+  .hk { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; max-height: calc(100vh - 42px); margin: 0; }
+  .hk-head { display: flex; align-items: center; gap: 8px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .hk-title { margin-right: auto; display: grid; gap: 2px; min-width: 0; }
+  .hk-title h2 { margin: 0; font-size: 18px; font-weight: 500; }
+  .hk-title p { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
+  .hk-head button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; white-space: nowrap; flex: none; }
+  .hk-body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); overflow: auto; min-height: 0; }
+  .hk-main { display: grid; align-content: start; min-width: 0; }
+  .hk-step { display: grid; gap: 10px; padding: 18px 22px; }
+  .hk-step + .hk-step { border-top: 1px solid var(--line); }
+  .hk-step h3 { margin: 0; display: flex; align-items: center; justify-content: flex-start; gap: 10px; font-size: 14.5px; font-weight: 600; }
+  .hk-n { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--primary); color: var(--on-primary); font-size: 12px; font-weight: 600; }
+  .hk-opt { font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
+  .hk-hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-muted); }
+  .hk-hint code { font-size: 11.5px; }
+  .hk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .hk-chips button { height: 32px; padding: 0 12px; border-radius: 999px; font-size: 13px; background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
+  .hk-chips button:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+  .hk-chips button[aria-checked="true"], .hk-chips button[aria-checked="true"]:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  .hk-field { display: grid; gap: 6px; min-width: 0; }
+  .hk-k { font-size: 12.5px; font-weight: 500; color: var(--ink); }
+  .hk input, .hk select { width: 100%; box-sizing: border-box; height: 36px; border-radius: 9px; font-size: 13px; }
+  .hk-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 8px; }
+  .hook-custom .hk-row { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .hk-map { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 8px 10px; align-items: center; }
+  .hk-map code { font-size: 12.5px; padding: 4px 8px; border-radius: 6px; background: var(--surface); justify-self: start; }
+  .hk-arrow { color: var(--ink-faint); }
+  .hk-whole { margin-top: 4px; }
+  .hk-side { display: grid; align-content: start; gap: 16px; padding: 18px 22px; border-left: 1px solid var(--line); background: var(--surface); min-width: 0; }
+  .hk-side h3 { margin: 0; font-size: 14.5px; font-weight: 600; }
+  .hk-how { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+  .hk-side .hook-secret { padding-top: 14px; border-top: 1px solid var(--line); }
+  .hk-note { padding-top: 14px; border-top: 1px solid var(--line); }
+  .hk-foot { padding: 0 22px; }
+  .hk-foot:has(.hook-form-result:empty) { display: none; }
+  .hk-foot .hook-form-result { display: block; padding: 10px 0; font-size: 13px; color: var(--ink-muted); }
+  @media (max-width: 860px) { .hk-body { grid-template-columns: minmax(0, 1fr); } .hk-side { border-left: 0; border-top: 1px solid var(--line); } .hk-row { grid-template-columns: minmax(0, 1fr); } }
   .wf-run-row.is-last { box-shadow: inset 3px 0 0 var(--accent); background: var(--surface); }
   .wf-trace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
   .wf-trace-bar a.wf-link { text-decoration: none; }
@@ -3563,49 +3606,48 @@ ${renderMarkdownScript}
   function hookFormHtml(w, t) {
     var params = Object.keys(w.parameters || {});
     var RSQ = String.fromCharCode(8217);
-    var field = function (label, input, hint, attrs) {
-      return '<div class="hd-field"' + (attrs || '') + '><label class="hd-label">' + label + input + '</label>' + (hint ? '<p class="hd-hint">' + hint + '</p>' : '') + '</div>';
-    };
-    return '<form class="hook-form hd">' +
-      '<header class="hd-head"><div><h3>' + (t ? 'Edit webhook' : 'Add a webhook') + '</h3>' +
-        (t
-          ? '<p>Changes apply from the next call. Its URL stays the same, so nothing changes in the sending app.</p></div>'
-          : '<p>Another app calls a private URL when something happens, and each call starts a run of ' + String.fromCharCode(8220) + escapeHtml(w.title || w.id) + String.fromCharCode(8221) + '.</p></div>') +
-        '<button type="button" class="hd-close hook-dialog-close" aria-label="Close">&times;</button></header>' +
-      '<div class="hd-body">' +
-        '<section class="hd-section"><h4>Source</h4>' +
-          field('Where it comes from',
-            '<select name="sender"><option value="stripe">Stripe</option><option value="github">GitHub</option><option value="shopify">Shopify</option>' +
-              '<option value="standard">Standard Webhooks (Clerk, Resend, OpenAI, Svix)</option><option value="custom">Another service that signs its requests</option>' +
-              '<option value="">Any app: the secret URL is enough</option></select>',
-            'A known sender' + RSQ + 's signature is checked, so only it can start runs.') +
-          '<div class="hd-field hook-custom" hidden><span class="hd-label">How it signs</span>' +
-            '<div class="hd-sig"><input name="sig_header" placeholder="Header, e.g. Linear-Signature" aria-label="Signature header">' +
-              '<select name="sig_algorithm" aria-label="Hash"><option value="sha256">SHA-256</option><option value="sha1">SHA-1</option><option value="sha512">SHA-512</option></select>' +
-              '<select name="sig_encoding" aria-label="Written as"><option value="hex">hex</option><option value="base64">base64</option></select></div>' +
-            '<input name="sig_prefix" placeholder="Prefix before the signature, e.g. sha256= (if any)" aria-label="Signature prefix">' +
-            '<p class="hd-hint">From its webhook docs: an HMAC of the request body, sent in a header.</p></div>' +
-          '<div class="hd-field hook-secret" hidden><label class="hd-label">Signing secret <span class="hd-optional">(optional now)</span><input name="secret" autocomplete="off" placeholder="whsec_' + String.fromCharCode(8230) + '"></label>' +
-            '<p class="hd-hint">Most senders show it only after you give them the URL. Leave it empty and add it in the next step.</p></div>' +
-        '</section>' +
-        '<section class="hd-section"><h4>Events</h4>' +
-          '<div class="hd-field"><span class="hd-label">Run only when <span class="hd-optional">(optional)</span></span>' +
-            '<div class="hd-row"><input name="filter_path" placeholder="type" aria-label="Field in the payload"><input name="filter_values" placeholder="charge.dispute.created, charge.dispute.updated" aria-label="Values that start a run"></div>' +
-            '<p class="hd-hint">A field in what the app sends, and the values that start a run. Everything else is skipped.</p></div>' +
-          field('Name <span class="hd-optional">(optional)</span>', '<input name="name" maxlength="80" placeholder="Stripe events">', 'Filled in from the source and events if you leave it empty.') +
-        '</section>' +
-        '<section class="hd-section"><h4>Workflow inputs</h4>' +
-          (params.length
-            ? '<div class="hd-field"><span class="hd-label">From each call</span><div class="hd-map">' +
-                params.map(function (p) { return '<code>' + escapeHtml(p) + '</code><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" aria-label="Where ' + escapeHtml(p) + ' comes from">'; }).join('') + '</div>' +
-                '<p class="hd-hint">A dot path into the JSON the app sends, such as <code>data.object.id</code>.</p></div>' +
-              field('Or give the whole payload to', '<select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select>', '')
-            : '<p class="hd-hint">This workflow takes no inputs, so what the app sends isn' + RSQ + 't passed on. Add one with Edit to use it.</p>') +
-        '</section>' +
-        '<p class="hd-hint">Where its runs' + RSQ + ' updates, approvals and questions go is set once for the workflow, in its Messaging tab.</p>' +
+    var senders = [['stripe', 'Stripe'], ['github', 'GitHub'], ['shopify', 'Shopify'], ['standard', 'Standard Webhooks'], ['custom', 'Another service'], ['', 'Any app']];
+    return '<form class="hook-form hk">' +
+      '<div class="hk-head"><div class="hk-title"><h2>' + (t ? 'Edit webhook' : 'Add a webhook') + '</h2>' +
+          '<p>' + (t ? 'Changes apply from the next call. Its address stays the same, so nothing changes in the sending app.'
+            : 'Another app calls a private address when something happens, and each call starts a run of ' + String.fromCharCode(8220) + escapeHtml(w.title || w.id) + String.fromCharCode(8221) + '.') + '</p></div>' +
+        '<button type="button" class="hook-dialog-cancel hook-dialog-close">Cancel</button><button type="submit" class="primary">' + (t ? 'Save' : 'Create webhook') + '</button></div>' +
+      '<div class="hk-body">' +
+        '<div class="hk-main">' +
+          '<section class="hk-step"><h3><span class="hk-n">1</span>Which app sends it?</h3>' +
+            '<select name="sender" hidden>' + senders.map(function (s) { return '<option value="' + s[0] + '">' + s[1] + '</option>'; }).join('') + '</select>' +
+            '<div class="hk-chips" role="radiogroup" aria-label="Which app sends it">' + senders.map(function (s) { return '<button type="button" role="radio" data-sender="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
+            '<p class="hk-hint hk-sender-hint"></p>' +
+            '<div class="hk-field hook-custom" hidden><span class="hk-k">How it signs its calls</span>' +
+              '<div class="hk-row"><input name="sig_header" placeholder="Header, e.g. Linear-Signature" aria-label="Signature header">' +
+                '<select name="sig_algorithm" aria-label="Hash"><option value="sha256">SHA-256</option><option value="sha1">SHA-1</option><option value="sha512">SHA-512</option></select>' +
+                '<select name="sig_encoding" aria-label="Written as"><option value="hex">hex</option><option value="base64">base64</option></select></div>' +
+              '<input name="sig_prefix" placeholder="Prefix before the signature, e.g. sha256= (if any)" aria-label="Signature prefix">' +
+              '<p class="hk-hint">From its webhook docs: an HMAC of the request body, sent in a header.</p></div>' +
+          '</section>' +
+          '<section class="hk-step"><h3><span class="hk-n">2</span>Which events start a run? <span class="hk-opt">optional</span></h3>' +
+            '<p class="hk-hint">Leave empty to run on every call. Otherwise, a field in what the app sends and the values that start a run; anything else is skipped.</p>' +
+            '<div class="hk-row hk-filter"><label class="hk-field"><span class="hk-k">Field</span><input name="filter_path" placeholder="type"></label>' +
+              '<label class="hk-field"><span class="hk-k">Values</span><input name="filter_values" placeholder="charge.dispute.created, charge.dispute.updated"></label></div>' +
+          '</section>' +
+          '<section class="hk-step"><h3><span class="hk-n">3</span>What the workflow gets</h3>' +
+            (params.length
+              ? '<p class="hk-hint">For each input, where to find it in the app' + RSQ + 's message, as a dot path like <code>data.object.id</code>. Leave one empty to skip it.</p>' +
+                '<div class="hk-map">' + params.map(function (p) { return '<code>' + escapeHtml(p) + '</code><span class="hk-arrow" aria-hidden="true">' + String.fromCharCode(8592) + '</span><input name="map:' + escapeHtml(p) + '" placeholder="data.object.id" aria-label="Where ' + escapeHtml(p) + ' comes from">'; }).join('') + '</div>' +
+                '<label class="hk-field hk-whole"><span class="hk-k">Or pass the whole message to</span><select name="payload_param"><option value="">(none)</option>' + params.map(function (p) { return '<option>' + escapeHtml(p) + '</option>'; }).join('') + '</select></label>'
+              : '<p class="hk-hint">This workflow takes no inputs, so what the app sends isn' + RSQ + 't passed on. Add one with Edit workflow to use it.</p>') +
+          '</section>' +
+        '</div>' +
+        '<aside class="hk-side">' +
+          '<h3>How it works</h3>' +
+          '<ol class="hk-how"></ol>' +
+          '<div class="hk-field hook-secret" hidden><label class="hk-field"><span class="hk-k">Signing secret <span class="hk-opt">optional now</span></span><input name="secret" autocomplete="off" placeholder="whsec_' + String.fromCharCode(8230) + '"></label>' +
+            '<p class="hk-hint">Most apps show it only after you give them the address: leave it empty and add it on the webhook once you have it.</p></div>' +
+          '<label class="hk-field"><span class="hk-k">Name <span class="hk-opt">optional</span></span><input name="name" maxlength="80" placeholder="Stripe events"></label>' +
+          '<p class="hk-hint hk-note">Where its runs' + RSQ + ' updates, approvals and questions go is set once for the workflow, on its Messaging tab.</p>' +
+        '</aside>' +
       '</div>' +
-      '<footer class="hd-foot"><span class="hook-form-result" role="status"></span>' +
-        '<div class="hd-actions"><button type="button" class="hook-dialog-cancel">Cancel</button><button type="submit" class="primary">' + (t ? 'Save' : 'Create webhook') + '</button></div></footer>' +
+      '<div class="hk-foot"><span class="hook-form-result" role="status"></span></div>' +
       '</form>';
   }
 
@@ -3621,7 +3663,7 @@ ${renderMarkdownScript}
     }
     if (t.verify && t.verify.secret_set) {
       form.secret.placeholder = 'Saved. Leave empty to keep it';
-      var hint = form.querySelector('.hook-secret .hd-hint');
+      var hint = form.querySelector('.hook-secret .hk-hint');
       if (hint) hint.textContent = 'Paste a new one only if the sender gave you a new secret.';
     }
     if (t.filter) { form.filter_path.value = t.filter.path; form.filter_values.value = t.filter.values.join(', '); }
@@ -3634,7 +3676,9 @@ ${renderMarkdownScript}
   // only its new settings.
   function openHookFormDialog(w, base, onCreated, existing) {
     var dialog = document.createElement('dialog');
-    dialog.className = 'le-dialog hook-dialog';
+    dialog.className = 'hook-dialog hk-dialog';
+    // The dialog itself takes focus, not its first button.
+    dialog.tabIndex = -1;
     dialog.innerHTML = hookFormHtml(w, existing);
     document.body.appendChild(dialog);
     dialog.addEventListener('close', function () { dialog.remove(); });
@@ -3651,12 +3695,42 @@ ${renderMarkdownScript}
       var events = form.filter_values.value.split(',').map(function (v) { return v.trim(); }).filter(Boolean);
       return events.length ? who + ': ' + events.join(', ') : (who === 'Webhook' ? who : who + ' events');
     }
+    // The chips pick the sender; what it means and the steps to finish
+    // follow it.
+    var SENDER_HINTS = {
+      stripe: 'Its signature is checked, so only Stripe can start runs.',
+      github: 'Its signature is checked, so only GitHub can start runs.',
+      shopify: 'Its signature is checked, so only Shopify can start runs.',
+      standard: 'For apps that sign the Standard Webhooks way: Clerk, Resend, OpenAI, Svix and others.',
+      custom: 'Another app that signs its calls: say how, from its webhook docs.',
+      '': 'No signature to check: anyone with the private address can start a run, so keep it secret.'
+    };
+    var EVENT_EXAMPLES = { stripe: ['type', 'charge.dispute.created, charge.dispute.updated'], github: ['action', 'opened, reopened'], shopify: ['financial_status', 'paid'] };
     function senderChanged() {
-      secretField.hidden = !form.sender.value;
-      customField.hidden = form.sender.value !== 'custom';
+      var v = form.sender.value;
+      var app = v === '' ? 'the app' : v === 'custom' || v === 'standard' ? 'the app' : HOOK_SENDERS[v] || 'the app';
+      secretField.hidden = !v;
+      customField.hidden = v !== 'custom';
       form.name.placeholder = defaultName();
+      form.querySelectorAll('[data-sender]').forEach(function (b) { b.setAttribute('aria-checked', String(b.dataset.sender === v)); });
+      form.querySelector('.hk-sender-hint').textContent = SENDER_HINTS[v] || '';
+      var ex = EVENT_EXAMPLES[v] || ['type', 'order.created, order.paid'];
+      form.filter_path.placeholder = ex[0];
+      form.filter_values.placeholder = ex[1];
+      var steps = existing
+        ? ['Save your changes: they apply from the next call.', 'Its address stays the same, so there' + String.fromCharCode(8217) + 's nothing to change in ' + app + '.']
+        : ['Create it here.', 'Copy the private address it gives you into ' + app + String.fromCharCode(8217) + 's webhook settings.'];
+      if (v && !existing) steps.push(app.charAt(0).toUpperCase() + app.slice(1) + ' shows a signing secret: paste it below, or on the webhook later, and it turns on.');
+      if (!v && !existing) steps.push('Each call to the address starts a run.');
+      form.querySelector('.hk-how').innerHTML = steps.map(function (x) { return '<li>' + escapeHtml(x) + '</li>'; }).join('');
     }
     form.sender.addEventListener('change', senderChanged);
+    form.querySelector('.hk-chips').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-sender]');
+      if (!b) return;
+      form.sender.value = b.dataset.sender;
+      senderChanged();
+    });
     form.filter_values.addEventListener('input', function () { form.name.placeholder = defaultName(); });
     if (existing) fillHookForm(form, existing);
     senderChanged();
@@ -3706,7 +3780,7 @@ ${renderMarkdownScript}
       });
     });
     dialog.showModal();
-    form.sender.focus();
+    dialog.focus();
   }
 
   function hookUrlHtml(url) {
