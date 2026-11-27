@@ -110,7 +110,7 @@ ${themeHeadHtml}<style>${devUiCss}
   .ib-fb-q { font-size: 14px; font-weight: 600; margin-right: auto; }
   .ib-fb-pick { display: inline-flex; gap: 6px; }
   .ib-fb-pick button { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; font-weight: 600; background: var(--bg); }
-  .ib-fb-pick button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  .ib-fb-pick button[aria-pressed="true"], .ib-fb-pick button[aria-pressed="true"]:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
   .ib-fb-form { display: grid; gap: 8px; }
   .ib-fb-form textarea { width: 100%; box-sizing: border-box; min-height: 64px; font-size: 13.5px; border-radius: 9px; }
   .ib-fb-form textarea.ib-fb-final { min-height: 140px; margin-top: 6px; }
@@ -147,6 +147,11 @@ ${themeHeadHtml}<style>${devUiCss}
   .ib-btn.plain { background: none; border-color: var(--line); color: var(--ink); font-weight: 500; }
   .ib-btn.bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
   .ib-btn.opt { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; font-weight: 500; }
+  /* Over the global button hover, which would leave white text on a light fill. */
+  .ib-btn:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); opacity: .88; }
+  .ib-btn.plain:hover:not(:disabled) { background: var(--surface); color: var(--ink); opacity: 1; }
+  .ib-btn.bad:hover:not(:disabled) { background: var(--bad-soft); color: var(--bad); opacity: .85; }
+  .ib-btn.opt:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-ink); opacity: .85; }
   .ib-change { display: grid; gap: 2px; margin: 2px 0 0 12px; font-size: 12.5px; }
   .ib-change del { color: var(--bad); }
   .ib-change ins { color: var(--good); text-decoration: none; }
