@@ -27,11 +27,8 @@ export const homePageHtml: string = `<!doctype html>
 <title>Home</title>
 ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}
   .hm { width: 100%; max-width: 860px; margin: 0 auto; display: grid; gap: 44px; padding: 0 0 56px; }
-  /* The hero, between two guide lines, with crosses where they end. */
+  /* The hero, between two guide lines. */
   .hm-hero { position: relative; display: grid; justify-items: center; gap: 0; padding: 7vh 56px 44px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  .hm-hero::before, .hm-hero::after { content: ""; position: absolute; bottom: -5px; width: 9px; height: 9px; background: linear-gradient(var(--accent), var(--accent)) center / 1px 100% no-repeat, linear-gradient(var(--accent), var(--accent)) center / 100% 1px no-repeat; }
-  .hm-hero::before { left: -5px; }
-  .hm-hero::after { right: -5px; }
   .hm-q { margin: 0 0 30px; text-align: center; font-size: 40px; line-height: 1.15; font-weight: 400; letter-spacing: -0.03em; }
   .hm-q .soft { display: block; color: var(--ink-faint); }
   .hm-mascot { margin: 0 0 -16px; position: relative; z-index: 1; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .12)); }

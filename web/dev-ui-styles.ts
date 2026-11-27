@@ -296,13 +296,9 @@ export const devUiCss: string = `
   .le-display { margin: 0; font-size: 40px; line-height: 1.12; font-weight: 400; letter-spacing: -0.03em; color: var(--ink); }
   .le-display .soft { color: var(--ink-faint); }
   .le-display-sub { margin: 8px 0 0; font-size: 15px; color: var(--ink-muted); }
-  /* A hairline grid: cells share their lines, and small crosses mark the
-     outer corners, like a drawing's guides. */
+  /* A hairline grid: cells share their lines. */
   .le-grid { position: relative; display: grid; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
   .le-grid > * { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
-  .le-grid::before, .le-grid::after { content: ""; position: absolute; top: -5px; width: 9px; height: 9px; background: linear-gradient(var(--accent), var(--accent)) center / 1px 100% no-repeat, linear-gradient(var(--accent), var(--accent)) center / 100% 1px no-repeat; pointer-events: none; }
-  .le-grid::before { left: -5px; }
-  .le-grid::after { right: -5px; }
   /* An on/off switch. */
   .le-switch { position: relative; width: 36px; height: 21px; flex: none; border-radius: 999px; border: 0; padding: 0; background: var(--surface-2); cursor: pointer; transition: background .15s; }
   .le-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s; }
