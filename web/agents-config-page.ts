@@ -305,7 +305,8 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-sum-n { font-size: 26px; letter-spacing: -0.02em; color: var(--ink); line-height: 1.1; }
   .ev-sum-n small { font-size: 13px; letter-spacing: 0; color: var(--ink-muted); }
   .ev-sum-arrow { font-size: 20px; color: var(--ink-faint); }
-  .ev-sum-verdict { margin: 0; justify-self: end; text-align: right; display: grid; gap: 2px; font-size: 14px; font-weight: 600; color: var(--ink); }
+  .ev-sum-note { grid-column: 1 / 4; grid-row: 2; margin: 0; }
+  .ev-sum-verdict { grid-row: 1 / 3; grid-column: 4; margin: 0; justify-self: end; text-align: right; display: grid; gap: 2px; font-size: 14px; font-weight: 600; color: var(--ink); }
   .ev-sum-verdict.better { color: var(--good); }
   .ev-sum-verdict.worse { color: var(--bad); }
   .ev-sum-verdict .hint { font-weight: 400; }
@@ -2995,7 +2996,7 @@ ${renderMarkdownScript}
     // A round's result: how many cases passed every check.
     var resultOf = function (r) {
       var ok = r.cases.filter(function (c) { return c.checks ? c.checks.every(function (x) { return x.pass; }) : c.score >= 4; }).length;
-      return '<span class="le-pill ' + (ok === r.cases.length ? 'good' : ok * 2 >= r.cases.length ? 'ask' : 'bad') + '">' + ok + ' of ' + r.cases.length + ' passed</span>' +
+      return '<span class="le-pill ' + (ok === r.cases.length ? 'good' : ok * 2 >= r.cases.length ? 'ask' : 'bad') + '" title="Cases that met every success criterion">' + ok + ' of ' + r.cases.length + (r.cases.length === 1 ? ' case' : ' cases') + ' passed</span>' +
         ' <span class="ev-when">' + escapeHtml(new Date(r.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>';
     };
     var details = function (r) {
@@ -3079,9 +3080,10 @@ ${renderMarkdownScript}
       var sameChecks = JSON.stringify((pubRound.criteria || []).map(function (c) { return c.text; })) === JSON.stringify((draftRound.criteria || []).map(function (c) { return c.text; }));
       compareTable = '<section class="wf-section ev-compare"><h4 class="wf-sub">Draft against ' + escapeHtml(pubLabel) + '</h4>' +
         '<div class="ev-sum">' +
-          '<div class="ev-sum-side"><span class="ev-sum-k">' + escapeHtml(pubLabel) + '</span><span class="ev-sum-n">' + pubAll + '<small> of ' + total + ' passed</small></span></div>' +
+          '<div class="ev-sum-side"><span class="ev-sum-k">' + escapeHtml(pubLabel) + '</span><span class="ev-sum-n">' + pubAll + '<small> of ' + total + (total === 1 ? ' case' : ' cases') + ' passed</small></span></div>' +
           '<span class="ev-sum-arrow" aria-hidden="true">' + String.fromCharCode(8594) + '</span>' +
-          '<div class="ev-sum-side is-draft"><span class="ev-sum-k">Draft</span><span class="ev-sum-n">' + draftAll + '<small> of ' + total + ' passed</small></span></div>' +
+          '<div class="ev-sum-side is-draft"><span class="ev-sum-k">Draft</span><span class="ev-sum-n">' + draftAll + '<small> of ' + total + (total === 1 ? ' case' : ' cases') + ' passed</small></span></div>' +
+          '<p class="ev-sum-note hint">A case passes when it meets every success criterion.</p>' +
           '<p class="ev-sum-verdict ' + tone + '">' + verdictText + (sameChecks ? '' : '<span class="hint">The draft changes the success criteria, so the two were checked differently.</span>') + '</p>' +
         '</div>' +
         '<div class="ev-cmp-head"><span>By success criterion</span><span>' + escapeHtml(pubLabel) + '</span><span>Draft</span><span></span></div>' +
