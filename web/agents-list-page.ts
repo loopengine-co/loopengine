@@ -163,7 +163,7 @@ ${consoleShellScript}
         ? '<span class="ag-chip strong">' + list.length + (list.length === 1 ? ' workflow' : ' workflows') + '</span>' + (live ? '<span class="ag-chip good">' + live + ' running</span>' : '') +
           list.slice(0, 3).map(function (w) { return '<a class="ag-chip" href="/agents/config' + qs + '&tab=workflows&workflow=' + encodeURIComponent(w.id) + '" title="' + escapeHtml(w.title) + '">' + escapeHtml(w.title) + '</a>'; }).join('') +
           (list.length > 3 ? '<span class="hint">+' + (list.length - 3) + ' more</span>' : '')
-        : '<a class="ag-chip" href="/workflows/new' + qs + '">No workflows yet: give it one</a>';
+        : '<a class="ag-chip" href="/workflows?new=1&' + qs.slice(1) + '">No workflows yet: give it one</a>';
     return '<div class="ag-card">' +
       '<div class="ag-card-head"><span class="ag-icon' + (live ? ' live' : '') + '">' + ICON_AGENT + '</span>' +
         '<span class="ag-card-text"><a class="ag-card-title" href="/agents/config' + qs + '">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? '<span class="ag-id">' + escapeHtml(agent.name) + '</span>' : '') + '</a>' +
@@ -320,7 +320,7 @@ ${consoleShellScript}
           // agent it was first planned for, now in this one.
           var workflow = new URLSearchParams(location.search).get('workflow');
           location.href = workflow !== null
-            ? '/workflows/new?agent=' + encodeURIComponent(body.name) + '&description=' + encodeURIComponent(workflow)
+            ? '/workflows?new=1&agent=' + encodeURIComponent(body.name) + '&description=' + encodeURIComponent(workflow)
             : '/agents/config?agent=' + encodeURIComponent(body.name);
         } else {
           newAgentResult.textContent =

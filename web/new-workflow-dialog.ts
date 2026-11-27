@@ -1,5 +1,8 @@
 // The New workflow dialog, shared by the Workflows page and an agent's
-// Workflows tab (window.leNewWorkflow.open({ agent })): the agent and the
+// Workflows tab (window.leNewWorkflow.open({ agent, description, goal,
+// goalJob, goalStep, go })): an example or a goal's suggestion opens it
+// filled in, a goal's at once (go), and a workflow built for a goal is
+// linked to it. The agent and the
 // workflow in words; Build plans it (POST /workflows/plan), stops only for
 // what's missing (an app or key, each with where to add it, then Check
 // again) or a workflow that isn't the agent's kind of work, writes its
@@ -64,7 +67,7 @@ export const newWorkflowDialogHtml: string = `<dialog class="wo-dialog" id="woDi
       </div>
       <div class="wo-dlg-col">
         <div class="wo-field"><span class="wo-field-k">What happens next</span><p class="hint">LoopEngine builds it on the agent: each step matched to a tool, where it asks you, its permissions and its success criteria. It stops to tell you if something it needs is missing, and when it's done, what's left to set up. This can take a few minutes.</p></div>
-        <div class="wo-field"><span class="wo-field-k">Rather start from something ready-made?</span><p class="hint"><a href="/workflows/new#examples">Choose a workflow example</a>, or <a href="/interview">find your first agent</a>.</p></div>
+        <div class="wo-field"><span class="wo-field-k">Rather start from something ready-made?</span><p class="hint"><a href="/workflows?view=examples">Choose a workflow example</a>, or <a href="/interview">find your first agent</a>.</p></div>
       </div>
     </div>
     <div class="wo-dlg-foot"><span id="woFoot"></span></div>
@@ -86,13 +89,20 @@ export const newWorkflowDialogScript: string = `<script>
   var agentSelect = document.getElementById('woAgent');
   var built = null;
   var wantAgent = '';
+  // A goal's suggestion being built: linked to it once it's made.
+  var forGoal = null;
+  var startNow = false;
   function openNew(opts) {
-    wantAgent = (opts && opts.agent) || '';
+    opts = opts || {};
+    wantAgent = opts.agent || '';
+    forGoal = opts.goal && opts.goalJob ? { goal: opts.goal, job: opts.goalJob, step: opts.goalStep || '' } : null;
+    startNow = Boolean(opts.go);
+    if (typeof opts.description === 'string') document.getElementById('woText').value = opts.description;
     if (built && wantAgent) agentSelect.value = wantAgent;
     foot.textContent = '';
     if (!dlg.open) dlg.showModal();
     document.getElementById('woText').focus();
-    if (built) return;
+    if (built) { if (startNow) { startNow = false; form.requestSubmit(); } return; }
     fetch('/workflows', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
       built = d;
       var agents = (d.agents || []).map(function (a) { return typeof a === 'string' ? { name: a } : a; });
@@ -100,6 +110,7 @@ export const newWorkflowDialogScript: string = `<script>
         return '<option value="' + esc(a.name) + '">' + esc(a.displayName || a.name) + '</option>';
       }).join('');
       if (wantAgent) agentSelect.value = wantAgent;
+      if (startNow && agents.length && d.ready) { startNow = false; form.requestSubmit(); return; }
       if (!agents.length) foot.innerHTML = '<span class="error">There are no agents yet. <a href="/agents?new=1">Create one</a> first.</span>';
       else if (!d.ready) foot.innerHTML = '<span class="error">Building needs a model: set one on an agent and add its key under <a href="/config?section=models">Models</a>.</span>';
     }).catch(function (err) { foot.innerHTML = '<span class="error">' + esc(err.message) + '</span>'; });
@@ -187,7 +198,10 @@ export const newWorkflowDialogScript: string = `<script>
       api('/workflows/create', { plan: p, agent: agent, description: job.description, workflowContext: typeof p.context === 'string' ? p.context : undefined }).then(function (r) {
         if (building !== job) return;
         if (!r.ok) return backToForm(r.body.error || 'Could not create it.');
-        done(r.body);
+        if (!job.goal) return done(r.body);
+        // Built for a goal: it's linked to the suggestion it came from.
+        api('/goals/' + encodeURIComponent(job.goal.goal) + '/jobs/' + encodeURIComponent(job.goal.job) + '/built', { agent: r.body.agent, workflowId: r.body.workflowId, title: r.body.workflow, description: job.description, step: job.goal.step || undefined })
+          .then(function () { done(r.body, job.goal); }, function () { done(r.body, job.goal); });
       }).catch(function (err) { backToForm(err.message); });
     };
     // Its success criteria, written as the build page would, unless it has some.
@@ -196,8 +210,9 @@ export const newWorkflowDialogScript: string = `<script>
     api('/workflows/criteria', { plan: p, agent: agent }).then(function (r) { if (r.ok) p.successCriteria = r.body.criteria || []; go(); }, go);
   }
   // Done: what was made, and what's left to set up.
-  function done(c) {
+  function done(c, goal) {
     building = null;
+    forGoal = null;
     document.getElementById('woText').value = '';
     var href = '/agents/config?agent=' + encodeURIComponent(c.agent) + '&tab=workflows&workflow=' + encodeURIComponent(c.workflowId || '');
     var left = [];
@@ -212,7 +227,8 @@ export const newWorkflowDialogScript: string = `<script>
     (c.checklist || []).forEach(function (it) { left.push('<li><span class="wo-tag warn">To do</span>' + (it.href ? '<a href="' + esc(it.href) + '">' + esc(it.label) + '</a>' : esc(it.label)) + '</li>'); });
     show('<h3>' + esc(c.workflow) + ' is ready</h3><p>Added to ' + esc(agentName(c.agent)) + '.</p>' +
       (left.length ? '<div class="wo-k">Left to set up</div><ul class="wo-list">' + left.join('') + '</ul>' : '<p class="wo-k"><span class="wo-tag good">Ready</span> Nothing left to set up.</p>') +
-      '<div class="wo-row-actions"><a class="le-btn-dark" href="' + href + '">Open the workflow</a><a class="wo-plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a></div>');
+      '<div class="wo-row-actions"><a class="le-btn-dark" href="' + href + '">Open the workflow</a>' +
+        (goal ? '<a class="wo-plain" href="/goals?goal=' + encodeURIComponent(goal.goal) + '">Back to your goal</a>' : '<a class="wo-plain" href="/playground?agent=' + encodeURIComponent(c.agent) + '">Try it in Chat</a>') + '</div>');
     cancelBtn.textContent = 'Close';
     var copy = statusBox.querySelector('[data-wo="hook-copy"]');
     if (copy) copy.addEventListener('click', function () { var input = statusBox.querySelector('[data-wo="hook-url"]'); input.select(); if (navigator.clipboard) navigator.clipboard.writeText(input.value); copy.textContent = 'Copied'; });
@@ -229,7 +245,7 @@ export const newWorkflowDialogScript: string = `<script>
     if (!agent) { foot.innerHTML = '<span class="error">Choose the agent it goes into.</span>'; return; }
     if (text.length < 10) { foot.innerHTML = '<span class="error">Say what the workflow should do: what starts it and its steps.</span>'; return; }
     if (built && !built.ready) { foot.innerHTML = '<span class="error">Building needs a model: set one on an agent and add its key under <a href="/config?section=models">Models</a>.</span>'; return; }
-    building = { agent: agent, description: text, started: Date.now() };
+    building = { agent: agent, description: text, started: Date.now(), goal: forGoal };
     cancelBtn.textContent = 'Cancel';
     plan(building);
   });

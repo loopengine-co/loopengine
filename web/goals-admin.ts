@@ -532,7 +532,7 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
     }
     if (step.agent.isNew || createdAgent) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, group: x.group && { ...x.group, steps: x.group.steps.map((s2) => (s2.id === step.id ? { ...s2, agent: { name: s2.agent.name, isNew: false } } : s2)) }, ...(createdAgent ? { agentCreated: true } : {}) }))
     const params = new URLSearchParams({ agent: step.agent.name, description: step.request, goal: id, goalJob: workflowId, goalStep: step.id })
-    return { goal, agent: step.agent.name, createdAgent, url: `/workflows/new?${params}` }
+    return { goal, agent: step.agent.name, createdAgent, url: `/workflows?new=1&${params}` }
   }
   if (w.state === 'active' && !opts.another) throw new GoalError('A workflow already does this: add another workflow to it instead.')
   if (w.state !== 'suggested' && w.state !== 'active') throw new GoalError('Restore it first.')
@@ -544,7 +544,7 @@ export async function prepareBuild(deps: GoalsDeps, id: string, workflowId: stri
   if (w.agent.isNew || createdAgent) goal = updateWorkflow(deps, goal, workflowId, (x) => ({ ...x, agent: { name: x.agent.name, isNew: false }, ...(createdAgent ? { agentCreated: true } : {}) }))
   // Another workflow for an active job starts from a blank description.
   const params = new URLSearchParams({ agent: w.agent.name, description: opts.another ? '' : w.request, goal: id, goalJob: workflowId })
-  return { goal, agent: w.agent.name, createdAgent, url: `/workflows/new?${params}` }
+  return { goal, agent: w.agent.name, createdAgent, url: `/workflows?new=1&${params}` }
 }
 
 /** Build a workflow's Create it, linking the new workflow back.

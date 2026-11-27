@@ -80,7 +80,7 @@ export const consoleSidebarHtml: string = `<aside class="le-sidebar" aria-label=
       <a class="le-sub-link" href="/interview" data-le-nav="interview">Find your first agent</a>
     </section>
     <section class="le-pane" data-le-pane="workflows">
-      <div class="le-pane-head"><a href="/workflows">Workflows</a><a class="le-pane-new" href="/workflows/new">+ New</a></div>
+      <div class="le-pane-head"><a href="/workflows">Workflows</a><a class="le-pane-new" href="/workflows?new=1">+ New</a></div>
       <ul class="le-agent-list le-goal-list le-wf-list" id="leWorkflowList"></ul>
     </section>
     <section class="le-pane" data-le-pane="settings">

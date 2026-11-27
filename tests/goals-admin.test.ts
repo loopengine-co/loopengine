@@ -107,7 +107,7 @@ describe('a goal and its workflows', () => {
     const built = await prepareBuild(deps, id, listings!.id)
     expect(created).toEqual([{ name: 'listings-agent', instructions: 'Finds directories.' }])
     expect(built.createdAgent).toBe(true)
-    expect(built.url).toContain('/workflows/new?agent=listings-agent&description=')
+    expect(built.url).toContain('/workflows?new=1&agent=listings-agent&description=')
     expect(built.url).toContain(`goal=${id}`)
     // A workflow for an agent that now exists doesn't make it again.
     expect(posts!.agent).toMatchObject({ name: 'growth-agent', isNew: true })
@@ -304,7 +304,7 @@ describe('workflows and groups under a goal', () => {
 
     const built = await prepareBuild(deps, id, job.id, { step: draft!.id })
     expect(created.map((c) => c.name)).toEqual(['sales-agent'])
-    expect(built.url).toContain('/workflows/new?agent=sales-agent&description=Draft+a+first+email')
+    expect(built.url).toContain('/workflows?new=1&agent=sales-agent&description=Draft+a+first+email')
     expect(built.url).toContain(`goalStep=${draft!.id}`)
     await expect(prepareBuild(deps, id, job.id, { step: 's-nope' })).rejects.toThrow(/isn’t in this group/)
 

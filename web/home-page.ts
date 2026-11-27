@@ -97,7 +97,7 @@ ${consoleSidebarHtml}
     <button type="button" class="le-menu-btn" data-le-menu aria-label="Open navigation">&#9776;</button>
     <h1 class="le-topbar-title">Home</h1>
     <span class="le-topbar-gap"></span>
-    <a class="le-btn-dark" href="/workflows/new">+ New workflow</a>
+    <a class="le-btn-dark" href="/workflows?new=1">+ New workflow</a>
   </header>
   <div class="le-scroll"><div class="le-page hm-page">
     <div class="hm">
@@ -158,7 +158,7 @@ ${consoleShellScript}
   });
   function go() {
     var said = text.value.trim();
-    if (mode === 'one') location.href = '/workflows/new?description=' + encodeURIComponent(said) + (agentPick.value ? '&agent=' + encodeURIComponent(agentPick.value) : '');
+    if (mode === 'one') location.href = '/workflows?new=1&description=' + encodeURIComponent(said) + (agentPick.value ? '&agent=' + encodeURIComponent(agentPick.value) : '');
     else location.href = '/goals?new=1&go=1&text=' + encodeURIComponent(said);
   }
   document.getElementById('hmForm').addEventListener('submit', function (ev) { ev.preventDefault(); if (!send.disabled) go(); });

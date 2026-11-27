@@ -2281,7 +2281,7 @@ ${renderMarkdownScript}
       workflows = page;
     }
     if (!workflows.length) {
-      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Say what this agent should do in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" data-new-workflow="' + escapeHtml(name) + '" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
+      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Say what this agent should do in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" data-new-workflow="' + escapeHtml(name) + '" href="/workflows?new=1&agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
     }
     // Those that need someone first: waiting for a decision, then failed.
     var rank = function (w) { return workflowNeedsDecision(w) ? 0 : (workflowLastRun(w) || {}).status === 'error' ? 1 : 2; };
@@ -7392,7 +7392,7 @@ ${renderMarkdownScript}
       // Workflows: the jobs this agent does, each with what starts it.
       '<div class="tab-panel" data-tab-panel="workflows">' +
         '<div class="wf-tab-head"><p class="muted">What this agent does on its own, as workflows: what each does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
-          '<a class="wf-new-btn" data-new-workflow="' + escapeHtml(cfg.name) + '" href="/workflows/new?agent=' + encodeURIComponent(cfg.name) + '">Build a workflow</a></div>' +
+          '<a class="wf-new-btn" data-new-workflow="' + escapeHtml(cfg.name) + '" href="/workflows?new=1&agent=' + encodeURIComponent(cfg.name) + '">Build a workflow</a></div>' +
         '<section id="workflowsSection"><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '</div>' +
       // Advanced: the agent's own tools (and Composio, subagents), then its

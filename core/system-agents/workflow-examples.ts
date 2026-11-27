@@ -1,7 +1,8 @@
-// Workflow examples: ready-made plans on the console's new-workflow page
-// (/workflows/new). Opening one goes straight to the plan review, with no
-// model call, and creates it like a planned workflow: as a new agent or
-// in one the person already has. They replace the starter templates.
+// Workflow examples, on the Workflows page's Examples view: opening one
+// fills in the New workflow dialog with its description, which is built
+// like any other (planned for the agent chosen). Their ready-made plans
+// below are kept for an older console, which opened one straight to the
+// plan review. They replace the starter templates.
 //
 // Each is split the way the planner splits a plan:
 //   - newAgent.systemPrompt: the agent's standing instructions, read on
