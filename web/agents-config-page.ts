@@ -4654,7 +4654,10 @@ ${renderMarkdownScript}
         critForm.hidden = false;
         cbtn.hidden = true;
         offerPublish(critForm);
-        if (!rows.children.length) rows.insertAdjacentHTML('beforeend', critRowHtml({ kind: 'judge' }));
+        // With none set yet, the check every case already gets (against its
+        // good result) is a row too: adding criteria keeps it unless it's
+        // removed, rather than silently replacing it.
+        if (!rows.children.length) rows.insertAdjacentHTML('beforeend', critRowHtml(REFERENCE_CRIT) + critRowHtml({ kind: 'judge' }));
         return;
       }
       if (cbtn.classList.contains('wf-crit-add')) { rows.insertAdjacentHTML('beforeend', critRowHtml({ kind: 'judge' })); return; }
@@ -4666,7 +4669,9 @@ ${renderMarkdownScript}
         fetchJsonRetryOnce(base + '/evals/criteria/draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(function (r) {
           cbtn.disabled = false;
           if (!r.ok) { critStatus.textContent = r.body.error || 'Couldn' + String.fromCharCode(8217) + 't draft them.'; return; }
-          rows.innerHTML = r.body.criteria.map(critRowHtml).join('');
+          // Suggested ones replace the rest, but the good-result check stays.
+          var kept = Array.prototype.filter.call(rows.querySelectorAll('.wf-crit-row'), function (row) { return row.querySelector('[data-crit-kind]').value === 'reference'; }).map(function (row) { return row.outerHTML; }).join('');
+          rows.innerHTML = kept + r.body.criteria.map(critRowHtml).join('');
           critStatus.textContent = 'Drafted ' + r.body.criteria.length + ': edit or remove any, then save.';
         });
         return;
