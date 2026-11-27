@@ -604,15 +604,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .decision-switch button[aria-pressed="true"][data-decision="deny"] { background: var(--ink-muted); border-color: var(--ink-muted); }
   .decision-switch.is-saving button { cursor: progress; opacity: 0.7; }
   /* Messaging: one section per app; the primary one is outlined. */
-  .msg-conns { display: grid; gap: 10px; max-width: 720px; }
-  .msg-conn { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 0 14px; }
-  .msg-conn.is-primary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .msg-conn > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; cursor: pointer; }
-  .msg-conn-title { font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
+  .msg-conn-title { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
   .msg-conn-bot { font-weight: 500; font-size: 12.5px; color: var(--ink-muted); font-family: var(--font-mono); }
   .le-channel-icon { width: 18px; height: 18px; flex: none; }
-  .msg-conn-blurb { flex-basis: 100%; margin: 0; }
-  .msg-conn > form.add-source { border: 0; background: none; box-shadow: none; padding: 0 0 14px; margin: 0; }
   .env-desc { max-width: 340px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   form.add-source.env-inline { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-width: 320px; }
   form.add-source.env-inline input, form.add-source.env-inline select { flex: 1 1 140px; width: auto; min-width: 0; }
@@ -920,11 +914,10 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-msg-dest, .wf-fb-stat, .wf-fb-way { border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 16px 18px; }
   .wf-fb-stat strong, .wf-fb-stat b { font-weight: 400; }
   /* One under another: rows sharing their lines. */
-  .wf-crits, .wf-fb-list, .msg-conns, .wf-version-cards { gap: 0; border: 1px solid var(--line); }
-  .wf-crit, .wf-fb-item, .msg-conn, .wf-version-card { border: 0; border-radius: 0; }
-  .wf-crit + .wf-crit, .wf-fb-item + .wf-fb-item, .msg-conn + .msg-conn, .wf-version-card + .wf-version-card { border-top: 1px solid var(--line); }
+  .wf-crits, .wf-fb-list, .wf-version-cards { gap: 0; border: 1px solid var(--line); }
+  .wf-crit, .wf-fb-item, .wf-version-card { border: 0; border-radius: 0; }
+  .wf-crit + .wf-crit, .wf-fb-item + .wf-fb-item, .wf-version-card + .wf-version-card { border-top: 1px solid var(--line); }
   .wf-fb-item, .wf-version-card { padding: 14px 18px; }
-  .msg-conn { background: var(--bg); }
   .wf-version-card { background: var(--bg); }
   .wf-version-card.is-current { box-shadow: inset 3px 0 0 var(--accent); }
   .wf-version-cards { list-style: none; margin: 0; padding: 0; display: grid; }
@@ -999,6 +992,22 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .sched-ended { margin-top: 18px; }
   .sched-ended summary { cursor: pointer; margin-bottom: 12px; }
   @media (max-width: 860px) { .sched-cards { grid-template-columns: minmax(0, 1fr); } }
+  /* Messaging Apps: a card per app; its settings open in a dialog. */
+  .msg-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .msg-card { display: grid; gap: 14px; align-content: space-between; padding: 20px 22px; background: var(--bg); min-width: 0; }
+  .msg-card .sched-icon .le-channel-icon { width: 17px; height: 17px; }
+  .msg-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .msg-card-foot button { flex: none; height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
+  @media (max-width: 860px) { .msg-cards { grid-template-columns: minmax(0, 1fr); } }
+  .msg-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .22); overflow: hidden; }
+  .msg-dialog[open] { display: flex; flex-direction: column; }
+  .msg-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
+  .msg-dialog .sched-dlg-head { flex: none; }
+  .msg-dialog .sched-dlg-head h2 { display: inline-flex; align-items: center; gap: 10px; }
+  .msg-dlg-body { overflow: auto; padding: 18px 22px 22px; }
+  .msg-dlg-body > p.hint { margin: 0 0 14px; }
+  .tab-panel .msg-dlg-body form.add-source { border: 0; background: none; box-shadow: none; padding: 0; margin: 0; max-width: none !important; }
+  .msg-dlg-body .approvers-section { max-width: none !important; }
 
   /* A run's trace, in the new style: the same layout (its details, then
      its steps beside the one picked), with plain buttons, square cells
@@ -4688,7 +4697,7 @@ ${renderMarkdownScript}
         slack: r.body.slack && r.body.slack.bot + (r.body.slack.team ? ' in ' + r.body.slack.team : ''),
       };
       Object.keys(label).forEach(function (channel) {
-        var title = label[channel] && content.querySelector('details.msg-conn[data-channel="' + channel + '"] .msg-conn-title');
+        var title = label[channel] && content.querySelector('.msg-card[data-channel="' + channel + '"] .msg-conn-title');
         if (!title || title.querySelector('.msg-conn-bot')) return;
         title.insertAdjacentHTML('beforeend', '<span class="msg-conn-bot">' + escapeHtml(label[channel]) + '</span>');
       });
@@ -4696,26 +4705,36 @@ ${renderMarkdownScript}
   }
 
   // One app's section: its status in the summary, then its own form.
-  function renderConnectionSection(n, channel) {
+  // One app: its card in the grid (part 'card'), or its settings dialog.
+  function renderConnectionSection(n, channel, part) {
     var saved = connectionFor(n, channel);
     var f = saved || { channel: channel, events: ['approval', 'question'] };
     var isPrimary = n.primary === channel;
     var isWebhook = channel === 'webhook';
     var secretSet = n.secretsSet && n.secretsSet[channel];
-    var pills = isPrimary ? '<span class="le-pill accent">Primary</span>' : isWebhook && saved ? '<span class="le-pill accent">Always on</span>' : '';
-    pills += saved ? (secretSet ? ' <span class="le-pill good">Saved</span>' : ' <span class="le-pill warn">Secret not set</span>') : ' <span class="le-pill">Not set up</span>';
+    var pills = isPrimary ? '<span class="sched-chip strong">Primary</span>' : isWebhook && saved ? '<span class="sched-chip strong">Always on</span>' : '';
+    pills += saved ? (secretSet ? '<span class="sched-chip">Saved</span>' : '<span class="sched-chip warn">Secret not set</span>') : '<span class="sched-chip">Not set up</span>';
     var events = f.events || [];
     function eventBox(e) {
       return '<label class="tool-picker-item" style="border:0;padding:0;justify-content:flex-start"><input type="checkbox" name="events" value="' + e[0] + '"' + (events.indexOf(e[0]) !== -1 ? ' checked' : '') + '> ' + e[1] + '</label>';
     }
     var locked = n.canSave === false;
-    // Every section starts closed; loadApprovalsSection reopens the ones
-    // that were open before a save redrew the tab.
+    // Every dialog starts closed; loadApprovalsSection reopens the one
+    // that was open before a save redrew the tab.
     var inUse = isPrimary || (isWebhook && saved);
-    return '<details class="msg-conn' + (inUse ? ' is-primary' : '') + '" data-channel="' + channel + '">' +
-      '<summary><span class="msg-conn-title">' + (CHANNEL_ICONS[channel] || '') + escapeHtml(CHANNEL_TITLES[channel] || channel) + '</span>' + pills +
-        '<span class="hint msg-conn-blurb">' + escapeHtml(CHANNEL_BLURBS[channel] || '') + '</span></summary>' +
-      '<form class="add-source notifier-form" data-channel="' + channel + '" style="max-width:560px">' +
+    if (part === 'card') {
+      return '<div class="msg-card' + (inUse ? ' is-primary' : '') + '" data-channel="' + channel + '">' +
+        '<div class="sched-card-head"><span class="sched-icon">' + (CHANNEL_ICONS[channel] || '') + '</span>' +
+          '<span class="sched-card-text"><span class="sched-card-title msg-conn-title">' + escapeHtml(CHANNEL_TITLES[channel] || channel) + '</span>' +
+          '<span class="sched-card-desc">' + escapeHtml(CHANNEL_BLURBS[channel] || '') + '</span></span></div>' +
+        '<div class="msg-card-foot"><span class="sched-chips">' + pills + '</span>' +
+          '<button type="button" class="msg-open" data-channel="' + channel + '">' + (saved ? 'Settings' : 'Set up') + '</button></div>' +
+      '</div>';
+    }
+    return '<dialog class="msg-dialog" data-channel="' + channel + '" aria-label="' + escapeHtml(CHANNEL_TITLES[channel] || channel) + '">' +
+      '<div class="sched-dlg-head"><h2>' + (CHANNEL_ICONS[channel] || '') + escapeHtml(CHANNEL_TITLES[channel] || channel) + '</h2><button type="button" class="msg-close">Close</button></div>' +
+      '<div class="msg-dlg-body"><p class="hint">' + escapeHtml(CHANNEL_BLURBS[channel] || '') + '</p>' +
+      '<form class="add-source notifier-form" data-channel="' + channel + '">' +
         renderChannelFields(n, channel, f) +
         '<label>Link address <span class="hint">(messages link here so people can approve without logging in; use an address they can reach)</span>' +
           '<input type="url" name="publicUrl" class="notifier-public-url" value="' + escapeHtml(n.publicUrl || f.publicUrl || location.origin) + '"' + (n.publicUrl ? ' disabled title="Set by LOOPENGINE_PUBLIC_URL"' : '') + '></label>' +
@@ -4733,12 +4752,14 @@ ${renderMarkdownScript}
       '</form>' +
       // Who can decide and give jobs here: part of this app's settings.
       (channel === 'slack' || channel === 'telegram' ? renderApproversHtml(n, channel) : '') +
-      '</details>';
+      '</div></dialog>';
   }
 
   function renderConnectionsHtml(n) {
+    var channels = n.channels || ['slack', 'telegram', 'lark', 'email', 'webhook'];
     return (n.canSave === false ? leShell.adminNote('Saving needs <code>LOOPENGINE_ADMIN_AUTH</code> set on the server, because this stores a secret. Add <code>LOOPENGINE_ADMIN_AUTH=user:pass</code> to <code>.env</code> and restart.') : '') +
-      '<div class="msg-conns">' + (n.channels || ['slack', 'telegram', 'lark', 'email', 'webhook']).map(function (c) { return renderConnectionSection(n, c); }).join('') + '</div>';
+      '<div class="le-grid msg-cards">' + channels.map(function (c) { return renderConnectionSection(n, c, 'card'); }).join('') + (channels.length % 2 ? '<div class="msg-card" aria-hidden="true"></div>' : '') + '</div>' +
+      channels.map(function (c) { return renderConnectionSection(n, c, 'dialog'); }).join('');
   }
 
   function renderDeliveries(list) {
@@ -4875,7 +4896,7 @@ ${renderMarkdownScript}
   function renderApprovalsHtml(n) {
     return '<p class="muted" style="margin:0 0 20px">Connect a messaging app, so this agent can reach people when nobody is in Chat. When an app calls it over HTTP or a scheduled task runs, and a tool call needs approval or the agent asks a question, the request is sent here. In Chat it shows up in the conversation instead.</p>' +
       '<section id="approvalsSetup"><h3>Connections</h3>' +
-      '<p class="muted" style="margin:0 0 12px">' + renderNotifierStatus(n) + '</p>' +
+      '<p class="muted" style="margin:0 0 20px">' + renderNotifierStatus(n) + '</p>' +
         (n.error ? '<p class="error">' + escapeHtml(n.error) + '</p>' : '') +
         (n.source === 'code' ? '' : renderConnectionsHtml(n)) + '</section>' +
 
@@ -5097,6 +5118,20 @@ ${renderMarkdownScript}
     });
   }
 
+  // Set up / Settings on an app's card opens its dialog.
+  function wireMessagingDialogs(content) {
+    content.querySelectorAll('.msg-open').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var dlg = content.querySelector('dialog.msg-dialog[data-channel="' + btn.dataset.channel + '"]');
+        if (dlg) dlg.showModal();
+      });
+    });
+    content.querySelectorAll('dialog.msg-dialog').forEach(function (dlg) {
+      dlg.querySelector('.msg-close').addEventListener('click', function () { dlg.close(); });
+      dlg.addEventListener('click', function (ev) { if (ev.target === dlg) dlg.close(); });
+    });
+  }
+
   function loadApprovalsSection(name, message) {
     var content = approvalsContentEl();
     if (!content) return;
@@ -5108,12 +5143,13 @@ ${renderMarkdownScript}
       if (!results[0].ok) throw new Error(results[0].body.error || 'request failed');
       lastNotifier = results[0].body;
       showMessagingCount(results[0].body);
-      // Keep open the app sections that were open (a save redraws the tab).
-      var wasOpen = Array.prototype.map.call(content.querySelectorAll('details.msg-conn[open]'), function (d) { return d.dataset.channel; });
+      // Keep open the app's dialog that was open (a save redraws the tab).
+      var wasOpen = Array.prototype.map.call(content.querySelectorAll('dialog.msg-dialog[open]'), function (d) { return d.dataset.channel; });
       content.innerHTML = renderApprovalsHtml(results[0].body);
+      wireMessagingDialogs(content);
       wasOpen.forEach(function (channel) {
-        var section = content.querySelector('details.msg-conn[data-channel="' + channel + '"]');
-        if (section) section.open = true;
+        var dlg = content.querySelector('dialog.msg-dialog[data-channel="' + channel + '"]');
+        if (dlg) dlg.showModal();
       });
       wireApprovalsHandlers(name);
       wireApproversHandlers(name, results[0].body);
@@ -5130,7 +5166,7 @@ ${renderMarkdownScript}
         // Otherwise the section that was open, which is the one just saved.
         var r = message.indexOf('pprover') !== -1
           ? content.querySelector('.approvers-section[data-app="' + approverApp + '"] .approvers-result')
-          : content.querySelector('details.msg-conn[open] .notifier-result') || content.querySelector('#notifierResult');
+          : content.querySelector('dialog.msg-dialog[open] .notifier-result') || content.querySelector('#notifierResult');
         if (r) r.textContent = message;
       }
     }).catch(function (err) {
