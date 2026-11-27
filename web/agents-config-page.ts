@@ -31,6 +31,7 @@ import { MESSAGING_ICONS } from './messaging-icons.js'
 import { renderMarkdownScript } from './markdown-script.js'
 import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
+import { newWorkflowDialogCss, newWorkflowDialogHtml, newWorkflowDialogScript } from './new-workflow-dialog.js'
 import { REASONING_PROVIDERS } from './agent-file-admin.js'
 
 export const agentsConfigPageHtml: string = `<!doctype html>
@@ -39,7 +40,7 @@ export const agentsConfigPageHtml: string = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoopEngine Console</title>
-<style>${devUiCss}${MASCOT_CSS}
+<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   /* Each tab panel is a .le-page column inside the shell's scrolling
      main area (see web/console-shell.ts); everything below styles the
      panels' own content. */
@@ -1032,6 +1033,9 @@ export const agentsConfigPageHtml: string = `<!doctype html>
   .wf-tl-kind { font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
   .wf-tl-time { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; gap: 1px; }
   .wf-tl-detail { border-radius: 0; background: var(--bg); padding: 18px 20px; }
+
+  /* With no workflows yet, the empty state's Build a workflow is the one. */
+  .tab-panel[data-tab-panel="workflows"]:has(.wf-empty-state) .wf-tab-head .wf-new-btn { display: none; }
 </style>
 </head>
 <body data-le-page="agent-config">
@@ -1043,7 +1047,9 @@ ${consoleSidebarHtml}
   <div id="detail" style="display:none;flex-direction:column;flex:1;min-height:0"></div>
 </main>
 </div>
+${newWorkflowDialogHtml}
 ${consoleShellScript}
+${newWorkflowDialogScript}
 <script>
 (function () {
   // Every request this page's address already settles (the agent's
@@ -1087,6 +1093,17 @@ ${consoleShellScript}
   var detail = document.getElementById('detail');
   var currentName = null;
   var currentTab = 'overview';
+  // Build a workflow opens the New workflow dialog with this agent
+  // chosen (web/new-workflow-dialog.ts); one built there joins the list.
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-new-workflow]');
+    if (!b || ev.metaKey || ev.ctrlKey || !window.leNewWorkflow) return;
+    ev.preventDefault();
+    window.leNewWorkflow.open({ agent: b.getAttribute('data-new-workflow') });
+  });
+  document.addEventListener('le-workflow-built', function (ev) {
+    if (currentName && ev.detail && ev.detail.agent === currentName) loadWorkflowsSection(currentName);
+  });
   // Which agent's Gateway tools tab has already been fetched — reset on
   // every agent switch so a stale agent's sources are never shown under
   // a new one, and re-fetched the next time that tab is opened.
@@ -2264,7 +2281,7 @@ ${renderMarkdownScript}
       workflows = page;
     }
     if (!workflows.length) {
-      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Say what this agent should do in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
+      return '<div class="wf-empty-state"><strong>No workflows yet</strong><p>Say what this agent should do in a sentence or two, or start from an example, and it' + String.fromCharCode(8217) + 's planned and set up for you.</p><a class="wf-new-btn" data-new-workflow="' + escapeHtml(name) + '" href="/workflows/new?agent=' + encodeURIComponent(name) + '">Build a workflow</a></div>';
     }
     // Those that need someone first: waiting for a decision, then failed.
     var rank = function (w) { return workflowNeedsDecision(w) ? 0 : (workflowLastRun(w) || {}).status === 'error' ? 1 : 2; };
@@ -7375,7 +7392,7 @@ ${renderMarkdownScript}
       // Workflows: the jobs this agent does, each with what starts it.
       '<div class="tab-panel" data-tab-panel="workflows">' +
         '<div class="wf-tab-head"><p class="muted">What this agent does on its own, as workflows: what each does, the ways to run it (a schedule, a webhook, Run now or an app&#39;s API call) and how its runs went. In Chat it can do them too, when you ask.</p>' +
-          '<a class="wf-new-btn" href="/workflows/new?agent=' + encodeURIComponent(cfg.name) + '">Build a workflow</a></div>' +
+          '<a class="wf-new-btn" data-new-workflow="' + escapeHtml(cfg.name) + '" href="/workflows/new?agent=' + encodeURIComponent(cfg.name) + '">Build a workflow</a></div>' +
         '<section id="workflowsSection"><div id="workflowsContent"><p class="hint">Loading&hellip;</p></div></section>' +
       '</div>' +
       // Advanced: the agent's own tools (and Composio, subagents), then its
