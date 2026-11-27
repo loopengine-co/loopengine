@@ -4,7 +4,7 @@
 // Like the other console pages, its inline script avoids backslashes and
 // template placeholders, since it lives inside a template literal.
 import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
-import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { AGENT_GLYPH, consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 import { newWorkflowDialogCss, newWorkflowDialogHtml, newWorkflowDialogScript } from './new-workflow-dialog.js'
 
@@ -104,6 +104,7 @@ ${newWorkflowDialogScript}
   var DOT = ' ' + String.fromCharCode(183) + ' ';
   var ELLIPSIS = String.fromCharCode(8230);
   var esc = window.leShell.esc;
+  var GLYPH_AGENT = '${AGENT_GLYPH}';
   var ICON_FLOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/><path d="M7 11v3a3 3 0 0 0 3 3h3"/></svg>';
   var data = null;
 
@@ -205,7 +206,7 @@ ${newWorkflowDialogScript}
           '<span class="wo-card-desc">' + plural(w.runsThisWeek, 'run', 'runs') + ' this week' + (w.failedThisWeek ? ', <span style="color:var(--bad)">' + w.failedThisWeek + ' failed</span>' : '') + (decided ? DOT + w.approved + ' of ' + decided + ' approved' : '') + '</span></span>' +
         '<a class="wo-open" href="' + href(w) + '">Open</a></div>' +
       '<div class="wo-chips">' + w.starts.map(function (x, i) { var t = x === 'Run now' ? 'when someone runs it' : x; return '<span class="wo-chip' + (i === 0 ? ' strong' : '') + '" title="' + esc(t) + '">' + (i === 0 ? '<span class="wo-chip-k">Starts</span>' : '') + esc(t) + '</span>'; }).join('') +
-        '<a class="wo-chip" href="/agents/config?agent=' + encodeURIComponent(w.agent) + '">' + esc(w.agentLabel) + '</a>' +
+        '<a class="wo-chip" href="/agents/config?agent=' + encodeURIComponent(w.agent) + '" title="Agent">' + GLYPH_AGENT + esc(w.agentLabel) + '</a>' +
         lastRunChip(w) + (w.lastRun ? '<span class="wo-next">Last run ' + esc(ago(w.lastRun.at)) + '</span>' : '') + '</div>' +
     '</div>';
   }

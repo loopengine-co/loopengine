@@ -37,6 +37,12 @@ const AGENTS_ICON = '<svg class="le-nav-icon" viewBox="3 3 18 18" fill="currentC
 // Two linked steps going round, for Workflows.
 const WORKFLOWS_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3.5 3.5 0 0 1 3.5 3.5v4"/><path d="M14 17.5h-4A3.5 3.5 0 0 1 6.5 14v-4"/></svg>'
 
+// The same two, small, for a chip or a line naming an agent or a
+// workflow, and a speech bubble for a message.
+export const AGENT_GLYPH: string = AGENTS_ICON.replace('class="le-nav-icon"', 'class="le-glyph"')
+export const WORKFLOW_GLYPH: string = WORKFLOWS_ICON.replace('class="le-nav-icon"', 'class="le-glyph"')
+export const MESSAGE_GLYPH = '<svg class="le-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>'
+
 // An inbox tray, for the Inbox.
 const INBOX_ICON = '<svg class="le-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
 

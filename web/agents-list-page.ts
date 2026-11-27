@@ -6,7 +6,7 @@
 // that route always returned, unchanged. See web/dev-ui-styles.ts for
 // why the look is a shared import rather than a third copy of the same CSS.
 import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
-import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { WORKFLOW_GLYPH, consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
 export const agentsListPageHtml: string = `<!doctype html>
@@ -141,6 +141,7 @@ ${consoleShellScript}
   var newAgentResult = document.getElementById('newAgentResult');
   var cancelNewAgentBtn = document.getElementById('cancelNewAgentBtn');
   var search = document.getElementById('agSearch');
+  var GLYPH_FLOW = '${WORKFLOW_GLYPH}';
   var ICON_AGENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/></svg>';
 
   var agents = [];
@@ -161,9 +162,9 @@ ${consoleShellScript}
     var chips = list === null ? '<span class="ag-chip">' + String.fromCharCode(8230) + '</span>'
       : list.length
         ? '<span class="ag-chip strong">' + list.length + (list.length === 1 ? ' workflow' : ' workflows') + '</span>' + (live ? '<span class="ag-chip good">' + live + ' running</span>' : '') +
-          list.slice(0, 3).map(function (w) { return '<a class="ag-chip" href="/agents/config' + qs + '&tab=workflows&workflow=' + encodeURIComponent(w.id) + '" title="' + escapeHtml(w.title) + '">' + escapeHtml(w.title) + '</a>'; }).join('') +
+          list.slice(0, 3).map(function (w) { return '<a class="ag-chip" href="/agents/config' + qs + '&tab=workflows&workflow=' + encodeURIComponent(w.id) + '" title="' + escapeHtml(w.title) + '">' + GLYPH_FLOW + escapeHtml(w.title) + '</a>'; }).join('') +
           (list.length > 3 ? '<span class="hint">+' + (list.length - 3) + ' more</span>' : '')
-        : '<a class="ag-chip" href="/workflows?new=1&' + qs.slice(1) + '">No workflows yet: give it one</a>';
+        : '<a class="ag-chip" href="/workflows?new=1&' + qs.slice(1) + '">' + GLYPH_FLOW + 'No workflows yet: give it one</a>';
     return '<div class="ag-card">' +
       '<div class="ag-card-head"><span class="ag-icon' + (live ? ' live' : '') + '">' + ICON_AGENT + '</span>' +
         '<span class="ag-card-text"><a class="ag-card-title" href="/agents/config' + qs + '">' + escapeHtml(agent.displayName || agent.name) + (agent.displayName ? '<span class="ag-id">' + escapeHtml(agent.name) + '</span>' : '') + '</a>' +

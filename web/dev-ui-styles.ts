@@ -186,6 +186,7 @@ export const devUiCss: string = `
   button.le-rail-item { width: 100%; border: 0; background: none; cursor: pointer; font: inherit; }
   button.le-rail-item:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
   .le-nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
+  .le-glyph { width: 13px; height: 13px; flex-shrink: 0; margin-right: 5px; opacity: .8; }
   .le-panel { width: 228px; flex: none; display: flex; flex-direction: column; min-height: 0; padding-top: 14px; }
   .le-panel[hidden] { display: none; }
   .le-sidebar.previewing .le-panel { position: absolute; left: 100%; top: 0; bottom: 0; z-index: 30; background: var(--sidebar); border: 1px solid var(--line); border-width: 0 1px 0 0; box-shadow: 8px 0 24px rgba(0, 0, 0, .12); }

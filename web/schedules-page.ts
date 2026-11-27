@@ -21,7 +21,7 @@
 // console pages, its inline script avoids backslashes and template
 // placeholders, since it lives inside a template literal.
 import { devUiCss, themeHeadHtml } from './dev-ui-styles.js'
-import { consoleShellScript, consoleSidebarHtml } from './console-shell.js'
+import { AGENT_GLYPH, MESSAGE_GLYPH, WORKFLOW_GLYPH, consoleShellScript, consoleSidebarHtml } from './console-shell.js'
 import { MASCOT_CSS, mascotSvg } from './mascot.js'
 
 export const schedulesPageHtml: string = `<!doctype html>
@@ -207,6 +207,9 @@ ${consoleShellScript}
   var ICON_REPEAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18 2v4h-4"/><path d="M6 22v-4h4"/></svg>';
   var ICON_ONCE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>';
   var mascot = document.getElementById('scMascot').innerHTML;
+  var GLYPH_AGENT = '${AGENT_GLYPH}';
+  var GLYPH_FLOW = '${WORKFLOW_GLYPH}';
+  var GLYPH_MESSAGE = '${MESSAGE_GLYPH}';
   var ICON_DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
 
   function api(method, path, body) {
@@ -288,9 +291,9 @@ ${consoleShellScript}
     // A message's title is its first line, unless it has a name.
     var desc = wf ? (wf.description && wf.description !== wf.title ? wf.description : wf.start_message) || '' : t.workflow_id ? '' : t.task_name ? t.message : lines.slice(1).join(' ').trim();
     // What it runs: a workflow (linked) or a message the agent receives.
-    var what = wf ? '<a class="sc-chip" href="' + wfHref(t.agent, t.workflow_id, 'overview') + '">Workflow: ' + esc(wf.title) + '</a>'
+    var what = wf ? '<a class="sc-chip" href="' + wfHref(t.agent, t.workflow_id, 'overview') + '" title="Workflow">' + GLYPH_FLOW + esc(wf.title) + '</a>'
       : t.workflow_id ? '<span class="sc-chip bad">Its workflow was removed</span>'
-      : '<span class="sc-chip" title="Sends the agent a message each time">Message</span>';
+      : '<span class="sc-chip" title="Sends the agent a message each time">' + GLYPH_MESSAGE + 'Message</span>';
     var state = t.status === 'awaiting_approval' || t.pending ? '<a class="sc-chip warn" href="/inbox?view=needs">Waiting for you</a>'
       : t.status === 'running' ? '<span class="sc-chip strong">Running now</span>'
       : t.last_status === 'error' ? '<span class="sc-chip bad" title="' + esc(t.last_error || '') + '">Last run failed</span>' : '';
@@ -306,7 +309,7 @@ ${consoleShellScript}
           '<button type="button" class="sc-danger" data-remove="' + esc(t.task_id) + '">Remove</button>' +
         '</div></details></div>' +
       '<div class="sc-chips"><span class="sc-chip strong">' + esc(describe(t)) + '</span>' + what +
-        '<a class="sc-chip" href="/agents/config?agent=' + encodeURIComponent(t.agent) + '">' + esc(t.agentLabel) + '</a>' +
+        '<a class="sc-chip" href="/agents/config?agent=' + encodeURIComponent(t.agent) + '" title="Agent">' + GLYPH_AGENT + esc(t.agentLabel) + '</a>' +
         (t.notify ? '<span class="sc-chip">Result to chat</span>' : '') + state +
         (next ? '<span class="sc-next">' + esc(next) + '</span>' : '') + '</div>' +
     '</div>';
