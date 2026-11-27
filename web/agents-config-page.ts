@@ -296,6 +296,22 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-vs-row .wf-evals-run.plain, .ev-vs-row .wf-evals-run.plain:hover:not(:disabled) { background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
   .ev-steps .wf-evals-run:disabled { opacity: .45; }
   .ev-shown { margin-left: auto; }
+  .ev-cmp { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .ev-cmp-col, .ev-cmp > .ev-result, .ev-cmp > div:empty { display: grid; gap: 6px; align-content: start; padding: 10px 12px; min-width: 0; }
+  .ev-cmp > * + * { border-left: 1px solid var(--line); }
+  .ev-cmp-col.is-draft, .ev-cmp > .ev-result:nth-child(2) { background: var(--surface); }
+  .ev-cmp-k { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; font-size: 12.5px; color: var(--ink); }
+  .ev-cmp .wf-case-fails { margin: 0; }
+  .ev-cmp .wf-case-standins { margin: 0; }
+  details .ev-cmp { margin-top: 8px; }
+  .ev-change { font-size: 12px; color: var(--ink-muted); }
+  .ev-change.better { color: var(--good); font-weight: 600; }
+  .ev-change.worse { color: var(--bad); font-weight: 600; }
+  .ev-verdict { margin: 0; font-size: 13px; color: var(--ink); font-weight: 600; }
+  .ev-verdict.better { color: var(--good); }
+  .ev-verdict.worse { color: var(--bad); }
+  .ev-verdict .hint { font-weight: 400; }
+  @media (max-width: 760px) { .ev-cmp { grid-template-columns: minmax(0, 1fr); } .ev-cmp > * + * { border-left: 0; border-top: 1px solid var(--line); } }
   .ev-step .wf-evals-bar { margin-top: 4px; }
   .ev-step .wf-evals-run.primary, .ev-step .wf-evals-run.primary:hover:not(:disabled) { height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--primary); border: 1px solid var(--primary); color: var(--on-primary); }
   .ev-step .wf-evals-run:disabled { opacity: .45; }
@@ -2887,35 +2903,63 @@ ${renderMarkdownScript}
           '<span style="flex:1"></span><button type="button" class="plain wf-crit-cancel">Cancel</button><button type="button" class="wf-crit-save">Save as draft</button><button type="button" class="primary wf-crit-save wf-crit-publish" data-publish-offer hidden>Save and publish</button></div>' +
         '<span class="hint wf-crit-status"></span>' +
       '</div>';
-    var latest = {};
-    (round ? round.cases : []).forEach(function (c) { latest[c.caseId] = c; });
-    var critName = {};
-    ((round && round.criteria) || criteria).forEach(function (c) { critName[c.id] = c.text; });
     var running = evals.running;
-    var cases = evals.cases.map(function (c, i) {
-      var last = latest[c.id];
-      var values = Object.keys(c.params || {}).map(function (k) { var v = String(c.params[k]); return escapeHtml(k) + ': ' + escapeHtml(v.length > 60 ? v.slice(0, 60) + String.fromCharCode(8230) : v); }).join(DOT);
-      var fails = last && last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
-      var pill = !last ? ''
-        : last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' criteria missed</span>' : '<span class="le-pill good">Passed all ' + last.checks.length + '</span>')
+    // The published version's latest round, and the draft's (only one of
+    // this draft as it is now: an edit since makes its test out of date).
+    // With both, each case shows the two side by side.
+    var pubRound = evals.rounds.filter(function (r) { return !r.draft; })[0];
+    var draftRounds = w.draft ? evals.rounds.filter(function (r) { return r.draft; }) : [];
+    var draftRound = draftRounds.filter(function (r) { return r.draft.savedAt === w.draft.savedAt; })[0];
+    var comparing = Boolean(w.draft && pubRound && draftRound);
+    var byCase = function (r) { var m = {}; (r ? r.cases : []).forEach(function (c) { m[c.caseId] = c; }); return m; };
+    var namesOf = function (r) { var m = {}; ((r && r.criteria) || criteria).forEach(function (c) { m[c.id] = c.text; }); return m; };
+    var passedAll = function (last) { return last ? (last.checks ? last.checks.every(function (x) { return x.pass; }) : last.score >= 4) : null; };
+    // One round's outcome for a case: its pill, what it missed and why,
+    // and the calls the test didn't make.
+    var outcome = function (last, names) {
+      if (!last) return { pill: '<span class="ev-none">Not in this round</span>', body: '' };
+      var fails = last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
+      var pill = last.checks ? (fails.length ? '<span class="le-pill bad">' + fails.length + ' of ' + last.checks.length + ' criteria missed</span>' : '<span class="le-pill good">Passed all ' + last.checks.length + '</span>')
         : typeof last.score === 'number' ? '<span class="le-pill ' + (last.score >= 4 ? 'good' : last.score === 3 ? 'ask' : 'bad') + '">' + last.score + ' / 5</span>' : '<span class="le-pill bad">Not scored</span>';
-      var why = !last ? ''
-        : last.checks ? (fails.length ? '<ul class="wf-case-fails">' + fails.map(function (x) { return '<li><strong>' + escapeHtml(critName[x.criterionId] || x.criterionId) + '</strong>' + (x.reason ? ': ' + escapeHtml(x.reason) : '') + '</li>'; }).join('') + '</ul>' : '')
+      var why = last.checks ? (fails.length ? '<ul class="wf-case-fails">' + fails.map(function (x) { return '<li><strong>' + escapeHtml(names[x.criterionId] || x.criterionId) + '</strong>' + (x.reason ? ': ' + escapeHtml(x.reason) : '') + '</li>'; }).join('') + '</ul>' : '')
         : '<p class="hint" style="margin:0">' + escapeHtml(last.reason || last.error || '') + '</p>';
-      // The calls the test didn't make: what it would have done.
-      var standIns = last && last.standIns && last.standIns.length
+      var standIns = last.standIns && last.standIns.length
         ? '<p class="wf-case-standins">Not made in the test: ' + last.standIns.map(function (x) {
-            var shown = JSON.stringify(x.input);
-            return '<code title="' + escapeHtml(shown) + '">' + escapeHtml(x.tool) + '</code>' + (x.replayed ? ' <span class="hint">(reply from its run)</span>' : '');
+            return '<code title="' + escapeHtml(JSON.stringify(x.input)) + '">' + escapeHtml(x.tool) + '</code>' + (x.replayed ? ' <span class="hint">(reply from its run)</span>' : '');
           }).join(', ') + '</p>'
         : '';
-      return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '"><div class="wf-case-head"><strong>Case ' + (i + 1) + '</strong>' + pill +
-        '<span class="hint">' + (values || 'no inputs') + '</span><button type="button" class="wf-link wf-case-remove">Remove</button></div>' +
-        why + standIns +
-        '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (last && last.result ? ' and its latest result' : '') + '</summary>' +
-          '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '" placeholder="Optional: what a good result says, to compare against">' + escapeHtml(c.reference || '') + '</textarea>' +
-          '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>' +
-          (last && last.result ? '<div class="workflow-run-entry-label">Latest result' + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div>' : '') +
+      return { pill: pill, body: why + standIns };
+    };
+    var resultBlock = function (label, last) {
+      return last && last.result ? '<div class="ev-result"><div class="workflow-run-entry-label">' + label + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div></div>' : '';
+    };
+    var latest = byCase(round), pubCases = byCase(pubRound), draftCases = byCase(draftRound);
+    var critName = namesOf(round), pubNames = namesOf(pubRound), draftNames = namesOf(draftRound);
+    var pubLabel = 'Published' + (pubRound && pubRound.workflowVersion ? ' v' + pubRound.workflowVersion : '');
+    var cases = evals.cases.map(function (c, i) {
+      var values = Object.keys(c.params || {}).map(function (k) { var v = String(c.params[k]); return escapeHtml(k) + ': ' + escapeHtml(v.length > 60 ? v.slice(0, 60) + String.fromCharCode(8230) : v); }).join(DOT);
+      var head = function (extra) {
+        return '<div class="wf-case-head"><strong>Case ' + (i + 1) + '</strong>' + extra + '<span class="hint">' + (values || 'no inputs') + '</span><button type="button" class="wf-link wf-case-remove">Remove</button></div>';
+      };
+      var goodResult = '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '" placeholder="Optional: what a good result says, to compare against">' + escapeHtml(c.reference || '') + '</textarea>' +
+        '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>';
+      if (comparing) {
+        var pub = pubCases[c.id], dr = draftCases[c.id];
+        var p = outcome(pub, pubNames), d = outcome(dr, draftNames);
+        var was = passedAll(pub), now = passedAll(dr);
+        // How the draft did against the published version on this case.
+        var change = was === null || now === null ? '' : now && !was ? '<span class="ev-change better">Fixed by the draft</span>' : was && !now ? '<span class="ev-change worse">Broken by the draft</span>' : '<span class="ev-change">Same</span>';
+        return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '">' + head(change) +
+          '<div class="ev-cmp"><div class="ev-cmp-col"><div class="ev-cmp-k">' + escapeHtml(pubLabel) + ' ' + p.pill + '</div>' + p.body + '</div>' +
+            '<div class="ev-cmp-col is-draft"><div class="ev-cmp-k"><span class="le-pill warn">Draft</span> ' + d.pill + '</div>' + d.body + '</div></div>' +
+          '<details><summary>Good result' + (c.reference ? '' : ' (none)') + ' and both results</summary>' + goodResult +
+            '<div class="ev-cmp">' + (resultBlock(pubLabel, pub) || '<div></div>') + (resultBlock('Draft', dr) || '<div></div>') + '</div>' +
+          '</details></li>';
+      }
+      var last = latest[c.id];
+      var o = last ? outcome(last, critName) : { pill: '', body: '' };
+      return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '">' + head(o.pill) + o.body +
+        '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (last && last.result ? ' and its latest result' : '') + '</summary>' + goodResult + resultBlock('Latest result', last) +
         '</details></li>';
     }).join('');
     var nCases = evals.cases.length;
@@ -2929,15 +2973,21 @@ ${renderMarkdownScript}
     var details = function (r) {
       return r ? '<details class="wf-eval-details"><summary>Details</summary>Ran with ' + escapeHtml(r.model) + DOT + 'judged by ' + escapeHtml(r.judge) + DOT + escapeHtml(new Date(r.at).toLocaleString()) + '</details>' : '';
     };
-    // The published version's latest round, and the draft's (only one of
-    // this draft as it is now: an edit since makes its test out of date).
-    var pubRound = evals.rounds.filter(function (r) { return !r.draft; })[0];
-    var draftRounds = w.draft ? evals.rounds.filter(function (r) { return r.draft; }) : [];
-    var draftRound = draftRounds.filter(function (r) { return r.draft.savedAt === w.draft.savedAt; })[0];
     var runBtn = function (forDraft, label, primary) {
       var mine = running && Boolean(running.draft) === forDraft;
       return '<button type="button" class="' + (primary ? 'primary ' : 'plain ') + 'wf-evals-run"' + (forDraft ? ' data-draft="1"' : '') + (!nCases || running ? ' disabled' : '') + (nCases ? '' : ' title="Add an eval case first"') + '>' +
         (mine ? 'Evaluating ' + running.done + ' of ' + running.total + String.fromCharCode(8230) : label) + '</button>';
+    };
+    // Draft against published, in a line: the cases each passed in full,
+    // and whether they were checked the same way.
+    var verdict = function () {
+      if (!comparing) return '';
+      var count = function (r) { return r.cases.filter(passedAll).length; };
+      var a = count(pubRound), b = count(draftRound), diff = b - a;
+      var sameChecks = JSON.stringify((pubRound.criteria || []).map(function (c) { return c.id; })) === JSON.stringify((draftRound.criteria || []).map(function (c) { return c.id; }));
+      return '<p class="ev-verdict ' + (diff > 0 ? 'better' : diff < 0 ? 'worse' : '') + '">' +
+        (diff > 0 ? 'The draft passes ' + diff + ' more ' + (diff === 1 ? 'case' : 'cases') : diff < 0 ? 'The draft passes ' + (-diff) + ' fewer ' + (-diff === 1 ? 'case' : 'cases') : 'Both pass the same number of cases') +
+        ' (' + b + ' vs ' + a + ').' + (sameChecks ? '' : ' <span class="hint">The draft changes the success criteria, so the two were checked differently.</span>') + '</p>';
     };
     var step = function (n, title, value, hint, extra) {
       return '<div class="ev-step"><div class="ev-step-k"><span class="ev-step-n">' + n + '</span>' + title + '</div><div class="ev-step-v">' + value + '</div><p class="hint">' + hint + '</p>' + (extra || '') + '</div>';
@@ -2953,6 +3003,7 @@ ${renderMarkdownScript}
             '<div class="ev-vs-row"><span class="ev-vs-k">Published<span class="ev-pub-v"></span></span><span class="ev-vs-v">' + (pubRound ? resultOf(pubRound) : '<span class="ev-none">Not run yet</span>') + '</span>' + runBtn(false, 'Evaluate', false) + '</div>' +
             '<div class="ev-vs-row is-draft"><span class="ev-vs-k"><span class="le-pill warn">Draft</span></span><span class="ev-vs-v">' + (draftRound ? resultOf(draftRound) : '<span class="ev-none">' + (draftRounds.length ? 'Changed since its test' : 'Not tested yet') + '</span>') + '</span>' + runBtn(true, 'Evaluate draft', true) + '</div>' +
           '</div>' +
+          verdict() +
           '<p class="hint">Test the draft on the same cases before you publish it. Nothing is sent, refunded or submitted.</p>' + details(draftRound || pubRound) + '</div>';
     // The three steps, in order, with where each stands; Evaluate in the third.
     var steps = '<div class="ev-steps' + (w.draft ? ' has-draft' : '') + '">' +
@@ -2963,7 +3014,7 @@ ${renderMarkdownScript}
       evaluate +
       '</div>';
     // Which round the cases below show.
-    var shown = round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
+    var shown = comparing ? '<span class="hint ev-shown">' + escapeHtml(pubLabel) + ' beside the draft</span>' : round ? '<span class="hint ev-shown">Results from ' + (round.draft ? 'the draft' : 'v' + (round.workflowVersion || round.briefVersion || '?')) + DOT + escapeHtml(new Date(round.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) + '</span>' : '';
     return steps +
       '<section class="wf-section ev-cases"><div class="wf-sub-row"><h4 class="wf-sub">Eval cases' + (nCases ? ' <span class="ev-count">' + nCases + '</span>' : '') + '</h4>' + shown + '</div>' +
         (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet. Add one of the runs suggested below, or save any run from its trace.</p>') +
