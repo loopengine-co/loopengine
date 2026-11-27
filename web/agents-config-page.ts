@@ -315,6 +315,11 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-runs-head .wf-sub { margin: 0; }
   .wf-run-filter button { gap: 6px; }
   .wf-run-filter-n { font-size: 11.5px; color: var(--ink-faint); }
+  .wf-version-pick { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12.5px; color: var(--ink-muted); }
+  .wf-version-pick[hidden] { display: none; }
+  .wf-version-pick select { height: 32px; border-radius: 9px; font-size: 13px; padding: 0 28px 0 10px; }
+  .wf-runs-more { display: block; width: 100%; height: 40px; margin-top: -1px; border: 1px solid var(--line); border-radius: 0; background: var(--bg); color: var(--ink-muted); font-size: 13px; }
+  .wf-runs-more:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
   .wf-runs-links { display: inline-flex; gap: 14px; margin-left: auto; }
   .wf-runs-links a { font-size: 12.5px; font-weight: 500; color: var(--ink-muted); text-decoration: none; }
   .wf-runs-links a:hover { color: var(--ink); text-decoration: underline; }
@@ -1249,7 +1254,7 @@ ${newWorkflowDialogScript}
     var wf = q.get('tab') === 'workflows' && q.get('workflow');
     if (wf) {
       var b = base + '/workflows/' + encodeURIComponent(wf);
-      urls.push(b + '/versions', b + '/health?days=30', b + '/evals/candidates', b + '/runs');
+      urls.push(b + '/versions', b + '/health?days=30', b + '/evals/candidates', b + '/runs?days=30&offset=0');
     }
     urls.forEach(function (u) { early[u] = plainFetch(u, { headers: { accept: 'application/json' } }); });
   })();
@@ -1640,34 +1645,66 @@ ${renderMarkdownScript}
     for (var j = 0; j < panels.length; j++) panels[j].hidden = panels[j].dataset.panel !== key;
   }
 
-  // The Summary: its runs over a time range (7 days to a year), as
-  // totals, day by day and per workflow version, and any alert (a rate
-  // that just got worse). The range picked stays for this page's visit.
+  // The Summary: its runs over a time range (7 days to a year) and of
+  // every version or one, as totals, day by day and per workflow version,
+  // and any alert (a rate that just got worse). The Runs list below
+  // follows the same range and version. Both stay for this page's visit.
   var HEALTH_RANGES = [[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']];
   var healthDays = 30;
+  var healthVersion = '';
+  function activityQuery() {
+    return 'days=' + healthDays + (healthVersion ? '&version=' + encodeURIComponent(healthVersion) : '');
+  }
+  function rangeWords() {
+    return healthDays >= 365 ? 'the last year' : 'the last ' + healthDays + ' days';
+  }
   function loadWorkflowHealth(card, base) {
     var box = card.querySelector('.wf-health');
     if (!box) return;
-    var head = '<div class="wf-runs-head"><h4 class="wf-sub">Summary</h4><div class="le-seg wf-range" role="group" aria-label="Time range">' +
-      HEALTH_RANGES.map(function (r) { return '<button type="button" data-health-days="' + r[0] + '" aria-pressed="' + (r[0] === healthDays) + '">' + r[1] + '</button>'; }).join('') + '</div></div>';
-    if (!box.querySelector('.wf-range')) box.innerHTML = head + '<div class="wf-health-body"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>';
-    else box.querySelectorAll('[data-health-days]').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.dataset.healthDays) === healthDays)); });
-    if (!box.dataset.rangeWired) {
-      box.dataset.rangeWired = '1';
+    if (!box.querySelector('.wf-range')) {
+      box.innerHTML = '<div class="wf-runs-head"><h4 class="wf-sub">Summary</h4><div class="le-seg wf-range" role="group" aria-label="Time range">' +
+          HEALTH_RANGES.map(function (r) { return '<button type="button" data-health-days="' + r[0] + '">' + r[1] + '</button>'; }).join('') + '</div>' +
+          '<label class="wf-version-pick" hidden><span>Version</span><select aria-label="Workflow version"></select></label></div>' +
+        '<div class="wf-health-body"><p class="hint" style="margin:0">Loading' + String.fromCharCode(8230) + '</p></div>';
       box.addEventListener('click', function (ev) {
         var b = ev.target.closest && ev.target.closest('[data-health-days]');
         if (!b || Number(b.dataset.healthDays) === healthDays) return;
         healthDays = Number(b.dataset.healthDays);
-        loadWorkflowHealth(card, base);
+        reloadActivity(card);
+      });
+      box.querySelector('.wf-version-pick select').addEventListener('change', function (ev) {
+        healthVersion = ev.target.value;
+        reloadActivity(card);
       });
     }
+    box.querySelectorAll('[data-health-days]').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.dataset.healthDays) === healthDays)); });
     var body = box.querySelector('.wf-health-body');
-    var days = healthDays;
+    var want = activityQuery();
     body.style.opacity = '0.5';
-    fetch(base + '/health?days=' + days, { headers: { accept: 'application/json' } })
+    fetch(base + '/health?' + want, { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (h) { if (days !== healthDays) return; body.style.opacity = ''; body.innerHTML = workflowHealthHtml(h); })
+      .then(function (h) {
+        if (want !== activityQuery()) return;
+        body.style.opacity = '';
+        body.innerHTML = workflowHealthHtml(h);
+        // The versions that ran in this range, newest first; one picked
+        // stays listed even when it didn't run in a shorter range.
+        var versions = (h.versionsRun || []).map(function (v) { return v == null ? 'none' : String(v); });
+        if (healthVersion && versions.indexOf(healthVersion) === -1) versions.push(healthVersion);
+        var pick = box.querySelector('.wf-version-pick');
+        pick.hidden = versions.length < 2 && !healthVersion;
+        pick.querySelector('select').innerHTML = '<option value="">All versions</option>' + versions.map(function (v) {
+          return '<option value="' + escapeHtml(v) + '"' + (v === healthVersion ? ' selected' : '') + '>' + (v === 'none' ? 'Before versions' : 'Version ' + escapeHtml(v)) + '</option>';
+        }).join('');
+      })
       .catch(function (err) { body.style.opacity = ''; body.innerHTML = '<p class="error">Could not load it: ' + escapeHtml(err.message) + '</p>'; });
+  }
+  // The range or version changed: the Summary and the Runs follow.
+  function reloadActivity(card) {
+    var name = currentName;
+    var base = '/agents/' + encodeURIComponent(name) + '/workflows/' + encodeURIComponent(card.dataset.workflow);
+    loadWorkflowHealth(card, base);
+    loadWorkflowRuns(name, card, base);
   }
 
   function healthPct(part, whole) { return whole ? Math.round(100 * part / whole) + '%' : String.fromCharCode(8212); }
@@ -2029,31 +2066,58 @@ ${renderMarkdownScript}
     return r.versions ? (r.versions.workflow || r.versions.brief || null) : null;
   }
 
-  // Its runs, newest first (the latest 50): a filter by how they ended,
-  // then a row per run that opens it (its result and trace).
+  // Its runs in the Summary's range and version, newest first, 50 at a
+  // time: a filter by how they ended (counts for the whole range), then a
+  // row per run that opens it (its result and trace).
+  var RUN_FILTERS = [['', 'All'], ['done', 'Done'], ['error', 'Failed'], ['awaiting_approval', 'Waiting'], ['running', 'Running']];
   function loadWorkflowRuns(name, card, base) {
     var box = card.querySelector('.wf-runs');
     if (!box) return;
     var w = workflowsById[card.dataset.workflow];
     var filter = card.querySelector('.wf-run-filter');
-    fetch(base + '/runs', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
-      .then(function (data) {
-        var runs = data.runs || [];
-        var count = card.querySelector('.wf-runs-count');
-        if (count) count.textContent = runs.length >= 50 ? 'latest 50' : '';
-        var n = function (s) { return runs.filter(function (r) { return s === 'all' || r.status === s; }).length; };
-        if (filter) {
-          filter.innerHTML = runs.length ? [['all', 'All'], ['done', 'Done'], ['error', 'Failed'], ['awaiting_approval', 'Waiting']].filter(function (f) { return f[0] === 'all' || n(f[0]); }).map(function (f) {
-            return '<button type="button" data-run-filter="' + f[0] + '" aria-pressed="' + (f[0] === 'all') + '">' + f[1] + ' <span class="wf-run-filter-n">' + n(f[0]) + '</span></button>';
-          }).join('') : '';
-          filter.hidden = !runs.length;
-        }
-        box.innerHTML = runs.length ? '<ol class="wf-run-rows">' + runs.map(function (r) { return runCardHtml(w, r); }).join('') + '</ol>'
-          : '<div class="ab-empty">No runs yet. Start one from Triggers (Run now), an app, a schedule or a webhook.</div>';
-      })
-      .catch(function (err) { box.innerHTML = '<p class="error">Could not load its runs: ' + escapeHtml(err.message) + '</p>'; });
+    var state = card._runs = { status: (card._runs && card._runs.status) || '', offset: 0 };
+    var draw = function (append) {
+      var want = activityQuery() + (state.status ? '&status=' + state.status : '') + '&offset=' + state.offset;
+      if (!append) box.style.opacity = '0.5';
+      fetch(base + '/runs?' + want, { headers: { accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
+        .then(function (data) {
+          if (card._runs !== state) return;
+          box.style.opacity = '';
+          var runs = data.runs || [];
+          var counts = data.counts || {};
+          var all = data.all != null ? data.all : runs.length;
+          var count = card.querySelector('.wf-runs-count');
+          if (count) count.textContent = all ? all + ' in ' + rangeWords() : '';
+          if (filter) {
+            filter.innerHTML = RUN_FILTERS.filter(function (f) { return !f[0] || counts[f[0]]; }).map(function (f) {
+              return '<button type="button" data-run-filter="' + f[0] + '" aria-pressed="' + (f[0] === state.status) + '">' + f[1] + ' <span class="wf-run-filter-n">' + (f[0] ? counts[f[0]] : all) + '</span></button>';
+            }).join('');
+            filter.hidden = !all;
+          }
+          var rows = runs.map(function (r) { return runCardHtml(w, r); }).join('');
+          var more = data.total != null && state.offset + runs.length < data.total
+            ? '<button type="button" class="wf-runs-more">Show more (' + (data.total - state.offset - runs.length) + ' more)</button>' : '';
+          var list = box.querySelector('.wf-run-rows');
+          if (append && list) {
+            list.insertAdjacentHTML('beforeend', rows);
+            var oldMore = box.querySelector('.wf-runs-more');
+            if (oldMore) oldMore.remove();
+            if (more) box.insertAdjacentHTML('beforeend', more);
+          } else {
+            box.innerHTML = runs.length ? '<ol class="wf-run-rows">' + rows + '</ol>' + more
+              : '<div class="ab-empty">' + (all ? 'None of these in ' + rangeWords() + '.' : 'No runs in ' + rangeWords() + (healthVersion ? ' of this version' : '') + '. Start one from Triggers (Run now), an app, a schedule or a webhook.') + '</div>';
+          }
+        })
+        .catch(function (err) { box.style.opacity = ''; box.innerHTML = '<p class="error">Could not load its runs: ' + escapeHtml(err.message) + '</p>'; });
+    };
+    state.draw = draw;
+    draw(false);
+    if (box.dataset.wired) return;
+    box.dataset.wired = '1';
     box.addEventListener('click', function (ev) {
+      var more = ev.target.closest('.wf-runs-more');
+      if (more) { more.disabled = true; card._runs.offset += 50; card._runs.draw(true); return; }
       var b = ev.target.closest('.wf-run-trace');
       if (!b) return;
       openRunTrace(name, card, b.getAttribute('data-run'));
@@ -2061,8 +2125,9 @@ ${renderMarkdownScript}
     if (filter) filter.addEventListener('click', function (ev) {
       var f = ev.target.closest('[data-run-filter]');
       if (!f) return;
-      filter.querySelectorAll('[data-run-filter]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === f)); });
-      box.querySelectorAll('.wf-run-row').forEach(function (row) { row.parentNode.hidden = f.dataset.runFilter !== 'all' && row.dataset.status !== f.dataset.runFilter; });
+      card._runs.status = f.dataset.runFilter;
+      card._runs.offset = 0;
+      card._runs.draw(false);
     });
   }
 

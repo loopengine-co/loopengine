@@ -1941,7 +1941,23 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
   const dir = agentDir(agentName)
   try {
     if (!id && req.method === 'GET') return json(200, await workflowsView(agentName))
-    if (id && action === 'runs' && req.method === 'GET') return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
+    // Its runs, newest first: the latest 50; or, with ?days, those in the
+    // last days (?version narrows them to one workflow version, "none"
+    // for runs from before versions), a page at a time (?offset), with
+    // how many there are and how they ended.
+    if (id && action === 'runs' && req.method === 'GET') {
+      const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const days = Number(q.get('days'))
+      if (!(days > 0)) return json(200, { runs: await listRuns(agentName, { workflowId: id, limit: 50 }) })
+      const span = Math.min(Math.round(days), 400)
+      const inRange = (await runsSince(agentName, id, new Date(Date.now() - span * 86_400_000).toISOString())).filter((r) => versionMatches(r, q.get('version'))).reverse()
+      const counts: Record<string, number> = {}
+      for (const r of inRange) counts[r.status] = (counts[r.status] ?? 0) + 1
+      const offset = Math.max(0, Math.floor(Number(q.get('offset')) || 0))
+      const status = q.get('status')
+      const shown = status ? inRange.filter((r) => r.status === status) : inRange
+      return json(200, { runs: shown.slice(offset, offset + 50), total: shown.length, all: inRange.length, counts })
+    }
     // Its Feedback tab: what people said about its results, from anywhere
     // (web/workflow-feedback.ts), over ?days (30 by default).
     if (id && action === 'feedback' && req.method === 'GET') {
@@ -1979,7 +1995,7 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
     if (id && action === 'health' && req.method === 'GET') {
       if (!readWorkflow(dir, id)) return json(404, { error: `No workflow ${id}.` })
       const days = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('days'))
-      return json(200, await healthOf(agentName, id, days > 0 && days <= 400 ? Math.round(days) : 30))
+      return json(200, await healthOf(agentName, id, days > 0 && days <= 400 ? Math.round(days) : 30, new URL(req.url ?? '/', 'http://localhost').searchParams.get('version')))
     }
     // The Messages tab: where every run's updates and decisions go.
     if (id && action === 'messages' && req.method === 'PUT') return json(200, updateWorkflowMessages(dir, id, await readJsonBody(req)))
@@ -2587,12 +2603,23 @@ const inboxDeps: InboxDeps = {
   archived: () => readArchived(projectDir()),
 }
 
+// A run's workflow version against ?version: a number, "none" for a run
+// from before versions, or empty for any.
+function versionMatches(run: WorkflowRun, version: string | null): boolean {
+  if (!version) return true
+  const v = workflowVersionOf(run)
+  return version === 'none' ? v === undefined : v === Number(version)
+}
+
 // A workflow's health over the last `days` days (web/workflow-health.ts):
-// its runs, and each run's cost where every model call has a price.
-async function healthOf(agent: string, workflowId: string, days = 30): Promise<WorkflowHealth> {
+// its runs (of one version, when asked), and each run's cost where every
+// model call has a price; and every version that ran in those days.
+async function healthOf(agent: string, workflowId: string, days = 30, version: string | null = null): Promise<WorkflowHealth & { versionsRun: (number | null)[] }> {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-  const runs = await runsSince(agent, workflowId, since)
-  return workflowHealth(runs, runCosts(agent, runs), { days })
+  const all = await runsSince(agent, workflowId, since)
+  const versionsRun = [...new Set(all.map((r) => workflowVersionOf(r) ?? null))].sort((a, b) => (b ?? 0) - (a ?? 0))
+  const runs = all.filter((r) => versionMatches(r, version))
+  return { ...workflowHealth(runs, runCosts(agent, runs), { days }), versionsRun }
 }
 
 // Each run's cost in US dollars, where every model call has a price.
