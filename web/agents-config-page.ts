@@ -358,6 +358,15 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-run-card-out { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .wf-run-card-out.error { color: var(--bad); }
   .wf-trace { display: grid; gap: 20px; min-width: 0; }
+  /* A run, over the Activity list. */
+  .wf-trace-dialog { width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--canvas); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .25); overflow: auto; }
+  .wf-trace-dialog:focus, .wf-trace-dialog:focus-visible { outline: none; }
+  .wf-trace-dialog::backdrop { background: rgba(20, 24, 25, .35); backdrop-filter: blur(3px); }
+  .wf-trace-dialog .wf-trace { padding: 0 24px 24px; }
+  .wf-trace-dialog .wf-trace-bar { position: sticky; top: 0; z-index: 2; margin: 0 -24px; padding: 14px 24px; background: var(--canvas); border-bottom: 1px solid var(--line); }
+  .wf-trace-dialog .wf-trace > .hint:first-child { padding-top: 24px; }
+  .wf-trace-back { height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
+  .wf-run-row.is-last { box-shadow: inset 3px 0 0 var(--accent); background: var(--surface); }
   .wf-trace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
   .wf-trace-bar a.wf-link { text-decoration: none; }
   .wf-trace-save-case { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
@@ -2050,7 +2059,8 @@ ${renderMarkdownScript}
           '<a href="' + auditHref + '" title="Who changed this workflow, and when, in Audit">Change history</a></span></div>' +
           '<div class="wf-runs">' + loading + '</div></section>' +
       '</div>' +
-      '<div class="wf-trace" hidden></div>';
+      // A run opens over the list, which stays as it was underneath.
+      '<dialog class="wf-trace-dialog" aria-label="Run"><div class="wf-trace"></div></dialog>';
   }
 
   var RUN_PILLS = { done: ['good', 'Done'], error: ['bad', 'Failed'], awaiting_approval: ['ask', 'Waiting'], running: ['accent', 'Running'] };
@@ -2174,12 +2184,21 @@ ${renderMarkdownScript}
     var prev = openTraces[id];
     openTraces[id] = { run: runId, step: prev && prev.run === runId ? prev.step : null };
     setRunParam(runId);
-    var main = card.querySelector('.wf-act-main');
+    var dlg = card.querySelector('.wf-trace-dialog');
     var box = card.querySelector('.wf-trace');
-    if (!main || !box) return;
-    main.hidden = true;
-    box.hidden = false;
-    if (!box.innerHTML) box.innerHTML = '<p class="hint">Loading the trace' + String.fromCharCode(8230) + '</p>';
+    if (!dlg || !box) return;
+    if (!dlg.dataset.wired) {
+      dlg.dataset.wired = '1';
+      // Esc, a click outside or Close: back to the list just as it was.
+      dlg.addEventListener('close', function () { forgetRunTrace(card); });
+      dlg.addEventListener('click', function (ev) { if (ev.target === dlg) dlg.close(); });
+    }
+    if (!prev || prev.run !== runId || !box.innerHTML) box.innerHTML = '<p class="hint">Loading the run' + String.fromCharCode(8230) + '</p>';
+    if (!dlg.open) dlg.showModal();
+    // The run last opened stays marked in the list.
+    card.querySelectorAll('.wf-run-row.is-last').forEach(function (r) { r.classList.remove('is-last'); });
+    var row = card.querySelector('.wf-run-row[data-run="' + runId + '"]');
+    if (row) row.classList.add('is-last');
     fetch('/agents/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId) + '/trace', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (b) { throw new Error(b.error || 'HTTP ' + r.status); }); })
       .then(function (t) {
@@ -2194,12 +2213,15 @@ ${renderMarkdownScript}
   }
 
   function closeRunTrace(card) {
+    var dlg = card.querySelector('.wf-trace-dialog');
+    if (dlg && dlg.open) dlg.close();
+    else forgetRunTrace(card);
+  }
+  function forgetRunTrace(card) {
     delete openTraces[card.dataset.workflow];
     setRunParam(null);
-    var main = card.querySelector('.wf-act-main');
     var box = card.querySelector('.wf-trace');
-    if (box) { box.hidden = true; box.innerHTML = ''; }
-    if (main) main.hidden = false;
+    if (box) box.innerHTML = '';
   }
 
   // Back to the runs; the run's conversation in the Inbox; its record (the
@@ -2207,7 +2229,7 @@ ${renderMarkdownScript}
   // policies it ran under) or just its trace, as a file; and, for a run
   // that finished, saving it as an eval case.
   function traceBarHtml(name, runId, t) {
-    return '<div class="wf-trace-bar"><button type="button" class="wf-link wf-trace-back">' + String.fromCharCode(8592) + ' All runs</button>' +
+    return '<div class="wf-trace-bar"><button type="button" class="wf-trace-back" aria-label="Close">Close</button>' +
       '<span style="flex:1"></span><a class="wf-link" href="' + inboxHref(runId) + '">Open in Inbox</a>' +
       '<a class="wf-link" href="/inbox/cases/' + encodeURIComponent(runId) + '/export" download>Download record</a>' +
       '<a class="wf-link" href="/agents/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId) + '/trace" download="trace-' + escapeHtml(runId) + '.json">Download trace</a>' +
@@ -2398,7 +2420,7 @@ ${renderMarkdownScript}
         panel.innerHTML = '<p style="margin:0"><span class="le-pill good">Saved</span> It' + RSQ + 's one of this workflow' + RSQ + 's eval cases now. <a href="#" class="wf-link wf-trace-evals">See them in Evaluation</a></p>' +
           (fresh.length ? '<h4 class="wf-sub">Add to its success criteria?</h4><p class="hint" style="margin:0">From what people corrected in this run. Each goes into the draft; publish it to judge every eval case on it.</p>' +
             '<ul class="wf-trace-suggest">' + fresh.map(function (x, i) { return '<li><span>' + escapeHtml(x.text) + '</span><button type="button" class="wf-link" data-suggest="' + i + '">Add to draft</button></li>'; }).join('') + '</ul>' : '');
-        panel.querySelector('.wf-trace-evals').addEventListener('click', function (ev) { ev.preventDefault(); showWorkflowTab(card, 'evaluation'); });
+        panel.querySelector('.wf-trace-evals').addEventListener('click', function (ev) { ev.preventDefault(); closeRunTrace(card); showWorkflowTab(card, 'evaluation'); });
         panel.addEventListener('click', function (ev) {
           var b = ev.target.closest('[data-suggest]');
           if (!b) return;
