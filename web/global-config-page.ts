@@ -144,7 +144,9 @@ export const globalConfigPageHtml: string = `<!doctype html>
   .cf-foot button, .cf-own-form > button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; white-space: nowrap; }
   .cf-foot .delete-btn { background: var(--bg); border-color: var(--line); color: var(--bad); }
   .cf-foot .delete-btn:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad-soft); }
-  .cf-foot .app-form { flex: 1; max-width: 520px; }
+  .cf-foot .app-form { flex: 1; max-width: 520px; gap: 8px; }
+  .cf-foot .app-form > button { justify-self: start; height: 34px; padding: 0 16px; }
+  .cf-foot .app-form > input { max-width: 360px; height: 34px; }
   .cf-foot button.app-link { height: auto; padding: 2px 0; }
   .cf-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
   .cf-chip.strong { background: var(--surface); border-color: transparent; color: var(--ink); font-weight: 500; }
