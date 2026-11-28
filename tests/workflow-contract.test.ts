@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { readWorkflow, readWorkspacePolicies, setWorkflowFields, workflowRunMessage, writeWorkspacePolicies } from '#core/workflows.js'
-import { addEvalCase, checkCase, codeCheck, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase, workflowScores } from '#web/workflow-evidence.js'
+import { addEvalCase, checkCase, draftEvalStatus, setRequirePass, codeCheck, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, startEvalRound, updateEvalCase, workflowScores } from '#web/workflow-evidence.js'
 import type { WorkflowRun } from '#core/workflow-runs.js'
 import type { ModelCall } from '#core/run-agent.js'
 
@@ -68,6 +68,26 @@ describe('a workflow evidence', () => {
   })
 
   const judgeSays = (text: string): ModelCall => async () => ({ content: [{ type: 'text', text }], stopReason: 'end_turn' } as never)
+
+  it("says where a draft stands on its eval cases, and whether publishing needs a pass", async () => {
+    const dir = agentWithWorkflow()
+    const savedAt = '2026-11-28T10:00:00.000Z'
+    expect(draftEvalStatus(readEvals(dir, 'reply'), savedAt)).toMatchObject({ state: 'no_cases', requirePass: false })
+    const a = addEvalCase(dir, 'reply', { params: { order_number: 'EM-1' } })
+    const b = addEvalCase(dir, 'reply', { params: { order_number: 'EM-2' } })
+    expect(setRequirePass(dir, 'reply', true).requirePass).toBe(true)
+    expect(draftEvalStatus(readEvals(dir, 'reply'), savedAt)).toMatchObject({ state: 'untested', total: 2, requirePass: true })
+    const judge = judgeSays('{"checks": []}')
+    const criteria = [{ id: 'signed', text: 'Signed', kind: 'contains' as const, value: 'Support' }]
+    // Published: passes both. Draft: drops the signature on EM-2.
+    await startEvalRound({ agentDir: dir, workflowId: 'reply', instructions: 'x', model: 'm', judgeLabel: 'j', judge, workflowVersion: 4, criteria, runCase: async () => ({ result: 'Hi. Support', tools: [] }) })
+    await startEvalRound({ agentDir: dir, workflowId: 'reply', instructions: 'x', model: 'm', judgeLabel: 'j', judge, draft: { savedAt }, criteria, runCase: async ({ params }) => ({ result: params.order_number === 'EM-2' ? 'Hi.' : 'Hi. Support', tools: [] }) })
+    expect(draftEvalStatus(readEvals(dir, 'reply'), savedAt)).toMatchObject({ state: 'broken', broken: [2], draftPassed: 1, publishedPassed: 2, publishedVersion: 4 })
+    // Edited since its test: out of date.
+    expect(draftEvalStatus(readEvals(dir, 'reply'), '2026-11-28T11:00:00.000Z').state).toBe('stale')
+    expect(a.id).not.toBe(b.id)
+    expect(setRequirePass(dir, 'reply', false).requirePass).toBeUndefined()
+  })
 
   it("fills a case's expected result only from what a person stood behind", () => {
     const dir = agentWithWorkflow()

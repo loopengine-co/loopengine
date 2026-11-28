@@ -285,6 +285,10 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-when { font-size: 12.5px; color: var(--ink-muted); }
   .ev-step .hint { margin: 0; }
   .ev-vs { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .ev-rule { display: flex; align-items: center; gap: 12px; margin: -10px 0 18px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .ev-rule > span { display: grid; gap: 2px; font-size: 13px; }
+  .ev-rule .hint { margin: 0; }
+  .ev-rule input.wfm-switch { flex-shrink: 0; }
   .ev-steps.has-draft { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr); }
   .ev-vs-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; font-size: 13px; }
   .ev-vs-v .le-pill { white-space: nowrap; }
@@ -677,6 +681,15 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .wf-publish { display: grid; gap: 12px; }
   .wf-publish h4 { margin: 4px 0 0; font-size: 13px; }
   .wf-pub-version { margin: 0; }
+  .wf-pub-eval { display: grid; gap: 8px; justify-items: start; margin: 4px 0 8px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+  .wf-pub-eval p { margin: 0; }
+  .wf-pub-eval.is-good { background: var(--good-soft); color: var(--good); }
+  .wf-pub-eval.is-bad { background: var(--bad-soft); color: var(--bad); }
+  .wf-pub-eval.is-warn { background: var(--warn-soft); color: var(--ink); }
+  .wf-pub-eval.is-none { background: var(--surface); color: var(--ink-muted); }
+  .wf-pub-eval .wf-pub-rule { font-weight: 600; color: var(--ink); }
+  .wf-pub-anyway-row { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+  .wf-pub-anyway-row input { width: auto; margin: 0; }
   .wf-pub-stale { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-soft, #fff8e1); font-size: 13px; }
   .wf-publish .ed-actions { align-items: center; }
   .wf-publish .ed-actions .hint { margin-right: auto; }
@@ -3147,7 +3160,11 @@ ${renderMarkdownScript}
         caseSection +
       '</section>';
     }
-    return steps + compareTable +
+    // The workflow's rule: its draft publishes only once evaluated,
+    // breaking no case.
+    var rule = '<label class="ev-rule"><input type="checkbox" class="wfm-switch ev-require"' + (live.requirePass ? ' checked' : '') + '>' +
+      '<span><strong>Require a passing evaluation to publish</strong><span class="hint">A draft can then be published only after Evaluate draft, and only if it breaks no case the published version passes.</span></span></label>';
+    return steps + rule + compareTable +
       '<section class="wf-section ev-cases"><div class="wf-sub-row"><h4 class="wf-sub">Eval cases' + (nCases ? ' <span class="ev-count">' + nCases + '</span>' : '') + '</h4>' + shown + '</div>' +
         (cases ? '<ul class="wf-cases">' + cases + '</ul>' : '<p class="hint" style="margin:0">None yet. Add one of the runs suggested below, or save any run from its trace.</p>') +
         (workflowPageId ? '<h5 class="ev-sub">Suggested from recent runs</h5><div class="wf-candidates"><p class="hint" style="margin:0">Looking through its runs' + String.fromCharCode(8230) + '</p></div>' : '') +
@@ -3612,6 +3629,27 @@ ${renderMarkdownScript}
     });
   }
 
+  // Review and publish: how the draft did on its eval cases, above Publish
+  // (core: draftEvalStatus). A draft that breaks a case needs "Publish
+  // anyway"; a workflow that requires a passing evaluation can't publish
+  // until it has one.
+  function publishEvalHtml(ev) {
+    if (!ev) return '';
+    var plural = function (n) { return n + (n === 1 ? ' case' : ' cases'); };
+    var rule = ev.requirePass && ev.state !== 'passed' ? '<p class="wf-pub-rule">This workflow requires a passing evaluation to publish.</p>' : '';
+    var test = '<button type="button" class="wf-pub-test">Evaluate draft first</button>';
+    if (ev.state === 'no_cases') return '<div class="wf-pub-eval is-none"><p>No eval cases to test the draft on.' + (ev.requirePass ? '' : ' Add some on the Evaluation tab to check changes before they go live.') + '</p>' + rule + '</div>';
+    if (ev.state === 'untested' || ev.state === 'stale') return '<div class="wf-pub-eval is-warn"><p><strong>' + (ev.state === 'untested' ? 'The draft hasn' + String.fromCharCode(8217) + 't been tested.' : 'The draft changed since its test.') + '</strong> Evaluate it on the ' + plural(ev.total) + ' before it goes live.</p>' + rule + test + '</div>';
+    var vs = ev.publishedPassed !== undefined ? ' (published' + (ev.publishedVersion ? ' v' + ev.publishedVersion : '') + ': ' + ev.publishedPassed + ' of ' + ev.total + ')' : '';
+    if (ev.state === 'broken') return '<div class="wf-pub-eval is-bad"><p><strong>The draft breaks ' + plural(ev.broken.length) + '</strong>: case ' + ev.broken.join(', ') + ' passed with the published version and fails with the draft. It passes ' + ev.draftPassed + ' of ' + ev.total + vs + '.</p>' + rule +
+      (ev.requirePass ? '' : '<label class="wf-pub-anyway-row"><input type="checkbox" class="wf-pub-anyway"> Publish anyway</label>') + '</div>';
+    // Green only when every case passes; breaking none while some still
+    // fail (with both versions) is neutral.
+    var failing = ev.total - ev.draftPassed;
+    return '<div class="wf-pub-eval ' + (failing ? 'is-none' : 'is-good') + '"><p><strong>Tested: the draft passes ' + ev.draftPassed + ' of ' + ev.total + ' cases</strong>' + vs + ' and breaks none.' +
+      (failing ? ' ' + plural(failing) + ' still ' + (failing === 1 ? 'fails' : 'fail') + ', as with the published version.' : '') + '</p></div>';
+  }
+
   // Review and publish: what the draft changes in the published workflow,
   // the version it will be, a note kept with it, then Publish.
   function openPublishDialog(name, w) {
@@ -3642,10 +3680,30 @@ ${renderMarkdownScript}
         '<p class="wf-pub-version">' + (v.current ? 'Publishing makes this <strong>version ' + v.next + '</strong>, replacing version ' + v.current + ' for every run from now on.' : 'Publishing makes this the version every run uses from now on.') + '</p>' +
         (v.stale ? '<p class="wf-pub-stale">The published workflow changed since this draft began (it was version ' + v.draft.basedOn + '). Publishing replaces those changes with the draft' + String.fromCharCode(8217) + 's: check below.</p>' : '') +
         '<h4>What' + String.fromCharCode(8217) + 's changed</h4>' + changeDetailsHtml({ changes: v.changes }) +
+        publishEvalHtml(v.evaluation) +
         '<label>Note <span class="hint">(optional: what changed and why, kept with the version)</span><textarea class="wf-pub-note" rows="2" maxlength="500" placeholder="e.g. Ask for the order number before looking it up">' + (v.draft.restoredFrom ? 'Restored version ' + v.draft.restoredFrom : '') + '</textarea></label>' +
         '<div class="ed-actions"><span class="hint wf-pub-result" role="status"></span><button type="button" class="wf-pub-cancel">Cancel</button><button type="button" class="primary wf-pub-go">Publish version ' + (v.next || '') + '</button></div>';
       body.querySelector('.wf-pub-cancel').addEventListener('click', close);
       var go = body.querySelector('.wf-pub-go');
+      // Blocked by the workflow's rule, or held until "Publish anyway".
+      var ev = v.evaluation;
+      var blocked = ev && ev.requirePass && ev.state !== 'passed';
+      var anyway = body.querySelector('.wf-pub-anyway');
+      if (blocked) go.disabled = true;
+      else if (anyway) {
+        go.disabled = true;
+        anyway.addEventListener('change', function () { go.disabled = !anyway.checked; });
+      }
+      var testFirst = body.querySelector('.wf-pub-test');
+      if (testFirst) testFirst.addEventListener('click', function () {
+        testFirst.disabled = true;
+        fetchJsonRetryOnce(base + '/evals/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ draft: true }) }).then(function (r) {
+          if (!r.ok) { testFirst.disabled = false; body.querySelector('.wf-pub-result').textContent = r.body.error || 'Could not start the evaluation'; return; }
+          close();
+          workflowTabs[w.id] = 'evaluation';
+          loadWorkflowsSection(name);
+        });
+      });
       go.addEventListener('click', function () {
         go.disabled = true;
         var result = body.querySelector('.wf-pub-result');
@@ -4761,6 +4819,16 @@ ${renderMarkdownScript}
       }).then(function (r) {
         cbtn.disabled = false;
         if (!r.ok) { critStatus.textContent = r.body.error || 'That didn' + String.fromCharCode(8217) + 't save.'; return; }
+        workflowTabs[id] = 'evaluation';
+        loadWorkflowsSection(name);
+      });
+    });
+    var requireBox = card.querySelector('.ev-require');
+    if (requireBox) requireBox.addEventListener('change', function () {
+      requireBox.disabled = true;
+      fetchJsonRetryOnce(base + '/evals/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requirePass: requireBox.checked }) }).then(function (r) {
+        requireBox.disabled = false;
+        if (!r.ok) { requireBox.checked = !requireBox.checked; alert(r.body.error || 'Could not change it'); return; }
         workflowTabs[id] = 'evaluation';
         loadWorkflowsSection(name);
       });

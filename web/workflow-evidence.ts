@@ -188,6 +188,9 @@ export interface WorkflowEvals {
   rounds: EvalRound[]
   /** Set while a round is running; `draft` when it's testing the draft. */
   running?: { startedAt: string; done: number; total: number; draft?: boolean }
+  /** Its draft can be published only once evaluated, breaking no case
+   * (draftEvalStatus's `passed`). */
+  requirePass?: boolean
 }
 
 const MAX_CASES = 30
@@ -205,7 +208,7 @@ function evalsFile(agentDir: string, workflowId: string): string {
 export function readEvals(agentDir: string, workflowId: string): WorkflowEvals {
   try {
     const raw = JSON.parse(readFileSync(evalsFile(agentDir, workflowId), 'utf8')) as Partial<WorkflowEvals>
-    return { cases: Array.isArray(raw.cases) ? raw.cases : [], criteria: Array.isArray(raw.criteria) ? raw.criteria : [], rounds: Array.isArray(raw.rounds) ? raw.rounds : [], ...(raw.running ? { running: raw.running } : {}) }
+    return { cases: Array.isArray(raw.cases) ? raw.cases : [], criteria: Array.isArray(raw.criteria) ? raw.criteria : [], rounds: Array.isArray(raw.rounds) ? raw.rounds : [], ...(raw.running ? { running: raw.running } : {}), ...(raw.requirePass ? { requirePass: true } : {}) }
   } catch {
     return { cases: [], criteria: [], rounds: [] }
   }
@@ -272,7 +275,9 @@ export function checkEvalCriteria(input: unknown): EvalCriterion[] {
   const criteria = input.map((raw, i): EvalCriterion => {
     const c = (raw ?? {}) as Record<string, unknown>
     const kind = CRITERION_KINDS.includes(c.kind as CriterionKind) ? (c.kind as CriterionKind) : 'judge'
-    const text = typeof c.text === 'string' ? c.text.trim().slice(0, 300) : ''
+    // The expected-result check always reads the same: it compares, so its
+    // words describe it rather than set it (it was "Matches the good result").
+    const text = kind === 'reference' ? REFERENCE_CRITERION.text : typeof c.text === 'string' ? c.text.trim().slice(0, 300) : ''
     const value = typeof c.value === 'string' ? c.value.trim().slice(0, 300) : ''
     if (!text) throw new EvidenceError(`Criterion ${i + 1} needs its words.`)
     if (kind !== 'judge' && kind !== 'reference' && !value) throw new EvidenceError(`Criterion ${i + 1} needs ${kind.startsWith('tool') ? 'the tool' : 'the text to look for'}.`)
@@ -413,6 +418,56 @@ export async function draftCriteria(model: ModelCall, input: { instructions: str
   })
   if (!drafted.length) throw new EvidenceError('No checks could be drafted from this brief: add them by hand.')
   return drafted.slice(0, MAX_CRITERIA)
+}
+
+/** Whether its draft must pass an evaluation before it's published. */
+export function setRequirePass(agentDir: string, workflowId: string, on: unknown): WorkflowEvals {
+  if (typeof on !== 'boolean') throw new EvidenceError('requirePass must be true or false.')
+  const evals = readEvals(agentDir, workflowId)
+  const { requirePass: _was, ...rest } = evals
+  writeEvals(agentDir, workflowId, on ? { ...rest, requirePass: true } : rest)
+  return readEvals(agentDir, workflowId)
+}
+
+/** Where a draft stands on its eval cases, for Review and publish:
+ * - `no_cases`: nothing to test it on;
+ * - `untested`: never evaluated; `stale`: changed since its test, or
+ *   cases were added since;
+ * - `broken`: it fails cases the published version passes (`broken`, by
+ *   case number), else `passed`.
+ * With the published version's result beside it when there is one: on
+ * the draft's criteria when it changes them, else its latest. */
+export interface DraftEvalStatus {
+  state: 'no_cases' | 'untested' | 'stale' | 'broken' | 'passed'
+  total: number
+  draftPassed?: number
+  publishedPassed?: number
+  publishedVersion?: number
+  broken?: number[]
+  requirePass: boolean
+}
+
+export function draftEvalStatus(evals: WorkflowEvals, draftSavedAt: string): DraftEvalStatus {
+  const base = { total: evals.cases.length, requirePass: Boolean(evals.requirePass) }
+  if (!evals.cases.length) return { state: 'no_cases', ...base }
+  const draftRounds = evals.rounds.filter((r) => r.draft)
+  const tested = draftRounds.find((r) => r.draft!.savedAt === draftSavedAt)
+  if (!tested) return { state: draftRounds.length ? 'stale' : 'untested', ...base }
+  const passedAll = (r: EvalRound | undefined, caseId: string): boolean | null => {
+    const c = r?.cases.find((x) => x.caseId === caseId)
+    if (!c) return null
+    return c.checks ? c.checks.every((x) => x.pass) : (c.score ?? 0) >= 4
+  }
+  if (evals.cases.some((c) => passedAll(tested, c.id) === null)) return { state: 'stale', ...base }
+  const published = evals.rounds.find((r) => r.forDraft?.savedAt === draftSavedAt) ?? evals.rounds.find((r) => !r.draft && !r.forDraft)
+  const broken = evals.cases.flatMap((c, i) => (passedAll(published, c.id) === true && passedAll(tested, c.id) === false ? [i + 1] : []))
+  return {
+    state: broken.length ? 'broken' : 'passed',
+    ...base,
+    draftPassed: evals.cases.filter((c) => passedAll(tested, c.id)).length,
+    ...(published ? { publishedPassed: evals.cases.filter((c) => passedAll(published, c.id)).length, ...(published.workflowVersion ? { publishedVersion: published.workflowVersion } : {}) } : {}),
+    ...(broken.length ? { broken } : {}),
+  }
 }
 
 export interface EvalRunDeps {

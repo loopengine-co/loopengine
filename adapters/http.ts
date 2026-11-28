@@ -96,7 +96,7 @@ import { workflowHealth, type WorkflowHealth } from '#web/workflow-health.js'
 import { buildWorkflowAudit, type WorkflowAudit } from '#web/workflow-audit.js'
 import { workflowAuditReportHtml } from '#web/workflow-audit-report.js'
 import { compressResponses, serveConsoleAsset } from '#web/response-compression.js'
-import { EvidenceError, type EvalCriterion, type StandIn, feedbackSourceOf, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, checkEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
+import { EvidenceError, type EvalCriterion, type StandIn, draftEvalStatus, setRequirePass, feedbackSourceOf, addEvalCase, evalCandidates, suggestedCriteria, draftCriteria, readEvals, removeEvalCase, runFeedbackFrom, setEvalCriteria, checkEvalCriteria, startEvalRound, updateEvalCase } from '#web/workflow-evidence.js'
 import { substituteParameters } from '#core/skillgarden/index.js'
 import { WorkflowRunner, getRun, getRunStore, listRuns, runsSince, searchRuns, workflowVersionOf, type WorkflowRun } from '#core/workflow-runs.js'
 import { CallbackUrlError, callbackSecret, deliverCallback, runCallbackPayload, type CallbackPending, type RunCallbackEvent } from '#core/run-callbacks.js'
@@ -1877,6 +1877,10 @@ async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, ag
       removeEvalCase(dir, id, caseId)
       return json(200, readEvals(dir, id))
     }
+    // { requirePass }: whether the draft must pass an evaluation to publish.
+    if (part === 'settings' && !caseId && req.method === 'PUT') {
+      return json(200, setRequirePass(dir, id, (await readJsonBody(req)).requirePass))
+    }
     if (part === 'criteria' && !caseId && req.method === 'PUT') {
       setEvalCriteria(dir, id, (await readJsonBody(req)).criteria)
       return json(200, readEvals(dir, id))
@@ -2103,6 +2107,14 @@ async function handleAgentWorkflows(req: IncomingMessage, res: ServerResponse, a
       if (!draft) return json(400, { error: 'There is no draft to publish: change the workflow and save a draft first.', code: 'no_draft' })
       const { changes } = await draftStates(agentName, workflow, draft)
       if (!changes.length) return json(400, { error: 'The draft is the same as the published workflow: there is nothing to publish.', code: 'unchanged' })
+      // A workflow that requires it publishes only a draft evaluated on
+      // every case that breaks none.
+      const evaluation = draftEvalStatus(readEvals(dir, id), draft.savedAt)
+      if (evaluation.requirePass && evaluation.state !== 'passed') {
+        const broken = evaluation.broken ?? []
+        const why = { no_cases: 'it has no eval cases to test the draft on', untested: "the draft hasn't been evaluated", stale: 'the draft changed since its evaluation (or cases were added): evaluate it again', broken: `the draft fails ${broken.length === 1 ? 'a case' : 'cases'} the published version passes (case ${broken.join(', ')})`, passed: '' }[evaluation.state]
+        return json(409, { error: `This workflow requires a passing evaluation to publish, and ${why}.`, code: 'evaluation_required', evaluation })
+      }
       const body = await readJsonBody(req)
       const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
       const previous = await noteWorkflowVersion(agentName, id)
@@ -2819,12 +2831,14 @@ async function draftStates(agent: string, workflow: Workflow, draft: WorkflowDra
 // changes against the published workflow, the version in use and the one
 // publishing makes, and whether the published workflow changed since the
 // draft began (someone else published, or the file was edited).
-async function draftView(agent: string, workflow: Workflow): Promise<{ draft: WorkflowDraft | null; changes: FieldChange[]; current: number | null; next: number | null; stale: boolean }> {
+async function draftView(agent: string, workflow: Workflow): Promise<{ draft: WorkflowDraft | null; changes: FieldChange[]; current: number | null; next: number | null; stale: boolean; evaluation?: ReturnType<typeof draftEvalStatus> }> {
   const draft = readDraft(projectDir(), agent, workflow.id)
   const current = (await noteWorkflowVersion(agent, workflow.id)) ?? null
   if (!draft) return { draft: null, changes: [], current, next: null, stale: false }
   const { changes } = await draftStates(agent, workflow, draft)
-  return { draft, changes, current, next: current !== null && changes.length ? current + 1 : null, stale: Boolean(draft.basedOn && current && draft.basedOn !== current) }
+  // How the draft did on its eval cases, for Review and publish.
+  const evaluation = draftEvalStatus(readEvals(agentDir(agent), workflow.id), draft.savedAt)
+  return { draft, changes, current, next: current !== null && changes.length ? current + 1 : null, stale: Boolean(draft.basedOn && current && draft.basedOn !== current), evaluation }
 }
 
 // Puts a draft live: the editor's fields, the success criteria, where
@@ -6203,7 +6217,7 @@ const server = createServer(async (req, res) => {
         return void reply(err instanceof EvidenceError ? 400 : 500, { error: err instanceof Error ? err.message : String(err) })
       }
     }
-    const evalsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/evals(?:\/(run|cases|criteria|candidates))?(?:\/([a-z0-9]+))?$/)
+    const evalsMatch = pathname.match(/^\/agents\/([^/]+)\/workflows\/([a-z0-9-]+)\/evals(?:\/(run|cases|criteria|candidates|settings))?(?:\/([a-z0-9]+))?$/)
     if (evalsMatch) {
       await handleWorkflowEvals(req, res, decodeURIComponent(evalsMatch[1]), evalsMatch[2], evalsMatch[3], evalsMatch[4])
       return
