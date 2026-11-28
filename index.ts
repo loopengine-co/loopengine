@@ -411,7 +411,7 @@ export { checkInputSpec, checkInputValue, inputSchemaOf, INPUT_TYPES, INPUT_FORM
 // checks its parts go through before they're drafted.
 export { changeDraft, discardDraft, draftChanges, readDraft, saveDraft, withDraft, isEmptyDraft, messagesText, type DraftSchedule, type DraftState, type WorkflowDraft } from './web/workflow-drafts.js'
 export { setWorkflowName } from './core/workflows.js'
-export { checkEvalCriteria } from './web/workflow-evidence.js'
+export { checkEvalCriteria, draftEvalStatus, setRequirePass, type DraftEvalStatus } from './web/workflow-evidence.js'
 export { applyTriggerSettings } from './core/workflow-triggers.js'
 export { parseScheduleInput } from './core/scheduler.js'
 export { workflowEdit, checkWorkflowMessages } from './web/workflow-admin.js'
