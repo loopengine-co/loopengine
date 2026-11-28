@@ -297,6 +297,7 @@ ${themeHeadHtml}<style>${devUiCss}${MASCOT_CSS}${newWorkflowDialogCss}
   .ev-steps .wf-evals-run:disabled { opacity: .45; }
   .ev-shown { margin-left: auto; }
   .wf-case-skip { margin: 0; font-size: 12.5px; color: var(--ink-muted); }
+  .ev-ref-hint { margin: 6px 0 4px; }
   .ev-sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .ev-side { display: grid; gap: 6px; align-content: start; padding: 10px 12px; min-width: 0; }
   .ev-side + .ev-side { border-left: 1px solid var(--line); }
@@ -2397,10 +2398,10 @@ ${renderMarkdownScript}
     ['not_contains', 'Result doesn' + String.fromCharCode(8217) + 't contain'],
     ['tool_called', 'Calls tool'],
     ['tool_not_called', 'Doesn' + String.fromCharCode(8217) + 't call tool'],
-    ['reference', 'Matches the good result'],
+    ['reference', 'Matches the expected result'],
   ];
   function critKindText(c) {
-    if (c.kind === 'reference') return 'Checked against each eval case' + RSQ + 's saved good result';
+    if (c.kind === 'reference') return 'Checked against each eval case' + RSQ + 's expected result';
     var label = (CRIT_KINDS.filter(function (k) { return k[0] === c.kind; })[0] || CRIT_KINDS[0])[1];
     return c.value ? label + ' ' + String.fromCharCode(8220) + c.value + String.fromCharCode(8221) : label;
   }
@@ -2408,11 +2409,14 @@ ${renderMarkdownScript}
     var needsValue = c.kind !== 'judge' && c.kind !== 'reference';
     return '<div class="wf-crit-row" data-crit-id="' + escapeHtml(c.id || '') + '">' +
       '<select data-crit-kind aria-label="How it' + RSQ + 's checked">' + CRIT_KINDS.map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === c.kind ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>' +
-      '<input data-crit-text value="' + escapeHtml(c.text || '') + '" placeholder="e.g. The reply gives the order' + RSQ + 's tracking number" aria-label="The check">' +
+      '<input data-crit-text value="' + escapeHtml(c.kind === 'reference' ? critLabel(c) : c.text || '') + '" placeholder="e.g. The reply gives the order' + RSQ + 's tracking number" aria-label="The check">' +
       '<input data-crit-value value="' + escapeHtml(c.value || '') + '" placeholder="' + (c.kind && c.kind.indexOf('tool') === 0 ? 'tool name' : 'exact text') + '" aria-label="What to look for"' + (needsValue ? '' : ' hidden') + '>' +
       '<button type="button" class="wf-link wf-crit-remove">Remove</button></div>';
   }
-  var REFERENCE_CRIT = { id: 'reference', text: 'Matches the good result: the same facts and decisions', kind: 'reference' };
+  var REFERENCE_CRIT = { id: 'reference', text: 'Matches the expected result: the same facts and decisions', kind: 'reference' };
+  // A criterion's words as shown and matched: the expected-result check by
+  // its kind, whatever it was saved as (it was "Matches the good result").
+  function critLabel(c) { return c.kind === 'reference' ? REFERENCE_CRIT.text : c.text; }
 
   // The Activity tab: its execution history over the last 30 days (runs
   // per day, failures, approvals, time and cost), then its runs, each a
@@ -2924,10 +2928,10 @@ ${renderMarkdownScript}
     var liveCrit = live.criteria && live.criteria.length ? live.criteria : [REFERENCE_CRIT];
     var sameCheck = function (a, b) { return a.kind === b.kind && (a.value || '') === (b.value || ''); };
     var liveByText = {};
-    liveCrit.forEach(function (c) { liveByText[c.text.trim().toLowerCase()] = c; });
+    liveCrit.forEach(function (c) { liveByText[critLabel(c).trim().toLowerCase()] = c; });
     var draftTag = function (c) {
       if (!drafted) return '';
-      var was = liveByText[c.text.trim().toLowerCase()];
+      var was = liveByText[critLabel(c).trim().toLowerCase()];
       return !was ? '<span class="le-pill warn">New in the draft</span>' : !sameCheck(was, c) ? '<span class="le-pill warn">Changed in the draft</span>' : '';
     };
     var critList = criteria.map(function (c) {
@@ -2935,17 +2939,17 @@ ${renderMarkdownScript}
       // Its pass rate, only where nothing else shows it: beside a draft
       // the comparison has each criterion's rate on both versions.
       var pill = !r || !r.total || drafted ? '' : '<span class="le-pill ' + (r.passed === r.total ? 'good' : r.passed * 2 >= r.total ? 'ask' : 'bad') + ' wf-crit-rate">' + r.passed + ' / ' + r.total + '</span>';
-      return '<li class="wf-crit"><span><strong>' + escapeHtml(c.text) + '</strong> ' + draftTag(c) + '<br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
+      return '<li class="wf-crit"><span><strong>' + escapeHtml(critLabel(c)) + '</strong> ' + draftTag(c) + '<br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span>' + pill + '</li>';
     }).join('') + (drafted ? liveCrit.filter(function (c) {
-      return !criteria.some(function (d) { return d.text.trim().toLowerCase() === c.text.trim().toLowerCase(); });
+      return !criteria.some(function (d) { return critLabel(d).trim().toLowerCase() === critLabel(c).trim().toLowerCase(); });
     }).map(function (c) {
-      return '<li class="wf-crit is-removed"><span><s>' + escapeHtml(c.text) + '</s> <span class="le-pill">Removed in the draft</span><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span></li>';
+      return '<li class="wf-crit is-removed"><span><s>' + escapeHtml(critLabel(c)) + '</s> <span class="le-pill">Removed in the draft</span><br><span class="wf-crit-kind">' + escapeHtml(critKindText(c)) + '</span></span></li>';
     }).join('') : '');
     var critSection = '<h4 class="wf-sub">Success criteria</h4>' +
       (drafted ? draftNoteHtml('The draft changes these success criteria (marked below): Evaluate draft checks both versions on them, and the published version' + RSQ + 's own Evaluate uses the published ones until then.') : '') +
       '<p class="hint" style="margin:0">' + (evals.criteria && evals.criteria.length
-        ? 'What every good result must get right. Each eval case is checked against every criterion, yes or no.'
-        : 'What every good result must get right. None set yet, so each eval case is only compared with its good result. Add the criteria that matter, or have them suggested from its instructions.') + '</p>' +
+        ? 'What every result must get right to pass. Each eval case is checked against every criterion, yes or no.'
+        : 'What every result must get right to pass. None set yet, so each eval case is only compared with its expected result. Add the criteria that matter, or have them suggested from its instructions.') + '</p>' +
       '<ul class="wf-crits">' + critList + '</ul>' +
       '<div class="wf-crit-bar"><button type="button" class="wf-crit-edit">' + (evals.criteria && evals.criteria.length ? 'Edit the success criteria' : 'Add success criteria') + '</button></div>' +
       '<div class="wf-crit-form" hidden>' +
@@ -2966,12 +2970,12 @@ ${renderMarkdownScript}
     var pubRound = pubForDraft || evals.rounds.filter(function (r) { return !r.draft && !r.forDraft; })[0];
     var comparing = Boolean(w.draft && pubRound && draftRound);
     var byCase = function (r) { var m = {}; (r ? r.cases : []).forEach(function (c) { m[c.caseId] = c; }); return m; };
-    var namesOf = function (r) { var m = {}; ((r && r.criteria) || criteria).forEach(function (c) { m[c.id] = c.text; }); return m; };
+    var namesOf = function (r) { var m = {}; ((r && r.criteria) || criteria).forEach(function (c) { m[c.id] = critLabel(c); }); return m; };
     var passedAll = function (last) { return last ? (last.checks ? last.checks.every(function (x) { return x.pass; }) : last.score >= 4) : null; };
     // One round's outcome for a case: its pill, what it missed and why,
     // and the calls the test didn't make.
     // skipped: the good-result check the round had but couldn't make for
-    // this case, with no good result saved for it.
+    // this case, with no expected result saved for it.
     var outcome = function (last, names, skipped) {
       if (!last) return { pill: '<span class="ev-none">Not tested yet</span>', body: '' };
       var fails = last.checks ? last.checks.filter(function (x) { return !x.pass; }) : [];
@@ -2992,7 +2996,7 @@ ${renderMarkdownScript}
               (g.replayed ? ' <span class="hint">(' + (g.replayed === g.n ? 'reply from its run' : g.replayed + ' replied from its run') + ')</span>' : '');
           }).join(', ') + '</p>'
         : '';
-      var skip = skipped ? '<p class="wf-case-skip">' + escapeHtml(skipped) + ' wasn' + RSQ + 't checked: this case has no good result saved. Add one under Good result.</p>' : '';
+      var skip = skipped ? '<p class="wf-case-skip">' + escapeHtml(skipped) + ' wasn' + RSQ + 't checked: this case has no expected result. Write one under Expected result.</p>' : '';
       return { pill: pill, body: why + skip + standIns };
     };
     // The good-result check a round had, named, when this case has no good
@@ -3000,7 +3004,7 @@ ${renderMarkdownScript}
     var skippedFor = function (r, c) {
       if (!r || (c.reference || '').trim()) return '';
       var ref = (r.criteria || []).filter(function (x) { return x.kind === 'reference'; })[0];
-      return ref ? ref.text : '';
+      return ref ? critLabel(ref) : '';
     };
     var resultBlock = function (label, last) {
       return last && last.result ? '<div class="ev-result"><div class="workflow-run-entry-label">' + label + (last.tools && last.tools.length ? ' <span class="hint">(called ' + escapeHtml(last.tools.join(', ')) + ')</span>' : '') + '</div><div class="workflow-steps-text">' + escapeHtml(last.result) + '</div></div>' : '';
@@ -3013,8 +3017,8 @@ ${renderMarkdownScript}
       var head = function (extra) {
         return '<div class="wf-case-head"><strong>Case ' + (i + 1) + '</strong>' + extra + '<span class="hint">' + (values || 'no inputs') + '</span><button type="button" class="wf-link wf-case-remove">Remove</button></div>';
       };
-      var goodResult = '<textarea class="wf-case-ref" aria-label="Good result for case ' + (i + 1) + '" placeholder="Optional: what a good result says, to compare against">' + escapeHtml(c.reference || '') + '</textarea>' +
-        '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save good result</button></div>';
+      var goodResult = '<p class="hint ev-ref-hint">What the result should say for these inputs. Results are checked for the same facts and decisions; the wording can differ.</p><textarea class="wf-case-ref" aria-label="Expected result for case ' + (i + 1) + '" placeholder="Write what this result should have said">' + escapeHtml(c.reference || '') + '</textarea>' +
+        '<div class="wf-case-actions"><button type="button" class="wf-case-save">Save expected result</button></div>';
       if (comparing) {
         // Both versions' outcomes on this case, side by side.
         var pub = pubCases[c.id], dr = draftCases[c.id];
@@ -3022,7 +3026,7 @@ ${renderMarkdownScript}
         var col = function (label, o, draftSide) { return '<div class="ev-side' + (draftSide ? ' is-draft' : '') + '"><div class="ev-side-k">' + label + ' ' + o.pill + '</div>' + o.body + '</div>'; };
         return '<li class="wf-case" id="ev-case-' + escapeHtml(c.id) + '" data-case="' + escapeHtml(c.id) + '">' + head('') +
           '<div class="ev-sides">' + col(escapeHtml(pubLabel), p, false) + col('<span class="le-pill warn">Draft</span>', d, true) + '</div>' +
-          '<details><summary>Good result' + (c.reference ? '' : ' (none)') + ' and both results</summary>' + goodResult +
+          '<details><summary>Expected result' + (c.reference ? '' : ' (none yet)') + ' and both results</summary>' + goodResult +
             '<div class="ev-sides">' + '<div class="ev-side">' + (resultBlock(escapeHtml(pubLabel), pub) || '<span class="ev-none">No result</span>') + '</div>' +
               '<div class="ev-side is-draft">' + (resultBlock('Draft', dr) || '<span class="ev-none">No result</span>') + '</div></div>' +
           '</details></li>';
@@ -3030,7 +3034,7 @@ ${renderMarkdownScript}
       var last = latest[c.id];
       var o = last ? outcome(last, critName, skippedFor(round, c)) : { pill: '', body: '' };
       return '<li class="wf-case" data-case="' + escapeHtml(c.id) + '">' + head(o.pill) + o.body +
-        '<details><summary>Good result' + (c.reference ? '' : ' (none)') + (last && last.result ? ' and its latest result' : '') + '</summary>' + goodResult + resultBlock('Latest result', last) +
+        '<details><summary>Expected result' + (c.reference ? '' : ' (none yet)') + (last && last.result ? ' and its latest result' : '') + '</summary>' + goodResult + resultBlock('Latest result', last) +
         '</details></li>';
     }).join('');
     var nCases = evals.cases.length;
@@ -3068,8 +3072,8 @@ ${renderMarkdownScript}
     var steps = '<div class="ev-steps' + (w.draft ? ' has-draft' : '') + '">' +
       step(1, 'Pick real runs', nCases ? nCases + (nCases === 1 ? ' eval case' : ' eval cases') : '<span class="ev-none">None yet</span>',
         nCases ? 'Saved runs each change is tested against.' : 'Add one from the suggestions below.') +
-      step(2, 'Say what good looks like', nCrit ? nCrit + (nCrit === 1 ? ' success criterion' : ' success criteria') : '<span class="ev-none">Its good result</span>',
-        nCrit ? 'Each case is checked against every one, yes or no.' : 'With no criteria, each case is compared with its saved good result.') +
+      step(2, 'Decide what passes', nCrit ? nCrit + (nCrit === 1 ? ' success criterion' : ' success criteria') : '<span class="ev-none">Its expected result</span>',
+        nCrit ? 'The success criteria every result is checked against, yes or no.' : 'With no criteria, each case is compared with its expected result.') +
       evaluate +
       '</div>';
     // Which round the cases below show.
@@ -3129,7 +3133,7 @@ ${renderMarkdownScript}
       var caseSection = '<div class="ev-cmp-head ev-cmp-head-cases"><span>' + (changed.length ? 'Cases that changed' : 'By case') + '</span></div>' +
         (changed.length ? '<ul class="ev-krows">' + changed.map(function (x) { return x.html; }).join('') + '</ul>' : '') +
         (rest.length ? '<details class="ev-rest"><summary>' + (changed.length ? rest.length + ' unchanged' : 'No case changed') + ': ' + restWords + '</summary><ul class="ev-krows">' + rest.map(function (x) { return x.html; }).join('') + '</ul></details>' : '');
-      var sameChecks = JSON.stringify((pubRound.criteria || []).map(function (c) { return c.text; })) === JSON.stringify((draftRound.criteria || []).map(function (c) { return c.text; }));
+      var sameChecks = JSON.stringify((pubRound.criteria || []).map(critLabel)) === JSON.stringify((draftRound.criteria || []).map(critLabel));
       compareTable = '<section class="wf-section ev-compare"><h4 class="wf-sub">Draft against ' + escapeHtml(pubLabel) + '</h4>' +
         '<div class="ev-sum">' +
           '<div class="ev-sum-side"><span class="ev-sum-k">' + escapeHtml(pubLabel) + '</span><span class="ev-sum-n">' + pubAll + '<small> of ' + total + (total === 1 ? ' case' : ' cases') + ' passed</small></span></div>' +
@@ -4725,7 +4729,7 @@ ${renderMarkdownScript}
         cbtn.hidden = true;
         offerPublish(critForm);
         // With none set yet, the check every case already gets (against its
-        // good result) is a row too: adding criteria keeps it unless it's
+        // expected result) is a row too: adding criteria keeps it unless it's
         // removed, rather than silently replacing it.
         if (!rows.children.length) rows.insertAdjacentHTML('beforeend', critRowHtml(REFERENCE_CRIT) + critRowHtml({ kind: 'judge' }));
         return;

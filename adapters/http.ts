@@ -1841,7 +1841,7 @@ async function evalJudge(tested: AgentConfig): Promise<{ call: ModelCall; label:
 }
 
 // A workflow's eval cases and criteria (web/workflow-evidence.ts): list
-// them, add a case (from a past run, or inputs and a good result), change
+// them, add a case (from a past run, or inputs and an expected result), change
 // or remove one, set the criteria or draft them from the brief, and run
 // every case as a test run, each result checked on every criterion.
 async function handleWorkflowEvals(req: IncomingMessage, res: ServerResponse, agentName: string, id: string, part: string | undefined, caseId: string | undefined): Promise<void> {

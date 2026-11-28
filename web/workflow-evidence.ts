@@ -6,7 +6,7 @@
 //     the feedback an app or person reported afterwards
 //     (POST /agents/:name/runs/:id/feedback): the text actually used,
 //     compared with the result (none, light or heavy edits), and a verdict.
-//   - Eval cases: real inputs, and when there is one a good result to
+//   - Eval cases: real inputs, and when there is one an expected result to
 //     compare against, kept beside its skill
 //     (agents/<name>/skills/<id>/evals.json). A case is usually saved from
 //     a past run, its result edited into the good one.
@@ -15,7 +15,7 @@
 //     wasn't called); the rest a judge model answers, one call per case
 //     for all of them, a model other than the workflow's own (models
 //     favour their own writing). With none set, the one check is whether
-//     the result matches the case's good result.
+//     the result matches the case's expected result.
 //   - Eval results: each time the cases are run, as a test run (tools its
 //     rules don't allow aren't run, nobody is asked anything), every
 //     result is checked against every criterion; a round reports each
@@ -100,7 +100,7 @@ export function feedbackSourceOf(value: unknown): FeedbackSource | undefined {
 export interface EvalCase {
   id: string
   params: Record<string, string>
-  /** The good result to compare against; empty for a case checked only
+  /** The expected result to compare against; empty for a case checked only
    * on criteria that need none. */
   reference: string
   /** The run it was saved from. */
@@ -110,7 +110,7 @@ export interface EvalCase {
 
 /** A yes or no check on every result. `judge`: a statement the judge
  * says is true or false of the result. `reference`: the result matches
- * the case's good result (cases without one skip it). `contains` /
+ * the case's expected result (cases without one skip it). `contains` /
  * `not_contains`: `value` is or isn't in the result, ignoring case.
  * `tool_called` / `tool_not_called`: the run did or didn't call tool
  * `value` (in a test run, a call it would have made counts). */
@@ -196,7 +196,7 @@ const MAX_CRITERIA = 8
 const CRITERION_KINDS: CriterionKind[] = ['judge', 'reference', 'contains', 'not_contains', 'tool_called', 'tool_not_called']
 
 /** The check a workflow has before anyone sets criteria. */
-export const REFERENCE_CRITERION: EvalCriterion = { id: 'reference', text: 'Matches the good result: the same facts and decisions', kind: 'reference' }
+export const REFERENCE_CRITERION: EvalCriterion = { id: 'reference', text: 'Matches the expected result: the same facts and decisions', kind: 'reference' }
 
 function evalsFile(agentDir: string, workflowId: string): string {
   return join(agentDir, 'skills', workflowId, 'evals.json')
@@ -225,11 +225,17 @@ function writeEvals(agentDir: string, workflowId: string, evals: WorkflowEvals):
 export function addEvalCase(agentDir: string, workflowId: string, input: { run?: WorkflowRun; params?: Record<string, string>; reference?: unknown }): EvalCase {
   const evals = readEvals(agentDir, workflowId)
   if (evals.cases.length >= MAX_CASES) throw new EvidenceError(`A workflow keeps up to ${MAX_CASES} eval cases; remove one first.`)
-  // The good result: what was given, else the text a person actually used
-  // (feedback's `final`, their edit of the result), else the result.
-  const reference = (typeof input.reference === 'string' && input.reference.trim() ? input.reference.trim() : (input.run?.feedback?.final?.trim() || input.run?.result?.trim())) ?? ''
+  // The expected result: what was given, else what a person stood behind:
+  // the text they actually used (feedback's `final`, their edit of the
+  // result), or the result they marked good. A run that failed, was marked
+  // needs work or got no feedback leaves it empty, for the person to write:
+  // its own output isn't what a result should be.
+  const vouched = input.run?.feedback?.final?.trim() || (input.run?.feedback?.verdict === 'good' ? input.run?.result?.trim() : '')
+  const reference = (typeof input.reference === 'string' && input.reference.trim() ? input.reference.trim() : vouched) ?? ''
   const params = input.run?.params ?? input.params ?? {}
-  if (!reference && !Object.keys(params).length) throw new EvidenceError('An eval case needs its inputs, a good result, or both.')
+  // A past run is a case even with neither: its inputs were none, and its
+  // expected result is for the person to write.
+  if (!input.run && !reference && !Object.keys(params).length) throw new EvidenceError('An eval case needs its inputs, an expected result, or both.')
   if (input.run && evals.cases.some((c) => c.fromRun === input.run!.run_id)) throw new EvidenceError('That run is already an eval case.')
   const c: EvalCase = { id: randomUUID().slice(0, 8), params, reference: reference.slice(0, 50000), ...(input.run ? { fromRun: input.run.run_id } : {}), createdAt: new Date().toISOString() }
   writeEvals(agentDir, workflowId, { ...evals, cases: [...evals.cases, c] })
@@ -279,7 +285,7 @@ export function checkEvalCriteria(input: unknown): EvalCriterion[] {
 }
 
 /** The criteria a round checks: the workflow's, or with none set,
- * whether the result matches the good result. */
+ * whether the result matches the expected result. */
 export function effectiveCriteria(evals: Pick<WorkflowEvals, 'criteria'>): EvalCriterion[] {
   return evals.criteria.length ? evals.criteria : [REFERENCE_CRITERION]
 }
@@ -316,9 +322,9 @@ Reply with JSON only: {"checks": [{"id": "<the statement's id>", "pass": true or
 
 /** The judge's answers for one result, one call for all its statements. */
 export async function judgeCriteria(judge: ModelCall, input: { instructions: string; reference?: string; result: string; tools: string[]; criteria: EvalCriterion[] }): Promise<EvalCheck[]> {
-  const statements = input.criteria.map((c) => `- ${c.id}: ${c.kind === 'reference' ? 'The result has the same facts and decisions as the good result (wording may differ).' : c.text}`).join('\n')
+  const statements = input.criteria.map((c) => `- ${c.id}: ${c.kind === 'reference' ? 'The result has the same facts and decisions as the expected result (wording may differ).' : c.text}`).join('\n')
   const content = `The workflow's instructions:\n<instructions>\n${input.instructions.slice(0, 12000)}\n</instructions>\n\n` +
-    (input.reference ? `The good result for these inputs:\n<good_result>\n${input.reference.slice(0, 12000)}\n</good_result>\n\n` : '') +
+    (input.reference ? `The expected result for these inputs:\n<expected_result>\n${input.reference.slice(0, 12000)}\n</expected_result>\n\n` : '') +
     `Tools the run called: ${input.tools.length ? input.tools.join(', ') : 'none'}\n\nThe result to check:\n<result>\n${input.result.slice(0, 12000)}\n</result>\n\nThe statements:\n${statements}`
   const response = await judge([{ role: 'user', content }], EVAL_CRITERIA_PROMPT, [])
   const text = response.content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('')
@@ -340,7 +346,7 @@ export async function judgeCriteria(judge: ModelCall, input: { instructions: str
 }
 
 /** Every check on one case's result: the program's, then the judge's in
- * one call. A case with no good result skips the reference check; a
+ * one call. A case with no expected result skips the reference check; a
  * failed run fails every check that applies. */
 export async function checkCase(judge: ModelCall, input: { instructions: string; criteria: EvalCriterion[]; reference: string; outputSchema?: JsonSchema; run: { result: string; tools: string[] } | { error: string } }): Promise<EvalCheck[]> {
   const applies = input.criteria.filter((c) => c.kind !== 'reference' || input.reference.trim())
@@ -560,7 +566,7 @@ export function evalCandidates(runs: WorkflowRun[], evals: WorkflowEvals, max = 
     const key = JSON.stringify(r.params ?? {})
     if (r.status !== 'done' || !r.result || overruled || seenInputs.has(key)) continue
     seenInputs.add(key)
-    add(r, 'typical', r.feedback?.verdict === 'good' ? 'A good result, marked good' : r.feedback?.edit === 'none' ? 'A good result, used unedited' : 'A typical run that went through')
+    add(r, 'typical', r.feedback?.verdict === 'good' ? 'A result a person marked Good' : r.feedback?.edit === 'none' ? 'A result a person used unedited' : 'A typical run that went through')
   }
   return out
 }

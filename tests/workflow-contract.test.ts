@@ -69,9 +69,21 @@ describe('a workflow evidence', () => {
 
   const judgeSays = (text: string): ModelCall => async () => ({ content: [{ type: 'text', text }], stopReason: 'end_turn' } as never)
 
-  it('saves a past run as an eval case and, with no criteria set, checks results against its good result', async () => {
+  it("fills a case's expected result only from what a person stood behind", () => {
     const dir = agentWithWorkflow()
-    addEvalCase(dir, 'reply', { run: run({ params: { order_number: 'EM-1' } }) })
+    const plain = addEvalCase(dir, 'reply', { run: run({ run_id: 'r-plain', result: 'Whatever it said' }) })
+    expect(plain.reference).toBe('')
+    const bad = addEvalCase(dir, 'reply', { run: run({ run_id: 'r-bad', result: 'Wrong', feedback: { verdict: 'bad' } as never }) })
+    expect(bad.reference).toBe('')
+    const good = addEvalCase(dir, 'reply', { run: run({ run_id: 'r-good', result: 'Right', feedback: { verdict: 'good' } as never }) })
+    expect(good.reference).toBe('Right')
+    const edited = addEvalCase(dir, 'reply', { run: run({ run_id: 'r-edit', result: 'Draft', feedback: { verdict: 'bad', final: 'What was sent' } as never }) })
+    expect(edited.reference).toBe('What was sent')
+  })
+
+  it('saves a past run as an eval case and, with no criteria set, checks results against its expected result', async () => {
+    const dir = agentWithWorkflow()
+    addEvalCase(dir, 'reply', { run: run({ params: { order_number: 'EM-1' }, feedback: { verdict: 'good' } as never }) })
     expect(() => addEvalCase(dir, 'reply', { run: run() })).toThrow(/already/)
     const round = await startEvalRound({ agentDir: dir, workflowId: 'reply', instructions: 'Draft a reply.', model: 'deepseek v4', judgeLabel: 'openai gpt-6.1-sol', judge: judgeSays('{"checks": [{"id": "reference", "pass": true}]}'), runCase: async ({ params }) => ({ result: `Draft for ${params.order_number}`, tools: [] }) })
     expect(round).toMatchObject({ allPassed: 1, passRates: [{ criterionId: 'reference', passed: 1, total: 1 }], cases: [{ result: 'Draft for EM-1', checks: [{ criterionId: 'reference', pass: true }] }] })
@@ -163,7 +175,7 @@ describe('a workflow evidence', () => {
     expect(() => setEvalCriteria(dir, 'reply', [{ text: '', kind: 'judge' }])).toThrow(/words/)
     expect(() => setEvalCriteria(dir, 'reply', [{ text: 'Signed', kind: 'contains' }])).toThrow(/text to look for/)
     expect(() => setEvalCriteria(dir, 'reply', Array.from({ length: 9 }, (_, i) => ({ text: `c${i}`, kind: 'judge' })))).toThrow(/8 criteria/)
-    expect(() => addEvalCase(dir, 'reply', {})).toThrow(/inputs, a good result/)
+    expect(() => addEvalCase(dir, 'reply', {})).toThrow(/inputs, an expected result/)
     const c = addEvalCase(dir, 'reply', { params: { order_number: 'EM-9' }, reference: 'x' })
     updateEvalCase(dir, 'reply', c.id, '')
     expect(readEvals(dir, 'reply').cases[0]!.reference).toBe('')
